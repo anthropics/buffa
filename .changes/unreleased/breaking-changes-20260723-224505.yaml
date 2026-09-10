@@ -1,0 +1,4 @@
+kind: Breaking changes
+body: |-
+    **`MapView::iter_unique` and `MapView::len_unique` require `K: Ord` instead of `K: PartialEq`** (#340), and `iter_unique` now returns `impl ExactSizeIterator`. Every key type a generated view uses (the integral types, `bool`, `&str`, `&[u8]`) already satisfies `Ord`, and `ReflectMapKey` keeps its `PartialEq` bound — the extra `Ord` sits only on the `ReflectMap` impl for `MapView` — so generated code, custom `string_type` map keys and `#[derive(ProtoString)]` newtypes need no change and no regeneration. Only a hand-built `MapView` over a key type without `Ord` is affected.
+time: 2026-07-23T22:45:05.976557579-07:00

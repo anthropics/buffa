@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Generated textproto parsers now reject unknown field names by default**, matching upstream protobuf text-format parsers and surfacing spelling mistakes instead of silently discarding values. Previously accepted unknown names now return `ParseErrorKind::UnknownField` (#371). Declared reserved field names remain accepted and their values are discarded with `TextDecoder::skip_value()`. A populated `message_set_wire_format` body in textproto input (all `[type.url] { ... }` entries) is now rejected by the stub parser rather than skipped, since the text encoder writes nothing for those messages and cannot round-trip them. Hand-written `TextFormat` implementations can also opt into lenient parsing with the public `skip_value()` method.
+time: 2026-08-25T09:46:17+02:00

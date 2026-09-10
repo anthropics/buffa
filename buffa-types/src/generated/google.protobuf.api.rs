@@ -554,7 +554,7 @@ impl ::buffa::text::TextFormat for Api {
                         },
                     )?
                 }
-                _ => dec.skip_value()?,
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -1042,7 +1042,7 @@ impl ::buffa::text::TextFormat for Method {
                         },
                     )?
                 }
-                _ => dec.skip_value()?,
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
@@ -1390,7 +1390,7 @@ impl ::buffa::text::TextFormat for Mixin {
             match __name {
                 "name" => self.name = dec.read_string()?.into_owned(),
                 "root" => self.root = dec.read_string()?.into_owned(),
-                _ => dec.skip_value()?,
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())

@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects extension ranges that do not satisfy `0 < start < end`** (#416), as `protoc` does, instead of accepting an empty or reversed range and silently dropping one with a missing bound. An unset bound reads as 0, so a missing `start` or `end` is the same error; a negative bound, previously reported as `PoolError::InvalidFieldNumber` with a synthetic field name, now reports here too. One-element ranges up to `MAX_FIELD_NUMBER..MAX_FIELD_NUMBER + 1` stay valid. Only hand-built or synthesized descriptor sets can reach this. The new `PoolError::InvalidExtensionRange` variant carries the message and the bounds as declared.
+time: 2026-09-03T14:00:00+02:00

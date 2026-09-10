@@ -1,4 +1,0 @@
-kind: Fixed
-body: |-
-    **JSON `null` on a registered extension key unsets the extension** (#355), for both singular and repeated extensions. Singular `google.protobuf.Value` and `google.protobuf.NullValue` extensions are the exception: `null` is a present value there. A `NullValue` extension now also serialises as `null` rather than the enum name `"NULL_VALUE"` (`[null, …]` when repeated), matching the reflective codec and ProtoJSON; the parse side accepts `null`, `"NULL_VALUE"`, and `0`.
-time: 2026-07-25T17:40:28.421509+02:00

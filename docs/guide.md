@@ -1143,7 +1143,7 @@ The default `Message::decode` / `decode_from_slice` methods use the defaults (10
 
 ### What these limits do and do not bound
 
-Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. The one carve-out is `ReflectMessage::to_dynamic`, whose internal round-trip re-decodes bytes buffa just encoded and so exempts itself from the two memory bounds; it reads a message you already hold, not wire input. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
+Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. The carve-outs are `ReflectMessage::to_dynamic` and the generated-message bridge (`DynamicMessage::from_message` / `try_from_message*`), whose internal round-trip re-decodes bytes buffa just encoded with memory bounds scaled to the encoded length: 128 bytes of element memory per encoded byte and one unknown-field slot per encoded byte, each floored at its default. They read messages you already hold, not wire input, so this avoids false rejection by the fixed defaults without making the second representation unbounded. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
 
 Textproto is the exception among the non-binary formats: `decode_from_str` applies the element-memory limit on its own. The amplification there is very nearly as large as on the wire — `{},` is three input bytes for the same element footprint that costs two encoded — so the parser needs the same bound, and carries its own because `DecodeContext` never reaches it. Raise it with `buffa::text::decode_from_str_with_element_memory_limit`. The recursion limit already applied there, enforced by the tokenizer.
 
@@ -1291,7 +1291,7 @@ let owned: Person = view.to_owned_message();
 
 When working with the generic `OwnedView<V>` directly (for example, a request type handed to you by an RPC framework), reach the inner view with `reborrow()`, which ties the borrow to the `OwnedView` itself: `let person = view.reborrow();` then `person.name`. Field access directly on the handle is deliberately not provided — the stored view's lifetime is a synthetic `'static`, and exposing it would let field borrows outlive the buffer they point into.
 
-`OwnedView` implements `Clone` (cheap — `Bytes` clone is an O(1) refcount bump), `Debug`, `PartialEq`, and `Eq` when the underlying view type does; the generated `PersonOwnedView` wrapper forwards `Clone` and `Debug`.
+`OwnedView` implements `Clone` (cheap — `Bytes` clone is an O(1) refcount bump) when the view does, `Debug` for every view (the `ViewReborrow::Reborrowed` type is required to be `Debug`, which every generated view is), and `PartialEq`, `Eq` and `Serialize` when the view implements them at every lifetime (`for<'b> V::Reborrowed<'b>: Trait`; generated views derive `Debug` but not `PartialEq`, so the comparison impls apply to hand-written views that do) — all of these except `Clone` call the view's impl on a `reborrow()`ed value, never on the `'static`-typed one. The generated `PersonOwnedView` wrapper forwards `Clone` and `Debug`.
 
 **When to use which:**
 
@@ -1438,9 +1438,14 @@ helper:
 use buffa::HasMessageView;
 
 // Accept any generated message type and hand back its 'static view handle.
-fn decode_request<M: HasMessageView>(
-    body: bytes::Bytes,
-) -> Result<M::ViewHandle, buffa::DecodeError> {
+// `decode_view_handle` requires the view to be `ViewLifetimeParametric` — the
+// `unsafe` marker every generated view carries (see `OwnedView`) — and the
+// trait cannot state that bound for you, so it goes at the call site.
+fn decode_request<M>(body: bytes::Bytes) -> Result<M::ViewHandle, buffa::DecodeError>
+where
+    M: HasMessageView,
+    M::View<'static>: buffa::ViewLifetimeParametric,
+{
     M::decode_view_handle(body)
 }
 
@@ -1601,6 +1606,13 @@ let pretty = encode_to_string_pretty(&msg);
 let msg: Person = decode_from_str(&compact)?;
 ```
 
+Generated textproto parsers reject unknown field names by default, so spelling
+mistakes return `ParseErrorKind::UnknownField` instead of being silently
+discarded. Names the message declares as `reserved` are still accepted and
+their values discarded, matching upstream parsers. A hand-written `TextFormat`
+implementation can opt into lenient parsing by calling
+`TextDecoder::skip_value()` for names it does not recognize.
+
 For streaming to a `Write` sink or tuning options (e.g. printing unknown
 fields), use `TextEncoder` / `TextDecoder` directly:
 
@@ -1642,6 +1654,8 @@ The `buffa-types` crate provides pre-generated types for Google's well-known pro
 | SourceContext | `google.protobuf.SourceContext` | `buffa_types::google::protobuf::SourceContext` |
 
 `Api`, `Type`, `Enum`, `SourceContext` and the messages they contain (`Method`, `Mixin`, `Field`, `EnumValue`, `Option`) implement the binary, view, and text codecs but not `Serialize`/`Deserialize`. A message that embeds one of them under `json = true` fails to compile with `the trait bound Api: Serialize is not satisfied`; map the type to your own generated copy with `extern_path` if you need JSON for it.
+
+Import well-known types by name (`use buffa_types::google::protobuf::Timestamp;`) rather than with a glob. `type.proto` defines a message named `Option`, so `use buffa_types::google::protobuf::*;` brings a struct `Option` into scope that shadows the prelude's `core::option::Option` and turns every `Option<T>` in that module into `error[E0107]: struct takes 0 generic arguments`. The name is kept as protoc, prost-types and protobuf-go keep it, because the proto-path-to-Rust-path mapping that `extern_path` relies on has no room for a rename; generated code is unaffected since it always spells `::core::option::Option`.
 
 ### Timestamp and Duration
 
@@ -1948,6 +1962,29 @@ extensions (`extension_by_name`, `extensions_of`), and retains the raw
 `FileDescriptorProto`s with a symbol index (`file_by_name`,
 `file_containing_symbol`) — the two lookups gRPC server reflection needs.
 
+Linking follows protoc's import rules: a file may reference types from
+itself, the files in its `dependency` list, and anything those re-export
+through `import public`; a reference to a type in any other file is
+`PoolError::TypeNotImported`, even when that file is in the same set. Sets
+produced with `protoc --include_imports` or `buf build` always satisfy this.
+A hand-built `FileDescriptorProto` that names types from another file must
+list that file in `dependency`. A `dependency` entry that is absent from the
+pool is tolerated as long as nothing it defines is referenced, so sets that
+strip option-only imports (`google/api/annotations.proto`) still load. Both
+rules are adjustable through `LinkOptions`:
+
+```rust,ignore
+use buffa_descriptor::{DescriptorPool, LinkOptions};
+
+// Pre-0.10 behaviour: resolve every type name across the whole pool.
+let pool = DescriptorPool::decode_with_link_options(
+    &descriptor_set_bytes,
+    &buffa::DecodeOptions::new(),
+    LinkOptions::new().with_import_visibility(false),
+)?;
+// Or reject an absent import outright: `.with_required_dependencies(true)`.
+```
+
 ### Dynamic messages
 
 `DynamicMessage` encodes and decodes any message by descriptor, with the same
@@ -1966,6 +2003,13 @@ let bytes = msg.encode_to_vec();
 // proto3 canonical JSON (requires the `json` feature)
 let from_json = DynamicMessage::from_json(pool.clone(), idx, r#"{"name":"alice"}"#)?;
 let json = msg.to_json()?;
+
+// From a generated message, resolving the descriptor by the type's full name
+let person_msg = my_pkg::Person {
+    name: "alice".into(),
+    ..Default::default()
+};
+let bridged = DynamicMessage::try_from_message(&person_msg, pool.clone())?;
 ```
 
 Beyond plain encode/decode, `DynamicMessage` covers the rest of the
@@ -1986,8 +2030,13 @@ reflection surface:
   options message; `DynamicMessage::from_options(pool, opts)` re-reads it
   reflectively so extension-defined custom options are reachable by
   descriptor.
-- **Bridging** — `from_message` / `to_message` convert between a
-  `DynamicMessage` and any generated type with the same descriptor.
+- **Bridging** — `try_from_message` / `to_message` convert between a
+  `DynamicMessage` and any generated type with the same descriptor;
+  `try_from_message` resolves the descriptor from the type's `MessageName`
+  and returns a `BridgeError` when the pool lacks the type or the encoded
+  bytes fail to decode against its descriptor
+  (`try_from_message_with_index` is the fallible index-taking form;
+  `from_message` is the panicking one).
 
 ### Reflecting generated types
 
@@ -2322,6 +2371,17 @@ pub type Int64RangeView<'a> = Int64Range;
 ```
 
 For types with string or bytes fields where zero-copy borrowing is valuable, you would implement `MessageView` by hand, following the same pattern as the generated view types. The decode tag loop is a provided method on the trait, so a hand-written view supplies only `decode_view` and the per-field `merge_view_field`; see the `MessageView` trait docs for the canonical shape.
+
+As a field of a generated view, a hand-written view is only ever driven by the generated view's own lifetime-parametric impls, so nothing more is needed. To use it through `OwnedView` *directly* (`OwnedView<Int64RangeView<'static>>`), it must also implement `Debug`, `ViewReborrow` (via `buffa::impl_view_reborrow!(Int64RangeView)`, whose `Reborrowed` type must be `Debug`), and the `unsafe` marker `ViewLifetimeParametric`, whose `# Safety` section states the contract: no impl on the view may keep a borrow of the buffer past the view itself. A scalar-only alias like `Int64RangeView` holds no borrows at all and may be marked on that basis; a borrowing view must keep every impl parametric in `'a`:
+
+```rust,ignore
+buffa::impl_view_reborrow!(Int64RangeView);
+// SAFETY: `Int64RangeView<'a>` is an alias for an owned struct and holds no
+// borrows from the decode buffer, so no impl on it can retain one.
+buffa::unsafe_impl_view_lifetime_parametric!(Int64RangeView);
+```
+
+The macro takes a type path (`MyView`, `views::MyView`, `::my_crate::MyView`) and expands to `unsafe impl buffa::ViewLifetimeParametric for Int64RangeView<'static> {}`; writing that impl literally is equivalent, except that the macro form is accepted in a crate under `#![forbid(unsafe_code)]`.
 
 Alternatively, pass `.generate_views(false)` in your build config if you don't use views at all.
 

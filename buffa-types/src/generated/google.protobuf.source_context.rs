@@ -223,7 +223,7 @@ impl ::buffa::text::TextFormat for SourceContext {
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "file_name" => self.file_name = dec.read_string()?.into_owned(),
-                _ => dec.skip_value()?,
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
         ::core::result::Result::Ok(())
