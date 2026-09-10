@@ -321,6 +321,9 @@ jobs:
       - name: Check buffa-descriptor no_std
         run: cargo check -p buffa-descriptor --no-default-features
 
+      - name: Check buffa-descriptor no_std + json/reflect/text/views
+        run: cargo check -p buffa-descriptor --no-default-features --features json,reflect,text,views
+
       - name: Check workspace 32-bit
         run: cargo check --workspace --target i686-unknown-linux-gnu
 

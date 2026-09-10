@@ -791,6 +791,7 @@ tasks:
       - cargo check -p buffa-types --no-default-features --features chrono
       - cargo check -p buffa-types --no-default-features --features jiff
       - cargo check -p buffa-descriptor --no-default-features
+      - cargo check -p buffa-descriptor --no-default-features --features json,reflect,text,views
   # ── Coverage ─────────────────────────────────────────────────────────
 
   coverage:
