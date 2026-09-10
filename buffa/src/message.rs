@@ -303,8 +303,9 @@ pub fn checked_encode_size(size: u32) -> Result<u32, EncodeError> {
 /// Debug-build two-pass coherence ledger: asserts `write_to` produced
 /// exactly the byte count `compute_size` declared.
 ///
-/// Called by the provided `encode_to_vec` / `encode_to_bytes` entry points
-/// (and their generated lazy-view counterparts) after the write pass. The
+/// Called by the provided `encode_to_vec` / `try_encode_to_vec` entry
+/// points (and their generated lazy-view counterparts) after the write pass;
+/// the `*_to_bytes` entry points reach it through those. The
 /// write pass is ground truth — leaf writers emit `len as u64` prefixes and
 /// full payloads — so any divergence indicates a size-pass bug (wrong
 /// presence check, traversal drift) in a generated or manual
@@ -658,9 +659,9 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     // the delegating form re-checks the capacity sentinel and round-trips
     // the Vec through a Result temp in every caller — measured +7.5% on
     // dense-small-message encode (google_message1, quieted metal,
-    // layout-normalized). Same for encode_to_bytes. The unit- and
-    // scalar-returning entry points delegate — their Results stay in
-    // registers and fold cleanly.
+    // layout-normalized). `encode_to_bytes` reuses this infallible body via
+    // `Bytes::from`. The unit- and scalar-returning entry points delegate —
+    // their Results stay in registers and fold cleanly.
     #[inline]
     #[must_use]
     fn encode_to_vec(&self) -> alloc::vec::Vec<u8> {
@@ -702,9 +703,12 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// Useful when handing off to networking code (hyper, tonic, axum)
     /// that expects `Bytes` frame or body payloads. Works in `no_std`.
     ///
-    /// This is equivalent to `Bytes::from(self.encode_to_vec())` — both
-    /// are zero-copy with respect to the encoded bytes — but saves readers
-    /// from having to know that `From<Vec<u8>> for Bytes` is zero-copy.
+    /// This is `Bytes::from(self.encode_to_vec())` — zero-copy and
+    /// allocation-free for the exactly-sized vector `encode_to_vec` returns —
+    /// and saves readers from having to know that `From<Vec<u8>> for Bytes`
+    /// is zero-copy. Because it is defined in terms of
+    /// [`encode_to_vec`](Self::encode_to_vec), an implementation that
+    /// overrides that method must not call this one from it.
     ///
     /// # Panics
     ///

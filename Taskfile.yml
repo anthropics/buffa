@@ -402,13 +402,17 @@ tasks:
   bench-encode-sink:
     desc: >-
       Compare encode sinks (Vec<u8> vs BytesMut, encode_to_vec vs
-      encode_to_bytes) at both the LTO bench profile and the no-LTO profile a
-      downstream `cargo build --release` gets. Extra args go to criterion,
-      e.g. task bench-encode-sink -- --save-baseline main
+      encode_to_bytes) at both the fat-LTO bench profile and the profile a
+      downstream `cargo build --release` gets. The two runs keep separate
+      criterion result directories (target/criterion, target/criterion-nolto)
+      so a baseline saved by one is never compared against the other. Extra
+      args go to criterion, e.g. task bench-encode-sink -- --save-baseline main
     dir: benchmarks/buffa
     cmds:
-      - cargo bench --bench encode_sink -- {{.CLI_ARGS}}
-      - cargo bench --bench encode_sink --profile bench-nolto -- {{.CLI_ARGS}}
+      - cargo bench --features encode_sink --bench encode_sink -- {{.CLI_ARGS}}
+      - cmd: cargo bench --features encode_sink --bench encode_sink --profile bench-nolto -- {{.CLI_ARGS}}
+        env:
+          CRITERION_HOME: target/criterion-nolto
 
   bench-iso:
     desc: >-

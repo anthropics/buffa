@@ -282,8 +282,8 @@ impl EncodeSink for Rope {
     const IS_SEGMENTED: bool = true;
 
     // The tail is written through `BytesMut::extend_from_slice` (inherent,
-    // `#[inline]`) rather than its `BufMut::put_*` impls, which are
-    // out-of-line calls per tag/varint byte without LTO.
+    // `#[inline]` since bytes 1.5) rather than its `BufMut::put_*` impls,
+    // which are an out-of-line call per tag/varint byte even under fat LTO.
     #[inline]
     fn put_u8(&mut self, value: u8) {
         self.tail.extend_from_slice(&[value]);
@@ -565,11 +565,13 @@ mod tests {
         EncodeSink::put_u8(&mut contiguous, 0x0A);
         EncodeSink::put_slice(&mut contiguous, &payload);
         EncodeSink::put_u32_le(&mut contiguous, 42);
+        EncodeSink::put_u64_le(&mut contiguous, 0x0102_0304_0506_0708);
 
         let mut rope = Rope::with_min_segment(64);
         rope.put_u8(0x0A);
         rope.put_shared(payload);
         rope.put_u32_le(42);
+        rope.put_u64_le(0x0102_0304_0506_0708);
 
         assert_eq!(&rope.to_contiguous_bytes()[..], &contiguous[..]);
     }

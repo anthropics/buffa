@@ -1135,6 +1135,10 @@ pub trait ViewEncode<'a>: MessageView<'a> {
 
     /// Encode this view to a new [`bytes::Bytes`].
     ///
+    /// This is `Bytes::from(self.encode_to_vec())`, zero-copy for the
+    /// exactly-sized vector; an implementation overriding
+    /// [`encode_to_vec`](Self::encode_to_vec) must not call this from it.
+    ///
     /// # Panics
     ///
     /// Panics if the encoded size exceeds the 2 GiB protobuf limit

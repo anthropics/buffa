@@ -1,33 +1,42 @@
 // Encode-sink comparison: the same messages written through `Vec<u8>` vs
 // `BytesMut`, and through the `encode_to_vec` / `encode_to_bytes` entry
-// points, for three payload shapes.
+// points.
 //
 // Why this exists: `BufMut for BytesMut` does not mark `put_slice` (and hence
-// the default `put_u8`) `#[inline]`, so without whole-program LTO every tag and
-// varint byte written through a `BytesMut` is an out-of-line call. `Vec<u8>`'s
-// impl is inlined and compiles to a plain store. `encode_to_bytes` therefore
-// encodes into a `Vec<u8>` and converts (zero-copy) — this bench is the
-// reproduction and the guard.
+// the default `put_u8`) `#[inline]`, and LLVM folds `reserve_inner` into it, so
+// every tag and varint byte written through a `BytesMut` is an out-of-line
+// call — with or without fat LTO (measured: `encode_to_bytes` was 3.5–4.4x
+// slower than `encode_to_vec` on the tag-dense shapes at both profiles).
+// `Vec<u8>`'s impl is inlined and compiles to a plain store. `encode_to_bytes`
+// therefore encodes into a `Vec<u8>` and converts (zero-copy); this bench is
+// the reproduction and the guard, and the `bytesmut` rows show what a caller
+// encoding into their own `BytesMut` still pays.
 //
-// Run it twice: once at the default bench profile (fat LTO — the gap mostly
-// closes, which is why the other benches never showed it) and once the way a
-// downstream crate without `[profile.release] lto` builds:
+// Not part of the default `task bench` run (gated behind the `encode_sink`
+// feature so its IDs never enter the suite's saved baselines):
 //
-//   cargo bench --bench encode_sink
-//   cargo bench --bench encode_sink --profile bench-nolto
+//   cargo bench --features encode_sink --bench encode_sink
+//   cargo bench --features encode_sink --bench encode_sink --profile bench-nolto
 //
-// (or `task bench-encode-sink`, which runs both).
+// or `task bench-encode-sink`, which runs both and keeps their criterion
+// results in separate directories.
 use buffa::{Message, MessageView, ViewEncode};
 use bytes::{BufMut, BytesMut};
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 
 use bench_buffa::bench::__buffa::view::LogRecordView;
-use bench_buffa::bench::{ApiResponse, LogRecord};
+use bench_buffa::bench::{ApiResponse, LogRecord, MediaFrame};
 use bench_buffa::benchmarks::BenchmarkDataset;
 use bench_buffa::proto3::GoogleMessage1;
 
 fn load(data: &[u8]) -> BenchmarkDataset {
     BenchmarkDataset::decode_from_slice(data).expect("dataset")
+}
+
+/// Throughput is input payload bytes, as in every other `buffa/<shape>/*` row,
+/// so MB/s is comparable across benches.
+fn total_payload_bytes(d: &BenchmarkDataset) -> u64 {
+    d.payload.iter().map(|p| p.len() as u64).sum()
 }
 
 fn sinks<M: Message + Default>(c: &mut Criterion, name: &str, data: &[u8]) {
@@ -38,12 +47,14 @@ fn sinks<M: Message + Default>(c: &mut Criterion, name: &str, data: &[u8]) {
         .map(|p| M::decode_from_slice(p).unwrap())
         .collect();
     let sizes: Vec<usize> = msgs.iter().map(|m| m.encoded_len() as usize).collect();
-    let total: u64 = sizes.iter().map(|&n| n as u64).sum();
+    let max_size = sizes.iter().copied().max().unwrap_or(0);
 
     let mut g = c.benchmark_group(format!("encode_sink/{name}"));
-    g.throughput(Throughput::Bytes(total));
+    g.throughput(Throughput::Bytes(total_payload_bytes(&ds)));
 
-    // The two library entry points.
+    // The two library entry points. `encode_to_vec` is also the `encode` row
+    // of `benches/protobuf.rs`; it is repeated here so one report carries the
+    // reference next to `encode_to_bytes`.
     g.bench_function("encode_to_vec", |b| {
         b.iter(|| {
             for m in &msgs {
@@ -59,30 +70,35 @@ fn sinks<M: Message + Default>(c: &mut Criterion, name: &str, data: &[u8]) {
         })
     });
 
-    // The same write pass into a pre-sized sink of each type: isolates the
-    // sink's per-`put` cost from allocation and size computation.
-    g.bench_function("encode_into_vec_presized", |b| {
+    // `encode` (size pass + write pass) into one reused, pre-grown sink of
+    // each type, so the rows differ only in the sink's per-`put` cost: no
+    // allocation inside the loop, and the size pass is common to both.
+    g.bench_function("encode_into_vec_reused", |b| {
+        let mut buf: Vec<u8> = Vec::with_capacity(max_size);
         b.iter(|| {
-            for (m, &n) in msgs.iter().zip(&sizes) {
-                let mut buf: Vec<u8> = Vec::with_capacity(n);
+            for m in &msgs {
+                buf.clear();
                 m.encode(&mut buf);
-                black_box(buf);
+                black_box(&buf);
             }
         })
     });
-    g.bench_function("encode_into_bytesmut_presized", |b| {
+    g.bench_function("encode_into_bytesmut_reused", |b| {
+        let mut buf = BytesMut::with_capacity(max_size);
         b.iter(|| {
-            for (m, &n) in msgs.iter().zip(&sizes) {
-                let mut buf = BytesMut::with_capacity(n);
+            for m in &msgs {
+                buf.clear();
                 m.encode(&mut buf);
-                black_box(buf);
+                black_box(&buf);
             }
         })
     });
-    // A caller that frames into its own `BytesMut` (e.g. a 5-byte envelope
-    // header followed by the message) keeps the slow path even after the
-    // `encode_to_bytes` change; this row shows what such callers still pay
-    // and what encoding to a `Vec` first and copying once would cost instead.
+
+    // A caller that frames into its own `BytesMut` (a 5-byte envelope header
+    // followed by the message, as an RPC codec does) keeps the slow sink even
+    // after the `encode_to_bytes` change; these rows show what such a caller
+    // pays and what encoding to a `Vec` first and copying once costs instead.
+    // Both write 5 bytes per message beyond the payload throughput above.
     g.bench_function("frame_header_then_encode_into_bytesmut", |b| {
         b.iter(|| {
             for (m, &n) in msgs.iter().zip(&sizes) {
@@ -110,18 +126,19 @@ fn sinks<M: Message + Default>(c: &mut Criterion, name: &str, data: &[u8]) {
 
 fn view_sinks(c: &mut Criterion) {
     let ds = load(include_bytes!("../../datasets/log_record.pb"));
-    let total: u64 = ds.payload.iter().map(|p| p.len() as u64).sum();
     let views: Vec<LogRecordView<'_>> = ds
         .payload
         .iter()
         .map(|p| LogRecordView::decode_view(p).unwrap())
         .collect();
     let mut g = c.benchmark_group("encode_sink/log_record_view");
-    g.throughput(Throughput::Bytes(total));
+    g.throughput(Throughput::Bytes(total_payload_bytes(&ds)));
     g.bench_function("encode_to_vec", |b| {
         b.iter(|| {
             for v in &views {
-                black_box(v.encode_to_vec());
+                let out = v.encode_to_vec();
+                debug_assert_eq!(out.len(), v.encoded_len() as usize);
+                black_box(out);
             }
         })
     });
@@ -136,14 +153,30 @@ fn view_sinks(c: &mut Criterion) {
 }
 
 fn run(c: &mut Criterion) {
-    // String-heavy (many short length-delimited fields), nested/mixed, and
-    // dense small scalars respectively.
-    sinks::<LogRecord>(c, "log_record", include_bytes!("../../datasets/log_record.pb"));
-    sinks::<ApiResponse>(c, "api_response", include_bytes!("../../datasets/api_response.pb"));
+    // Tag-dense shapes, where the per-byte sink cost dominates: string-heavy
+    // (many short length-delimited fields), nested/mixed, and dense small
+    // scalars.
+    sinks::<LogRecord>(
+        c,
+        "log_record",
+        include_bytes!("../../datasets/log_record.pb"),
+    );
+    sinks::<ApiResponse>(
+        c,
+        "api_response",
+        include_bytes!("../../datasets/api_response.pb"),
+    );
     sinks::<GoogleMessage1>(
         c,
-        "google_message1",
+        "google_message1_proto3",
         include_bytes!("../../datasets/google_message1_proto3.pb"),
+    );
+    // Bytes-heavy control: a few KB-scale `put_slice` calls per message, so
+    // the out-of-line call is amortised and the sinks should be close.
+    sinks::<MediaFrame>(
+        c,
+        "media_frame",
+        include_bytes!("../../datasets/media_frame.pb"),
     );
     view_sinks(c);
 }
