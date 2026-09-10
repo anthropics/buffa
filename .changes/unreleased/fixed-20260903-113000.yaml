@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects duplicate oneof names within a message** (#415), as `protoc` does. Only hand-built or synthesized descriptor sets can reach this state; the rejection is the new `PoolError::DuplicateOneofName` variant.
+time: 2026-09-03T11:30:00+02:00

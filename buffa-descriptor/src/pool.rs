@@ -1485,18 +1485,18 @@ impl DescriptorPool {
         }
 
         // Build oneof descriptors. Track member field indices as we go.
-        let mut oneof_names = BTreeSet::new();
+        let mut oneof_names: BTreeSet<&str> = BTreeSet::new();
         let mut oneofs = Vec::with_capacity(msg.oneof_decl.len());
         for o in &msg.oneof_decl {
-            let oneof_name = o.name.clone().unwrap_or_default();
-            if !oneof_names.insert(oneof_name.clone()) {
+            let oneof_name = o.name.as_deref().unwrap_or("");
+            if !oneof_names.insert(oneof_name) {
                 return Err(PoolError::DuplicateOneofName {
-                    message: fqn.clone(),
-                    name: oneof_name,
+                    message: fqn,
+                    name: oneof_name.to_string(),
                 });
             }
             oneofs.push(OneofDescriptor {
-                name: oneof_name,
+                name: oneof_name.to_string(),
                 field_indices: Vec::new(),
                 synthetic: false,
                 options: clone_options(&o.options),

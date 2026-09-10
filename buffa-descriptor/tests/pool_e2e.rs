@@ -486,13 +486,23 @@ fn oneof_links() {
 
 #[test]
 fn duplicate_oneof_names_are_rejected_transactionally() {
-    use buffa_descriptor::generated::descriptor::{DescriptorProto, OneofDescriptorProto};
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, OneofDescriptorProto,
+    };
 
+    // Each oneof gets a member so the descriptor is invalid for the duplicate
+    // name alone (protoc separately rejects an empty oneof).
+    let member = |name: &str, number: i32, oneof: i32| FieldDescriptorProto {
+        oneof_index: Some(oneof),
+        ..scalar_field(name, number, Type::TYPE_INT32)
+    };
     assert_rejected_without_mutating_pool(
         "duplicate-oneof-name.proto",
         "invalid.test.DuplicateOneof",
         DescriptorProto {
             name: Some("DuplicateOneof".into()),
+            field: vec![member("a", 1, 0), member("b", 2, 1)],
             oneof_decl: vec![
                 OneofDescriptorProto {
                     name: Some("choice".into()),
