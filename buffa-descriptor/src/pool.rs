@@ -86,23 +86,52 @@ pub const MAX_SYMBOL_LEN: usize = 512;
 struct ReservedRanges(Vec<(i64, i64)>);
 
 impl ReservedRanges {
-    fn new(ranges: &[crate::generated::descriptor::descriptor_proto::ReservedRange]) -> Self {
-        Self::from_half_open(ranges.iter().filter_map(|r| match (r.start, r.end) {
-            // An unset bound cannot be honoured; protoc requires both.
-            (Some(start), Some(end)) => Some((i64::from(start), i64::from(end))),
-            _ => None,
-        }))
+    /// Index a message's reserved ranges, validating each as protoc does: an
+    /// unset bound reads as 0, and the half-open range must satisfy
+    /// `0 < start < end`.
+    fn for_message(
+        message_fqn: &str,
+        ranges: &[crate::generated::descriptor::descriptor_proto::ReservedRange],
+    ) -> Result<Self, PoolError> {
+        let mut checked = Vec::with_capacity(ranges.len());
+        for r in ranges {
+            let (start, end) = (r.start.unwrap_or(0), r.end.unwrap_or(0));
+            if start <= 0 || start >= end {
+                return Err(PoolError::InvalidMessageReservedRange {
+                    message: message_fqn.to_string(),
+                    start: r.start,
+                    end: r.end,
+                });
+            }
+            checked.push((i64::from(start), i64::from(end)));
+        }
+        Ok(Self::from_half_open(checked.into_iter()))
     }
 
+    /// Index an enum's reserved ranges, validating each as protoc does: an
+    /// unset bound reads as 0, the range is inclusive, may be negative, and
+    /// must satisfy `start <= end`.
     fn for_enum(
+        enum_fqn: &str,
         ranges: &[crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange],
-    ) -> Self {
-        Self::from_half_open(ranges.iter().filter_map(|r| match (r.start, r.end) {
-            (Some(start), Some(end)) => Some((i64::from(start), i64::from(end) + 1)),
-            _ => None,
-        }))
+    ) -> Result<Self, PoolError> {
+        let mut checked = Vec::with_capacity(ranges.len());
+        for r in ranges {
+            let (start, end) = (r.start.unwrap_or(0), r.end.unwrap_or(0));
+            if start > end {
+                return Err(PoolError::InvalidEnumReservedRange {
+                    enum_name: enum_fqn.to_string(),
+                    start: r.start,
+                    end: r.end,
+                });
+            }
+            checked.push((i64::from(start), i64::from(end) + 1));
+        }
+        Ok(Self::from_half_open(checked.into_iter()))
     }
 
+    /// Sort and coalesce validated half-open ranges. Callers validate first;
+    /// the `start < end` filter only protects the coalescing invariant.
     fn from_half_open(ranges: impl Iterator<Item = (i64, i64)>) -> Self {
         let mut sorted: Vec<(i64, i64)> = ranges.filter(|&(start, end)| start < end).collect();
         sorted.sort_unstable();
@@ -132,22 +161,6 @@ impl ReservedRanges {
             .get(idx)
             .is_some_and(|&(reserved_start, _)| reserved_start < end)
     }
-}
-
-fn validate_reserved_range_bounds(
-    owner: &str,
-    ranges: impl IntoIterator<Item = (Option<i32>, Option<i32>)>,
-) -> Result<(), PoolError> {
-    for (start, end) in ranges {
-        if start.is_none() || end.is_none() {
-            return Err(PoolError::InvalidReservedRange {
-                owner: owner.to_string(),
-                start,
-                end,
-            });
-        }
-    }
-    Ok(())
 }
 
 /// Errors that can occur while building a [`DescriptorPool`].
@@ -292,9 +305,19 @@ pub enum PoolError {
         name: String,
         number: i32,
     },
-    /// A message or enum reserved range is missing its start or end bound.
-    InvalidReservedRange {
-        owner: String,
+    /// A message reserved range does not satisfy `0 < start < end`. `end` is
+    /// exclusive, as in `DescriptorProto.ReservedRange`, and an unset bound
+    /// reads as 0, as protoc reads it. The bounds are carried as declared.
+    InvalidMessageReservedRange {
+        message: String,
+        start: Option<i32>,
+        end: Option<i32>,
+    },
+    /// An enum reserved range has `start > end`. Both bounds are inclusive,
+    /// as in `EnumDescriptorProto.EnumReservedRange`, may be negative, and an
+    /// unset bound reads as 0. The bounds are carried as declared.
+    InvalidEnumReservedRange {
+        enum_name: String,
         start: Option<i32>,
         end: Option<i32>,
     },
@@ -494,9 +517,25 @@ impl core::fmt::Display for PoolError {
                 f,
                 "enum {enum_name} value {name:?} reuses number {number} without allow_alias"
             ),
-            Self::InvalidReservedRange { owner, start, end } => write!(
+            Self::InvalidMessageReservedRange {
+                message,
+                start,
+                end,
+            } => write!(
                 f,
-                "reserved range on {owner} is missing a bound (start: {start:?}, end: {end:?})"
+                "message {message} reserved range {}..{} is invalid; bounds must satisfy 0 < start < end",
+                Bound(*start),
+                Bound(*end),
+            ),
+            Self::InvalidEnumReservedRange {
+                enum_name,
+                start,
+                end,
+            } => write!(
+                f,
+                "enum {enum_name} reserved range {} to {} is invalid; start must not exceed end",
+                Bound(*start),
+                Bound(*end),
             ),
         }
     }
@@ -1493,8 +1532,6 @@ impl DescriptorPool {
         let msg_features =
             features::resolve_child(parent_features, features::message_features(msg));
 
-        validate_reserved_range_bounds(&fqn, msg.reserved_range.iter().map(|r| (r.start, r.end)))?;
-
         // u16 field index cap.
         let field_count = msg.field.len();
         if field_count > u16::MAX as usize {
@@ -1530,7 +1567,7 @@ impl DescriptorPool {
                 });
             }
         }
-        let reserved_ranges = ReservedRanges::new(&msg.reserved_range);
+        let reserved_ranges = ReservedRanges::for_message(&fqn, &msg.reserved_range)?;
         let mut field_names: BTreeMap<String, usize> = BTreeMap::new();
         // Two fields resolving to one JSON name make JSON lookup ambiguous, but
         // protobuf permits it where JSON is best-effort: protoc emits such a
@@ -1711,7 +1748,6 @@ impl DescriptorPool {
             format!("{parent_fqn}.{name}")
         };
         let enum_features = features::resolve_child(parent_features, features::enum_features(e));
-        validate_reserved_range_bounds(&fqn, e.reserved_range.iter().map(|r| (r.start, r.end)))?;
         if enum_features.enum_type == EnumType::Open {
             if let Some(first) = e.value.first() {
                 let number = first.number.unwrap_or(0);
@@ -1734,7 +1770,7 @@ impl DescriptorPool {
                 });
             }
         }
-        let reserved_ranges = ReservedRanges::for_enum(&e.reserved_range);
+        let reserved_ranges = ReservedRanges::for_enum(&fqn, &e.reserved_range)?;
         let allow_alias = e
             .options
             .as_option()
@@ -2411,7 +2447,7 @@ mod reserved_ranges_tests {
                 ..Default::default()
             })
             .collect();
-        ReservedRanges::new(&raw)
+        ReservedRanges::for_message("t.M", &raw).expect("valid message reserved ranges")
     }
 
     #[test]
@@ -2428,16 +2464,57 @@ mod reserved_ranges_tests {
     }
 
     #[test]
-    fn unset_or_empty_ranges_are_ignored() {
-        let r = ranges(&[
+    fn message_ranges_follow_protoc_bounds_rules() {
+        use super::PoolError;
+        // protoc reads an unset bound as 0 and requires `0 < start < end`.
+        for (start, end) in [
             (Some(1), None),
             (None, Some(4)),
+            (None, None),
             (Some(7), Some(7)),
             (Some(8), Some(3)),
-        ]);
-        assert!(r.0.is_empty());
-        assert!(!r.contains(1));
-        assert!(!r.overlaps(0, 10));
+            (Some(0), Some(3)),
+            (Some(-2), Some(3)),
+        ] {
+            let raw = [ReservedRange {
+                start,
+                end,
+                ..Default::default()
+            }];
+            assert!(
+                matches!(
+                    ReservedRanges::for_message("t.M", &raw),
+                    Err(PoolError::InvalidMessageReservedRange { start: s, end: e, .. }) if (s, e) == (start, end)
+                ),
+                "{start:?}..{end:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn enum_ranges_read_unset_bounds_as_zero() {
+        use super::PoolError;
+        use crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
+        let range = |start, end| EnumReservedRange {
+            start,
+            end,
+            ..Default::default()
+        };
+        // `reserved 0 to 8`, `reserved -3 to 0`, and `reserved 0` respectively.
+        let r = ReservedRanges::for_enum(
+            "t.E",
+            &[
+                range(None, Some(8)),
+                range(Some(-3), None),
+                range(None, None),
+            ],
+        )
+        .expect("unset enum bounds read as 0 and are valid");
+        assert!(r.contains(-3) && r.contains(0) && r.contains(8) && !r.contains(9));
+        assert!(matches!(
+            ReservedRanges::for_enum("t.E", &[range(Some(5), Some(4))]),
+            Err(PoolError::InvalidEnumReservedRange { .. })
+        ));
     }
 
     #[test]
@@ -2451,7 +2528,7 @@ mod reserved_ranges_tests {
                 ..Default::default()
             })
             .collect();
-        let r = ReservedRanges::for_enum(&raw);
+        let r = ReservedRanges::for_enum("t.E", &raw).expect("valid enum reserved ranges");
         assert_eq!(
             r.0,
             vec![

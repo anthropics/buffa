@@ -1,3 +1,4 @@
 kind: Fixed
-body: '**`DescriptorPool` now rejects message and enum reserved ranges with a missing start or end bound**, instead of silently ignoring malformed range entries.'
+body: |-
+    **`DescriptorPool` validates reserved-range bounds as `protoc` does** (#418), instead of silently dropping a malformed range and reserving nothing. An unset bound reads as 0; a message reserved range must then satisfy `0 < start < end` (so a missing, zero, negative, empty, or reversed range is `PoolError::InvalidMessageReservedRange`), and an enum reserved range, which is inclusive and may be negative, must satisfy `start <= end` (`PoolError::InvalidEnumReservedRange`). Only hand-built or synthesized descriptor sets can reach either.
 time: 2026-09-03T13:28:23+02:00
