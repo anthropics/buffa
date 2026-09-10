@@ -941,6 +941,127 @@ fn adjacent_reserved_and_extension_ranges_are_accepted() {
 }
 
 #[test]
+fn extension_range_bounds_are_half_open_at_the_field_number_limit() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let max = buffa::encoding::MAX_FIELD_NUMBER as i32;
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("valid-extension-bounds.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("RangeMessage".into()),
+                extension_range: vec![
+                    ExtensionRange {
+                        start: Some(7),
+                        end: Some(8),
+                        ..Default::default()
+                    },
+                    ExtensionRange {
+                        start: Some(max),
+                        end: Some(max + 1),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("one-element ranges include the maximum field number");
+
+    let message = pool.message_by_name("valid.test.RangeMessage").unwrap();
+    assert_eq!(
+        message.extension_ranges(),
+        &[(7, 8), (max as u32, (max + 1) as u32)]
+    );
+    assert!(message.in_extension_range(7));
+    assert!(!message.in_extension_range(8));
+    assert!(message.in_extension_range(max as u32));
+    assert!(!message.in_extension_range((max + 1) as u32));
+}
+
+#[test]
+fn invalid_extension_range_bounds_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let max = buffa::encoding::MAX_FIELD_NUMBER as i32;
+    // protoc reads an unset bound as 0, then requires `0 < start < end`.
+    for (suffix, start, end) in [
+        ("equal", Some(7), Some(7)),
+        ("reversed", Some(8), Some(7)),
+        ("max-equal", Some(max + 1), Some(max + 1)),
+        ("max-reversed", Some(max + 1), Some(max)),
+        ("zero-start", Some(0), Some(5)),
+        ("negative-start", Some(-3), Some(5)),
+        ("negative-end", Some(3), Some(-5)),
+        ("unset-start", None, Some(5)),
+        ("unset-end", Some(5), None),
+        ("unset-both", None, None),
+    ] {
+        let message_name = format!("InvalidRange{suffix}");
+        let full_name = format!("invalid.test.{message_name}");
+        let file_name = format!("invalid-extension-range-{suffix}.proto");
+        let expected_message = full_name.clone();
+
+        assert_set_rejected_without_mutating_pool(
+            &file_name,
+            &full_name,
+            FileDescriptorSet {
+                file: vec![FileDescriptorProto {
+                    name: Some(file_name.clone()),
+                    package: Some("invalid.test".into()),
+                    syntax: Some("proto2".into()),
+                    message_type: vec![DescriptorProto {
+                        name: Some(message_name),
+                        extension_range: vec![ExtensionRange {
+                            start,
+                            end,
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            move |err| {
+                assert!(
+                    matches!(
+                        err,
+                        PoolError::InvalidExtensionRange {
+                            message,
+                            start: actual_start,
+                            end: actual_end,
+                        } if message == &expected_message
+                            && *actual_start == start
+                            && *actual_end == end
+                    ),
+                    "unexpected error: {err}"
+                );
+                if (start, end) == (Some(5), None) {
+                    assert_eq!(
+                        err.to_string(),
+                        format!(
+                            "message {expected_message} extension range 5..unset is invalid; \
+                             bounds must satisfy 0 < start < end"
+                        )
+                    );
+                }
+            },
+        );
+    }
+}
+
+#[test]
 fn duplicate_proto_field_names_are_rejected_without_mutating_pool() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
     use buffa_descriptor::generated::descriptor::DescriptorProto;

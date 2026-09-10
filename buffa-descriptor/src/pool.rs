@@ -207,8 +207,7 @@ pub enum PoolError {
         index: i32,
     },
     /// A field number is outside the valid range
-    /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`), or an extension range has
-    /// an invalid bound.
+    /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
     /// A field number, or a finite extension range, overlaps the field-number
     /// interval reserved for the protobuf implementation. The bounds are
@@ -244,6 +243,16 @@ pub enum PoolError {
         start: u32,
         end: u32,
     },
+    /// A message extension range does not satisfy `0 < start < end`. `end`
+    /// is exclusive, as in `DescriptorProto.ExtensionRange` (`extensions 5
+    /// to 7;` is `start: 5, end: 8`), and an unset bound reads as 0, as protoc
+    /// reads it — so a missing `start` or `end` is reported here too. The
+    /// bounds are carried as declared.
+    InvalidExtensionRange {
+        message: String,
+        start: Option<i32>,
+        end: Option<i32>,
+    },
     /// An open enum's first declared value has a non-zero number.
     OpenEnumFirstValueNotZero {
         enum_name: String,
@@ -267,6 +276,19 @@ pub enum PoolError {
         name: String,
         number: i32,
     },
+}
+
+/// Renders an optional range bound for [`PoolError`] messages: the number,
+/// or `unset` when the descriptor left it out.
+struct Bound(Option<i32>);
+
+impl core::fmt::Display for Bound {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self.0 {
+            Some(n) => write!(f, "{n}"),
+            None => f.write_str("unset"),
+        }
+    }
 }
 
 impl core::fmt::Display for PoolError {
@@ -406,6 +428,16 @@ impl core::fmt::Display for PoolError {
             } => write!(
                 f,
                 "message {message} extension range {start}..{end} overlaps a reserved range"
+            ),
+            Self::InvalidExtensionRange {
+                message,
+                start,
+                end,
+            } => write!(
+                f,
+                "message {message} extension range {}..{} is invalid; bounds must satisfy 0 < start < end",
+                Bound(*start),
+                Bound(*end),
             ),
             Self::OpenEnumFirstValueNotZero {
                 enum_name,
@@ -1570,17 +1602,22 @@ impl DescriptorPool {
             }
         }
 
-        // Negative bounds are spec-illegal; reject rather than letting the
-        // `i32 → u32` reinterpretation roll over to a giant range.
+        // protoc reads an unset bound as 0 and then requires `0 < start < end`,
+        // so a negative, zero, missing, empty or reversed range is one error.
         let mut extension_ranges: Vec<(u32, u32)> = Vec::with_capacity(msg.extension_range.len());
         for r in &msg.extension_range {
-            let (Some(start), Some(end)) = (r.start, r.end) else {
-                continue;
+            let bounds = match (
+                u32::try_from(r.start.unwrap_or(0)),
+                u32::try_from(r.end.unwrap_or(0)),
+            ) {
+                (Ok(start), Ok(end)) if start > 0 && start < end => Some((start, end)),
+                _ => None,
             };
-            let (Ok(start), Ok(end)) = (u32::try_from(start), u32::try_from(end)) else {
-                return Err(PoolError::InvalidFieldNumber {
-                    field: format!("{fqn} (extension range)"),
-                    number: start.min(end),
+            let Some((start, end)) = bounds else {
+                return Err(PoolError::InvalidExtensionRange {
+                    message: fqn.clone(),
+                    start: r.start,
+                    end: r.end,
                 });
             };
             if reserved_ranges.overlaps(start, end) {
