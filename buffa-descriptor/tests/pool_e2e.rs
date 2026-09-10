@@ -1129,9 +1129,8 @@ fn overlapping_extension_ranges_are_rejected_transactionally() {
         &[(1, max as i32 + 1), (max as i32, max as i32 + 1)],
         ((max, max + 1), (1, max + 1)),
     );
-    // A range that overlaps only a non-adjacent earlier one (sorted by start,
-    // it sits after a short range that does not reach it) is still caught.
-    assert_rejected(&[(10, 100), (20, 30), (50, 60)], ((50, 60), (10, 100)));
+    // Three ranges: the first overlap in start order is reported.
+    assert_rejected(&[(10, 100), (50, 60), (20, 30)], ((20, 30), (10, 100)));
 }
 
 #[test]

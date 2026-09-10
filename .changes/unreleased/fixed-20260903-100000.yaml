@@ -1,4 +1,4 @@
 kind: Fixed
 body: |-
-    **`DescriptorPool` rejects overlapping extension ranges** within the same message, as `protoc` does. Touching half-open ranges remain valid, and the public descriptor keeps the original declaration order. Only hand-built or synthesized descriptor sets can reach this; the rejection is the new `PoolError::OverlappingExtensionRange` variant.
+    **`DescriptorPool` rejects overlapping extension ranges within a message** (#417), as `protoc` does. Touching half-open ranges (`10 to 19` then `20 to 29`) stay valid. Only hand-built or synthesized descriptor sets can reach this state; the rejection is the new `PoolError::OverlappingExtensionRange` variant, which names both ranges.
 time: 2026-09-03T10:00:00+02:00
