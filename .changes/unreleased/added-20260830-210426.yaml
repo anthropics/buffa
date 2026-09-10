@@ -1,3 +1,0 @@
-kind: Added
-body: '**`CodeGenConfig::shared_descriptor_pool_root`** (#399): override the computed `super::`-relative path to the shared `__buffa_fds` root in shared-pool mode (`shared_descriptor_pool`) with a caller-supplied path, for workspaces where one crate does not host the whole package tree as nested modules (e.g. one independent Cargo crate per proto package). `None` (the default) keeps the existing `super::`-relative behavior — purely additive, no change to any existing consumer. Reachable only by direct `buffa-codegen` callers this release; `buffa-build` and the `protoc-gen-buffa*` plugins do not expose it yet.'
-time: 2026-08-30T21:04:26.915917-04:00
