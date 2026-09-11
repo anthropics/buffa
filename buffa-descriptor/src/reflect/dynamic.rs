@@ -1631,20 +1631,9 @@ impl ReflectMessage for DynamicMessage {
             "FieldDescriptor passed to has() is not a member of {}",
             self.message_descriptor().full_name,
         );
-        match self.fields.get(&field.number()) {
-            None => false,
-            Some(Value::List(l)) => !l.is_empty(),
-            Some(Value::Map(m)) => !m.is_empty(),
-            // Implicit-presence singular fields are "present" only when
-            // non-default. Explicit-presence and `LegacyRequired` fields
-            // are present whenever they appear in the field map. This is
-            // what makes `set(fd, default)` on an implicit-presence field
-            // round-trip to "absent" through both binary and JSON encode.
-            Some(v) if field.presence == buffa::editions::FieldPresence::Implicit => {
-                !is_default_scalar(v)
-            }
-            Some(_) => true,
-        }
+        self.fields
+            .get(&field.number())
+            .is_some_and(|v| is_present(field, v))
     }
 
     fn for_each_set(&self, f: &mut dyn FnMut(&FieldDescriptor, ValueRef<'_>)) {
@@ -1654,10 +1643,9 @@ impl ReflectMessage for DynamicMessage {
         // — `None` means the descriptor came from the extension index.
         for (&number, value) in &self.fields {
             if let Some(fd) = self.field_or_extension(number) {
-                if !self.has(fd) {
-                    continue;
+                if is_present(fd, value) {
+                    f(fd, value.as_ref());
                 }
-                f(fd, value.as_ref());
             }
         }
     }
@@ -1706,6 +1694,22 @@ impl ReflectMessageMut for DynamicMessage {
 }
 
 // ── Free helper functions ───────────────────────────────────────────────────
+
+/// Whether a stored value counts as present, for `has` and `for_each_set`.
+///
+/// Implicit-presence singular fields are "present" only when
+/// non-default. Explicit-presence and `LegacyRequired` fields
+/// are present whenever they appear in the field map. This is
+/// what makes `set(fd, default)` on an implicit-presence field
+/// round-trip to "absent" through both binary and JSON encode.
+fn is_present(fd: &FieldDescriptor, value: &Value) -> bool {
+    match value {
+        Value::List(l) => !l.is_empty(),
+        Value::Map(m) => !m.is_empty(),
+        v if fd.presence == buffa::editions::FieldPresence::Implicit => !is_default_scalar(v),
+        _ => true,
+    }
+}
 
 /// Whether a stored field value should be skipped when encoding.
 ///
