@@ -10,17 +10,10 @@ plugin with `file_per_package=true` and a hand-written `mod.rs`. See
 """
 
 [dependencies]
-# Pinned to the crates.io releases matching the BSR plugin in `buf.gen.yaml`,
-# so the checked-in `src/gen/` and the runtime it compiles against always come
-# from one buffa version. That is also what a downstream BSR user has.
-#
-# The path dependencies this replaces made the example a forward-compat canary
-# against the in-tree workspace. The canary could not hold, because the
-# published plugin lags `main` by design: each in-tree change to generated
-# output broke the example until someone hand-patched `src/gen/`, which is how
-# it drifted across four releases without CI noticing (#427).
-#
-# Bump these together with the plugin pin in `buf.gen.yaml`.
+# crates.io releases, not path dependencies: `src/gen/` is output from the
+# published plugin pinned in `buf.gen.yaml`, which trails `main`, so it only
+# compiles against the runtime from that same release. Keep these versions
+# equal to that pin. In your own project, `version = "0.9"` is enough.
 buffa = { version = "=0.9.2", features = ["json"] }
 buffa-types = { version = "=0.9.2", features = ["json"] }
 serde = { version = "1", features = ["derive"] }

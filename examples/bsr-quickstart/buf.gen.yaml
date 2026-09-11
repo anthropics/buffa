@@ -9,10 +9,9 @@
 # `protoc-gen-buffa-packaging` locally and add it as a second plugin (and
 # drop `file_per_package=true`).
 #
-# The plugin reference is pinned to a specific version so the generated
-# output is reproducible and a plugin update can't silently change it. The pin
-# and the `buffa` / `buffa-types` versions in `Cargo.toml` must name the same
-# release, so bump both together when a new BSR plugin ships and then re-run
+# The plugin reference is pinned so the generated output is reproducible and a
+# plugin update can't silently change it. `Cargo.toml` pins `buffa` /
+# `buffa-types` to the same release: bump all three together, then run
 # `task gen-bsr-quickstart-example`.
 version: v2
 plugins:
