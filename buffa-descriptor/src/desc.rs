@@ -51,9 +51,35 @@ use buffa::editions::{EnumType, FieldPresence};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MessageIndex(pub(crate) u32);
 
+impl MessageIndex {
+    /// The ordinal of this index within the pool that issued it.
+    ///
+    /// Dense in `0..pool.messages().len()`, and equal to this descriptor's
+    /// position in [`DescriptorPool::messages`](crate::DescriptorPool::messages),
+    /// so it can key a side table sized once from that slice. Meaningless
+    /// against any other pool, the same cross-pool hazard that applies to
+    /// comparing indices.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
 /// Index of an [`EnumDescriptor`] within its owning pool.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EnumIndex(pub(crate) u32);
+
+impl EnumIndex {
+    /// The ordinal of this index within the pool that issued it.
+    ///
+    /// Dense in `0..pool.enums().len()`, and equal to this descriptor's
+    /// position in [`DescriptorPool::enums`](crate::DescriptorPool::enums).
+    /// Meaningless against any other pool.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
 
 /// Protobuf scalar field types.
 ///
@@ -642,6 +668,19 @@ impl MethodDescriptor {
 /// lifetime of the pool, no cross-pool identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExtensionIndex(pub(crate) u32);
+
+impl ExtensionIndex {
+    /// The ordinal of this index within the pool that issued it.
+    ///
+    /// Dense in `0..pool.extensions().len()`, and equal to this descriptor's
+    /// position in
+    /// [`DescriptorPool::extensions`](crate::DescriptorPool::extensions).
+    /// Meaningless against any other pool.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
 
 /// A linked extension descriptor.
 ///
