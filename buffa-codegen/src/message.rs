@@ -308,7 +308,7 @@ fn generate_message_with_nesting(
     // `IgnoredAny` skip for unknown keys).
     let has_extension_ranges = !msg.extension_range.is_empty();
     let use_ext_json_wrapper =
-        ctx.config.generate_json && ctx.config.preserve_unknown_fields && has_extension_ranges;
+        ctx.config.generate_json && ctx.preserve_unknown_fields(proto_fqn) && has_extension_ranges;
     let ext_json_wrapper_ident = format_ident!("__{}ExtJson", rust_name);
     let (unknown_fields_field, ext_json_wrapper_def) = if use_ext_json_wrapper {
         let arbitrary_attr = if ctx.config.generate_arbitrary {
@@ -376,7 +376,7 @@ fn generate_message_with_nesting(
             pub __buffa_unknown_fields: #ext_json_wrapper_ident,
         };
         (field, wrapper)
-    } else if ctx.config.preserve_unknown_fields {
+    } else if ctx.preserve_unknown_fields(proto_fqn) {
         // No wrapper — either generate_json is off, or this message has no
         // extension ranges. In the latter case the serde derive is present
         // and we must `#[serde(skip)]` to exclude the field from JSON; in
@@ -410,7 +410,7 @@ fn generate_message_with_nesting(
     // Extension ranges also force the custom impl so `"[...]"` keys are
     // handled inline without buffering.
     let needs_custom_deserialize = ctx.config.generate_json
-        && (has_real_oneofs || (has_extension_ranges && ctx.config.preserve_unknown_fields));
+        && (has_real_oneofs || (has_extension_ranges && ctx.preserve_unknown_fields(proto_fqn)));
 
     // Oneof enum definitions — emitted inside the message's module.
     // Pass the file-level package as current_package, since
@@ -438,7 +438,7 @@ fn generate_message_with_nesting(
     let message_impl = crate::impl_message::generate_message_impl(
         ctx,
         msg,
-        ctx.config.preserve_unknown_fields,
+        ctx.preserve_unknown_fields(proto_fqn),
         rust_name,
         current_package,
         proto_fqn,
@@ -1131,42 +1131,42 @@ fn generate_custom_deserialize(
     // built below (it doesn't exist yet inside the match loop).
     // Emitted only when the message declares `extensions N to M;` AND
     // preserve_unknown_fields is on (otherwise there's nowhere to store them).
-    let (ext_var, ext_arm, ext_init) = if has_extension_ranges && ctx.config.preserve_unknown_fields
-    {
-        let proto_fqn_lit = proto_fqn;
-        let var = quote! {
-            let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField>
-                = ::buffa::alloc::vec::Vec::new();
-        };
-        let arm = quote! {
-            __k if __k.starts_with('[') => {
-                let __v: ::buffa::serde_json::Value = map.next_value()?;
-                match ::buffa::extension_registry::deserialize_extension_key(
-                    #proto_fqn_lit, __k, __v,
-                ) {
-                    ::core::option::Option::Some(::core::result::Result::Ok(__recs)) => {
-                        for __rec in __recs {
-                            __ext_records.push(__rec);
+    let (ext_var, ext_arm, ext_init) =
+        if has_extension_ranges && ctx.preserve_unknown_fields(proto_fqn) {
+            let proto_fqn_lit = proto_fqn;
+            let var = quote! {
+                let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField>
+                    = ::buffa::alloc::vec::Vec::new();
+            };
+            let arm = quote! {
+                __k if __k.starts_with('[') => {
+                    let __v: ::buffa::serde_json::Value = map.next_value()?;
+                    match ::buffa::extension_registry::deserialize_extension_key(
+                        #proto_fqn_lit, __k, __v,
+                    ) {
+                        ::core::option::Option::Some(::core::result::Result::Ok(__recs)) => {
+                            for __rec in __recs {
+                                __ext_records.push(__rec);
+                            }
                         }
+                        ::core::option::Option::Some(::core::result::Result::Err(__e)) => {
+                            return ::core::result::Result::Err(
+                                <A::Error as ::serde::de::Error>::custom(__e),
+                            );
+                        }
+                        ::core::option::Option::None => {}
                     }
-                    ::core::option::Option::Some(::core::result::Result::Err(__e)) => {
-                        return ::core::result::Result::Err(
-                            <A::Error as ::serde::de::Error>::custom(__e),
-                        );
-                    }
-                    ::core::option::Option::None => {}
                 }
-            }
+            };
+            let init = quote! {
+                for __rec in __ext_records {
+                    __r.__buffa_unknown_fields.push(__rec);
+                }
+            };
+            (var, arm, init)
+        } else {
+            (quote! {}, quote! {}, quote! {})
         };
-        let init = quote! {
-            for __rec in __ext_records {
-                __r.__buffa_unknown_fields.push(__rec);
-            }
-        };
-        (var, arm, init)
-    } else {
-        (quote! {}, quote! {}, quote! {})
-    };
 
     // Assemble the impl block. The non-snake allow covers the `__f_<name>` /
     // `__oneof_<name>` locals bound inside the visitor.
@@ -2568,7 +2568,7 @@ fn generate_custom_default(
         }
     }
 
-    let unknown_fields_init = if ctx.config.preserve_unknown_fields {
+    let unknown_fields_init = if ctx.preserve_unknown_fields(proto_fqn) {
         quote! { __buffa_unknown_fields: ::core::default::Default::default(), }
     } else {
         quote! {}
