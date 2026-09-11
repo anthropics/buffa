@@ -662,6 +662,39 @@ fn dynamic_message_empty_containers_have_returns_false() {
 }
 
 #[test]
+fn dynamic_message_for_each_set_agrees_with_has() {
+    let p = pool();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut msg = DynamicMessage::new(
+        Arc::clone(&p),
+        p.message_index("reflect.test.Scalars").unwrap(),
+    );
+    // Implicit presence at its default and non-default; explicit presence
+    // (`optional`) at its default; a message field.
+    msg.set(md.field(3).unwrap(), Value::I32(0));
+    msg.set(md.field(14).unwrap(), Value::String("x".into()));
+    msg.set(md.field(16).unwrap(), Value::I32(0));
+    msg.set(
+        md.field(17).unwrap(),
+        Value::Message(DynamicMessage::new(
+            Arc::clone(&p),
+            p.message_index("google.protobuf.FieldMask").unwrap(),
+        )),
+    );
+
+    let mut visited = Vec::new();
+    msg.for_each_set(&mut |fd, _| visited.push(fd.number()));
+    let present: Vec<u32> = md
+        .fields()
+        .iter()
+        .filter(|fd| msg.has(fd))
+        .map(|fd| fd.number())
+        .collect();
+    assert_eq!(visited, present);
+    assert_eq!(visited, vec![14, 16, 17]);
+}
+
+#[test]
 fn which_oneof_resolves_set_member() {
     let p = pool();
     let oneof_idx = p.message_index("reflect.test.OneOf").unwrap();
