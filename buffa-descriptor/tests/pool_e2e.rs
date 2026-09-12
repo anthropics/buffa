@@ -2646,3 +2646,75 @@ mod import_visibility {
             .expect("protoc output satisfies import visibility");
     }
 }
+
+/// `MessageIndex::index` is the descriptor's position in `pool.messages()`,
+/// for every message in a real `protoc`-built pool.
+#[test]
+fn message_index_ordinals_match_slice_positions() {
+    let pool = pool();
+    assert!(
+        pool.messages().len() > 1,
+        "fixture should link several messages"
+    );
+
+    for (position, desc) in pool.messages().iter().enumerate() {
+        let idx = pool
+            .message_index(desc.full_name())
+            .expect("every linked message resolves by its own full name");
+        assert_eq!(idx.index(), position, "message {}", desc.full_name());
+    }
+}
+
+/// `EnumIndex::index` is the descriptor's position in `pool.enums()`.
+#[test]
+fn enum_index_ordinals_match_slice_positions() {
+    let pool = pool();
+    assert!(
+        !pool.enums().is_empty(),
+        "fixture should link at least one enum"
+    );
+
+    for (position, desc) in pool.enums().iter().enumerate() {
+        let idx = pool
+            .enum_index(desc.full_name())
+            .expect("every linked enum resolves by its own full name");
+        assert_eq!(idx.index(), position, "enum {}", desc.full_name());
+    }
+}
+
+/// `ExtensionIndex::index` is the descriptor's position in
+/// `pool.extensions()`.
+#[test]
+fn extension_index_ordinals_match_slice_positions() {
+    let pool = pool();
+    assert!(
+        !pool.extensions().is_empty(),
+        "fixture should link at least one extension"
+    );
+
+    for (position, desc) in pool.extensions().iter().enumerate() {
+        let idx = pool
+            .extension_index(desc.full_name())
+            .expect("every linked extension resolves by its own registration name");
+        assert_eq!(idx.index(), position, "extension {}", desc.full_name());
+    }
+}
+
+/// The ordinals are dense over `0..len`, which is what lets a caller size a
+/// side table once and index it directly instead of hashing or binary
+/// searching.
+#[test]
+fn message_ordinals_are_dense_so_a_side_table_can_be_indexed_directly() {
+    let pool = pool();
+
+    let mut table = vec![None; pool.messages().len()];
+    for desc in pool.messages() {
+        let idx = pool.message_index(desc.full_name()).expect("resolves");
+        table[idx.index()] = Some(desc.full_name());
+    }
+
+    assert!(
+        table.iter().all(Option::is_some),
+        "every slot filled means the ordinals cover 0..len with no gaps"
+    );
+}
