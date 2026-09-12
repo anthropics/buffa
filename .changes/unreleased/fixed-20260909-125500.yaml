@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`examples/bsr-quickstart` builds again** (#427). Its checked-in generated code had been hand-patched since it was generated from the v0.5.2 plugin, so it matched neither that plugin nor the current runtime. It is now regenerated from the `buf.build/anthropics/buffa:v0.9.2` plugin and depends on `buffa` / `buffa-types` 0.9.2 from crates.io, and CI builds it.
+time: 2026-09-09T12:55:00.000000000-07:00
