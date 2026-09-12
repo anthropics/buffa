@@ -1633,17 +1633,7 @@ impl ReflectMessage for DynamicMessage {
         );
         match self.fields.get(&field.number()) {
             None => false,
-            Some(Value::List(l)) => !l.is_empty(),
-            Some(Value::Map(m)) => !m.is_empty(),
-            // Implicit-presence singular fields are "present" only when
-            // non-default. Explicit-presence and `LegacyRequired` fields
-            // are present whenever they appear in the field map. This is
-            // what makes `set(fd, default)` on an implicit-presence field
-            // round-trip to "absent" through both binary and JSON encode.
-            Some(v) if field.presence == buffa::editions::FieldPresence::Implicit => {
-                !is_default_scalar(v)
-            }
-            Some(_) => true,
+            Some(v) => value_is_present(v, field),
         }
     }
 
@@ -1654,7 +1644,10 @@ impl ReflectMessage for DynamicMessage {
         // — `None` means the descriptor came from the extension index.
         for (&number, value) in &self.fields {
             if let Some(fd) = self.field_or_extension(number) {
-                if !self.has(fd) {
+                // `field_or_extension` resolved `fd` *by* `number`, so `value`
+                // is the one `has(fd)` would look up. Applying the presence
+                // rule to it directly keeps each field to a single resolution.
+                if !value_is_present(value, fd) {
                     continue;
                 }
                 f(fd, value.as_ref());
@@ -2070,6 +2063,26 @@ fn map_key_shape(key: &MapKey) -> &'static str {
         MapKey::U32(_) => "u32",
         MapKey::U64(_) => "u64",
         MapKey::String(_) => "string",
+    }
+}
+
+/// Whether a stored `Value` counts as present for `field`.
+///
+/// Repeated and map fields are present when non-empty. Implicit-presence
+/// singular fields are present only when non-default, which is what makes
+/// `set(fd, default)` round-trip to "absent" through both binary and JSON
+/// encode. Explicit-presence and `LegacyRequired` fields are present whenever
+/// they appear in the field map.
+///
+/// Taking the value rather than looking it up lets a caller that already holds
+/// one skip a second resolution; `has` keeps the lookup, `for_each_set` does
+/// not need it.
+fn value_is_present(value: &Value, field: &FieldDescriptor) -> bool {
+    match value {
+        Value::List(l) => !l.is_empty(),
+        Value::Map(m) => !m.is_empty(),
+        v if field.presence == buffa::editions::FieldPresence::Implicit => !is_default_scalar(v),
+        _ => true,
     }
 }
 

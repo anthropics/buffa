@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`DynamicMessage::for_each_set` resolves each stored field once instead of twice** (#432). The loop already holds the `Value` for the field number it is visiting, but called `has(fd)`, which looked the same value up again in the field map to apply the implicit-presence rule. That rule now lives in one helper taking the value directly, so the second `BTreeMap` lookup is gone and `has` and `for_each_set` can no longer drift apart. Behaviour is unchanged: repeated and map fields are visited when non-empty, implicit-presence singular fields only when non-default, everything else whenever it appears in the field map. On a `Scalars` message with 15 stored fields a full `for_each_set` walk goes from ~288 ns to ~174 ns in a release build.
+time: 2026-09-12T17:05:00.000000000-05:00
