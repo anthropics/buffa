@@ -810,6 +810,57 @@ fn reserved_message_field_numbers_are_rejected_without_mutating_pool() {
 }
 
 #[test]
+fn invalid_message_reserved_ranges_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ReservedRange;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    // protoc reads an unset bound as 0 and requires `0 < start < end`, so a
+    // missing, zero, negative, empty, or reversed range is one error.
+    for (suffix, start, end) in [
+        ("missing-start", None, Some(8)),
+        ("missing-end", Some(7), None),
+        ("missing-both", None, None),
+        ("zero-start", Some(0), Some(5)),
+        ("negative-start", Some(-3), Some(5)),
+        ("empty", Some(7), Some(7)),
+        ("reversed", Some(9), Some(5)),
+    ] {
+        let file_name = format!("reserved-message-range-{suffix}.proto");
+        let full_name = "invalid.test.BadMessageRange";
+        assert_rejected_without_mutating_pool(
+            &file_name,
+            full_name,
+            DescriptorProto {
+                name: Some("BadMessageRange".into()),
+                reserved_range: vec![ReservedRange {
+                    start,
+                    end,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            move |err| {
+                assert!(
+                    matches!(
+                        err,
+                        PoolError::InvalidMessageReservedRange { message, start: s, end: e }
+                            if message == full_name && (*s, *e) == (start, end)
+                    ),
+                    "unexpected error for {suffix}: {err}"
+                );
+                if suffix == "missing-end" {
+                    assert_eq!(
+                        err.to_string(),
+                        "message invalid.test.BadMessageRange reserved range 7..unset is \
+                         invalid; bounds must satisfy 0 < start < end"
+                    );
+                }
+            },
+        );
+    }
+}
+
+#[test]
 fn reserved_message_field_range_end_is_exclusive() {
     use buffa_descriptor::generated::descriptor::descriptor_proto::ReservedRange;
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
@@ -1447,6 +1498,102 @@ fn reserved_enum_value_numbers_are_rejected_transactionally() {
             },
         );
     }
+}
+
+#[test]
+fn enum_reserved_ranges_follow_protoc_bounds_rules() {
+    use buffa_descriptor::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let make_set = |file: &str, package: &str, start, end, values: &[i32]| FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some(file.into()),
+            package: Some(package.into()),
+            syntax: Some("proto2".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Ranged".into()),
+                value: values
+                    .iter()
+                    .map(|&n| EnumValueDescriptorProto {
+                        name: Some(format!("V{n}")),
+                        number: Some(n),
+                        ..Default::default()
+                    })
+                    .collect(),
+                reserved_range: vec![EnumReservedRange {
+                    start,
+                    end,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    // Unset bounds read as 0 and enum ranges are inclusive and may be
+    // negative, so `..8` (0 to 8), `-3..` (-3 to 0) and `..` (0 to 0) are all
+    // valid — protoc and protobuf-go accept them — provided no value lands
+    // inside.
+    for (suffix, start, end) in [
+        ("unset-start", None, Some(8)),
+        ("unset-end", Some(-3), None),
+        ("unset-both", None, None),
+        ("negative", Some(-5), Some(-3)),
+    ] {
+        let file = format!("enum-range-{suffix}.proto");
+        let pool = DescriptorPool::new(make_set(&file, "valid.test", start, end, &[10, 11]))
+            .unwrap_or_else(|e| panic!("{suffix} should be accepted: {e}"));
+        assert!(pool
+            .enum_by_name("valid.test.Ranged")
+            .unwrap()
+            .value(10)
+            .is_some());
+    }
+
+    // ...and the unset-start range really is honoured as `0 to 8`.
+    let err = DescriptorPool::new(make_set(
+        "enum-range-hit.proto",
+        "invalid.test",
+        None,
+        Some(8),
+        &[5],
+    ))
+    .unwrap_err();
+    assert!(
+        matches!(&err, PoolError::ReservedEnumValueNumber { number: 5, .. }),
+        "unexpected error: {err}"
+    );
+
+    // Only `start > end` is an error.
+    assert_set_rejected_without_mutating_pool(
+        "enum-range-reversed.proto",
+        "invalid.test.Ranged",
+        make_set(
+            "enum-range-reversed.proto",
+            "invalid.test",
+            Some(9),
+            Some(7),
+            &[0],
+        ),
+        |err| {
+            assert!(
+                matches!(
+                    err,
+                    PoolError::InvalidEnumReservedRange { enum_name, start: Some(9), end: Some(7) }
+                        if enum_name == "invalid.test.Ranged"
+                ),
+                "unexpected error: {err}"
+            );
+            assert_eq!(
+                err.to_string(),
+                "enum invalid.test.Ranged reserved range 9 to 7 is invalid; start must not exceed end"
+            );
+        },
+    );
 }
 
 #[test]
