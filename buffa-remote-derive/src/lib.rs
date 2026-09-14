@@ -61,10 +61,12 @@
 //! `From<&str>`, and `buffa::ProtoString` impls that would otherwise be
 //! hand-written (compare to the worked example in `buffa-smolstr` or
 //! `examples/custom-types`). The remote type must already satisfy
-//! `ProtoString`'s non-buffa-owned supertraits (`Clone`, `PartialEq`,
+//! the forwarding bounds (`Clone`, `PartialEq`,
 //! `Default`, `Debug`, `Send`, `Sync`, `AsRef<str>`, `From<String>`,
-//! `From<&str>`) — true of essentially every inline/shared-string crate, since
-//! that's the API surface they're built to offer as a `String` substitute.
+//! `for<'a> From<&'a str>`). The derive uses the borrowed conversion for
+//! `copy_from_str` as well, avoiding an intermediate `String`. This last bound
+//! belongs to the derive, not to `ProtoString`: if the remote type's `From<&str>`
+//! borrows, implement `ProtoString` by hand and provide an owning copy operation.
 //! On the newtype itself, derive the derivable subset (`Clone`,
 //! `PartialEq`, `Default`, `Debug`) yourself — `Send`/`Sync` are automatic
 //! for a single-field wrapper, and for the generic list/map derives
@@ -208,6 +210,7 @@ mod string;
 /// `Deref<Target = str>`, `AsRef<str>`, `From<String>`, `From<&str>`, and
 /// `buffa::ProtoString` for a single-field newtype wrapping the type named by
 /// `#[buffa(remote = ...)]`.
+/// The generated `copy_from_str` forwards to the inner type's `From<&str>`.
 #[proc_macro_derive(ProtoString, attributes(buffa))]
 pub fn derive_proto_string(input: TokenStream) -> TokenStream {
     expand(input, string::derive)

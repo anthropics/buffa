@@ -1,0 +1,5 @@
+kind: Breaking changes
+body: |-
+    **`ProtoString` uses `copy_from_str(&str)` instead of requiring `for<'a> From<&'a str>`** (#441). This lets string libraries retain borrowing `From<&str>` conversions while copying temporary JSON inputs for non-optional singular fields and view inputs for all string fields into owned storage. The new method defaults to `From<String>`; override it to avoid the intermediate allocation for inline/shared strings. The remote derive and `buffa-smolstr` example preserve their direct borrowed-text construction path.
+    Generic callers that relied on `S: ProtoString` to imply `From<&str>` should use `S::copy_from_str(value)` or add an explicit conversion bound. `json_helpers::proto_string::deserialize` now requires `ProtoString`, not just the two `From` conversions; hand-written users of that helper must implement the trait or use their own deserializer. Regenerate custom-string view code before using a representation without the old bound. Binary decoding, wire format, and default `String` code generation are unchanged.
+time: 2026-09-14T00:00:00+00:00

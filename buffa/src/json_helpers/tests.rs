@@ -1338,7 +1338,7 @@ fn proto_string_null_is_empty() {
 }
 
 /// A stand-in for a configurable string type (`SmolStr`/`EcoString`/...): it
-/// implements just the `From<String>`/`From<&str>`/`AsRef<str>` surface the
+/// implements the `ProtoString` surface without `From<&str>`, which the
 /// generic `proto_string` path relies on, proving the with-module deserializes
 /// into an arbitrary target type without a per-type shim.
 #[derive(Clone, PartialEq, Debug, Default)]
@@ -1348,9 +1348,15 @@ impl From<alloc::string::String> for MyStr {
         MyStr(s)
     }
 }
-impl From<&str> for MyStr {
-    fn from(s: &str) -> Self {
-        MyStr(s.into())
+impl core::ops::Deref for MyStr {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+impl crate::ProtoString for MyStr {
+    fn from_wire(payload: crate::WirePayload<'_>) -> Result<Self, crate::DecodeError> {
+        payload.to_str().map(|s| Self(s.into()))
     }
 }
 impl AsRef<str> for MyStr {

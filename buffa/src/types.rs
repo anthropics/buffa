@@ -1293,9 +1293,11 @@ pub fn string_encoded_len(value: &str) -> usize {
 ///   [`encode_string`] / [`string_encoded_len`] expect `&str`), so the
 ///   representation must `Deref` to `str`; `AsRef<str>` is also required for the
 ///   call sites that ask for it explicitly.
-/// - `From<String>` and `From<&str>` — used by the JSON, text-format, and
-///   view→owned paths to construct the field from freshly decoded text (binary
-///   decode uses [`from_wire`](ProtoString::from_wire) instead).
+/// - `From<String>` — constructs fields from owned JSON strings, text-format
+///   parsing, and proto2 defaults.
+/// - [`copy_from_str`](ProtoString::copy_from_str) — copies borrowed JSON
+///   strings in non-optional singular fields and all string view fields into
+///   owned storage. Binary decoding uses [`from_wire`](ProtoString::from_wire).
 ///
 /// For the default `String` representation every conversion is the identity, so
 /// the generic path costs nothing relative to the specialized one.
@@ -1311,16 +1313,14 @@ pub fn string_encoded_len(value: &str) -> usize {
 /// - `Deref`, `AsRef`, and the constructors observe the same content — encoding
 ///   borrows via `Deref` / `AsRef` and the view / reflect paths read the same
 ///   way; if they disagree, a value encodes differently than it reads back.
-/// - `from_wire` is value-equivalent to `From<String>` / `From<&str>` — binary
-///   decode uses `from_wire` while JSON / text / view→owned use `From`, so a
-///   representation must not transform the text (e.g. case-fold) in one path but
-///   not the other.
+/// - `from_wire` is value-equivalent to `From<String>` / `copy_from_str` — binary
+///   decode uses `from_wire` while JSON / text / view→owned use the other
+///   constructors, so a representation must not transform the text (e.g.
+///   case-fold) in one path but not the other.
 ///
 /// # Limitations
 ///
-/// These apply to a custom type used as a `repeated` element or in a `map` slot
-/// (`map<string, V>` key, `map<K, string>` value). Singular / optional / oneof
-/// uses have none of them and work with a foreign type directly. See the user
+/// The requirements below depend on where the custom string appears. See the user
 /// guide's "String and bytes field representations" section for the full table.
 ///
 /// - **Must be crate-local.** A custom type in a `repeated` element or `map`
@@ -1328,10 +1328,11 @@ pub fn string_encoded_len(value: &str) -> usize {
 ///   vtable reflection), which the orphan rule permits only when the type is
 ///   local to the generating crate. A *foreign* custom type in those positions
 ///   fails to compile — wrap it in a crate-local newtype.
-/// - **JSON needs native `serde`.** A custom string used as a `repeated` element
-///   or in a `map` serializes through its own `serde`, so it must derive
+/// - **JSON needs native `serde` outside non-optional singular fields.** A custom
+///   string in an optional, repeated, map, or oneof field uses its own `serde`,
+///   so it must implement
 ///   `Serialize` / `Deserialize` (and, for an external type, enable its `serde`
-///   feature). Singular / optional / oneof custom strings use the `proto_string`
+///   feature). Non-optional singular custom strings use the `proto_string`
 ///   with-module and need no `serde` impl.
 /// - **A `map` key needs `Hash + Eq`** (default / `HashMap` container) or `Ord`
 ///   (`map_type(BTreeMap)`); the bound is enforced at the generated field type.
@@ -1344,8 +1345,8 @@ pub fn string_encoded_len(value: &str) -> usize {
     since(1.78),
     diagnostic::on_unimplemented(
         message = "`{Self}` cannot be used as a buffa custom string type",
-        note = "buffa owns `ProtoString`, so a foreign type can't implement it directly (orphan rule). \
-                Wrap it in a crate-local newtype and implement `ProtoString` on the newtype. \
+        note = "Implement `ProtoString` and its supertraits on your type. \
+                If the type is defined in another crate, wrap it in a crate-local newtype first. \
                 See `examples/custom-types` in the buffa repository for a template."
     )
 )]
@@ -1359,8 +1360,20 @@ pub trait ProtoString:
     + core::ops::Deref<Target = str>
     + AsRef<str>
     + From<String>
-    + for<'a> From<&'a str>
 {
+    /// Copy text into storage that does not borrow from `value`.
+    ///
+    /// The default constructs a [`String`] and passes it to `From<String>`.
+    /// Inline or shared-string implementations can override this to avoid the
+    /// intermediate allocation. Unlike `From<&str>`, this method does not tie
+    /// the result's lifetime to the input, so a type can retain a separate
+    /// borrowing `From<&str>` implementation.
+    /// The explicit name also avoids confusion with the fallible `FromStr` trait.
+    #[inline]
+    fn copy_from_str(value: &str) -> Self {
+        Self::from(String::from(value))
+    }
+
     /// Construct the representation from a decoded `string` field's wire payload.
     ///
     /// This is the decode constructor: it owns the validation/ownership choice,
@@ -1370,7 +1383,7 @@ pub trait ProtoString:
     /// picks up the `fast-utf8` feature), or read raw bytes with
     /// [`WirePayload::as_slice`]. There is
     /// intentionally no blanket impl — every representation provides its own
-    /// optimal `from_wire`; the `From<String>`/`From<&str>` supertraits remain
+    /// optimal `from_wire`; `From<String>` and [`Self::copy_from_str`] remain
     /// for the JSON, text, and view→owned paths.
     ///
     /// # Errors

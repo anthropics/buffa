@@ -10,6 +10,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for basic.proto");
 
+    // A string type whose From<&str> borrows cannot satisfy a higher-ranked
+    // From<&str> bound. Compile every field shape against its owned variant.
+    buffa_build::Config::new()
+        .files(&["protos/string_copy.proto"])
+        .includes(&["protos/"])
+        .string_type_custom("crate::string_copy::OwnedStr")
+        .generate_json(true)
+        .generate_text(true)
+        .compile()
+        .expect("buffa_build failed for string_copy.proto");
+
     // box_type: a crate-LOCAL `CustomBox<T>` pointer (a `ProtoBox<T>` impl) for
     // singular message fields, via the `*`-templated knob. The crate compiling
     // is most of the test — the field type, decode (`get_or_insert_default`),
