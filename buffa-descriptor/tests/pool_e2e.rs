@@ -444,13 +444,14 @@ fn proto2_enum_first_value_can_be_nonzero() {
 }
 
 #[test]
-fn open_enum_with_no_values_is_not_rejected_by_the_first_value_rule() {
+fn empty_open_enum_reports_empty_enum_not_the_first_value_rule() {
     use buffa_descriptor::generated::descriptor::{
         EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
     };
 
-    // protoc rejects an empty enum for a different reason; this rule must
-    // not panic or misfire on `value.first()` being `None`.
+    // An empty enum is rejected as `EmptyEnum` (checked first, as protoc
+    // does); the open-enum first-value rule must not be the one that fires,
+    // nor panic on `value.first()` being `None`.
     let result = DescriptorPool::new(FileDescriptorSet {
         file: vec![FileDescriptorProto {
             name: Some("proto3-empty-enum.proto".into()),
@@ -465,11 +466,44 @@ fn open_enum_with_no_values_is_not_rejected_by_the_first_value_rule() {
         ..Default::default()
     });
     assert!(
-        !matches!(
-            result,
-            Err(buffa_descriptor::PoolError::OpenEnumFirstValueNotZero { .. })
+        matches!(
+            &result,
+            Err(buffa_descriptor::PoolError::EmptyEnum { enum_name }) if enum_name == "valid.test.Empty"
         ),
         "{result:?}"
+    );
+}
+
+#[test]
+fn empty_enums_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("empty-enum.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Empty".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "empty-enum.proto",
+        "invalid.test.Empty",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::EmptyEnum { enum_name } if enum_name == "invalid.test.Empty"
+            ));
+        },
     );
 }
 
