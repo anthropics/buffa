@@ -1062,6 +1062,156 @@ fn invalid_extension_range_bounds_are_rejected_without_mutating_pool() {
 }
 
 #[test]
+
+fn overlapping_extension_ranges_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    /// `expected` is `(later-declared range, earlier-declared range)`.
+    fn assert_rejected(ranges: &[(i32, i32)], expected: ((u32, u32), (u32, u32))) {
+        let extension_range = ranges
+            .iter()
+            .map(|&(start, end)| ExtensionRange {
+                start: Some(start),
+                end: Some(end),
+                ..Default::default()
+            })
+            .collect();
+        // proto2: protoc rejects extension ranges in a proto3 file outright,
+        // so a proto3 fixture would be invalid for an unrelated reason.
+        assert_set_rejected_without_mutating_pool(
+            "overlapping-extension-range.proto",
+            "invalid.test.OverlappingExtensionRange",
+            FileDescriptorSet {
+                file: vec![FileDescriptorProto {
+                    name: Some("overlapping-extension-range.proto".into()),
+                    package: Some("invalid.test".into()),
+                    syntax: Some("proto2".into()),
+                    message_type: vec![DescriptorProto {
+                        name: Some("OverlappingExtensionRange".into()),
+                        extension_range,
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            |err| {
+                assert!(
+                    matches!(
+                        err,
+                        PoolError::OverlappingExtensionRange {
+                            message,
+                            start,
+                            end,
+                            other_start,
+                            other_end,
+                        } if message == "invalid.test.OverlappingExtensionRange"
+                            && ((*start, *end), (*other_start, *other_end)) == expected
+                    ),
+                    "unexpected error for {ranges:?}: {err}"
+                );
+            },
+        );
+    }
+
+    let max = buffa::encoding::MAX_FIELD_NUMBER;
+    // Partial overlap, identical ranges, containment, overlap when the
+    // declarations arrive in reverse order, and overlap at the top of the
+    // field-number space all fail, naming the later declaration first.
+    assert_rejected(&[(10, 20), (19, 30)], ((19, 30), (10, 20)));
+    assert_rejected(&[(10, 20), (10, 20)], ((10, 20), (10, 20)));
+    assert_rejected(&[(10, 30), (15, 20)], ((15, 20), (10, 30)));
+    assert_rejected(&[(20, 30), (10, 25)], ((10, 25), (20, 30)));
+    assert_rejected(
+        &[(1, max as i32 + 1), (max as i32, max as i32 + 1)],
+        ((max, max + 1), (1, max + 1)),
+    );
+    // Three ranges: the first overlap in start order is reported.
+    assert_rejected(&[(10, 100), (50, 60), (20, 30)], ((20, 30), (10, 100)));
+}
+
+#[test]
+fn adjacent_extension_ranges_are_accepted_in_declaration_order() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let ranges = [(30, 40), (40, 50)];
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("adjacent-extension-ranges.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("RangeMessage".into()),
+                extension_range: ranges
+                    .iter()
+                    .map(|&(start, end)| ExtensionRange {
+                        start: Some(start),
+                        end: Some(end),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("adjacent extension ranges do not overlap");
+
+    assert_eq!(
+        pool.message_by_name("valid.test.RangeMessage")
+            .unwrap()
+            .extension_ranges(),
+        &[(30, 40), (40, 50)]
+    );
+}
+
+#[test]
+fn disjoint_extension_ranges_are_accepted_in_declaration_order() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let ranges = [(40, 50), (10, 20)];
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("disjoint-extension-ranges.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("RangeMessage".into()),
+                extension_range: ranges
+                    .iter()
+                    .map(|&(start, end)| ExtensionRange {
+                        start: Some(start),
+                        end: Some(end),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("disjoint extension ranges do not overlap");
+
+    assert_eq!(
+        pool.message_by_name("valid.test.RangeMessage")
+            .unwrap()
+            .extension_ranges(),
+        &[(40, 50), (10, 20)]
+    );
+}
+
+#[test]
 fn duplicate_proto_field_names_are_rejected_without_mutating_pool() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
     use buffa_descriptor::generated::descriptor::DescriptorProto;
