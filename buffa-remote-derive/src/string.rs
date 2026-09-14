@@ -65,6 +65,11 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
 
         impl #impl_generics ::buffa::ProtoString for #ident #ty_generics #where_clause {
             #[inline]
+            fn copy_from_str(s: &str) -> Self {
+                #ctor_from_str
+            }
+
+            #[inline]
             fn from_wire(
                 payload: ::buffa::WirePayload<'_>,
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {

@@ -1,0 +1,13 @@
+syntax = "proto3";
+package string_copy;
+
+message Strings {
+  string name = 1;
+  optional string maybe = 2;
+  repeated string items = 3;
+  map<string, string> by_name = 4;
+  oneof choice {
+    string label = 5;
+    int32 number = 6;
+  }
+}

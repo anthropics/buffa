@@ -112,6 +112,10 @@ pub mod vtable_string_repr {
         }
     }
     impl ::buffa::ProtoString for LocalStr {
+        fn copy_from_str(value: &str) -> Self {
+            Self::from(value)
+        }
+
         fn from_wire(
             payload: ::buffa::WirePayload<'_>,
         ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
@@ -271,6 +275,10 @@ pub mod reprs {
         }
     }
     impl ::buffa::ProtoString for EcoStr {
+        fn copy_from_str(value: &str) -> Self {
+            Self::from(value)
+        }
+
         fn from_wire(
             payload: ::buffa::WirePayload<'_>,
         ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
@@ -312,6 +320,10 @@ pub mod reprs {
         }
     }
     impl ::buffa::ProtoString for CompactStr {
+        fn copy_from_str(value: &str) -> Self {
+            Self::from(value)
+        }
+
         fn from_wire(
             payload: ::buffa::WirePayload<'_>,
         ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
@@ -404,6 +416,10 @@ pub mod string_map {
         }
     }
     impl ::buffa::ProtoString for MapStr {
+        fn copy_from_str(value: &str) -> Self {
+            Self::from(value)
+        }
+
         fn from_wire(
             payload: ::buffa::WirePayload<'_>,
         ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
@@ -988,3 +1004,5 @@ pub mod basic_no_uf {
 )]
 #[cfg(test)]
 mod tests;
+
+pub mod string_copy;

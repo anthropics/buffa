@@ -513,30 +513,30 @@ pub mod proto_string {
     /// Generic over the return type so that codegen's `string_type` knob (which
     /// can map the field to `smol_str::SmolStr`, `ecow::EcoString`, etc.) works
     /// without a per-type shim. The visitor constructs the target type directly:
-    /// `visit_str` goes through `From<&str>`, so a short string is inlined by an
-    /// SSO type without first allocating an intermediate `String`. `String`
-    /// itself satisfies both `From<&str>` and `From<String>`, keeping the
+    /// `visit_str` goes through `ProtoString::copy_from_str`, which an SSO type
+    /// can override to inline short strings without an intermediate `String`.
+    /// `String` itself implements `ProtoString`, keeping the
     /// default path zero-extra-cost. Type inference picks `T` from the field
     /// type at the serde call site.
     pub fn deserialize<'de, T, D>(d: D) -> Result<T, D::Error>
     where
-        T: for<'a> From<&'a str> + From<alloc::string::String>,
+        T: crate::ProtoString,
         D: Deserializer<'de>,
     {
         struct V<T>(core::marker::PhantomData<T>);
         impl<'de, T> serde::de::Visitor<'de> for V<T>
         where
-            T: for<'a> From<&'a str> + From<alloc::string::String>,
+            T: crate::ProtoString,
         {
             type Value = T;
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("a string or null")
             }
             fn visit_unit<E>(self) -> Result<T, E> {
-                Ok(T::from(""))
+                Ok(T::copy_from_str(""))
             }
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<T, E> {
-                Ok(T::from(v))
+                Ok(T::copy_from_str(v))
             }
             fn visit_string<E>(self, v: alloc::string::String) -> Result<T, E> {
                 Ok(T::from(v))
