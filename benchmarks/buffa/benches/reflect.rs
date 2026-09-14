@@ -26,12 +26,16 @@
 //!    Vtable reflection is dominated by the cheap zero-copy `decode_view`, so it
 //!    lands well below both the bridge round-trip and pure `DynamicMessage`
 //!    reflection.
+//! 5. **Reads that include unset fields** — `dynamic_get_every_field` calls
+//!    `get` on every declared field of the decoded messages, and
+//!    `dynamic_get_unset_message` calls it on each singular message field of
+//!    an empty message (registered only for shapes that have one).
 
 use std::sync::Arc;
 
 use buffa::{Message, MessageView};
 use buffa_descriptor::reflect::{DynamicMessage, ReflectMessage};
-use buffa_descriptor::{DescriptorPool, MessageIndex};
+use buffa_descriptor::{DescriptorPool, FieldKind, MessageIndex, SingularKind};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 
 use bench_buffa::bench::{
@@ -62,6 +66,14 @@ fn read_all(m: &dyn ReflectMessage) {
     m.for_each_set(&mut |_fd, v| {
         criterion::black_box(v);
     });
+}
+
+/// Read every declared field, set or not (a reader that treats an absent
+/// sub-message as its empty default rather than checking `has` first).
+fn get_every_field(m: &dyn ReflectMessage) {
+    for fd in m.message_descriptor().fields() {
+        criterion::black_box(m.get(fd));
+    }
 }
 
 /// Zero-copy decode floor: `decode_view(bytes)` and discard, no reflection.
@@ -261,6 +273,33 @@ fn bench_message<M>(
             }
         });
     });
+
+    // `get` on already-decoded messages, every declared field including the
+    // unset ones, and `get` on each singular message field of an empty
+    // message (the unset-message default path in isolation).
+    group.bench_function("reflect/dynamic_get_every_field", |b| {
+        b.iter(|| {
+            for dm in &reflective {
+                get_every_field(dm);
+            }
+        });
+    });
+    let empty = DynamicMessage::new(Arc::clone(p), idx);
+    let message_fields: Vec<_> = empty
+        .message_descriptor()
+        .fields()
+        .iter()
+        .filter(|fd| matches!(fd.kind(), FieldKind::Singular(SingularKind::Message(_))))
+        .collect();
+    if !message_fields.is_empty() {
+        group.bench_function("reflect/dynamic_get_unset_message", |b| {
+            b.iter(|| {
+                for fd in &message_fields {
+                    criterion::black_box(empty.get(fd));
+                }
+            });
+        });
+    }
 
     group.finish();
 }

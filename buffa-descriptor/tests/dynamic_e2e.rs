@@ -9,7 +9,8 @@ use std::sync::Arc;
 use buffa::encoding::{encode_varint, Tag, WireType};
 use buffa::DecodeError;
 use buffa_descriptor::reflect::{
-    DynamicMessage, MapKey, MapValue, ReflectError, ReflectMessage, ReflectMessageMut, Value,
+    DynamicMessage, MapKey, MapValue, ReflectCow, ReflectError, ReflectMessage, ReflectMessageMut,
+    Value, ValueRef,
 };
 use buffa_descriptor::DescriptorPool;
 
@@ -1665,4 +1666,88 @@ fn a_map_inside_a_group_is_normalized() {
             "key {k} must be findable after a group decode"
         );
     }
+}
+
+// ── Unset message fields ────────────────────────────────────────────────────
+
+/// `get()` on message field `number` of `msg`, which must be message-typed.
+fn get_message(msg: &dyn ReflectMessage, number: u32) -> ReflectCow<'_> {
+    let fd = msg
+        .message_descriptor()
+        .field(number)
+        .expect("field declared");
+    match msg.get(fd) {
+        ValueRef::Message(cow) => cow,
+        other => panic!("field {number} is not a message: {other:?}"),
+    }
+}
+
+#[test]
+fn unset_message_field_reads_as_a_borrowed_empty_message() {
+    let p = pool();
+    let inner_idx = p.message_index("reflect.test.Inner").unwrap();
+    let nested_fd = p
+        .message_by_name("reflect.test.Containers")
+        .unwrap()
+        .field(5)
+        .unwrap();
+    let mut msg = DynamicMessage::new_by_name(Arc::clone(&p), "reflect.test.Containers").unwrap();
+    let count = Arc::strong_count(&p);
+
+    let cow = get_message(&msg, 5);
+    assert!(matches!(cow, ReflectCow::Empty(_)));
+    assert_eq!(
+        Arc::strong_count(&p),
+        count,
+        "get() must not clone the pool"
+    );
+
+    let inner: &dyn ReflectMessage = &*cow;
+    let imd = inner.message_descriptor();
+    assert_eq!(imd.full_name(), "reflect.test.Inner");
+    assert!(Arc::ptr_eq(inner.pool(), &p));
+    assert!(inner.unknown_fields().is_empty());
+    assert!(imd.fields().iter().all(|fd| !inner.has(fd)));
+    assert!(matches!(
+        inner.get(imd.field(1).unwrap()),
+        ValueRef::String("")
+    ));
+    assert!(matches!(inner.get(imd.field(2).unwrap()), ValueRef::I32(0)));
+    let empty = DynamicMessage::new(Arc::clone(&p), inner_idx);
+    assert_eq!(cow.to_dynamic(), empty);
+
+    // Materializing the default and setting it makes the field present.
+    let owned = msg.get(nested_fd).to_owned();
+    assert_eq!(owned, Value::Message(empty));
+    msg.set(nested_fd, owned);
+    assert!(msg.has(nested_fd));
+    assert!(matches!(get_message(&msg, 5), ReflectCow::Borrowed(_)));
+}
+
+#[test]
+fn empty_message_reads_nest_and_do_not_keep_the_pool_alive() {
+    let fds = include_bytes!("protos/reflect_test_options.fds");
+    let p = Arc::new(DescriptorPool::decode(fds).unwrap());
+    let weak = Arc::downgrade(&p);
+    let file =
+        DynamicMessage::new_by_name(Arc::clone(&p), "google.protobuf.FileDescriptorProto").unwrap();
+    {
+        let options = get_message(&file, 8);
+        // `get()` on the empty message returns another empty message.
+        let features = get_message(&*options, 50);
+        assert!(matches!(options, ReflectCow::Empty(_)));
+        assert!(matches!(features, ReflectCow::Empty(_)));
+        assert_eq!(
+            features.message_descriptor().full_name(),
+            "google.protobuf.FeatureSet"
+        );
+        assert_eq!(Arc::strong_count(&p), 2);
+        // An owned snapshot takes a count and releases it on drop.
+        let snapshot = features.to_dynamic();
+        assert_eq!(Arc::strong_count(&p), 3);
+        drop(snapshot);
+    }
+    drop(file);
+    drop(p);
+    assert!(weak.upgrade().is_none(), "the pool must be freed");
 }
