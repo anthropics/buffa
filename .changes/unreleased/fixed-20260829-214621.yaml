@@ -1,0 +1,3 @@
+kind: Fixed
+body: DynamicMessage now rejects group-encoded values inside message-valued map entries. Map values always use length-delimited encoding; accepting the legacy group wire type made reflective decoding disagree with generated and view decoders for crafted input.
+time: 2026-08-29T21:46:21+02:00
