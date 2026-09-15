@@ -221,23 +221,23 @@ where
     match s {
         "inf" | "infinity" => {
             if is_f32 {
-                Ok(quote! { f32::INFINITY })
+                Ok(quote! { ::core::primitive::f32::INFINITY })
             } else {
-                Ok(quote! { f64::INFINITY })
+                Ok(quote! { ::core::primitive::f64::INFINITY })
             }
         }
         "-inf" | "-infinity" => {
             if is_f32 {
-                Ok(quote! { f32::NEG_INFINITY })
+                Ok(quote! { ::core::primitive::f32::NEG_INFINITY })
             } else {
-                Ok(quote! { f64::NEG_INFINITY })
+                Ok(quote! { ::core::primitive::f64::NEG_INFINITY })
             }
         }
         "nan" => {
             if is_f32 {
-                Ok(quote! { f32::NAN })
+                Ok(quote! { ::core::primitive::f32::NAN })
             } else {
-                Ok(quote! { f64::NAN })
+                Ok(quote! { ::core::primitive::f64::NAN })
             }
         }
         _ => {
@@ -514,19 +514,22 @@ mod tests {
     #[test]
     fn parse_float_inf() {
         let ts = parse_float_default::<f32>("inf").unwrap();
-        assert!(ts.to_string().contains("INFINITY"));
+        assert_eq!(ts.to_string(), ":: core :: primitive :: f32 :: INFINITY");
     }
 
     #[test]
     fn parse_float_neg_inf() {
         let ts = parse_float_default::<f64>("-inf").unwrap();
-        assert!(ts.to_string().contains("NEG_INFINITY"));
+        assert_eq!(
+            ts.to_string(),
+            ":: core :: primitive :: f64 :: NEG_INFINITY"
+        );
     }
 
     #[test]
     fn parse_float_nan() {
         let ts = parse_float_default::<f32>("nan").unwrap();
-        assert!(ts.to_string().contains("NAN"));
+        assert_eq!(ts.to_string(), ":: core :: primitive :: f32 :: NAN");
     }
 
     #[test]
