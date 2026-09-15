@@ -9,13 +9,13 @@
 # `protoc-gen-buffa-packaging` locally and add it as a second plugin (and
 # drop `file_per_package=true`).
 #
-# The plugin reference is pinned to a specific version so the generated
-# output is reproducible and a plugin update can't silently change it. Match
-# the pin to the `buffa` runtime crate version in `Cargo.toml`. Bump it (and
-# `task gen-bsr-quickstart-example`) when a new BSR plugin release ships.
+# The plugin reference is pinned so the generated output is reproducible and a
+# plugin update can't silently change it. `Cargo.toml` pins `buffa` /
+# `buffa-types` to the same release: bump all three together, then run
+# `task gen-bsr-quickstart-example`.
 version: v2
 plugins:
-  - remote: buf.build/anthropics/buffa:v0.5.2
+  - remote: buf.build/anthropics/buffa:v0.9.2
     out: src/gen
     opt:
       - file_per_package=true
