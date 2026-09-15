@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`DynamicMessage::for_each_set` takes about 40% less time per visited field** (#432, item 1). It applies the presence rule (implicit-presence scalars count only when non-default, containers only when non-empty) directly to each stored value instead of looking the field up a second time through `has`; `has` and `for_each_set` apply the rule through one shared helper. Visited fields, their order and the values handed to the callback are unchanged.
+time: 2026-09-11T10:30:00.000000000+00:00
