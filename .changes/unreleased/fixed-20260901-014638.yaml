@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**ProtoJSON float fields now reject finite quoted values that overflow `f32` instead of silently decoding to infinity.**'
+time: 2026-09-01T01:46:38.536387+02:00

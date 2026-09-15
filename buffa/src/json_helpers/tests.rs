@@ -389,6 +389,27 @@ fn float_deserializes_neg_infinity_string() {
     assert_eq!(val.0, f32::NEG_INFINITY);
 }
 
+#[test]
+fn float_rejects_quoted_finite_overflow() {
+    for json in [r#""3.5e38""#, r#""-3.5e38""#] {
+        assert!(
+            serde_json::from_str::<SerdeFloat>(json).is_err(),
+            "quoted finite overflow should be rejected: {json}"
+        );
+    }
+}
+
+#[test]
+fn float_accepts_quoted_values_near_f32_limit() {
+    for (json, expected) in [
+        (r#""3.4028235e38""#, f32::MAX),
+        (r#""-3.4028235e38""#, -f32::MAX),
+    ] {
+        let val: SerdeFloat = serde_json::from_str(json).unwrap();
+        assert_eq!(val.0, expected, "quoted boundary value: {json}");
+    }
+}
+
 // ── double ──────────────────────────────────────────────────────────────
 
 #[test]
