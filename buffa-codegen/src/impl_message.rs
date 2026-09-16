@@ -3382,7 +3382,7 @@ fn map_merge_arm(
     // parent message's `UnknownFields`; every other value type stays on the
     // simpler `merge_entry` path so the generated code is unchanged for the
     // common case.
-    let merge_call = if m.val_is_closed_enum && ctx.config.preserve_unknown_fields {
+    let merge_call = if m.val_is_closed_enum && ctx.preserve_unknown_fields(proto_fqn) {
         quote! {
             ::buffa::map_codec::merge_entry_with_unknowns::<#key_codec, #val_codec, _>(
                 &mut self.#ident,

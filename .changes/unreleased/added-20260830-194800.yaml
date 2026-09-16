@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+    **`buffa_build::Config::preserve_unknown_fields_in`** — path-scoped unknown-field preservation (#281).
+
+    `preserve_unknown_fields(bool)` remains the global default. `preserve_unknown_fields_in` (plugin: `unknown_fields_in=<path>`, repeatable) then re-enables preservation for matching message FQNs and package prefixes via the same proto-segment prefix matching as `unbox_oneof_in`. Last matching rule wins, so a global `.preserve_unknown_fields(false)` can keep the memory savings while selected types still round-trip. Nested messages resolve independently of their enclosing type. Per-field granularity is not representable: the flag gates whether the generated struct carries `__buffa_unknown_fields`.
+time: 2026-08-30T19:48:00+05:30
