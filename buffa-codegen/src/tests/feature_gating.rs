@@ -480,6 +480,63 @@ fn gated_ext_json_wrapper_struct_is_unconditional_but_serde_impls_are_gated() {
 }
 
 #[test]
+fn gated_bridge_reflect_impls_share_one_cfg_block() {
+    // Regression test: bridge-mode reflection (`generate_reflection = true`,
+    // `generate_reflection_vtable = false`) emits two sibling impls
+    // (`Reflectable`, `ReflectElement`). A bare `#[cfg(...)]` attribute only
+    // covers the first item it precedes, so gating them with `cfg_block`
+    // instead of `cfg_const_block` silently leaves `ReflectElement` (and any
+    // impl after it) compiled unconditionally, defeating `--no-default-features`.
+    let cfg = CodeGenConfig {
+        generate_json: true,
+        generate_views: true,
+        generate_text: false,
+        generate_reflection: true,
+        generate_reflection_vtable: false,
+        preserve_unknown_fields: true,
+        gate_impls_on_crate_features: true,
+        ..CodeGenConfig::default()
+    };
+    let files =
+        generate(&[fixture()], &["gated.proto".to_string()], &cfg).expect("should generate");
+    let content = joined(&files);
+    let squashed = squash(&content);
+
+    assert!(
+        squashed.contains(
+            r#"#[cfg(feature = "reflect")] const _: () = { impl ::buffa_descriptor::reflect::Reflectable for Outer"#
+        ),
+        "bridge-mode Reflectable impl must be inside a single cfg'd const block: {content}"
+    );
+    // The bug this guards against: a bare `#[cfg(...)]` attribute only
+    // covers the *first* item it precedes — gating `Reflectable` and
+    // `ReflectElement` with plain `cfg_block` (no `const _: () = { ... }`
+    // wrapper) would attach the cfg to `Reflectable` alone and leave
+    // `ReflectElement` compiled unconditionally. The assertion above
+    // already pins the wrapper's presence; this pins that both impls are
+    // nested inside it, ending with the block's single closing `};`.
+    assert!(
+        squashed.contains("impl ::buffa_descriptor::reflect::ReflectElement for Outer {"),
+        "bridge-mode ReflectElement impl must be emitted: {content}"
+    );
+    let reflectable_idx = squashed
+        .find(r#"const _: () = { impl ::buffa_descriptor::reflect::Reflectable for Outer"#)
+        .expect("checked above");
+    let element_idx = squashed
+        .find("impl ::buffa_descriptor::reflect::ReflectElement for Outer")
+        .expect("checked above");
+    let closing_idx = squashed[element_idx..]
+        .find("} } };")
+        .map(|i| i + element_idx)
+        .expect("ReflectElement impl must be closed by the shared const block's `};`");
+    assert!(
+        reflectable_idx < element_idx && element_idx < closing_idx,
+        "Reflectable and ReflectElement must both live inside the same \
+         `#[cfg(feature = \"reflect\")] const _: () = {{ ... }};` block: {content}"
+    );
+}
+
+#[test]
 fn gated_only_when_kind_is_enabled() {
     // `gate_impls_on_crate_features = true` does not change *whether* a
     // kind is emitted, only how. Disable text and verify nothing in the

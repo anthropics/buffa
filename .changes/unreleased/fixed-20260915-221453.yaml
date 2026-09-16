@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **Bridge-mode `Reflectable`/`ReflectElement` impls were left ungated under `gate_impls_on_crate_features`** (feature-gated codegen output).
+    `cfg_block` only attaches its `#[cfg(feature = "...")]` attribute to the first of the two sibling impls it wraps, silently leaving `ReflectElement` compiled unconditionally regardless of the `reflect` feature. Switched to `cfg_const_block`, which wraps both impls in a single anonymous `const _: () = { ... };` block covered by one `#[cfg]`, matching the vtable-mode branch immediately above it.
+time: 2026-09-15T22:14:53.863828-04:00
