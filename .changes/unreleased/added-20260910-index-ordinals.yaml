@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`MessageIndex::index`, `EnumIndex::index` and `ExtensionIndex::index`** (#433) return the ordinal an index holds within the pool that issued it. The ordinal is dense in `0..len` and equal to the descriptor's position in `DescriptorPool::messages` / `enums` / `extensions`, so a consumer building a per-type side table can size a `Vec` from that slice and index it directly instead of keeping a `HashMap<MessageIndex, T>` or binary-searching a sorted `Vec`. Cross-pool use is meaningless, the same caveat the types already document for comparison.
+time: 2026-09-10T21:35:00.000000000-05:00
