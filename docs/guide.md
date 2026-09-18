@@ -2207,6 +2207,8 @@ buffa_build::Config::new()
     // ...
 ```
 
+A borrowed view keeps its own `#[doc(hidden)] __buffa_phantom: PhantomData<&'a ()>` anchor only when no field borrows the buffer itself — an all-scalar message, or one whose fields reach `'a` solely through another view (a self-reference, a `oneof` of messages, or two messages that reference each other). The marker is zero-sized and absent from serialized output, but it is a public field, so construct or destructure such a view with `..Default::default()` rather than exhaustively.
+
 **This is mostly a memory optimization**: **24 bytes/message** for the omitted
 `Vec` header, plus one pointer per view. When no unknown fields appear on the
 wire — the common case for schema-aligned services — no per-field work happens

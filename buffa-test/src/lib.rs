@@ -976,6 +976,38 @@ pub mod basic_no_uf {
     include!(concat!(env!("OUT_DIR"), "/no_unknown_views/basic.mod.rs"));
 }
 
+// Self-recursive messages with preserve_unknown_fields=false: #449. The eager
+// views need the generated lifetime anchor to compile at all, and the lazy ones
+// must keep compiling without it, so both families are built here and compiling
+// this module is the coverage for the generated code. Which structs carry the
+// marker is asserted in both directions in
+// `buffa-codegen/src/tests/view_codegen.rs`.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod self_recursive_views {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/self_recursive_views/test.selfrecursive.mod.rs"
+    ));
+}
+
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod self_recursive_lazy {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/self_recursive_lazy/test.selfrecursive.mod.rs"
+    ));
+}
+
 // These tests intentionally use the field-assignment style
 // (`let mut m = T::default(); m.f = v;`) because it mirrors how protobuf
 // messages are constructed in other languages and is what the docs show.

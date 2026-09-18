@@ -26,7 +26,7 @@ use crate::impl_message::{
 };
 use crate::message::{is_map_field, rust_path_to_tokens};
 use crate::view::{
-    custom_view_default_impl, map_decode_arm, map_to_owned_expr, message_view_has_borrowing_field,
+    custom_view_default_impl, map_decode_arm, map_to_owned_expr, message_view_anchors_lifetime,
     oneof_decode_arms, oneof_variant_to_owned, oneof_view_struct_fields, repeated_decode_arm,
     repeated_to_owned, required_presence, resolve_lazy_view_path, resolve_lazy_view_ty_tokens,
     resolve_owned_path, scalar_decode_arm, singular_to_owned, view_field_serialize_stmt,
@@ -182,8 +182,11 @@ pub(crate) fn generate_lazy_view_with_nesting(
         quote! {}
     };
 
-    let has_phantom_field =
-        !message_view_has_borrowing_field(ctx, msg, features, ctx.config.preserve_unknown_fields);
+    // Lazy views differ from eager ones only in the message field: a lazy
+    // singular message field is `LazyMessageFieldView<'a, V>`, which borrows the
+    // buffer itself, so it anchors `'a` and needs no marker. See
+    // `message_view_anchors_lifetime`.
+    let has_phantom_field = !message_view_anchors_lifetime(ctx, msg, features, true);
     let phantom_field = if has_phantom_field {
         quote! { #[doc(hidden)] pub __buffa_phantom: ::core::marker::PhantomData<&'a ()>, }
     } else {

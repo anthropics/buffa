@@ -1,0 +1,92 @@
+// Eager and lazy views generated with preserve_unknown_fields(false).
+//
+// An eager view struct must anchor its `'a` in a field that borrows the decode
+// buffer itself: a singular message field is emitted as `MessageFieldView<V>`,
+// which carries no lifetime parameter, so a `'a` reachable only through another
+// view can lead back to the struct being defined. rustc rejects that
+// (`lifetime parameter 'a is only used recursively`, and E0392 once a struct in
+// the set has no use left), which is #449. A lazy view struct differs only in
+// that one field: `LazyMessageFieldView<'a, V>` borrows the buffer itself, so
+// the same shape anchors `'a` and needs no marker.
+//
+// Eager family — the marker is expected on Node, Tree, IndirectA, IndirectB and
+// Outer/Inner, and must be absent on Chain, SelfMap, NamedNode, Mixed and Blob,
+// each of which borrows through `RepeatedView<'a, _>`, `MapView<'a, _, _>`,
+// `&'a str` / `&'a [u8]`, or a oneof with a scalar variant.
+//
+// Lazy family — no marker is expected on any message here. The three shapes in
+// the first list that are also message-only (`Node`, `IndirectA`, `IndirectB`)
+// compile lazily without one, which is why the two families are decided
+// separately; `TreeLazyView` failed on `main` only because the eager `Shape<'a>`
+// enum it borrows through was itself rejected.
+//
+// `tests` for both directions of that decision live in
+// `buffa-codegen/src/tests/view_codegen.rs`; compiling here is the coverage for
+// the generated code actually building.
+syntax = "proto3";
+
+package test.selfrecursive;
+
+// Singular self-reference: no eager anchor.
+message Node {
+  Node next = 1;
+}
+
+// Repeated self-reference: `RepeatedView<'a, Self>` anchors `'a`.
+message Chain {
+  repeated Chain links = 1;
+}
+
+// Map whose value is the message itself: the synthetic map entry is a repeated
+// field, and `MapView<'a, K, V>` anchors `'a`.
+message SelfMap {
+  map<int32, SelfMap> kids = 1;
+}
+
+// Self-reference behind a oneof whose variants are all messages: no anchor.
+message Tree {
+  oneof shape {
+    Tree left = 1;
+    int32 leaf = 2;
+  }
+}
+
+// Oneof with a `string` variant: that variant borrows, so no marker.
+message Mixed {
+  oneof payload {
+    string tag = 1;
+    Mixed node = 2;
+  }
+}
+
+// Same through a `bytes` variant.
+message Blob {
+  oneof payload {
+    bytes raw = 1;
+    Blob next = 2;
+  }
+}
+
+// Self-reference alongside a borrowed scalar: `&'a str` anchors.
+message NamedNode {
+  string name = 1;
+  NamedNode next = 2;
+}
+
+// Mutual recursion between two messages: neither anchors the other.
+message IndirectA {
+  IndirectB other = 1;
+}
+
+message IndirectB {
+  IndirectA other = 1;
+}
+
+// Self-reference through a nested message: the cycle runs Outer -> Inner ->
+// Outer, and each side reaches `'a` only through the other's view.
+message Outer {
+  message Inner {
+    Outer back = 1;
+  }
+  Inner child = 1;
+}
