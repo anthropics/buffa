@@ -60,6 +60,7 @@ mod idiomatic_enums;
 mod idiomatic_fields;
 mod idiomatic_imports;
 mod json_codegen;
+mod lifetime_anchor;
 mod map_type;
 mod naming;
 mod owned_view_codegen;
