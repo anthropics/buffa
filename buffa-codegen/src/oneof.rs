@@ -5,7 +5,7 @@ use crate::generated::descriptor::{
     DescriptorProto, FieldDescriptorProto, FileDescriptorProto, OneofDescriptorProto,
 };
 use proc_macro2::{Ident, TokenStream};
-use quote::{format_ident, quote};
+use quote::quote;
 
 use crate::context::CodeGenContext;
 use crate::features::ResolvedFeatures;
@@ -922,15 +922,18 @@ pub(crate) fn oneof_variant_deser_arm(
     }
 }
 
-/// Build the Rust identifier for a oneof enum: `{PascalCase(oneof_name)}`.
+/// Build the Rust identifier for a oneof enum: `{PascalCase(oneof_name)}`,
+/// sanitized against reserved Rust idents exactly as
+/// [`oneof_variant_ident`] is. A oneof named `self`, `self_` or `_self`
+/// PascalCases to `Self`, which `make_field_ident` suffixes to `Self_`.
 ///
-/// No suffix and no collision check — oneof enums live in the dedicated
+/// No collision check — oneof enums live in the dedicated
 /// `__buffa::oneof::<msg>::` tree where they cannot collide with nested
 /// types, nested enums, or view structs. Two sibling oneofs would only
 /// produce the same ident if they share a proto name, which protoc
 /// rejects at parse time.
 fn oneof_enum_ident(oneof_name: &str) -> proc_macro2::Ident {
-    format_ident!("{}", to_pascal_case(oneof_name))
+    crate::idents::make_field_ident(&to_pascal_case(oneof_name))
 }
 
 /// Compute oneof enum identifiers for all non-synthetic oneofs in a message.
