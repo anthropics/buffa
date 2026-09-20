@@ -655,7 +655,10 @@ pub fn generate_message_impl(
             let bridge =
                 crate::reflect::reflectable_impl(&quote! { #name_ident }, &quote! { __buffa });
             let element = crate::reflect::reflect_element_impl_bridge(&quote! { #name_ident });
-            crate::feature_gates::cfg_block(quote! { #bridge #element }, gate)
+            // Two sibling impls (Reflectable, ReflectElement) — like the
+            // vtable branch above, `cfg_block` only gates the first item and
+            // leaves the rest ungated, so use `cfg_const_block` instead.
+            crate::feature_gates::cfg_const_block(quote! { #bridge #element }, gate)
         }
     } else {
         quote! {}
