@@ -25,7 +25,8 @@ use crate::{
 use buffa::bytes::Buf;
 use buffa::editions::EnumType;
 use buffa::encoding::{
-    decode_unknown_field, decode_varint, encode_varint, skip_field_depth, Tag, WireType,
+    check_wire_type, decode_unknown_field, decode_varint, encode_varint, skip_field_depth, Tag,
+    WireType,
 };
 use buffa::types::{
     decode_bool, decode_double, decode_fixed32, decode_fixed64, decode_float, decode_int32,
@@ -705,8 +706,16 @@ impl DynamicMessage {
         while entry.has_remaining() {
             let entry_tag = Tag::decode(&mut entry)?;
             match entry_tag.field_number() {
-                1 => key = Some(decode_map_key(key_ty, entry_tag, &mut entry)?),
+                1 => {
+                    // Key and value tags must carry the wire type of the
+                    // declared type, as in the owned map codec. That includes a
+                    // message value, which unlike an ordinary message field
+                    // cannot use the legacy group encoding.
+                    check_wire_type(entry_tag, map_key_wire_type(key_ty))?;
+                    key = Some(decode_map_key(key_ty, entry_tag, &mut entry)?);
+                }
                 2 => {
+                    check_wire_type(entry_tag, singular_wire_type(value_kind, false))?;
                     // No `descend()` for the entry itself. A message-typed
                     // value descends once inside `decode_element_no_alias`,
                     // and that single level is what the owned decoder
@@ -786,8 +795,12 @@ impl DynamicMessage {
         while entry_buf.has_remaining() {
             let entry_tag = Tag::decode(&mut entry_buf)?;
             match entry_tag.field_number() {
-                1 => key = Some(decode_map_key(key_ty, entry_tag, &mut entry_buf)?),
+                1 => {
+                    check_wire_type(entry_tag, map_key_wire_type(key_ty))?;
+                    key = Some(decode_map_key(key_ty, entry_tag, &mut entry_buf)?);
+                }
                 2 => {
+                    check_wire_type(entry_tag, WireType::Varint)?;
                     let raw = decode_int32(&mut entry_buf)?;
                     if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
                         value = Some(Value::EnumNumber(raw));
