@@ -281,3 +281,37 @@ fn test_lean_lazy_views_need_no_marker_for_message_fields() {
         );
     }
 }
+
+#[test]
+fn test_lean_marker_follows_the_per_message_preservation_scope() {
+    // With the global flag off, a `preserve_unknown_fields_in` rule turns
+    // preservation back on for one message. That message's view carries
+    // `UnknownFieldsView<'a>`, which anchors 'a, so it needs no marker; a
+    // self-referencing sibling outside the rule still does.
+    let self_referencing = |name: &str| DescriptorProto {
+        name: Some(name.to_string()),
+        field: vec![message_field("next", 1, name)],
+        ..Default::default()
+    };
+    let mut file = proto3_file("lean.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type = vec![self_referencing("Keep"), self_referencing("Drop")];
+    let config = CodeGenConfig {
+        generate_views: true,
+        preserve_unknown_fields: false,
+        preserve_unknown_fields_in: vec![(".pkg.Keep".to_string(), true)],
+        ..Default::default()
+    };
+    let files = generate(&[file], &["lean.proto".to_string()], &config).expect("should generate");
+    let content = joined(&files);
+    let keep = struct_body(&content, "pub struct KeepView<'a>");
+    assert!(
+        keep.contains("__buffa_unknown_fields") && !keep.contains("__buffa_phantom"),
+        "a preserving message anchors 'a through its unknown fields, not the marker"
+    );
+    let drop = struct_body(&content, "pub struct DropView<'a>");
+    assert!(
+        drop.contains("__buffa_phantom") && !drop.contains("__buffa_unknown_fields"),
+        "a non-preserving self-reference still needs the marker"
+    );
+}
