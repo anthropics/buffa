@@ -662,6 +662,77 @@ fn dynamic_message_empty_containers_have_returns_false() {
 }
 
 #[test]
+fn for_each_set_visits_exactly_the_fields_has_reports() {
+    let p = pool();
+    let scalars_idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), scalars_idx);
+
+    // One of each presence outcome, so neither side can be right by accident:
+    //   implicit + default     -> absent
+    //   implicit + non-default -> present
+    //   explicit + default     -> present
+    msg.set(md.field(3).unwrap(), Value::I32(0));
+    msg.set(md.field(4).unwrap(), Value::I64(7));
+    msg.set(md.field(13).unwrap(), Value::Bool(false));
+    msg.set(md.field(14).unwrap(), Value::String(String::new()));
+    msg.set(md.field(16).unwrap(), Value::I32(0));
+
+    let mut visited = Vec::new();
+    msg.for_each_set(&mut |fd, _| visited.push(fd.number()));
+    visited.sort_unstable();
+
+    let mut reported: Vec<u32> = md
+        .fields()
+        .iter()
+        .filter(|fd| msg.has(fd))
+        .map(|fd| fd.number())
+        .collect();
+    reported.sort_unstable();
+
+    assert_eq!(visited, reported);
+    // Pin the set itself too, so the parity assertion cannot pass by both
+    // sides being empty. Field 16 is the discriminating case: `optional
+    // int32` holding 0 is present, while implicit field 3 holding 0 is not.
+    assert_eq!(visited, vec![4, 16]);
+}
+
+#[test]
+fn for_each_set_agrees_with_has_on_containers() {
+    let p = pool();
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let md = p.message_by_name("reflect.test.Containers").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), containers_idx);
+
+    let mut tags = MapValue::new();
+    tags.insert(MapKey::String("k".into()), Value::I32(1));
+
+    msg.set(md.field(1).unwrap(), Value::List(Vec::new()));
+    msg.set(
+        md.field(2).unwrap(),
+        Value::List(vec![Value::String("s".into())]),
+    );
+    msg.set(md.field(3).unwrap(), Value::Map(tags));
+    msg.set(md.field(4).unwrap(), Value::Map(MapValue::new()));
+
+    let mut visited = Vec::new();
+    msg.for_each_set(&mut |fd, _| visited.push(fd.number()));
+    visited.sort_unstable();
+
+    let mut reported: Vec<u32> = md
+        .fields()
+        .iter()
+        .filter(|fd| msg.has(fd))
+        .map(|fd| fd.number())
+        .collect();
+    reported.sort_unstable();
+
+    assert_eq!(visited, reported);
+    // The empty list (1) and empty map (4) are skipped; the populated ones stay.
+    assert_eq!(visited, vec![2, 3]);
+}
+
+#[test]
 fn which_oneof_resolves_set_member() {
     let p = pool();
     let oneof_idx = p.message_index("reflect.test.OneOf").unwrap();
