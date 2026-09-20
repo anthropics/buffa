@@ -2074,9 +2074,8 @@ fn map_key_shape(key: &MapKey) -> &'static str {
 /// encode. Explicit-presence and `LegacyRequired` fields are present whenever
 /// they appear in the field map.
 ///
-/// Taking the value rather than looking it up lets a caller that already holds
-/// one skip a second resolution; `has` keeps the lookup, `for_each_set` does
-/// not need it.
+/// `value` must be the one stored under `field.number()`. `has` looks it up;
+/// `for_each_set` already holds it.
 fn value_is_present(value: &Value, field: &FieldDescriptor) -> bool {
     match value {
         Value::List(l) => !l.is_empty(),
