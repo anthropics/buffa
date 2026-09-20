@@ -73,9 +73,9 @@ fn clamp_size_hint(hint: Option<usize>) -> usize {
 // values) we need to apply the same per-element encoding, but serde's `with =`
 // attribute doesn't compose. This trait provides the dispatch point.
 //
-// proto_seq and proto_map are the ONLY two container modules needed — they
-// are generic over T: ProtoElemJson. Codegen emits ProtoElemJson impls for
-// each generated message and enum type.
+// proto_seq, proto_map, proto_str_key_map and bytes_key_map are the container
+// modules — they are generic over T: ProtoElemJson. Codegen emits ProtoElemJson
+// impls for each generated message and enum type.
 //
 // Named `Json` (not `Serde`) because these are JSON-specific encoding rules.
 // A future YAML encoder would have different per-element rules (YAML has native
@@ -85,13 +85,22 @@ fn clamp_size_hint(hint: Option<usize>) -> usize {
 ///
 /// Implemented in this crate for primitives (i64 → quoted, f64 → NaN/Inf
 /// strings, `Vec<u8>` → base64, etc.). Codegen generates impls for message
-/// and enum types. Used by [`proto_seq`] (repeated fields) and [`proto_map`]
-/// (map values) to apply proto-JSON encoding to each element.
+/// and enum types. Used by [`proto_seq`] (repeated fields), [`proto_map`],
+/// [`proto_str_key_map`] and [`bytes_key_map`] (map values) to apply proto-JSON
+/// encoding to each element.
 pub trait ProtoElemJson: Sized {
     /// Serialize this value with proto3 JSON semantics.
     fn serialize_proto_json<S: serde::Serializer>(v: &Self, s: S) -> Result<S::Ok, S::Error>;
     /// Deserialize a value with proto3 JSON semantics.
     fn deserialize_proto_json<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error>;
+    /// Deserialize a JSON `null` when it is a valid representation of this
+    /// protobuf type inside a container. Most protobuf element types reject
+    /// `null`; `google.protobuf.Value` overrides this for its null variant.
+    fn deserialize_proto_json_null<E: serde::de::Error>() -> Result<Self, E> {
+        Err(E::custom(
+            "null is not a valid repeated-field element or map value",
+        ))
+    }
 }
 
 /// Wraps `&T: ProtoElemJson` as `serde::Serialize`.
@@ -184,10 +193,13 @@ impl<E: crate::Enumeration> serde::Serialize for ClosedEnumSeqJson<'_, E> {
 }
 
 /// Bridge seed: deserializes a single T via `ProtoElemJson::deserialize_proto_json`,
-/// but REJECTS `null`. Per proto3 JSON spec, `null` as an element of a repeated
-/// field or as a map value is invalid (only the container itself may be `null`,
-/// meaning empty). The singular helper modules accept null → default, which is
-/// correct for singular fields but wrong for container elements.
+/// but routes `null` to [`ProtoElemJson::deserialize_proto_json_null`], which
+/// REJECTS it by default. Per proto3 JSON spec, `null` as an element of a
+/// repeated field or as a map value is invalid (only the container itself may be
+/// `null`, meaning empty); `google.protobuf.Value` is the one type that
+/// overrides the hook, because `null` is one of its variants. The singular
+/// helper modules accept null → default, which is correct for singular fields
+/// but wrong for container elements.
 struct ProtoElemSeed<T>(core::marker::PhantomData<T>);
 impl<'de, T: ProtoElemJson> serde::de::DeserializeSeed<'de> for ProtoElemSeed<T> {
     type Value = T;
@@ -201,14 +213,10 @@ impl<'de, T: ProtoElemJson> serde::de::DeserializeSeed<'de> for ProtoElemSeed<T>
                 f.write_str("a non-null value")
             }
             fn visit_none<E: serde::de::Error>(self) -> Result<T, E> {
-                Err(E::custom(
-                    "null is not a valid repeated-field element or map value",
-                ))
+                T::deserialize_proto_json_null()
             }
             fn visit_unit<E: serde::de::Error>(self) -> Result<T, E> {
-                Err(E::custom(
-                    "null is not a valid repeated-field element or map value",
-                ))
+                T::deserialize_proto_json_null()
             }
             fn visit_some<D2: serde::Deserializer<'de>>(self, d: D2) -> Result<T, D2::Error> {
                 T::deserialize_proto_json(d)
@@ -1455,23 +1463,25 @@ where
 /// `utf8_validation = NONE` produced `Vec<u8>` keys under strict mapping.
 ///
 /// Keys are serialized/deserialized as base64 strings (same as bytes values).
-/// Values use their own serde impl — this is generic over `V`.
+/// Values use [`ProtoElemJson`] so container-specific ProtoJSON rules apply and
+/// `null` values are rejected.
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::bytes_key_map")]`.
 pub mod bytes_key_map {
+    use super::{ProtoElemJson, ProtoElemSeed, ProtoJson};
     use crate::map_codec::MapStorage;
     use serde::{Deserializer, Serializer};
 
     pub fn serialize<C, S>(value: &C, s: S) -> Result<S::Ok, S::Error>
     where
         C: MapStorage<Key = alloc::vec::Vec<u8>>,
-        C::Value: serde::Serialize,
+        C::Value: ProtoElemJson,
         S: Serializer,
     {
         use serde::ser::SerializeMap;
         let mut map = s.serialize_map(Some(value.storage_len()))?;
         for (k, v) in value.storage_iter() {
-            map.serialize_entry(&super::Base64Wrapper(k), v)?;
+            map.serialize_entry(&super::Base64Wrapper(k), &ProtoJson(v))?;
         }
         map.end()
     }
@@ -1479,14 +1489,14 @@ pub mod bytes_key_map {
     pub fn deserialize<'de, C, D>(d: D) -> Result<C, D::Error>
     where
         C: MapStorage<Key = alloc::vec::Vec<u8>> + Default,
-        C::Value: serde::Deserialize<'de>,
+        C::Value: ProtoElemJson,
         D: Deserializer<'de>,
     {
         struct Vis<C>(core::marker::PhantomData<C>);
         impl<'de, C> serde::de::Visitor<'de> for Vis<C>
         where
             C: MapStorage<Key = alloc::vec::Vec<u8>> + Default,
-            C::Value: serde::Deserialize<'de>,
+            C::Value: ProtoElemJson,
         {
             type Value = C;
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -1502,7 +1512,8 @@ pub mod bytes_key_map {
                 let mut out = C::default();
                 while let Some(key_str) = map.next_key::<alloc::string::String>()? {
                     let k = super::decode_base64(&key_str).map_err(serde::de::Error::custom)?;
-                    let v: C::Value = map.next_value()?;
+                    let v =
+                        map.next_value_seed(ProtoElemSeed::<C::Value>(core::marker::PhantomData))?;
                     out.storage_insert(k, v);
                 }
                 Ok(out)
