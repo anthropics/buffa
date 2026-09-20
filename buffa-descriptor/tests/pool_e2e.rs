@@ -2718,3 +2718,46 @@ fn message_ordinals_are_dense_so_a_side_table_can_be_indexed_directly() {
         "every slot filled means the ordinals cover 0..len with no gaps"
     );
 }
+
+/// Adding a file only appends: every existing ordinal is unchanged and the
+/// new message takes the next one, so a side table sized earlier has only to
+/// grow.
+#[test]
+fn index_ordinals_survive_adding_a_file() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let mut pool = DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS");
+    let before: Vec<(String, usize)> = pool
+        .messages()
+        .iter()
+        .map(|desc| {
+            let idx = pool.message_index(desc.full_name()).expect("resolves");
+            (desc.full_name().to_string(), idx.index())
+        })
+        .collect();
+
+    pool.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("ordinal-append.proto".into()),
+            package: Some("ordinal.append".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Late".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("a message-only file links");
+
+    for (name, ordinal) in &before {
+        let idx = pool.message_index(name).expect("still resolves");
+        assert_eq!(idx.index(), *ordinal, "message {name}");
+    }
+    let late = pool.message_index("ordinal.append.Late").expect("added");
+    assert_eq!(late.index(), before.len());
+    assert_eq!(pool.messages().len(), before.len() + 1);
+}

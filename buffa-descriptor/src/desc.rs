@@ -56,9 +56,12 @@ impl MessageIndex {
     ///
     /// Dense in `0..pool.messages().len()`, and equal to this descriptor's
     /// position in [`DescriptorPool::messages`](crate::DescriptorPool::messages),
-    /// so it can key a side table sized once from that slice. Meaningless
-    /// against any other pool, the same cross-pool hazard that applies to
-    /// comparing indices.
+    /// so it can key a side table sized from that slice. An ordinal never
+    /// changes: [`add_file_descriptor_set`](crate::DescriptorPool::add_file_descriptor_set)
+    /// only appends, so a table sized earlier must grow but its existing
+    /// slots stay valid. Meaningless against any other pool, including one
+    /// built from the same schema with its files added in a different order:
+    /// the same cross-pool hazard that applies to comparing indices.
     #[must_use]
     pub const fn index(self) -> usize {
         self.0 as usize
@@ -74,7 +77,8 @@ impl EnumIndex {
     ///
     /// Dense in `0..pool.enums().len()`, and equal to this descriptor's
     /// position in [`DescriptorPool::enums`](crate::DescriptorPool::enums).
-    /// Meaningless against any other pool.
+    /// Stable as files are added, like [`MessageIndex::index`], and equally
+    /// meaningless against any other pool.
     #[must_use]
     pub const fn index(self) -> usize {
         self.0 as usize
@@ -675,7 +679,8 @@ impl ExtensionIndex {
     /// Dense in `0..pool.extensions().len()`, and equal to this descriptor's
     /// position in
     /// [`DescriptorPool::extensions`](crate::DescriptorPool::extensions).
-    /// Meaningless against any other pool.
+    /// Stable as files are added, like [`MessageIndex::index`], and equally
+    /// meaningless against any other pool.
     #[must_use]
     pub const fn index(self) -> usize {
         self.0 as usize
