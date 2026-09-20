@@ -1181,7 +1181,9 @@ int_serde_module!(
 ///
 /// Serializes finite values as JSON numbers. Serializes `NaN` as `"NaN"`,
 /// positive infinity as `"Infinity"`, and negative infinity as `"-Infinity"`.
-/// Accepts numbers and those three string literals on deserialization.
+/// Accepts numbers, quoted decimal numbers, and those three string literals on
+/// deserialization. A number or quoted decimal outside the `f32` range is an
+/// error, not infinity, and `"inf"` / `"nan"` in other spellings are rejected.
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::float")]`.
 pub mod float {
@@ -1217,12 +1219,20 @@ pub mod float {
                     "NaN" => Ok(f32::NAN),
                     "Infinity" => Ok(f32::INFINITY),
                     "-Infinity" => Ok(f32::NEG_INFINITY),
-                    _ => v.parse::<f32>().map_err(|_| {
-                        E::invalid_value(
+                    // Rust's float parser saturates to infinity on overflow
+                    // and also spells non-finite values "inf" / "nan" in any
+                    // case. The three ProtoJSON tokens were matched above, so
+                    // any non-finite result is out of range or not a float.
+                    // Parsing straight to f32 rounds once; going via f64
+                    // could round a value just below the f32::MAX boundary
+                    // up to infinity.
+                    _ => match v.parse::<f32>() {
+                        Ok(f) if f.is_finite() => Ok(f),
+                        _ => Err(E::invalid_value(
                             serde::de::Unexpected::Str(v),
-                            &r#"a float, or "NaN", "Infinity", "-Infinity""#,
-                        )
-                    }),
+                            &r#"a float within f32 range, or "NaN", "Infinity", "-Infinity""#,
+                        )),
+                    },
                 }
             }
 
@@ -1260,7 +1270,9 @@ pub mod float {
 ///
 /// Serializes finite values as JSON numbers. Serializes `NaN` as `"NaN"`,
 /// positive infinity as `"Infinity"`, and negative infinity as `"-Infinity"`.
-/// Accepts numbers and those three string literals on deserialization.
+/// Accepts numbers, quoted decimal numbers, and those three string literals on
+/// deserialization. A quoted decimal outside the `f64` range is an error, not
+/// infinity, and `"inf"` / `"nan"` in other spellings are rejected.
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::double")]`.
 pub mod double {
@@ -1296,12 +1308,15 @@ pub mod double {
                     "NaN" => Ok(f64::NAN),
                     "Infinity" => Ok(f64::INFINITY),
                     "-Infinity" => Ok(f64::NEG_INFINITY),
-                    _ => v.parse::<f64>().map_err(|_| {
-                        E::invalid_value(
+                    // As for `float`: a non-finite parse result is an
+                    // overflow or a spelling ProtoJSON does not have.
+                    _ => match v.parse::<f64>() {
+                        Ok(f) if f.is_finite() => Ok(f),
+                        _ => Err(E::invalid_value(
                             serde::de::Unexpected::Str(v),
-                            &r#"a double, or "NaN", "Infinity", "-Infinity""#,
-                        )
-                    }),
+                            &r#"a double within f64 range, or "NaN", "Infinity", "-Infinity""#,
+                        )),
+                    },
                 }
             }
 
