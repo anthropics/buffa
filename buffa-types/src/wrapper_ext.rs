@@ -218,45 +218,6 @@ impl<'de> serde::Deserialize<'de> for BytesValue {
     }
 }
 
-#[cfg(feature = "json")]
-macro_rules! impl_wrapper_proto_elem_json {
-    ($wrapper:ty) => {
-        impl buffa::json_helpers::ProtoElemJson for $wrapper {
-            fn serialize_proto_json<S: serde::Serializer>(
-                value: &Self,
-                s: S,
-            ) -> Result<S::Ok, S::Error> {
-                serde::Serialize::serialize(value, s)
-            }
-
-            fn deserialize_proto_json<'de, D: serde::Deserializer<'de>>(
-                d: D,
-            ) -> Result<Self, D::Error> {
-                <Self as serde::Deserialize>::deserialize(d)
-            }
-        }
-    };
-}
-
-#[cfg(feature = "json")]
-impl_wrapper_proto_elem_json!(BoolValue);
-#[cfg(feature = "json")]
-impl_wrapper_proto_elem_json!(BytesValue);
-#[cfg(feature = "json")]
-impl_wrapper_proto_elem_json!(DoubleValue);
-#[cfg(feature = "json")]
-impl_wrapper_proto_elem_json!(FloatValue);
-#[cfg(feature = "json")]
-impl_wrapper_proto_elem_json!(Int32Value);
-#[cfg(feature = "json")]
-impl_wrapper_proto_elem_json!(Int64Value);
-#[cfg(feature = "json")]
-impl_wrapper_proto_elem_json!(StringValue);
-#[cfg(feature = "json")]
-impl_wrapper_proto_elem_json!(UInt32Value);
-#[cfg(feature = "json")]
-impl_wrapper_proto_elem_json!(UInt64Value);
-
 #[cfg(test)]
 mod tests {
     use super::*;

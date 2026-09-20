@@ -346,8 +346,8 @@ pub mod map_type {
 /// `HashMap` key bound and every JSON dispatch path. The type is crate-local
 /// because vtable reflection emits `impl ReflectMapKey` / `impl ReflectElement`
 /// for it (a foreign type would be an orphan-rule error — exactly as for a
-/// custom `repeated` element). The fields cover all six custom-string-key/value
-/// JSON dispatch modules; exercised by `tests/string_map.rs`.
+/// custom `repeated` element). The seven fields cover every custom-string-key/value
+/// JSON dispatch path; exercised by `src/tests/string_map.rs`.
 #[allow(clippy::derivable_impls, non_camel_case_types)]
 pub mod string_map {
     /// `String`-backed newtype satisfying `buffa::ProtoString`, plus the

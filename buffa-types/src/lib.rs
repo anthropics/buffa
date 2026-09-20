@@ -110,8 +110,10 @@ pub mod google {
 }
 
 // Message WKTs use custom ProtoJSON serde implementations rather than the
-// generated field representation. Implement the container bridge for them so
-// externally mapped WKTs also work as bytes-keyed map values.
+// generated field representation. Implement the container bridge for them:
+// the nine scalar wrappers are the elements/values of repeated and map fields
+// (`proto_seq` / `proto_map`), and every other message WKT can be the value of
+// a bytes-keyed map (`bytes_key_map`).
 #[cfg(feature = "json")]
 macro_rules! impl_wkt_proto_elem_json {
     ($($ty:ty),+ $(,)?) => {
@@ -137,12 +139,21 @@ macro_rules! impl_wkt_proto_elem_json {
 #[cfg(feature = "json")]
 impl_wkt_proto_elem_json!(
     google::protobuf::Any,
+    google::protobuf::BoolValue,
+    google::protobuf::BytesValue,
+    google::protobuf::DoubleValue,
     google::protobuf::Duration,
     google::protobuf::Empty,
     google::protobuf::FieldMask,
+    google::protobuf::FloatValue,
+    google::protobuf::Int32Value,
+    google::protobuf::Int64Value,
     google::protobuf::ListValue,
+    google::protobuf::StringValue,
     google::protobuf::Struct,
     google::protobuf::Timestamp,
+    google::protobuf::UInt32Value,
+    google::protobuf::UInt64Value,
 );
 
 // `Value` is the one message WKT for which JSON `null` is a valid element

@@ -2207,6 +2207,11 @@ fn value_needs_proto_json(ty: Type) -> bool {
 /// Open-enum map values keep `map_enum` for its ignore-unknown-values
 /// filtering behavior (a `JsonParseOptions` feature proto_map doesn't have).
 ///
+/// Values that are `google.protobuf.*Value` wrappers also use `proto_map`
+/// (or `proto_str_key_map` for a custom string key): their JSON is a bare
+/// scalar, so the derived serde path would accept `null` as a value, which
+/// ProtoJSON forbids inside a map.
+///
 /// Key stringification: serde_json's `MapKeySerializer` auto-stringifies
 /// all proto map key types (i32/i64/u32/u64/bool → `"42"`/`"true"`/etc.)
 /// and parses them back, so `map_enum`/`map_closed_enum` delegating to

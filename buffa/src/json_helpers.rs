@@ -73,9 +73,9 @@ fn clamp_size_hint(hint: Option<usize>) -> usize {
 // values) we need to apply the same per-element encoding, but serde's `with =`
 // attribute doesn't compose. This trait provides the dispatch point.
 //
-// proto_seq and proto_map are the ONLY two container modules needed — they
-// are generic over T: ProtoElemJson. Codegen emits ProtoElemJson impls for
-// each generated message and enum type.
+// proto_seq, proto_map, proto_str_key_map and bytes_key_map are the container
+// modules — they are generic over T: ProtoElemJson. Codegen emits ProtoElemJson
+// impls for each generated message and enum type.
 //
 // Named `Json` (not `Serde`) because these are JSON-specific encoding rules.
 // A future YAML encoder would have different per-element rules (YAML has native
@@ -85,8 +85,9 @@ fn clamp_size_hint(hint: Option<usize>) -> usize {
 ///
 /// Implemented in this crate for primitives (i64 → quoted, f64 → NaN/Inf
 /// strings, `Vec<u8>` → base64, etc.). Codegen generates impls for message
-/// and enum types. Used by [`proto_seq`] (repeated fields) and [`proto_map`]
-/// (map values) to apply proto-JSON encoding to each element.
+/// and enum types. Used by [`proto_seq`] (repeated fields), [`proto_map`],
+/// [`proto_str_key_map`] and [`bytes_key_map`] (map values) to apply proto-JSON
+/// encoding to each element.
 pub trait ProtoElemJson: Sized {
     /// Serialize this value with proto3 JSON semantics.
     fn serialize_proto_json<S: serde::Serializer>(v: &Self, s: S) -> Result<S::Ok, S::Error>;
@@ -192,10 +193,13 @@ impl<E: crate::Enumeration> serde::Serialize for ClosedEnumSeqJson<'_, E> {
 }
 
 /// Bridge seed: deserializes a single T via `ProtoElemJson::deserialize_proto_json`,
-/// but REJECTS `null`. Per proto3 JSON spec, `null` as an element of a repeated
-/// field or as a map value is invalid (only the container itself may be `null`,
-/// meaning empty). The singular helper modules accept null → default, which is
-/// correct for singular fields but wrong for container elements.
+/// but routes `null` to [`ProtoElemJson::deserialize_proto_json_null`], which
+/// REJECTS it by default. Per proto3 JSON spec, `null` as an element of a
+/// repeated field or as a map value is invalid (only the container itself may be
+/// `null`, meaning empty); `google.protobuf.Value` is the one type that
+/// overrides the hook, because `null` is one of its variants. The singular
+/// helper modules accept null → default, which is correct for singular fields
+/// but wrong for container elements.
 struct ProtoElemSeed<T>(core::marker::PhantomData<T>);
 impl<'de, T: ProtoElemJson> serde::de::DeserializeSeed<'de> for ProtoElemSeed<T> {
     type Value = T;

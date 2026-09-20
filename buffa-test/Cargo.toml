@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [features]
-arbitrary = ["dep:arbitrary", "buffa/arbitrary"]
+arbitrary = ["dep:arbitrary", "buffa/arbitrary", "buffa-types/arbitrary"]
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }

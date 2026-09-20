@@ -1145,6 +1145,7 @@ pub struct CodeGenConfig {
     /// `::buffa_types::google::protobuf::*` without needing an explicit
     /// entry here. To override with a custom implementation, add an
     /// `extern_path` for `.google.protobuf` pointing to your crate.
+    ///
     /// When JSON generation is enabled, an external message routed through a
     /// ProtoJSON container helper must implement
     /// `buffa::json_helpers::ProtoElemJson` so generated containers can apply
