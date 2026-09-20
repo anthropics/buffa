@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **`parse_timestamp` rejects RFC 3339 components that are not digits** (#447). Integer `from_str` accepts a leading `+` even for the unsigned types, and nothing required a component to be digits before parsing it, so `"+999-01-01T00:00:00Z"`, `"2021-+1-01T00:00:00Z"` and `"2021-01-01T00:00:00++1:00"` parsed successfully and produced silently wrong values — year 999, month 1 and a +1h offset respectively. All eight components were affected; only the fractional-seconds component already carried the check. Both the typed `Timestamp` `Deserialize` in `buffa-types` and `DynamicMessage`'s reflective JSON codec go through this parser, so a payload carrying a signed component that previously deserialized now fails.
+    Some inputs that already failed now fail earlier, at the component rather than at a range check: `"2021-01-01T-1:00:00Z"` reports `bad hour` where it reported `time component out of range`. Every pre-existing message stays reachable, and no valid RFC 3339 input is newly rejected.
+time: 2026-09-16T17:24:37.736929-03:00

@@ -2719,6 +2719,66 @@ fn test_exclude_package_matched_nothing_warning() {
 }
 
 #[test]
+fn test_preserve_unknown_fields_in_inert_rules_warn() {
+    // Rules that name a generated message, a package, or `.` are live; a
+    // typo, a field path, a foreign package, and a message that exists only
+    // in a descriptor that is not being generated are inert and must warn,
+    // because a re-enable rule that silently does nothing loses round-trip
+    // fidelity.
+    let nested = |name: &str| DescriptorProto {
+        name: Some(name.to_string()),
+        ..Default::default()
+    };
+    let with_msgs = |name: &str, package: &str, msgs: Vec<DescriptorProto>| FileDescriptorProto {
+        message_type: msgs,
+        ..make_file_with_package(name, package)
+    };
+    let fds = vec![
+        with_msgs(
+            "example/outer.proto",
+            "example",
+            vec![DescriptorProto {
+                name: Some("Outer".to_string()),
+                nested_type: vec![nested("Inner")],
+                ..Default::default()
+            }],
+        ),
+        with_msgs("dep/dep.proto", "dep", vec![nested("Dep")]),
+    ];
+    let to_generate = vec!["example/outer.proto".to_string()];
+    let live = [".", ".example", ".example.Outer", ".example.Outer.Inner"];
+    let inert = [
+        ".example.Nope",
+        ".example.Outer.Inner.field",
+        ".example.Out",
+        ".other",
+        ".dep.Dep",
+    ];
+    let config = CodeGenConfig {
+        preserve_unknown_fields: false,
+        preserve_unknown_fields_in: live
+            .iter()
+            .chain(&inert)
+            .map(|r| ((*r).to_string(), true))
+            .collect(),
+        ..Default::default()
+    };
+    let (_, warnings) =
+        generate_with_diagnostics(&fds, &to_generate, &config).expect("generation failed");
+    let mut warned: Vec<&str> = warnings
+        .iter()
+        .filter_map(|w| match w {
+            CodeGenWarning::PreserveUnknownFieldsRuleMatchedNothing { rule } => Some(rule.as_str()),
+            _ => None,
+        })
+        .collect();
+    let mut expected = inert.to_vec();
+    warned.sort_unstable();
+    expected.sort_unstable();
+    assert_eq!(warned, expected, "all warnings: {warnings:?}");
+}
+
+#[test]
 fn test_exclude_packages_drops_matching_files() {
     // Files in `buf.validate` should be dropped; the one in `example` kept.
     let fds = vec![

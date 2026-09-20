@@ -25,7 +25,7 @@ use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 
 use super::value::ValueRef;
-use super::DynamicMessage;
+use super::{DynamicMessage, EmptyMessage};
 use crate::{DescriptorPool, FieldDescriptor, MessageDescriptor, OneofDescriptor};
 
 /// Errors returned by checked reflection mutation APIs.
@@ -324,13 +324,16 @@ pub trait ReflectMessageMut: ReflectMessage {
 ///
 /// `Borrowed` is the vtable path — a fat pointer to a generated struct that
 /// directly implements [`ReflectMessage`]. `Owned` is the bridge path — a
-/// boxed [`DynamicMessage`] produced by encode/decode round-trip.
+/// boxed [`DynamicMessage`] produced by encode/decode round-trip. `Empty` is
+/// what [`DynamicMessage`] returns for an unset singular message field: an
+/// [`EmptyMessage`] that borrows the pool and allocates nothing.
 ///
 /// Boxing the `Owned` variant is load-bearing for [`ValueRef`](super::ValueRef)'s
 /// size budget. The dominant variant is `Borrowed(&dyn ReflectMessage)`, a
 /// 16-byte fat pointer; with the 1-byte discriminant aligned to 8 bytes,
 /// `ReflectCow` is 24 bytes. `Owned(Box<DynamicMessage>)` is a thin 8-byte
-/// pointer, so it doesn't increase the footprint. If `DynamicMessage`
+/// pointer, so it doesn't increase the footprint, and neither does
+/// `Empty(EmptyMessage)`, a pool reference plus a `u32` index. If `DynamicMessage`
 /// (~56 bytes: an `Arc`, a `MessageIndex`, a `BTreeMap`, and an
 /// `UnknownFields`) were inlined instead of boxed, `ReflectCow` would jump
 /// to ~64 bytes — and since `ValueRef::Message(ReflectCow)` sets the floor
@@ -346,6 +349,9 @@ pub enum ReflectCow<'a> {
     Borrowed(&'a dyn ReflectMessage),
     /// Owned dynamic snapshot — the bridge path.
     Owned(Box<DynamicMessage>),
+    /// Default instance of a message type — an unset singular message field
+    /// of a [`DynamicMessage`].
+    Empty(EmptyMessage<'a>),
 }
 
 impl core::fmt::Debug for ReflectCow<'_> {
@@ -353,6 +359,7 @@ impl core::fmt::Debug for ReflectCow<'_> {
         match self {
             Self::Borrowed(_) => write!(f, "ReflectCow::Borrowed(..)"),
             Self::Owned(d) => f.debug_tuple("ReflectCow::Owned").field(d).finish(),
+            Self::Empty(e) => f.debug_tuple("ReflectCow::Empty").field(e).finish(),
         }
     }
 }
@@ -364,6 +371,7 @@ impl<'a> ReflectCow<'a> {
         match self {
             Self::Borrowed(m) => m.to_dynamic(),
             Self::Owned(d) => (**d).clone(),
+            Self::Empty(e) => e.to_dynamic(),
         }
     }
 }
@@ -375,6 +383,7 @@ impl<'a> core::ops::Deref for ReflectCow<'a> {
         match self {
             Self::Borrowed(m) => *m,
             Self::Owned(d) => &**d,
+            Self::Empty(e) => e,
         }
     }
 }

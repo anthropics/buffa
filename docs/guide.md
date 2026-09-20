@@ -202,6 +202,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.generate_json(bool)` | `false` | Generate serde Serialize/Deserialize for proto3 JSON |
 | `.generate_text(bool)` | `false` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
 | `.preserve_unknown_fields(bool)` | `true` | Preserve unknown fields for round-trip fidelity |
+| `.preserve_unknown_fields_in(&[...])` | — | Re-enable unknown-field preservation for matching messages and the messages nested in them (proto-path prefixes). Pair with `.preserve_unknown_fields(false)` to keep the memory savings globally while selected types still round-trip; see [Path-scoped re-enable](#path-scoped-re-enable) |
 | `.override_feature_in(path, feature)` | — | Apply a path-scoped editions feature override to the compiled descriptors — for protos you cannot modify; see [Enums](#enumvaluet--type-safe-open-enums) for the `enum_type` override's semantics |
 | `.open_enums_in(&[...])` | — | Shorthand for `override_feature_in(path, FeatureOverride::EnumType(EnumTypeOverride::Open))` per path: treat matching closed enums (or closed enum fields) as open in generated Rust (`EnumValue<E>`) |
 | `.generate_with_setters(bool)` | `true` | Emit `with_<name>()` builder-style setters for explicit-presence fields |
@@ -599,6 +600,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `json=true` | Generate serde Serialize/Deserialize for proto3 JSON |
 | `text=true` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
 | `unknown_fields=false` | Disable unknown field preservation |
+| `unknown_fields_in=<path>` | Re-enable unknown-field preservation for matching messages and the messages nested in them. Repeatable; same proto-path prefix matching as `open_enums_in`; see [Path-scoped re-enable](#path-scoped-re-enable) |
 | `arbitrary=true` | Emit `#[derive(arbitrary::Arbitrary)]` for fuzzing |
 | `gate_impls=true` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface (default: emitted unconditionally) |
 | `json_feature=<name>` | Rename the crate feature a gated impl kind is conditioned on (also `views_feature=`, `text_feature=`, `reflect_feature=`); inert without `gate_impls=true` |
@@ -2221,6 +2223,39 @@ Leave preservation enabled unless you are memory-constrained (embedded / `no_std
 targets) or maintain large in-memory collections of small messages where struct
 size dominates cache footprint. "I don't need round-trip fidelity" alone is not a
 strong reason to disable it.
+
+### Path-scoped re-enable
+
+When the global flag is off, `.preserve_unknown_fields_in` (plugin:
+`unknown_fields_in=<path>`, repeatable) turns preservation back on for the
+matching messages, at the cost of that message's `__buffa_unknown_fields`
+field. Paths use the same proto-segment prefix rules as `unbox_oneof_in`, and
+`"."` matches everything.
+
+```rust,ignore
+buffa_build::Config::new()
+    .preserve_unknown_fields(false)
+    .preserve_unknown_fields_in(&[".wa.CallLogRecord", ".wa.SyncdMutation"])
+    // ...
+```
+
+- A rule covers the message it names **and every message nested inside it**:
+  `.wa.CallLogRecord` also covers `.wa.CallLogRecord.Participant`. A rule
+  naming a nested message does not cover its enclosing message.
+- Rules are enable-only and independent of the order of the
+  `.preserve_unknown_fields(...)` call. The builder cannot exclude a nested
+  message from a rule that names its parent; `CodeGenConfig` accepts disabling
+  entries, and the last matching entry wins.
+- Preservation is per message *type*, not per value graph. A preserved
+  message's sub-messages keep their own unknown fields only if their types are
+  covered too, so list every type on the re-encode path.
+- A message that does not preserve unknown fields has no
+  `__buffa_unknown_fields` and also loses what is built on it: the
+  `ExtensionSet` impl (`extension()` / `set_extension()` / `has_extension()`),
+  `ReflectMessage::unknown_fields`, extension round-tripping through textproto,
+  and `[ext]` keys in JSON.
+- A rule that matches no generated message (a typo, a field path, a package
+  mapped through `extern_path`) produces a build warning.
 
 ## Custom type implementations
 

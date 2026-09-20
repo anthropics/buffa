@@ -45,7 +45,7 @@ pub(crate) mod reflect_owned;
 pub(crate) mod reflect_view;
 pub(crate) mod view;
 
-use crate::generated::descriptor::FileDescriptorProto;
+use crate::generated::descriptor::{DescriptorProto, FileDescriptorProto};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -1099,7 +1099,34 @@ pub struct CodeGenConfig {
     /// views disabled the flag is ignored with a warning.
     pub lazy_views: bool,
     /// Whether to preserve unknown fields (default: true).
+    ///
+    /// Path-scoped overrides go in
+    /// [`preserve_unknown_fields_in`](Self::preserve_unknown_fields_in);
+    /// the last matching rule wins over this global default.
+    ///
+    /// A message with preservation off has no `__buffa_unknown_fields` field,
+    /// and with it loses everything built on that field: its `ExtensionSet`
+    /// impl (typed extension access), `ReflectMessage::unknown_fields`,
+    /// extension round-tripping through textproto, and `[ext]` keys in JSON.
     pub preserve_unknown_fields: bool,
+    /// Path-scoped overrides for
+    /// [`preserve_unknown_fields`](Self::preserve_unknown_fields). Each entry is
+    /// `(proto_path_prefix, enabled)`, with a leading dot (`".pkg.Msg"`).
+    ///
+    /// Matching uses the same proto-segment-aware prefix rules as
+    /// `bytes_fields` and `unboxed_oneof_fields`: a rule covers the message it
+    /// names *and every message nested inside it*, and `"."` covers everything.
+    /// A rule naming a nested message does not cover its enclosing message. The
+    /// **last** matching rule wins, so a later, more specific entry can carve a
+    /// nested message back out of an earlier, broader one. Granularity is
+    /// per-message: the flag gates whether the struct carries
+    /// `__buffa_unknown_fields`. Preservation is a property of each message
+    /// type, not of a value graph, so a preserved message's sub-messages keep
+    /// their own unknown fields only if their types are covered too.
+    ///
+    /// A rule that matches no generated message produces a
+    /// [`CodeGenWarning::PreserveUnknownFieldsRuleMatchedNothing`].
+    pub preserve_unknown_fields_in: Vec<(String, bool)>,
     /// Whether to derive `serde::Serialize` / `serde::Deserialize` on
     /// generated message structs and enum types, and emit `#[serde(with = "...")]`
     /// attributes for proto3 JSON's special scalar encodings (int64 as quoted
@@ -1145,6 +1172,14 @@ pub struct CodeGenConfig {
     /// `::buffa_types::google::protobuf::*` without needing an explicit
     /// entry here. To override with a custom implementation, add an
     /// `extern_path` for `.google.protobuf` pointing to your crate.
+    ///
+    /// When JSON generation is enabled, an external message routed through a
+    /// ProtoJSON container helper must implement
+    /// `buffa::json_helpers::ProtoElemJson` so generated containers can apply
+    /// ProtoJSON encoding and reject null elements/values. This includes
+    /// external wrapper types in repeated/map fields and external message
+    /// values in bytes-keyed maps; ordinary message containers use serde
+    /// directly.
     pub extern_paths: Vec<(String, String)>,
     /// Ordered (proto-path-prefix, [`BytesRepr`]) rules selecting the Rust type
     /// for `bytes` fields. Later rules win, so a broad rule (e.g. `"."` →
@@ -1726,6 +1761,7 @@ impl Default for CodeGenConfig {
             generate_views: true,
             lazy_views: false,
             preserve_unknown_fields: true,
+            preserve_unknown_fields_in: Vec::new(),
             generate_json: false,
             generate_arbitrary: false,
             extern_paths: Vec::new(),
@@ -2080,6 +2116,17 @@ pub enum CodeGenWarning {
         /// The override value (e.g. `"OPEN"`).
         value: &'static str,
     },
+    /// A [`preserve_unknown_fields_in`](CodeGenConfig::preserve_unknown_fields_in)
+    /// rule matched no message being generated, so it changed nothing. Usually
+    /// a typo, a field path instead of a message path, or a rule for a package
+    /// mapped through `extern_path` — the affected messages silently keep the
+    /// global [`preserve_unknown_fields`](CodeGenConfig::preserve_unknown_fields)
+    /// setting, which for a re-enable rule means losing round-trip fidelity.
+    #[non_exhaustive]
+    PreserveUnknownFieldsRuleMatchedNothing {
+        /// The rule's path as configured.
+        rule: String,
+    },
 }
 
 impl core::fmt::Display for CodeGenWarning {
@@ -2193,8 +2240,50 @@ impl core::fmt::Display for CodeGenWarning {
                      check the path against the fully-qualified proto names"
                 )
             }
+            Self::PreserveUnknownFieldsRuleMatchedNothing { rule } => {
+                write!(
+                    f,
+                    "preserve_unknown_fields_in rule '{rule}' matched no generated message; \
+                     those messages keep the global preserve_unknown_fields setting — \
+                     check the path against the fully-qualified proto message names"
+                )
+            }
         }
     }
+}
+
+/// Whether `rule` (a leading-dot proto path prefix) matches at least one
+/// message, nested messages included, declared in `files_to_generate`.
+fn rule_matches_generated_message(
+    rule: &str,
+    file_descriptors: &[FileDescriptorProto],
+    files_to_generate: &[String],
+) -> bool {
+    fn any_message_matches(rule: &str, parent_fqn: &str, messages: &[DescriptorProto]) -> bool {
+        messages.iter().any(|m| {
+            let fqn = format!("{parent_fqn}.{}", m.name.as_deref().unwrap_or(""));
+            context::matches_proto_prefix(rule, &fqn)
+                || any_message_matches(rule, &fqn, &m.nested_type)
+        })
+    }
+
+    rule == "."
+        || file_descriptors
+            .iter()
+            .filter(|fd| {
+                fd.name
+                    .as_deref()
+                    .is_some_and(|n| files_to_generate.iter().any(|g| g == n))
+            })
+            .any(|fd| {
+                let package = fd.package.as_deref().unwrap_or("");
+                let parent_fqn = if package.is_empty() {
+                    String::new()
+                } else {
+                    format!(".{package}")
+                };
+                any_message_matches(rule, &parent_fqn, &fd.message_type)
+            })
 }
 
 /// Generate Rust source files from a set of file descriptors.
@@ -2805,6 +2894,18 @@ pub fn generate_with_diagnostics(
                 rule: rule.clone(),
                 feature: ovr.feature_name(),
                 value: ovr.value_name(),
+            });
+        }
+    }
+
+    // A `preserve_unknown_fields_in` rule that names no generated message
+    // (typo, field path, extern-mapped package) leaves its intended messages
+    // on the global default — for a re-enable rule, silently losing
+    // round-trip fidelity — so warn per rule.
+    for (rule, _) in &config.preserve_unknown_fields_in {
+        if !rule_matches_generated_message(rule, file_descriptors, files_to_generate) {
+            ctx.warn(CodeGenWarning::PreserveUnknownFieldsRuleMatchedNothing {
+                rule: rule.clone(),
             });
         }
     }

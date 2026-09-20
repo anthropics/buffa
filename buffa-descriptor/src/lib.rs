@@ -53,7 +53,7 @@ pub use pool::{DescriptorPool, LinkOptions, PoolError, MAX_SYMBOL_LEN};
 pub use reflect::DynamicMessageSeed;
 #[cfg(feature = "reflect")]
 pub use reflect::{
-    AnyError, BridgeError, DynamicMessage, MapKey, MapKeyRef, MapValue, ReflectCow, ReflectElement,
-    ReflectError, ReflectList, ReflectMap, ReflectMapKey, ReflectMessage, ReflectMessageMut,
-    ReflectMode, Reflectable, Value, ValueRef,
+    AnyError, BridgeError, DynamicMessage, EmptyMessage, MapKey, MapKeyRef, MapValue, ReflectCow,
+    ReflectElement, ReflectError, ReflectList, ReflectMap, ReflectMapKey, ReflectMessage,
+    ReflectMessageMut, ReflectMode, Reflectable, Value, ValueRef,
 };

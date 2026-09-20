@@ -456,7 +456,14 @@ pub fn generate_message_impl(
             FieldKind::Map(f) => {
                 compute_stmts.push(map_compute_size_stmt(ctx, msg, f, proto_fqn, features)?);
                 write_stmts.push(map_write_to_stmt(ctx, msg, f, proto_fqn, features)?);
-                merge_arms.push(map_merge_arm(ctx, msg, f, proto_fqn, features)?);
+                merge_arms.push(map_merge_arm(
+                    ctx,
+                    msg,
+                    f,
+                    proto_fqn,
+                    features,
+                    preserve_unknown_fields,
+                )?);
                 clear_stmts.push(map_field_clear_stmt(ctx, f, proto_fqn)?);
             }
             FieldKind::Oneof {
@@ -655,7 +662,10 @@ pub fn generate_message_impl(
             let bridge =
                 crate::reflect::reflectable_impl(&quote! { #name_ident }, &quote! { __buffa });
             let element = crate::reflect::reflect_element_impl_bridge(&quote! { #name_ident });
-            crate::feature_gates::cfg_block(quote! { #bridge #element }, gate)
+            // Two sibling impls (Reflectable, ReflectElement) — like the
+            // vtable branch above, `cfg_block` only gates the first item and
+            // leaves the rest ungated, so use `cfg_const_block` instead.
+            crate::feature_gates::cfg_const_block(quote! { #bridge #element }, gate)
         }
     } else {
         quote! {}
@@ -3365,6 +3375,7 @@ fn map_merge_arm(
     field: &FieldDescriptorProto,
     proto_fqn: &str,
     features: &ResolvedFeatures,
+    preserve_unknown_fields: bool,
 ) -> Result<TokenStream, CodeGenError> {
     let m = map_entry_ctx(ctx, msg, field, proto_fqn, features)?;
     let MapEntryCtx {
@@ -3382,7 +3393,7 @@ fn map_merge_arm(
     // parent message's `UnknownFields`; every other value type stays on the
     // simpler `merge_entry` path so the generated code is unchanged for the
     // common case.
-    let merge_call = if m.val_is_closed_enum && ctx.config.preserve_unknown_fields {
+    let merge_call = if m.val_is_closed_enum && preserve_unknown_fields {
         quote! {
             ::buffa::map_codec::merge_entry_with_unknowns::<#key_codec, #val_codec, _>(
                 &mut self.#ident,

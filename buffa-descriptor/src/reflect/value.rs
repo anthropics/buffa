@@ -68,7 +68,8 @@ pub enum Value {
 /// Returned by [`ReflectMessage::get`]. Scalar variants are inline copies
 /// (`Copy` types); container variants borrow from the source message.
 /// `Message` carries a [`ReflectCow`] so a nested generated message can be
-/// either borrowed (vtable mode) or owned (bridge mode).
+/// either borrowed (vtable mode) or owned (bridge mode), and an unset message
+/// field can read as its empty default without allocating.
 ///
 /// The variant set is closed (same as [`Value`]); exhaustive matching is safe.
 #[derive(Debug)]

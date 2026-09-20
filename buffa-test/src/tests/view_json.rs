@@ -451,7 +451,10 @@ mod wkt {
     use crate::view_json::__buffa::view::WithWktView;
     use crate::view_json::WithWkt;
     use buffa::MessageField;
-    use buffa_types::google::protobuf::{BoolValue, Duration, Int64Value, StringValue, Timestamp};
+    use buffa_types::google::protobuf::{
+        BoolValue, BytesValue, DoubleValue, Duration, FloatValue, Int32Value, Int64Value,
+        StringValue, Timestamp, UInt32Value, UInt64Value,
+    };
 
     #[test]
     fn matches_owned() {
@@ -490,6 +493,48 @@ mod wkt {
                     value: true,
                     ..Default::default()
                 }),
+                priority: MessageField::some(Int32Value {
+                    value: 7,
+                    ..Default::default()
+                }),
+                total: MessageField::some(UInt32Value {
+                    value: 9,
+                    ..Default::default()
+                }),
+                priorities: vec![Int32Value {
+                    value: 7,
+                    ..Default::default()
+                }],
+                totals: [(
+                    "first".to_string(),
+                    UInt32Value {
+                        value: 9,
+                        ..Default::default()
+                    }
+                )]
+                .into_iter()
+                .collect(),
+                large_values: vec![Int64Value {
+                    value: 9007199254740993,
+                    ..Default::default()
+                }],
+                unsigned_values: vec![UInt64Value {
+                    value: u64::MAX,
+                    ..Default::default()
+                }],
+                payloads: vec![BytesValue {
+                    value: vec![1, 2, 3],
+                    ..Default::default()
+                }],
+                float_values: vec![FloatValue {
+                    value: f32::INFINITY,
+                    ..Default::default()
+                }],
+                double_values: vec![DoubleValue {
+                    value: f64::NEG_INFINITY,
+                    ..Default::default()
+                }],
+                priorities_by_id: [(3, Int32Value::from(10))].into_iter().collect(),
                 ..Default::default()
             }
         );
@@ -511,6 +556,43 @@ mod wkt {
             "StringValue unwrap: {json}"
         );
         assert!(json.contains(r#""flag":true"#), "BoolValue unwrap: {json}");
+        assert!(
+            json.contains(r#""priority":7"#),
+            "Int32Value unwrap: {json}"
+        );
+        assert!(json.contains(r#""total":9"#), "UInt32Value unwrap: {json}");
+        assert!(
+            json.contains(r#""priorities":[7]"#),
+            "repeated Int32Value unwrap: {json}"
+        );
+        assert!(
+            json.contains(r#""totals":{"first":9}"#),
+            "map UInt32Value unwrap: {json}"
+        );
+        assert!(
+            json.contains(r#""largeValues":["9007199254740993"]"#),
+            "repeated Int64Value must be quoted: {json}"
+        );
+        assert!(
+            json.contains(r#""unsignedValues":["18446744073709551615"]"#),
+            "repeated UInt64Value must be quoted: {json}"
+        );
+        assert!(
+            json.contains(r#""payloads":["AQID"]"#),
+            "repeated BytesValue must be base64: {json}"
+        );
+        assert!(
+            json.contains(r#""floatValues":["Infinity"]"#),
+            "repeated FloatValue must use the ProtoJSON token: {json}"
+        );
+        assert!(
+            json.contains(r#""doubleValues":["-Infinity"]"#),
+            "repeated DoubleValue must use the ProtoJSON token: {json}"
+        );
+        assert!(
+            json.contains(r#""prioritiesById":{"3":10}"#),
+            "non-string wrapper map keys must be stringified: {json}"
+        );
         // Repeated Timestamp uses RFC 3339 elements.
         assert!(
             json.contains(r#""1970-01-01T00:00:01Z""#),
@@ -522,6 +604,72 @@ mod wkt {
     fn unset_omitted() {
         let json = assert_view_json_parity!(WithWktView, WithWkt::default());
         assert_eq!(json, "{}");
+    }
+
+    #[test]
+    fn deserializes_wrapper_json_forms() {
+        let decimal: WithWkt = serde_json::from_str(r#"{"priority": 1.0}"#).unwrap();
+        assert_eq!(decimal.priority.value, 1);
+
+        let exponent: WithWkt = serde_json::from_str(r#"{"priority": "1e2"}"#).unwrap();
+        assert_eq!(exponent.priority.value, 100);
+
+        let repeated: WithWkt = serde_json::from_str(r#"{"priorities": ["7", 1e1]}"#).unwrap();
+        assert_eq!(
+            repeated
+                .priorities
+                .iter()
+                .map(|value| value.value)
+                .collect::<Vec<_>>(),
+            vec![7, 10]
+        );
+
+        let populated: WithWkt =
+            serde_json::from_str(r#"{"priority": 7, "total": "9", "label": "test", "flag": true}"#)
+                .unwrap();
+        assert_eq!(populated.priority.value, 7);
+        assert_eq!(populated.total.value, 9);
+        assert_eq!(populated.label.value, "test");
+        assert!(populated.flag.value);
+
+        let nulls: WithWkt = serde_json::from_str(
+            r#"{"priority": null, "total": null, "label": null, "flag": null}"#,
+        )
+        .unwrap();
+        assert!(nulls.priority.is_unset());
+        assert!(nulls.total.is_unset());
+        assert!(nulls.label.is_unset());
+        assert!(nulls.flag.is_unset());
+
+        let specials: WithWkt = serde_json::from_str(
+            r#"{
+                "largeValues": ["9007199254740993"],
+                "unsignedValues": ["18446744073709551615"],
+                "payloads": ["AQID"],
+                "floatValues": ["Infinity"],
+                "doubleValues": ["-Infinity"],
+                "prioritiesById": {"3": "10"}
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(specials.large_values[0].value, 9007199254740993);
+        assert_eq!(specials.unsigned_values[0].value, u64::MAX);
+        assert_eq!(specials.payloads[0].value, vec![1, 2, 3]);
+        assert_eq!(specials.float_values[0].value, f32::INFINITY);
+        assert_eq!(specials.double_values[0].value, f64::NEG_INFINITY);
+        assert_eq!(specials.priorities_by_id.get(&3).unwrap().value, 10);
+    }
+
+    #[test]
+    fn repeated_and_map_wrapper_values_reject_null() {
+        assert!(
+            serde_json::from_str::<WithWkt>(r#"{"priorities": [null]}"#).is_err(),
+            "null is not valid inside a repeated wrapper field"
+        );
+        assert!(
+            serde_json::from_str::<WithWkt>(r#"{"totals": {"first": null}}"#).is_err(),
+            "null is not valid inside a map wrapper field"
+        );
     }
 }
 

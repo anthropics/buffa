@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Generated proto2 `inf`, `-inf` and `nan` defaults no longer resolve against a generated module named `f32` or `f64`** (#406). They were emitted as `f32::INFINITY` and so on, so a message named `F32` or `F64` with nested types (whose nested-types module is `f32` / `f64`), alongside an extension named `infinity`, `neg_infinity` or `nan`, made the path resolve to the extension constant and the generated code failed to compile. They are now emitted as `::core::primitive::f32::INFINITY` and so on, which is also `no_std`-clean.
+time: 2026-09-01T02:00:00+02:00
