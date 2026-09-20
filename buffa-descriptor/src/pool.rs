@@ -86,23 +86,52 @@ pub const MAX_SYMBOL_LEN: usize = 512;
 struct ReservedRanges(Vec<(i64, i64)>);
 
 impl ReservedRanges {
-    fn new(ranges: &[crate::generated::descriptor::descriptor_proto::ReservedRange]) -> Self {
-        Self::from_half_open(ranges.iter().filter_map(|r| match (r.start, r.end) {
-            // An unset bound cannot be honoured; protoc requires both.
-            (Some(start), Some(end)) => Some((i64::from(start), i64::from(end))),
-            _ => None,
-        }))
+    /// Index a message's reserved ranges, validating each as protoc does: an
+    /// unset bound reads as 0, and the half-open range must satisfy
+    /// `0 < start < end`.
+    fn for_message(
+        message_fqn: &str,
+        ranges: &[crate::generated::descriptor::descriptor_proto::ReservedRange],
+    ) -> Result<Self, PoolError> {
+        let mut checked = Vec::with_capacity(ranges.len());
+        for r in ranges {
+            let (start, end) = (r.start.unwrap_or(0), r.end.unwrap_or(0));
+            if start <= 0 || start >= end {
+                return Err(PoolError::InvalidMessageReservedRange {
+                    message: message_fqn.to_string(),
+                    start: r.start,
+                    end: r.end,
+                });
+            }
+            checked.push((i64::from(start), i64::from(end)));
+        }
+        Ok(Self::from_half_open(checked.into_iter()))
     }
 
+    /// Index an enum's reserved ranges, validating each as protoc does: an
+    /// unset bound reads as 0, the range is inclusive, may be negative, and
+    /// must satisfy `start <= end`.
     fn for_enum(
+        enum_fqn: &str,
         ranges: &[crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange],
-    ) -> Self {
-        Self::from_half_open(ranges.iter().filter_map(|r| match (r.start, r.end) {
-            (Some(start), Some(end)) => Some((i64::from(start), i64::from(end) + 1)),
-            _ => None,
-        }))
+    ) -> Result<Self, PoolError> {
+        let mut checked = Vec::with_capacity(ranges.len());
+        for r in ranges {
+            let (start, end) = (r.start.unwrap_or(0), r.end.unwrap_or(0));
+            if start > end {
+                return Err(PoolError::InvalidEnumReservedRange {
+                    enum_name: enum_fqn.to_string(),
+                    start: r.start,
+                    end: r.end,
+                });
+            }
+            checked.push((i64::from(start), i64::from(end) + 1));
+        }
+        Ok(Self::from_half_open(checked.into_iter()))
     }
 
+    /// Sort and coalesce validated half-open ranges. Callers validate first;
+    /// the `start < end` filter only protects the coalescing invariant.
     fn from_half_open(ranges: impl Iterator<Item = (i64, i64)>) -> Self {
         let mut sorted: Vec<(i64, i64)> = ranges.filter(|&(start, end)| start < end).collect();
         sorted.sort_unstable();
@@ -206,6 +235,8 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// Two oneof declarations in one message have the same name.
+    DuplicateOneofName { message: String, name: String },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
@@ -253,6 +284,19 @@ pub enum PoolError {
         start: Option<i32>,
         end: Option<i32>,
     },
+    /// Two extension ranges declared by the same message overlap. `end` is
+    /// exclusive, as in `DescriptorProto.ExtensionRange`. Carries both ranges
+    /// as declared: `start..end` is the later of the two in declaration
+    /// order, `other_start..other_end` the earlier one it collides with.
+    /// Contrast [`PoolError::ReservedExtensionRange`], an overlap with a
+    /// *reserved* range.
+    OverlappingExtensionRange {
+        message: String,
+        start: u32,
+        end: u32,
+        other_start: u32,
+        other_end: u32,
+    },
     /// An open enum's first declared value has a non-zero number.
     OpenEnumFirstValueNotZero {
         enum_name: String,
@@ -275,6 +319,22 @@ pub enum PoolError {
         enum_name: String,
         name: String,
         number: i32,
+    },
+    /// A message reserved range does not satisfy `0 < start < end`. `end` is
+    /// exclusive, as in `DescriptorProto.ReservedRange`, and an unset bound
+    /// reads as 0, as protoc reads it. The bounds are carried as declared.
+    InvalidMessageReservedRange {
+        message: String,
+        start: Option<i32>,
+        end: Option<i32>,
+    },
+    /// An enum reserved range has `start > end`. Both bounds are inclusive,
+    /// as in `EnumDescriptorProto.EnumReservedRange`, may be negative, and an
+    /// unset bound reads as 0. The bounds are carried as declared.
+    InvalidEnumReservedRange {
+        enum_name: String,
+        start: Option<i32>,
+        end: Option<i32>,
     },
     /// An enum declares no values.
     EmptyEnum { enum_name: String },
@@ -379,6 +439,12 @@ impl core::fmt::Display for PoolError {
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
             ),
+            Self::DuplicateOneofName { message, name } => {
+                write!(
+                    f,
+                    "message {message} declares oneof name {name:?} more than once"
+                )
+            }
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
@@ -441,6 +507,17 @@ impl core::fmt::Display for PoolError {
                 Bound(*start),
                 Bound(*end),
             ),
+            Self::OverlappingExtensionRange {
+                message,
+                start,
+                end,
+                other_start,
+                other_end,
+            } => write!(
+                f,
+                "message {message} extension range {start}..{end} overlaps extension range \
+                 {other_start}..{other_end}"
+            ),
             Self::OpenEnumFirstValueNotZero {
                 enum_name,
                 name,
@@ -473,6 +550,26 @@ impl core::fmt::Display for PoolError {
             } => write!(
                 f,
                 "enum {enum_name} value {name:?} reuses number {number} without allow_alias"
+            ),
+            Self::InvalidMessageReservedRange {
+                message,
+                start,
+                end,
+            } => write!(
+                f,
+                "message {message} reserved range {}..{} is invalid; bounds must satisfy 0 < start < end",
+                Bound(*start),
+                Bound(*end),
+            ),
+            Self::InvalidEnumReservedRange {
+                enum_name,
+                start,
+                end,
+            } => write!(
+                f,
+                "enum {enum_name} reserved range {} to {} is invalid; start must not exceed end",
+                Bound(*start),
+                Bound(*end),
             ),
             Self::EmptyEnum { enum_name } => {
                 write!(f, "enum {enum_name} declares no values")
@@ -1482,16 +1579,23 @@ impl DescriptorPool {
         }
 
         // Build oneof descriptors. Track member field indices as we go.
-        let mut oneofs: Vec<OneofDescriptor> = msg
-            .oneof_decl
-            .iter()
-            .map(|o| OneofDescriptor {
-                name: o.name.clone().unwrap_or_default(),
+        let mut oneof_names: BTreeSet<&str> = BTreeSet::new();
+        let mut oneofs = Vec::with_capacity(msg.oneof_decl.len());
+        for o in &msg.oneof_decl {
+            let oneof_name = o.name.as_deref().unwrap_or("");
+            if !oneof_names.insert(oneof_name) {
+                return Err(PoolError::DuplicateOneofName {
+                    message: fqn,
+                    name: oneof_name.to_string(),
+                });
+            }
+            oneofs.push(OneofDescriptor {
+                name: oneof_name.to_string(),
                 field_indices: Vec::new(),
                 synthetic: false,
                 options: clone_options(&o.options),
-            })
-            .collect();
+            });
+        }
 
         // Build field descriptors.
         let mut fields = Vec::with_capacity(field_count);
@@ -1507,7 +1611,7 @@ impl DescriptorPool {
                 });
             }
         }
-        let reserved_ranges = ReservedRanges::new(&msg.reserved_range);
+        let reserved_ranges = ReservedRanges::for_message(&fqn, &msg.reserved_range)?;
         let mut field_names: BTreeMap<String, usize> = BTreeMap::new();
         // Two fields resolving to one JSON name make JSON lookup ambiguous, but
         // protobuf permits it where JSON is best-effort: protoc emits such a
@@ -1639,6 +1743,40 @@ impl DescriptorPool {
             extension_ranges.push((start, end));
         }
 
+        // Overlap is independent of declaration order, so check a copy sorted
+        // by start: after sorting, any overlap shows up between a range and
+        // the furthest-reaching range before it. The declaration index rides
+        // along so the error names the later-declared range first, as protoc
+        // does. (`extension_ranges` itself stays in declaration order.)
+        let mut by_start: Vec<(u32, u32, usize)> = extension_ranges
+            .iter()
+            .enumerate()
+            .map(|(i, &(start, end))| (start, end, i))
+            .collect();
+        by_start.sort_unstable();
+        let mut reach: Option<(u32, u32, usize)> = None;
+        for &(start, end, i) in &by_start {
+            if let Some((prev_start, prev_end, j)) = reach {
+                if start < prev_end {
+                    let (later, earlier) = if i > j {
+                        ((start, end), (prev_start, prev_end))
+                    } else {
+                        ((prev_start, prev_end), (start, end))
+                    };
+                    return Err(PoolError::OverlappingExtensionRange {
+                        message: fqn,
+                        start: later.0,
+                        end: later.1,
+                        other_start: earlier.0,
+                        other_end: earlier.1,
+                    });
+                }
+            }
+            if reach.map_or(true, |(_, prev_end, _)| end > prev_end) {
+                reach = Some((start, end, i));
+            }
+        }
+
         // Replace the placeholder. Pass 1 registered messages depth-first
         // (this message before its nested messages), and pass 2 walks in the
         // same order, so `next_index` is exactly this message's slot.
@@ -1713,7 +1851,7 @@ impl DescriptorPool {
                 });
             }
         }
-        let reserved_ranges = ReservedRanges::for_enum(&e.reserved_range);
+        let reserved_ranges = ReservedRanges::for_enum(&fqn, &e.reserved_range)?;
         let allow_alias = e
             .options
             .as_option()
@@ -2390,7 +2528,7 @@ mod reserved_ranges_tests {
                 ..Default::default()
             })
             .collect();
-        ReservedRanges::new(&raw)
+        ReservedRanges::for_message("t.M", &raw).expect("valid message reserved ranges")
     }
 
     #[test]
@@ -2407,16 +2545,57 @@ mod reserved_ranges_tests {
     }
 
     #[test]
-    fn unset_or_empty_ranges_are_ignored() {
-        let r = ranges(&[
+    fn message_ranges_follow_protoc_bounds_rules() {
+        use super::PoolError;
+        // protoc reads an unset bound as 0 and requires `0 < start < end`.
+        for (start, end) in [
             (Some(1), None),
             (None, Some(4)),
+            (None, None),
             (Some(7), Some(7)),
             (Some(8), Some(3)),
-        ]);
-        assert!(r.0.is_empty());
-        assert!(!r.contains(1));
-        assert!(!r.overlaps(0, 10));
+            (Some(0), Some(3)),
+            (Some(-2), Some(3)),
+        ] {
+            let raw = [ReservedRange {
+                start,
+                end,
+                ..Default::default()
+            }];
+            assert!(
+                matches!(
+                    ReservedRanges::for_message("t.M", &raw),
+                    Err(PoolError::InvalidMessageReservedRange { start: s, end: e, .. }) if (s, e) == (start, end)
+                ),
+                "{start:?}..{end:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn enum_ranges_read_unset_bounds_as_zero() {
+        use super::PoolError;
+        use crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
+        let range = |start, end| EnumReservedRange {
+            start,
+            end,
+            ..Default::default()
+        };
+        // `reserved 0 to 8`, `reserved -3 to 0`, and `reserved 0` respectively.
+        let r = ReservedRanges::for_enum(
+            "t.E",
+            &[
+                range(None, Some(8)),
+                range(Some(-3), None),
+                range(None, None),
+            ],
+        )
+        .expect("unset enum bounds read as 0 and are valid");
+        assert!(r.contains(-3) && r.contains(0) && r.contains(8) && !r.contains(9));
+        assert!(matches!(
+            ReservedRanges::for_enum("t.E", &[range(Some(5), Some(4))]),
+            Err(PoolError::InvalidEnumReservedRange { .. })
+        ));
     }
 
     #[test]
@@ -2430,7 +2609,7 @@ mod reserved_ranges_tests {
                 ..Default::default()
             })
             .collect();
-        let r = ReservedRanges::for_enum(&raw);
+        let r = ReservedRanges::for_enum("t.E", &raw).expect("valid enum reserved ranges");
         assert_eq!(
             r.0,
             vec![
