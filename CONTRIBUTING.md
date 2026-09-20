@@ -134,6 +134,8 @@ Three sets of generated code are checked into the repo and **must be regenerated
 
 3. **Logging example** (`examples/logging/src/gen/`): Regenerate with `task gen-logging-example` (requires `buf` on PATH).
 
+The `bsr-quickstart` example's `examples/bsr-quickstart/src/gen/` is the exception: it holds output from the *published* BSR plugin, so codegen changes do not regenerate it. Once the `buf.build/anthropics/buffa` plugin for a new release is published, bump the plugin pin in its `buf.gen.yaml` and the `buffa` / `buffa-types` versions in its `Cargo.toml` together, then run `task gen-bsr-quickstart-example`.
+
 CI (`check-generated-code` job) will fail if checked-in generated code is stale.
 
 ## Cross-Target Checks

@@ -399,6 +399,21 @@ tasks:
     cmds:
       - cargo bench -- --baseline {{.CLI_ARGS}}
 
+  bench-encode-sink:
+    desc: >-
+      Compare encode sinks (Vec<u8> vs BytesMut, encode_to_vec vs
+      encode_to_bytes) at both the fat-LTO bench profile and the profile a
+      downstream `cargo build --release` gets. The two runs keep separate
+      criterion result directories (target/criterion, target/criterion-nolto)
+      so a baseline saved by one is never compared against the other. Extra
+      args go to criterion, e.g. task bench-encode-sink -- --save-baseline main
+    dir: benchmarks/buffa
+    cmds:
+      - cargo bench --features encode_sink --bench encode_sink -- {{.CLI_ARGS}}
+      - cmd: cargo bench --features encode_sink --bench encode_sink --profile bench-nolto -- {{.CLI_ARGS}}
+        env:
+          CRITERION_HOME: target/criterion-nolto
+
   bench-iso:
     desc: >-
       Run ONE message's benchmarks in isolation — only that message's decoder is
@@ -667,17 +682,19 @@ tasks:
       consumer-facing remote-plugin workflow, so it deliberately uses
       the published plugin rather than the in-tree `protoc-gen-buffa`.
       The plugin version is pinned in `buf.gen.yaml` for reproducible
-      output — bump the pin and re-run this task when a new BSR plugin
-      release ships, not after every codegen change. `src/gen/mod.rs` is
-      hand-written and not touched by buf.
+      output, and the example's `Cargo.toml` pins `buffa` / `buffa-types`
+      to the same release. When a new BSR plugin release ships, bump all
+      three together and re-run this task — not after every codegen
+      change. `src/gen/mod.rs` is hand-written and not touched by buf.
     dir: examples/bsr-quickstart
     cmds:
       - rm -f src/gen/example.v1.rs
       - buf generate
 
   # The examples are independent cargo projects (own Cargo.toml, own target/),
-  # not workspace members — they declare path deps on the workspace crates to
-  # mirror a downstream consumer's setup.
+  # not workspace members. Most declare path deps on the workspace crates to
+  # mirror a downstream consumer's setup; bsr-quickstart instead depends on the
+  # crates.io release matching its BSR plugin pin.
 
   build-examples:
     desc: Build all example binaries.

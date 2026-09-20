@@ -435,6 +435,13 @@ fn lean_lazy_drops_unknown_fields() {
     // No preservation: the round-trip equals the unknown-free encoding.
     assert_eq!(view.to_owned_message().unwrap(), owned);
     assert_eq!(view.encode_to_vec(), owned.encode_to_vec());
+    // The generated `*_to_bytes` inherent methods delegate to the `*_to_vec`
+    // ones; pin that they agree (these are the only calls to them in-tree).
+    assert_eq!(view.encode_to_bytes(), owned.encode_to_vec());
+    assert_eq!(
+        view.try_encode_to_bytes().unwrap(),
+        view.try_encode_to_vec().unwrap()
+    );
 }
 
 #[test]

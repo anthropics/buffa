@@ -93,6 +93,15 @@ jobs:
       - name: Shared descriptor pool compile
         run: cargo test -p buffa-codegen --test shared_pool_compile -- --ignored
 
+      # `examples/bsr-quickstart` is outside the workspace, and its `src/gen/`
+      # is checked-in output from the published BSR plugin, not in-tree
+      # codegen. Its runtime deps are pinned to the plugin's release (see its
+      # `Cargo.toml`), so this fails if the pins diverge or `src/gen/` is
+      # hand-edited. `--locked` keeps new upstream releases of its transitive
+      # deps from changing the result. (#427)
+      - name: Check bsr-quickstart example
+        run: cargo check --locked --manifest-path examples/bsr-quickstart/Cargo.toml
+
   # ── Markdown lint ────────────────────────────────────────────────────────
   # Same pinned markdownlint-cli version as `task lint-md`. Node is
   # preinstalled on ubuntu-latest so no setup-node step is needed.
