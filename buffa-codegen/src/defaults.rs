@@ -533,6 +533,31 @@ mod tests {
     }
 
     #[test]
+    fn parse_float_special_values_use_absolute_primitive_paths() {
+        let cases: [(&str, &str, &str); 6] = [
+            ("inf", "INFINITY", "f32"),
+            ("-inf", "NEG_INFINITY", "f32"),
+            ("nan", "NAN", "f32"),
+            ("infinity", "INFINITY", "f64"),
+            ("-infinity", "NEG_INFINITY", "f64"),
+            ("nan", "NAN", "f64"),
+        ];
+        for (src, constant, prim) in cases {
+            let ts = if prim == "f32" {
+                parse_float_default::<f32>(src)
+            } else {
+                parse_float_default::<f64>(src)
+            }
+            .unwrap();
+            assert_eq!(
+                ts.to_string(),
+                format!(":: core :: primitive :: {prim} :: {constant}"),
+                "{prim} default {src:?}"
+            );
+        }
+    }
+
+    #[test]
     fn parse_float_infinity_long_form() {
         let ts = parse_float_default::<f32>("infinity").unwrap();
         assert!(ts.to_string().contains("INFINITY"));
