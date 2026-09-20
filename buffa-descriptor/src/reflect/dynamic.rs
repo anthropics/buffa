@@ -169,17 +169,7 @@ impl DynamicMessage {
     /// inside it — `in_extension_range` short-circuits on the empty slice
     /// that proto3 messages and most proto2 messages have.
     fn field_or_extension(&self, number: u32) -> Option<&FieldDescriptor> {
-        let md = self.message_descriptor();
-        if let Some(fd) = md.field(number) {
-            return Some(fd);
-        }
-        if md.in_extension_range(number) {
-            return self
-                .pool
-                .extension_for(self.msg_idx, number)
-                .map(crate::ExtensionDescriptor::field);
-        }
-        None
+        resolve_field_or_extension(&self.pool, self.msg_idx, number)
     }
 
     fn enum_value_is_known(
@@ -1664,6 +1654,88 @@ impl ReflectMessage for DynamicMessage {
     }
 }
 
+/// The default instance of a message type, borrowing its descriptor pool.
+///
+/// [`DynamicMessage`]'s [`get`](ReflectMessage::get) returns one, as
+/// [`ReflectCow::Empty`], for a singular message field that is not set. It
+/// reads as a message with no fields set and no unknown fields. Reading it
+/// allocates nothing and does not touch the pool's reference count, and a
+/// nested `get` returns another `EmptyMessage`. For an owned message to
+/// modify, use [`to_dynamic`](ReflectMessage::to_dynamic).
+#[derive(Clone, Copy)]
+pub struct EmptyMessage<'a> {
+    pool: &'a Arc<DescriptorPool>,
+    msg_idx: MessageIndex,
+}
+
+impl EmptyMessage<'_> {
+    fn is_member(&self, field: &FieldDescriptor) -> bool {
+        resolve_field_or_extension(self.pool, self.msg_idx, field.number())
+            .is_some_and(|f| core::ptr::eq(f, field))
+    }
+}
+
+impl core::fmt::Debug for EmptyMessage<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("EmptyMessage")
+            .field("type", &self.message_descriptor().full_name)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ReflectMessage for EmptyMessage<'_> {
+    fn message_descriptor(&self) -> &MessageDescriptor {
+        self.pool.message(self.msg_idx)
+    }
+
+    fn pool(&self) -> &Arc<DescriptorPool> {
+        self.pool
+    }
+
+    fn get(&self, field: &FieldDescriptor) -> ValueRef<'_> {
+        debug_assert!(
+            self.is_member(field),
+            "FieldDescriptor passed to get() is not a member of {}",
+            self.message_descriptor().full_name,
+        );
+        default_value_ref(field.kind, self.pool)
+    }
+
+    fn has(&self, field: &FieldDescriptor) -> bool {
+        debug_assert!(
+            self.is_member(field),
+            "FieldDescriptor passed to has() is not a member of {}",
+            self.message_descriptor().full_name,
+        );
+        false
+    }
+
+    fn for_each_set(&self, _f: &mut dyn FnMut(&FieldDescriptor, ValueRef<'_>)) {}
+
+    fn to_dynamic(&self) -> DynamicMessage {
+        DynamicMessage::new(Arc::clone(self.pool), self.msg_idx)
+    }
+}
+
+/// [`DynamicMessage::field_or_extension`] for the message type `msg_idx` of
+/// `pool`.
+fn resolve_field_or_extension(
+    pool: &DescriptorPool,
+    msg_idx: MessageIndex,
+    number: u32,
+) -> Option<&FieldDescriptor> {
+    let md = pool.message(msg_idx);
+    if let Some(fd) = md.field(number) {
+        return Some(fd);
+    }
+    if md.in_extension_range(number) {
+        return pool
+            .extension_for(msg_idx, number)
+            .map(crate::ExtensionDescriptor::field);
+    }
+    None
+}
+
 impl ReflectMessageMut for DynamicMessage {
     fn try_set(&mut self, field: &FieldDescriptor, value: Value) -> Result<(), ReflectError> {
         self.validate_field_descriptor(field)?;
@@ -2216,10 +2288,9 @@ pub(super) fn default_scalar_value(s: ScalarType) -> Value {
 
 /// Build a default `ValueRef` for an absent field. Containers borrow
 /// statically-allocated empties; scalars are inline. Message-typed singulars
-/// allocate a fresh empty `DynamicMessage` boxed into a `ReflectCow::Owned`,
-/// since there's no `'static` empty to borrow — this is the one path where an
-/// absent-field read allocates.
-fn default_value_ref(kind: FieldKind, pool: &Arc<DescriptorPool>) -> ValueRef<'static> {
+/// are an [`EmptyMessage`] borrowing `pool`, so no absent-field read
+/// allocates or changes the pool's reference count.
+fn default_value_ref(kind: FieldKind, pool: &Arc<DescriptorPool>) -> ValueRef<'_> {
     // `Vec::new()` and `MapValue::new()` are both `const fn`, so both
     // empties are real `static`s — no leak pattern, no `OnceLock`, no
     // unsafe. The `&dyn ReflectList`/`&dyn ReflectMap` coercions are
@@ -2229,9 +2300,9 @@ fn default_value_ref(kind: FieldKind, pool: &Arc<DescriptorPool>) -> ValueRef<'s
     match kind {
         FieldKind::Singular(SingularKind::Scalar(s)) => default_scalar_ref(s),
         FieldKind::Singular(SingularKind::Enum(_)) => ValueRef::EnumNumber(0),
-        FieldKind::Singular(SingularKind::Message(midx)) => ValueRef::Message(ReflectCow::Owned(
-            alloc::boxed::Box::new(DynamicMessage::new(Arc::clone(pool), midx)),
-        )),
+        FieldKind::Singular(SingularKind::Message(msg_idx)) => {
+            ValueRef::Message(ReflectCow::Empty(EmptyMessage { pool, msg_idx }))
+        }
         FieldKind::List(_) => ValueRef::List(&EMPTY_LIST),
         FieldKind::Map { .. } => ValueRef::Map(&EMPTY_MAP),
     }
@@ -2623,6 +2694,56 @@ mod tests {
         assert!(decode(&one_level, 1).is_ok());
         // Depth 0 still admits a flat message: `{ name: "n" }`.
         assert!(decode(&[0x0A, 0x01, b'n'], 0).is_ok());
+    }
+
+    mod empty_message {
+        use alloc::format;
+        use alloc::sync::Arc;
+
+        use crate::reflect::{EmptyMessage, ReflectCow, ReflectMessage};
+        use crate::DescriptorPool;
+
+        fn pool() -> Arc<DescriptorPool> {
+            let fds = include_bytes!("../../tests/protos/reflect_test.fds");
+            Arc::new(DescriptorPool::decode(fds).unwrap())
+        }
+
+        fn empty<'a>(pool: &'a Arc<DescriptorPool>, full_name: &str) -> EmptyMessage<'a> {
+            let msg_idx = pool.message_index(full_name).unwrap();
+            EmptyMessage { pool, msg_idx }
+        }
+
+        #[test]
+        fn debug_names_the_message_type() {
+            let pool = pool();
+            let cow = ReflectCow::Empty(empty(&pool, "reflect.test.Inner"));
+            assert_eq!(
+                format!("{cow:?}"),
+                r#"ReflectCow::Empty(EmptyMessage { type: "reflect.test.Inner", .. })"#
+            );
+        }
+
+        #[test]
+        fn reports_no_field_or_oneof_member_set() {
+            let pool = pool();
+            let msg = empty(&pool, "reflect.test.OneOf");
+            let md = msg.message_descriptor();
+            assert!(md.fields().iter().all(|fd| !msg.has(fd)));
+            assert!(msg.which_oneof(&md.oneofs()[0]).is_none());
+            let mut visited = 0;
+            msg.for_each_set(&mut |_, _| visited += 1);
+            assert_eq!(visited, 0);
+        }
+
+        #[cfg(debug_assertions)]
+        #[test]
+        #[should_panic(expected = "is not a member of reflect.test.Inner")]
+        fn get_rejects_a_field_of_another_message() {
+            let pool = pool();
+            let msg = empty(&pool, "reflect.test.Inner");
+            let scalars = pool.message_by_name("reflect.test.Scalars").unwrap();
+            let _ = msg.get(scalars.field(3).unwrap());
+        }
     }
 
     mod bridge {
