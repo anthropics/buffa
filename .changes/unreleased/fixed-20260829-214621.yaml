@@ -1,3 +1,4 @@
 kind: Fixed
-body: DynamicMessage now rejects group-encoded values inside message-valued map entries. Map values always use length-delimited encoding; accepting the legacy group wire type made reflective decoding disagree with generated and view decoders for crafted input.
+body: |-
+    **`DynamicMessage` now checks the wire type of every map entry key and value** (#387). An entry field tagged with a wire type other than the one its declared type uses — a `Fixed32` tag on an `int32` value, a length-delimited `int32` key, or a group-encoded message value — was decoded as if it carried the right one, where the generated owned and view decoders reject the entry with `DecodeError::WireTypeMismatch`. Reflective decoding now returns that error too, so the three decoders agree on crafted input. The legacy group encoding is still accepted for ordinary (non-map) message fields.
 time: 2026-08-29T21:46:21+02:00

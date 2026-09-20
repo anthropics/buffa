@@ -256,6 +256,288 @@ fn map_message_values_reject_group_wire_encoding() {
     );
 }
 
+/// `mapwire.M` with one map field per key type (`map<K, int32>`) and one per
+/// value type (`map<int32, V>`), numbered from 1. Returns the pool and, per
+/// field, `(number, key wire type, value wire type)`.
+fn map_wire_type_pool() -> (Arc<DescriptorPool>, Vec<(u32, WireType, WireType)>) {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, EnumDescriptorProto, EnumValueDescriptorProto, FieldDescriptorProto,
+        FileDescriptorProto, FileDescriptorSet, MessageOptions,
+    };
+    use Type::*;
+    use WireType::{Fixed32, Fixed64, LengthDelimited, Varint};
+
+    let keys = [
+        (TYPE_INT32, Varint),
+        (TYPE_SINT32, Varint),
+        (TYPE_SFIXED32, Fixed32),
+        (TYPE_INT64, Varint),
+        (TYPE_SINT64, Varint),
+        (TYPE_SFIXED64, Fixed64),
+        (TYPE_UINT32, Varint),
+        (TYPE_FIXED32, Fixed32),
+        (TYPE_UINT64, Varint),
+        (TYPE_FIXED64, Fixed64),
+        (TYPE_BOOL, Varint),
+        (TYPE_STRING, LengthDelimited),
+    ];
+    let values = [
+        (TYPE_DOUBLE, None, Fixed64),
+        (TYPE_FLOAT, None, Fixed32),
+        (TYPE_INT64, None, Varint),
+        (TYPE_UINT64, None, Varint),
+        (TYPE_INT32, None, Varint),
+        (TYPE_FIXED64, None, Fixed64),
+        (TYPE_FIXED32, None, Fixed32),
+        (TYPE_BOOL, None, Varint),
+        (TYPE_STRING, None, LengthDelimited),
+        (TYPE_BYTES, None, LengthDelimited),
+        (TYPE_UINT32, None, Varint),
+        (TYPE_SFIXED32, None, Fixed32),
+        (TYPE_SFIXED64, None, Fixed64),
+        (TYPE_SINT32, None, Varint),
+        (TYPE_SINT64, None, Varint),
+        (TYPE_ENUM, Some(".mapwire.E"), Varint),
+        (TYPE_MESSAGE, Some(".mapwire.Leaf"), LengthDelimited),
+    ];
+    let specs: Vec<(Type, WireType, Type, Option<&str>, WireType)> = keys
+        .iter()
+        .map(|&(kt, kw)| (kt, kw, TYPE_INT32, None, Varint))
+        .chain(
+            values
+                .iter()
+                .map(|&(vt, name, vw)| (TYPE_INT32, Varint, vt, name, vw)),
+        )
+        .collect();
+
+    let field = |name: &str, number: i32, label: Label, ty: Type, type_name: Option<&str>| {
+        FieldDescriptorProto {
+            name: Some(name.into()),
+            number: Some(number),
+            label: Some(label),
+            r#type: Some(ty),
+            type_name: type_name.map(Into::into),
+            ..Default::default()
+        }
+    };
+    let mut m = DescriptorProto {
+        name: Some("M".into()),
+        ..Default::default()
+    };
+    let mut wires = Vec::new();
+    for (i, (kt, kw, vt, vname, vw)) in specs.into_iter().enumerate() {
+        let number = i as i32 + 1;
+        let entry = format!("E{number}");
+        m.nested_type.push(DescriptorProto {
+            name: Some(entry.clone()),
+            field: vec![
+                field("key", 1, Label::LABEL_OPTIONAL, kt, None),
+                field("value", 2, Label::LABEL_OPTIONAL, vt, vname),
+            ],
+            options: Some(MessageOptions {
+                map_entry: Some(true),
+                ..Default::default()
+            })
+            .into(),
+            ..Default::default()
+        });
+        m.field.push(field(
+            &format!("f{number}"),
+            number,
+            Label::LABEL_REPEATED,
+            TYPE_MESSAGE,
+            Some(&format!(".mapwire.M.{entry}")),
+        ));
+        wires.push((number as u32, kw, vw));
+    }
+    let file = FileDescriptorProto {
+        name: Some("mapwire.proto".into()),
+        package: Some("mapwire".into()),
+        syntax: Some("proto3".into()),
+        message_type: vec![
+            m,
+            DescriptorProto {
+                name: Some("Leaf".into()),
+                ..Default::default()
+            },
+        ],
+        enum_type: vec![EnumDescriptorProto {
+            name: Some("E".into()),
+            value: vec![EnumValueDescriptorProto {
+                name: Some("E_ZERO".into()),
+                number: Some(0),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![file],
+        ..Default::default()
+    })
+    .expect("pool builds from hand-built descriptor");
+    (Arc::new(pool), wires)
+}
+
+/// A map entry field 1 or 2 tagged with any wire type but the one its declared
+/// key or value type uses is a decode error, as in the owned map codec
+/// (`map_codec::merge_entry`), for every key type and every value type. The
+/// tag is checked before the payload is read, so the mismatch is reported
+/// rather than the field being decoded as a value of the wrong shape.
+#[test]
+fn map_entry_key_and_value_wire_types_are_checked() {
+    use WireType::{EndGroup, Fixed32, Fixed64, LengthDelimited, StartGroup, Varint};
+
+    let (p, maps) = map_wire_type_pool();
+    let idx = p.message_index("mapwire.M").unwrap();
+
+    // Well formed for every field type whose wire type is `wt`: a varint that
+    // is valid as bool/enum/int, fixed-width bytes, an empty string/bytes/
+    // message.
+    let entry_field = |number: u32, wt: WireType| {
+        let mut b = Vec::new();
+        Tag::new(number, wt).encode(&mut b);
+        match wt {
+            Varint => b.push(1),
+            Fixed64 => b.extend_from_slice(&[1; 8]),
+            Fixed32 => b.extend_from_slice(&[1; 4]),
+            LengthDelimited => b.push(0),
+            _ => {}
+        }
+        b
+    };
+    let decode = |number: u32, key: Vec<u8>, value: Vec<u8>| {
+        let mut entry = key;
+        entry.extend_from_slice(&value);
+        let mut wire = Vec::new();
+        Tag::new(number, LengthDelimited).encode(&mut wire);
+        encode_varint(entry.len() as u64, &mut wire);
+        wire.extend_from_slice(&entry);
+        DynamicMessage::decode(Arc::clone(&p), idx, &wire)
+    };
+
+    for (number, key_wt, value_wt) in maps {
+        let control = decode(number, entry_field(1, key_wt), entry_field(2, value_wt));
+        assert!(control.is_ok(), "map field {number}: {control:?}");
+
+        for wt in [
+            Varint,
+            Fixed64,
+            LengthDelimited,
+            StartGroup,
+            EndGroup,
+            Fixed32,
+        ] {
+            if wt != key_wt {
+                assert_eq!(
+                    decode(number, entry_field(1, wt), entry_field(2, value_wt)),
+                    Err(DecodeError::WireTypeMismatch {
+                        field_number: 1,
+                        expected: key_wt as u8,
+                        actual: wt as u8,
+                    }),
+                    "map field {number}: key tagged {wt:?}, expected {key_wt:?}"
+                );
+            }
+            if wt != value_wt {
+                assert_eq!(
+                    decode(number, entry_field(1, key_wt), entry_field(2, wt)),
+                    Err(DecodeError::WireTypeMismatch {
+                        field_number: 2,
+                        expected: value_wt as u8,
+                        actual: wt as u8,
+                    }),
+                    "map field {number}: value tagged {wt:?}, expected {value_wt:?}"
+                );
+            }
+        }
+    }
+}
+
+/// `merge_closed_enum_map_field` is a separate decoder from the generic map
+/// path: a closed-enum map value or key with the wrong wire type is an error
+/// there too, not an unknown-enum entry preserved verbatim.
+#[test]
+fn closed_enum_map_entry_wire_types_are_checked() {
+    let p = pool();
+    let idx = p.message_index("reflect.closed.Contexts").unwrap();
+
+    // `labels` is map<string, Status>: key length-delimited, value varint.
+    let decode = |key_wt: WireType, value_wt: WireType| {
+        let mut entry = Vec::new();
+        Tag::new(1, key_wt).encode(&mut entry);
+        match key_wt {
+            WireType::LengthDelimited => entry.extend_from_slice(&[1, b'k']),
+            _ => entry.push(1),
+        }
+        Tag::new(2, value_wt).encode(&mut entry);
+        match value_wt {
+            WireType::Fixed32 => entry.extend_from_slice(&[1; 4]),
+            _ => entry.push(99),
+        }
+        let mut wire = Vec::new();
+        Tag::new(5, WireType::LengthDelimited).encode(&mut wire);
+        encode_varint(entry.len() as u64, &mut wire);
+        wire.extend_from_slice(&entry);
+        DynamicMessage::decode(Arc::clone(&p), idx, &wire)
+    };
+
+    // Control: well-typed, and the unknown value 99 still takes the
+    // preserved-entry path.
+    let ok = decode(WireType::LengthDelimited, WireType::Varint).unwrap();
+    assert_eq!(ok.unknown_fields().iter().count(), 1);
+
+    assert_eq!(
+        decode(WireType::Varint, WireType::Varint),
+        Err(DecodeError::WireTypeMismatch {
+            field_number: 1,
+            expected: WireType::LengthDelimited as u8,
+            actual: WireType::Varint as u8,
+        })
+    );
+    assert_eq!(
+        decode(WireType::LengthDelimited, WireType::Fixed32),
+        Err(DecodeError::WireTypeMismatch {
+            field_number: 2,
+            expected: WireType::Varint as u8,
+            actual: WireType::Fixed32 as u8,
+        })
+    );
+}
+
+/// Negative control for the map wire-type checks: a message-typed field that
+/// is not a map value may still arrive group-encoded, singular or repeated.
+#[test]
+fn group_encoded_message_fields_outside_maps_still_decode() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+
+    let mut wire = Vec::new();
+    // `nested` (5) and `inners` (8) are Inner { string id = 1; }.
+    for number in [5, 8] {
+        Tag::new(number, WireType::StartGroup).encode(&mut wire);
+        Tag::new(1, WireType::LengthDelimited).encode(&mut wire);
+        buffa::types::encode_string("g", &mut wire);
+        Tag::new(number, WireType::EndGroup).encode(&mut wire);
+    }
+
+    let msg = DynamicMessage::decode(Arc::clone(&p), idx, &wire).unwrap();
+    let id_of = |m: &DynamicMessage| m.field_by_number(1).cloned();
+    let Some(Value::Message(nested)) = msg.field_by_number(5) else {
+        panic!("nested group not decoded");
+    };
+    assert_eq!(id_of(nested), Some(Value::String("g".into())));
+    let Some(Value::List(inners)) = msg.field_by_number(8) else {
+        panic!("repeated group not decoded");
+    };
+    let [Value::Message(inner)] = inners.as_slice() else {
+        panic!("expected one repeated element, got {inners:?}");
+    };
+    assert_eq!(id_of(inner), Some(Value::String("g".into())));
+}
+
 #[test]
 fn closed_enum_unknown_singular_oneof_and_extension_values_are_unknown() {
     let p = pool();
