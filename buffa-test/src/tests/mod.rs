@@ -86,6 +86,7 @@ mod proto2;
 mod proto3_semantics;
 mod repeated_type;
 mod rope_encode;
+mod scoped_unknown_fields;
 mod shared_pool;
 mod string_map;
 mod string_type;

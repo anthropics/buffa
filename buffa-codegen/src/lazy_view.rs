@@ -72,6 +72,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
         features,
         nesting,
     } = scope;
+    let preserve_unknown_fields = scope.preserve_unknown_fields();
 
     let oneof_idents = crate::oneof::resolve_oneof_idents(msg);
     let lazy_ident = format_ident!("{}LazyView", rust_name);
@@ -129,7 +130,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
         &oneof_idents,
     )?;
 
-    let unknown_fields_field = if ctx.config.preserve_unknown_fields {
+    let unknown_fields_field = if preserve_unknown_fields {
         quote! { pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>, }
     } else {
         quote! {}
@@ -138,7 +139,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
     let view_encode_methods = crate::impl_message::build_view_encode_methods(
         ctx,
         msg,
-        ctx.config.preserve_unknown_fields,
+        preserve_unknown_fields,
         features,
         &oneof_idents,
         &view_oneof_prefix,
@@ -168,12 +169,12 @@ pub(crate) fn generate_lazy_view_with_nesting(
         quote! {}
     };
 
-    let before_tag_capture = if ctx.config.preserve_unknown_fields {
+    let before_tag_capture = if preserve_unknown_fields {
         quote! { let before_tag = cur; }
     } else {
         quote! {}
     };
-    let unknown_field_handling = if ctx.config.preserve_unknown_fields {
+    let unknown_field_handling = if preserve_unknown_fields {
         quote! {
             let span_len = before_tag.len() - cur.len();
             view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
@@ -183,7 +184,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
     };
 
     let has_phantom_field =
-        !message_view_has_borrowing_field(ctx, msg, features, ctx.config.preserve_unknown_fields);
+        !message_view_has_borrowing_field(ctx, msg, features, preserve_unknown_fields);
     let phantom_field = if has_phantom_field {
         quote! { #[doc(hidden)] pub __buffa_phantom: ::core::marker::PhantomData<&'a ()>, }
     } else {
@@ -899,7 +900,7 @@ fn build_lazy_to_owned_fields(
         }
     }
 
-    if ctx.config.preserve_unknown_fields {
+    if scope.preserve_unknown_fields() {
         out.push(quote! {
             __buffa_unknown_fields: self
                 .__buffa_unknown_fields

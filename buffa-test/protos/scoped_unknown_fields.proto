@@ -1,0 +1,56 @@
+// Compiled with `preserve_unknown_fields(false)` plus
+// `preserve_unknown_fields_in(&[".test.scopedunknown.Keep"])`, so `Keep` (and
+// the messages nested inside it) preserve unknown fields while `Drop`, its
+// nested types, and the name-prefix sibling `Keeper` do not. proto2, so the
+// shapes that read the flag per message are all present: closed enums
+// (unknown values route to unknown fields), maps of closed enums, oneofs,
+// and an extension range (ExtensionSet, textproto and JSON extension keys).
+syntax = "proto2";
+
+package test.scopedunknown;
+
+enum Color {
+  RED = 0;
+  GREEN = 1;
+}
+
+message Keep {
+  optional int32 a = 1;
+  optional Color color = 2;
+  repeated Color colors = 3;
+  map<string, Color> by_name = 4;
+  oneof pick {
+    string text = 5;
+    Color shade = 6;
+  }
+  optional Child child = 7;
+  extensions 100 to 199;
+
+  message Child {
+    optional int32 a = 1;
+    optional Color color = 2;
+  }
+}
+
+message Drop {
+  optional int32 a = 1;
+  optional Color color = 2;
+  repeated Color colors = 3;
+  map<string, Color> by_name = 4;
+  oneof pick {
+    string text = 5;
+    Color shade = 6;
+  }
+  optional Child child = 7;
+  extensions 100 to 199;
+
+  message Child {
+    optional int32 a = 1;
+    optional Color color = 2;
+  }
+}
+
+// Shares the `Keep` name prefix but is a different segment.
+message Keeper {
+  optional int32 a = 1;
+}

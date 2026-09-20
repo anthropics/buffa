@@ -533,6 +533,14 @@ pub mod lazyviewslean {
     buffa::include_proto!("test.lazyviewslean");
 }
 
+/// `preserve_unknown_fields(false)` + `preserve_unknown_fields_in(&[".test.scopedunknown.Keep"])`
+/// with views, lazy views, JSON, text and vtable reflection all on: a mixed
+/// build where `Keep` preserves unknown fields and `Drop` does not.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod scopedunknown {
+    buffa::include_proto!("test.scopedunknown");
+}
+
 // unbox_oneof: `Envelope.body.small` is stored inline (opted out of Box),
 // `large` stays boxed. Compiling this module exercises every boxing site for
 // both shapes; runtime round-trips live in `tests/unbox_oneof.rs`.
