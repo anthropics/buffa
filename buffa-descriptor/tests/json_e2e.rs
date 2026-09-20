@@ -139,6 +139,51 @@ fn json_quoted_integer_bounds_match_generated_messages() {
     }
 }
 
+/// Quoted floats go through the same `json_helpers` modules as generated
+/// messages, so out-of-range strings are rejected rather than saturating to
+/// infinity, and only the three exact tokens spell a non-finite value.
+#[test]
+fn json_quoted_float_bounds_match_generated_messages() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+
+    let parsed = DynamicMessage::from_json(
+        Arc::clone(&p),
+        idx,
+        r#"{"fFloat": "-1.5e38", "fDouble": "1.7976931348623157e308"}"#,
+    )
+    .expect("quoted in-range floats parse");
+    assert_eq!(parsed.field_by_number(2), Some(&Value::F32(-1.5e38)));
+    assert_eq!(parsed.field_by_number(1), Some(&Value::F64(f64::MAX)));
+
+    let inf = DynamicMessage::from_json(
+        Arc::clone(&p),
+        idx,
+        r#"{"fFloat": "Infinity", "fDouble": "-Infinity"}"#,
+    )
+    .expect("the exact infinity tokens parse");
+    assert_eq!(inf.field_by_number(2), Some(&Value::F32(f32::INFINITY)));
+    assert_eq!(inf.field_by_number(1), Some(&Value::F64(f64::NEG_INFINITY)));
+
+    for input in [
+        r#"{"fFloat": "3.5e38"}"#,
+        r#"{"fFloat": "-3.5e38"}"#,
+        r#"{"fFloat": "1e400"}"#,
+        r#"{"fDouble": "1e400"}"#,
+        r#"{"fDouble": "-1e400"}"#,
+        r#"{"fFloat": "inf"}"#,
+        r#"{"fDouble": "-INF"}"#,
+        r#"{"fDouble": "nan"}"#,
+    ] {
+        let err = DynamicMessage::from_json(Arc::clone(&p), idx, input)
+            .expect_err("out-of-range or non-token quoted float must be rejected");
+        assert!(
+            err.to_string().contains("invalid value"),
+            "rejection should name the offending value for {input}, got: {err}"
+        );
+    }
+}
+
 #[test]
 fn json_containers_round_trip() {
     let p = pool();

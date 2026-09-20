@@ -746,20 +746,12 @@ fn scalar_from_str<E: de::Error>(sc: ScalarType, v: &str) -> Result<Value, E> {
         ScalarType::Uint32 | ScalarType::Fixed32 => {
             Value::U32(json_helpers::uint32::deserialize(d)?)
         }
-        // Float/double special values.
-        ScalarType::Float => Value::F32(parse_float_str(v).map_err(E::custom)? as f32),
-        ScalarType::Double => Value::F64(parse_float_str(v).map_err(E::custom)?),
+        // The special tokens, plus the shared range check: a quoted value
+        // outside the type's range is an error, not infinity.
+        ScalarType::Float => Value::F32(json_helpers::float::deserialize(d)?),
+        ScalarType::Double => Value::F64(json_helpers::double::deserialize(d)?),
         ScalarType::Bool => return Err(E::custom("string is not a bool")),
     })
-}
-
-fn parse_float_str(v: &str) -> Result<f64, String> {
-    match v {
-        "NaN" => Ok(f64::NAN),
-        "Infinity" => Ok(f64::INFINITY),
-        "-Infinity" => Ok(f64::NEG_INFINITY),
-        _ => v.parse().map_err(|_| "invalid float".to_owned()),
-    }
 }
 
 fn deserialize_enum<'de, D: Deserializer<'de>>(

@@ -1,3 +1,4 @@
 kind: Fixed
-body: '**ProtoJSON float fields now reject finite quoted values that overflow `f32` instead of silently decoding to infinity.**'
+body: |-
+    **ProtoJSON `float` and `double` fields now reject a quoted number outside the type's range instead of decoding it as infinity** (#403). `"3.5e38"` on a `float` and `"1e400"` on either type used to become `Infinity`; both are now errors, as the same values unquoted already were. `"inf"`, `"nan"` and other spellings that Rust's float parser accepts but ProtoJSON does not are rejected too, so only `"NaN"`, `"Infinity"` and `"-Infinity"` name a non-finite value. The check applies to singular, repeated, map-value, optional and oneof fields, the `FloatValue` and `DoubleValue` wrappers, `DynamicMessage`, and extensions decoded through `ExtensionRegistry`, whose unquoted `float` values are now range-checked as well.
 time: 2026-09-01T01:46:38.536387+02:00
