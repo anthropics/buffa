@@ -1,5 +1,5 @@
 kind: Fixed
 body: |-
-    **Bridge-mode `Reflectable`/`ReflectElement` impls were left ungated under `gate_impls_on_crate_features`** (feature-gated codegen output).
-    `cfg_block` only attaches its `#[cfg(feature = "...")]` attribute to the first of the two sibling impls it wraps, silently leaving `ReflectElement` compiled unconditionally regardless of the `reflect` feature. Switched to `cfg_const_block`, which wraps both impls in a single anonymous `const _: () = { ... };` block covered by one `#[cfg]`, matching the vtable-mode branch immediately above it.
+    **Bridge-mode reflection left its `ReflectElement` impl ungated under `gate_impls_on_crate_features` and `gate_reflect_on_crate_feature`** (#446, closes #445).
+    `cfg_block` attaches its `#[cfg(feature = "reflect")]` only to the first of the two sibling impls it wraps, so `ReflectElement` was emitted unconditionally and named `::buffa_descriptor` even with the `reflect` feature off, which failed the consuming crate with `E0433`; a code generator built with debug assertions instead panicked on `cfg_block`'s single-item assertion. Both impls now sit inside one gated anonymous `const _: () = { ... };` block, as the vtable-mode branch already did.
 time: 2026-09-15T22:14:53.863828-04:00

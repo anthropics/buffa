@@ -10,6 +10,10 @@
 //! body that produces a dangling reference, a cross-feature dependency
 //! between gated kinds.
 //!
+//! `gated_reflection_compiles_with_and_without_reflect_feature` covers the
+//! `reflect` feature separately (an optional `buffa-descriptor` dependency),
+//! in bridge and vtable mode.
+//!
 //! Marked `#[ignore]` so the default `cargo test --workspace` run stays
 //! fast; CI runs it via `cargo test -p buffa-codegen --test
 //! feature_gating_compile -- --ignored`. Locally: `task test` does not
@@ -131,18 +135,7 @@ fn build_gated_crate() -> GatedCrate {
         emit(&fds, group, &cfg, &gen, &mut packages);
     }
 
-    // `gen/mod.rs` — nested `pub mod` blocks `include!`-ing each per-package
-    // stitcher, with the same `#![allow]` block `protoc-gen-buffa-packaging`
-    // would emit.
-    let mut mod_rs = String::from(
-        "#![allow(\n    non_camel_case_types, dead_code, unused_imports, unused_qualifications,\n    \
-         clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args,\n    \
-         clippy::doc_lazy_continuation, clippy::module_inception\n)]\n\n",
-    );
-    mod_rs.push_str(&render_mod_tree(&packages));
-    std::fs::write(gen.join("mod.rs"), mod_rs).expect("write mod.rs");
-
-    std::fs::write(src.join("lib.rs"), "pub mod gen;\n").expect("write lib.rs");
+    write_gen_mod(&src, &gen, &packages);
 
     let manifest = dir.path().join("Cargo.toml");
     let workspace_root = Path::new(WORKSPACE_ROOT)
@@ -183,6 +176,20 @@ serde_json = {{ version = "1", optional = true }}
         _dir: dir,
         manifest,
     }
+}
+
+/// Write `gen/mod.rs` — nested `pub mod` blocks `include!`-ing each
+/// per-package stitcher, with the same `#![allow]` block
+/// `protoc-gen-buffa-packaging` would emit — and a `lib.rs` declaring it.
+fn write_gen_mod(src: &Path, gen: &Path, packages: &std::collections::BTreeSet<String>) {
+    let mut mod_rs = String::from(
+        "#![allow(\n    non_camel_case_types, dead_code, unused_imports, unused_qualifications,\n    \
+         clippy::derivable_impls, clippy::match_single_binding, clippy::uninlined_format_args,\n    \
+         clippy::doc_lazy_continuation, clippy::module_inception\n)]\n\n",
+    );
+    mod_rs.push_str(&render_mod_tree(packages));
+    std::fs::write(gen.join("mod.rs"), mod_rs).expect("write mod.rs");
+    std::fs::write(src.join("lib.rs"), "pub mod gen;\n").expect("write lib.rs");
 }
 
 fn emit(
@@ -296,5 +303,98 @@ fn gated_output_compiles_across_feature_matrix() {
     ];
     for combo in combos {
         check(&krate.manifest, combo);
+    }
+}
+
+/// Generate `proto` under `cfg` into a crate with a `reflect` feature (an
+/// optional `buffa-descriptor` dependency), ready to `cargo check`.
+fn build_reflect_gated_crate(proto: &str, cfg: &CodeGenConfig) -> GatedCrate {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let src = dir.path().join("src");
+    let gen = src.join("gen");
+    std::fs::create_dir_all(&gen).expect("mkdir");
+
+    let path = Path::new(PROTOS_DIR).join(proto);
+    let fds = compile_protos(&[path.to_str().unwrap()], &[PROTOS_DIR]);
+    let mut packages = std::collections::BTreeSet::new();
+    emit(&fds, &[proto], cfg, &gen, &mut packages);
+    write_gen_mod(&src, &gen, &packages);
+
+    let manifest = dir.path().join("Cargo.toml");
+    let workspace_root = Path::new(WORKSPACE_ROOT)
+        .canonicalize()
+        .expect("canonicalize workspace root");
+    std::fs::write(
+        &manifest,
+        format!(
+            r#"[package]
+name = "reflect-gated-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = []
+json = ["buffa/json", "buffa-types/json", "dep:serde", "dep:serde_json"]
+views = []
+text = ["buffa/text"]
+reflect = ["dep:buffa-descriptor", "buffa-descriptor/reflect"]
+
+[dependencies]
+buffa = {{ path = "{root}/buffa" }}
+buffa-types = {{ path = "{root}/buffa-types" }}
+buffa-descriptor = {{ path = "{root}/buffa-descriptor", optional = true }}
+serde = {{ version = "1", features = ["derive"], optional = true }}
+serde_json = {{ version = "1", optional = true }}
+
+[workspace]
+"#,
+            root = workspace_root.display()
+        ),
+    )
+    .expect("write Cargo.toml");
+
+    GatedCrate {
+        _dir: dir,
+        manifest,
+    }
+}
+
+/// With the `reflect` feature off, no generated item may name
+/// `::buffa_descriptor` (an optional dependency, absent from the crate), in
+/// either reflect mode and under both `gate_impls_on_crate_features` and
+/// reflect-only gating (`gate_reflect_on_crate_feature`).
+#[test]
+#[ignore = "slow compile-matrix test; run with --ignored"]
+fn gated_reflection_compiles_with_and_without_reflect_feature() {
+    // `basic.proto` for the top-level shapes, `nested_deep.proto` for
+    // messages nested inside `pub mod` scopes.
+    for proto in ["basic.proto", "nested_deep.proto"] {
+        for (vtable, gate_all) in [(false, true), (false, false), (true, true), (true, false)] {
+            let mut cfg = CodeGenConfig::default();
+            // With only reflect gated, json/text stay off: their ungated
+            // impls would need serde / `buffa/text` unconditionally.
+            cfg.generate_json = gate_all;
+            cfg.generate_views = true;
+            cfg.generate_text = gate_all;
+            cfg.generate_arbitrary = false;
+            cfg.preserve_unknown_fields = true;
+            cfg.generate_reflection = true;
+            cfg.generate_reflection_vtable = vtable;
+            cfg.gate_impls_on_crate_features = gate_all;
+            cfg.gate_reflect_on_crate_feature = !gate_all;
+            let krate = build_reflect_gated_crate(proto, &cfg);
+            let combos: &[&[&str]] = if gate_all {
+                &[&[], &["reflect"], &["json", "views", "text", "reflect"]]
+            } else {
+                &[&[], &["reflect"]]
+            };
+            for combo in combos {
+                check(&krate.manifest, combo);
+            }
+        }
     }
 }
