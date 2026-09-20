@@ -981,7 +981,7 @@ pub mod basic_no_uf {
 // must keep compiling without it, so both families are built here and compiling
 // this module is the coverage for the generated code. Which structs carry the
 // marker is asserted in both directions in
-// `buffa-codegen/src/tests/view_codegen.rs`.
+// `buffa-codegen/src/tests/lifetime_anchor.rs`.
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,

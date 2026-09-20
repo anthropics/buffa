@@ -20,9 +20,9 @@
 // separately; `TreeLazyView` failed on `main` only because the eager `Shape<'a>`
 // enum it borrows through was itself rejected.
 //
-// `tests` for both directions of that decision live in
-// `buffa-codegen/src/tests/view_codegen.rs`; compiling here is the coverage for
-// the generated code actually building.
+// Tests for both directions of that decision live in
+// `buffa-codegen/src/tests/lifetime_anchor.rs`; compiling here is the coverage
+// for the generated code actually building.
 syntax = "proto3";
 
 package test.selfrecursive;
