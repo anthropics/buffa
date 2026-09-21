@@ -88,6 +88,7 @@ mod repeated_type;
 mod rope_encode;
 mod scoped_unknown_fields;
 mod shared_pool;
+mod strict_json;
 mod string_map;
 mod string_type;
 mod textproto;

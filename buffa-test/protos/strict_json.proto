@@ -1,0 +1,51 @@
+// Strict JSON unknown-field rejection (#444).
+//
+// `deny_unknown_json_fields_in` names the three `Strict*` messages, so one
+// generated module carries both behaviours: the strict messages cover the
+// derive path (no oneof, no extension ranges), the hand-written-visitor path
+// (a real oneof — the shape from the issue's repro), and the extension path,
+// while the `Lenient*` siblings are the control for the unchanged default.
+//
+// proto2 because extensions require it, and `max_items` gives a field whose
+// JSON name differs from its proto name.
+
+syntax = "proto2";
+package buffa.test.strictjson;
+
+message StrictPlain {
+  optional int32 value = 1;
+  optional int32 max_items = 2;
+
+  // Covered by the rule naming the parent, not named itself.
+  message Nested {
+    optional int32 n = 1;
+  }
+}
+
+message StrictOneof {
+  oneof node {
+    StrictPlain sensor_node = 1;
+    int32 plain_node = 2;
+  }
+}
+
+message StrictExt {
+  extensions 100 to 200;
+  optional int32 x = 1;
+}
+
+extend StrictExt {
+  optional string label = 100;
+}
+
+message LenientPlain {
+  optional int32 value = 1;
+  optional int32 max_items = 2;
+}
+
+message LenientOneof {
+  oneof node {
+    int32 a = 1;
+    int32 b = 2;
+  }
+}

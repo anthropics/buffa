@@ -1,0 +1,30 @@
+// Strict JSON unknown-field rejection (#444), proto3 half.
+//
+// `strict_json.proto` is proto2 because extensions require it; this file
+// covers the field shapes only proto3 has, and the mix that matters most:
+// a message with a real oneof takes the hand-written-visitor path, so every
+// *other* field in it must still be listed as accepted. A field missing from
+// that list would reject a valid key — the worst failure this option can have.
+
+syntax = "proto3";
+package buffa.test.strictjson3;
+
+import "google/protobuf/struct.proto";
+
+message Sensor {
+  bool ir_enabled = 1;
+}
+
+message Mixed {
+  oneof node {
+    Sensor sensor_node = 1;
+    int32 plain_node = 2;
+  }
+  // Synthetic oneof (proto3 `optional`), so this field reaches the visitor
+  // through the regular-field loop rather than the oneof loop.
+  optional int32 opt_count = 3;
+  map<string, int32> labels_by_name = 4;
+  repeated string tag_list = 5;
+  google.protobuf.Value any_value = 6;
+  int32 max_items = 7;
+}

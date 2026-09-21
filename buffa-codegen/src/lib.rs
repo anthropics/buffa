@@ -1127,6 +1127,45 @@ pub struct CodeGenConfig {
     /// A rule that matches no generated message produces a
     /// [`CodeGenWarning::PreserveUnknownFieldsRuleMatchedNothing`].
     pub preserve_unknown_fields_in: Vec<(String, bool)>,
+    /// Whether generated JSON deserializers reject unknown fields
+    /// (default: `false`, lenient).
+    ///
+    /// Path-scoped overrides go in
+    /// [`deny_unknown_json_fields_in`](Self::deny_unknown_json_fields_in);
+    /// the last matching rule wins over this global default. Has no effect
+    /// unless [`generate_json`](Self::generate_json) is on.
+    ///
+    /// proto3's JSON mapping specifies rejecting unknown fields by default,
+    /// and the reflective decoder already does
+    /// (`DynamicMessage::from_json`, strict unless `ignore_unknown` is set).
+    /// The generated decoders are lenient instead, so a misspelled key
+    /// parses into a default message rather than erroring. This flag brings
+    /// them in line; the default stays lenient so enabling it is opt-in.
+    ///
+    /// Both codegen paths are covered and report through the same serde
+    /// constructor, so the diagnostic does not depend on a message's shape:
+    /// `#[serde(deny_unknown_fields)]` on the derive path, and a strict
+    /// terminal match arm through `serde::de::Error::unknown_field` in the
+    /// hand-written visitor emitted for messages with oneofs or extension
+    /// ranges. `"[pkg.ext]"` keys are matched by the extension arm before
+    /// that terminal arm, so extension handling and
+    /// `JsonParseOptions::strict_extension_keys` are unaffected.
+    pub deny_unknown_json_fields: bool,
+    /// Path-scoped overrides for
+    /// [`deny_unknown_json_fields`](Self::deny_unknown_json_fields). Each
+    /// entry is `(proto_path_prefix, enabled)`, with a leading dot
+    /// (`".pkg.Msg"`).
+    ///
+    /// Matching uses the same proto-segment-aware prefix rules as
+    /// [`preserve_unknown_fields_in`](Self::preserve_unknown_fields_in): a
+    /// rule covers the message it names *and every message nested inside
+    /// it*, `"."` covers everything, and the **last** matching rule wins, so
+    /// a later, more specific entry can carve a nested message back out of an
+    /// earlier, broader one.
+    ///
+    /// A rule that matches no generated message produces a
+    /// [`CodeGenWarning::DenyUnknownJsonFieldsRuleMatchedNothing`].
+    pub deny_unknown_json_fields_in: Vec<(String, bool)>,
     /// Whether to derive `serde::Serialize` / `serde::Deserialize` on
     /// generated message structs and enum types, and emit `#[serde(with = "...")]`
     /// attributes for proto3 JSON's special scalar encodings (int64 as quoted
@@ -1762,6 +1801,8 @@ impl Default for CodeGenConfig {
             lazy_views: false,
             preserve_unknown_fields: true,
             preserve_unknown_fields_in: Vec::new(),
+            deny_unknown_json_fields: false,
+            deny_unknown_json_fields_in: Vec::new(),
             generate_json: false,
             generate_arbitrary: false,
             extern_paths: Vec::new(),
@@ -2035,6 +2076,15 @@ pub enum CodeGenWarning {
     /// no lazy views were generated. Emitted once per generation run.
     #[non_exhaustive]
     LazyViewsRequireViews,
+    /// [`deny_unknown_json_fields`](CodeGenConfig::deny_unknown_json_fields), or a
+    /// [`deny_unknown_json_fields_in`](CodeGenConfig::deny_unknown_json_fields_in)
+    /// rule, was set with [`generate_json`](CodeGenConfig::generate_json)
+    /// disabled. There are no JSON deserializers to make strict, so the
+    /// setting changed nothing — forgetting `generate_json` is the likelier
+    /// mistake than a wrong path, and without this the option is silently
+    /// inert. Emitted once per generation run.
+    #[non_exhaustive]
+    DenyUnknownJsonFieldsRequiresJson,
     /// `idiomatic_field_names` found two or more members of one message whose
     /// snake_case conversions collide, and adjusted the affected Rust names
     /// deterministically (`_f<number>` suffix for fields, verbatim fallback
@@ -2127,6 +2177,18 @@ pub enum CodeGenWarning {
         /// The rule's path as configured.
         rule: String,
     },
+    /// A [`deny_unknown_json_fields_in`](CodeGenConfig::deny_unknown_json_fields_in)
+    /// rule matched no message being generated, so it changed nothing. Usually
+    /// a typo, a field path instead of a message path, or a rule for a package
+    /// mapped through `extern_path` — the affected messages silently keep the
+    /// global [`deny_unknown_json_fields`](CodeGenConfig::deny_unknown_json_fields)
+    /// setting, which for an enabling rule means unknown JSON keys stay silently
+    /// ignored.
+    #[non_exhaustive]
+    DenyUnknownJsonFieldsRuleMatchedNothing {
+        /// The rule's path as configured.
+        rule: String,
+    },
 }
 
 impl core::fmt::Display for CodeGenWarning {
@@ -2166,6 +2228,15 @@ impl core::fmt::Display for CodeGenWarning {
                     f,
                     "`{wrapper_name}`: accessor for field `{field_name}` suppressed \
                      (collides with a reserved wrapper method); use `.view().{field_name}` instead"
+                )
+            }
+            Self::DenyUnknownJsonFieldsRequiresJson => {
+                write!(
+                    f,
+                    "deny_unknown_json_fields requires generate_json (there are no \
+                     generated JSON deserializers to make strict); unknown JSON keys \
+                     are still ignored — enable generate_json (buffa-build: \
+                     `.generate_json(true)`; plugin: `json=true`)"
                 )
             }
             Self::LazyViewsRequireViews => {
@@ -2245,6 +2316,14 @@ impl core::fmt::Display for CodeGenWarning {
                     f,
                     "preserve_unknown_fields_in rule '{rule}' matched no generated message; \
                      those messages keep the global preserve_unknown_fields setting — \
+                     check the path against the fully-qualified proto message names"
+                )
+            }
+            Self::DenyUnknownJsonFieldsRuleMatchedNothing { rule } => {
+                write!(
+                    f,
+                    "deny_unknown_json_fields_in rule '{rule}' matched no generated message; \
+                     those messages keep the global deny_unknown_json_fields setting — \
                      check the path against the fully-qualified proto message names"
                 )
             }
@@ -2905,6 +2984,26 @@ pub fn generate_with_diagnostics(
     for (rule, _) in &config.preserve_unknown_fields_in {
         if !rule_matches_generated_message(rule, file_descriptors, files_to_generate) {
             ctx.warn(CodeGenWarning::PreserveUnknownFieldsRuleMatchedNothing {
+                rule: rule.clone(),
+            });
+        }
+    }
+
+    // JSON strictness needs JSON deserializers to attach to. Warn once per
+    // run: the whole point of the option is that the failure it prevents is
+    // silent, so an inert option must not be silent too.
+    if !config.generate_json
+        && (config.deny_unknown_json_fields || !config.deny_unknown_json_fields_in.is_empty())
+    {
+        ctx.warn(CodeGenWarning::DenyUnknownJsonFieldsRequiresJson);
+    }
+
+    // Same treatment for `deny_unknown_json_fields_in`: an inert enabling rule
+    // leaves its messages silently ignoring unknown JSON keys, which is the
+    // exact failure the rule was added to stop.
+    for (rule, _) in &config.deny_unknown_json_fields_in {
+        if !rule_matches_generated_message(rule, file_descriptors, files_to_generate) {
+            ctx.warn(CodeGenWarning::DenyUnknownJsonFieldsRuleMatchedNothing {
                 rule: rule.clone(),
             });
         }

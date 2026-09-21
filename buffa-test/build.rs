@@ -718,6 +718,37 @@ fn main() {
         .compile()
         .expect("buffa_build failed for custom_options.proto");
 
+    // Strict JSON unknown-field rejection (#444). Path-scoped rather than
+    // global so one generated module carries both behaviours: the three
+    // `Strict*` messages are named, `StrictPlain.Nested` is covered by its
+    // parent's rule, and the `Lenient*` messages are the control for the
+    // unchanged default.
+    buffa_build::Config::new()
+        .files(&["protos/strict_json.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .generate_json(true)
+        .deny_unknown_json_fields_in(&[
+            ".buffa.test.strictjson.StrictPlain",
+            ".buffa.test.strictjson.StrictOneof",
+            ".buffa.test.strictjson.StrictExt",
+        ])
+        .compile()
+        .expect("buffa_build failed for strict_json.proto");
+
+    // Strict JSON unknown-field rejection, proto3 field shapes (#444):
+    // synthetic oneof, map, repeated, `google.protobuf.Value` and a plain
+    // scalar alongside a real oneof, all in one message on the
+    // hand-written-visitor path. Global flag here rather than path-scoped.
+    buffa_build::Config::new()
+        .files(&["protos/strict_json3.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .generate_json(true)
+        .deny_unknown_json_fields(true)
+        .compile()
+        .expect("buffa_build failed for strict_json3.proto");
+
     // Extension JSON registry — message/enum/repeated extensions with a local
     // extendee. `generate_json(true)` so the `#[serde(flatten)]` wrapper and
     // `register_extensions` are emitted alongside the `Extension<_>` consts.
