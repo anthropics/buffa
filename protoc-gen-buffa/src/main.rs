@@ -298,6 +298,11 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             "idiomatic_field_names" => {
                 codegen.idiomatic_field_names = parse_bool("idiomatic_field_names", value)?
             }
+            // Enum aliases are default-on; expose the same opt-out as
+            // buffa-build for protoc / buf plugin users.
+            "idiomatic_enum_aliases" => {
+                codegen.idiomatic_enum_aliases = parse_bool("idiomatic_enum_aliases", value)?
+            }
             // `unbox_oneof=true` opts every non-recursive message/group
             // variant into inline storage. Path-scoped rules use the
             // repeatable `unbox_oneof_in=<path>` spelling, matching the
@@ -654,6 +659,26 @@ mod tests {
     fn idiomatic_field_names_defaults_off() {
         let config = parse_config("").unwrap();
         assert!(!config.codegen.idiomatic_field_names);
+    }
+
+    #[test]
+    fn idiomatic_enum_aliases_can_be_disabled_and_reenabled() {
+        let config = parse_config("").unwrap();
+        assert!(config.codegen.idiomatic_enum_aliases);
+
+        let config = parse_config("idiomatic_enum_aliases=false").unwrap();
+        assert!(!config.codegen.idiomatic_enum_aliases);
+
+        let config =
+            parse_config("idiomatic_enum_aliases=false,idiomatic_enum_aliases=true").unwrap();
+        assert!(config.codegen.idiomatic_enum_aliases);
+    }
+
+    #[test]
+    fn idiomatic_enum_aliases_rejects_non_boolean_values() {
+        let err = parse_err("idiomatic_enum_aliases=1");
+        assert!(err.contains("idiomatic_enum_aliases"));
+        assert!(err.contains("expected true or false"));
     }
 
     #[test]

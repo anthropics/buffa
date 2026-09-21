@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`protoc-gen-buffa` now accepts `idiomatic_enum_aliases=true|false`.** The plugin option mirrors `buffa_build::Config::idiomatic_enum_aliases`, allowing protoc and Buf users to disable the default-on `UpperCamelCase` associated-const aliases while leaving the canonical protobuf enum variants unchanged.
+time: 2026-09-21T15:34:00+02:00

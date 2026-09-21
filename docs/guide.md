@@ -609,6 +609,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `register_types=false` | Disable the per-package `register_types()` helper that populates a `MessageRegistry` (default: emitted) |
 | `allow_message_set=true` | Permit `option message_set_wire_format = true;` instead of rejecting it (default: false) |
 | `strict_utf8=true` | Map `string` fields to `Vec<u8>`/`&[u8]` (no UTF-8 validation) instead of `String`/`&str`. Alias: `strict_utf8_mapping`. |
+| `idiomatic_enum_aliases=false` | Disable the default-on `UpperCamelCase` associated-const aliases for enum values; canonical protobuf enum variants remain unchanged |
 | `type_name_prefix=<prefix>` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`) |
 | `override_feature_in=<path>=<feature>:<value>` | Apply a path-scoped editions feature override (currently `enum_type:OPEN`) to the compiled descriptors. Repeatable |
 | `open_enums_in=<path>` | Shorthand for `override_feature_in=<path>=enum_type:OPEN`. Repeatable |
