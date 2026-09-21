@@ -950,7 +950,7 @@ pub(super) fn consume_ws(mut s: &[u8]) -> &[u8] {
 }
 
 /// Lex a run of one-or-more adjacent string literals. Returns the total byte
-/// length including all quotes and any inter-literal whitespace.
+/// length including all quotes and any inter-literal whitespace/comments.
 ///
 /// Escapes are handled only insofar as needed to find the close quote:
 /// `\"` inside a `"..."` literal does not terminate it.
@@ -979,13 +979,10 @@ fn lex_string_run(s: &[u8]) -> Option<usize> {
                 _ => i += 1,
             }
         }
-        // After a closing quote: skip inter-literal whitespace and check for
-        // another opener. No `#` comments here — protobuf-go doesn't skip
-        // comments between adjacent literals either (see `parseStringValue`).
-        let mut j = i;
-        while s.get(j).is_some_and(|&c| is_textproto_ws(c)) {
-            j += 1;
-        }
+        // After a closing quote: skip inter-literal whitespace/comments and
+        // check for another opener.
+        let rest = consume_ws(&s[i..]);
+        let j = s.len() - rest.len();
         if matches!(s.get(j), Some(b'"') | Some(b'\'')) {
             i = j;
             continue;
@@ -1192,6 +1189,15 @@ mod tests {
         t.read().unwrap();
         let tok = t.read().unwrap();
         assert_eq!(tok.raw, r#""a"'b'"c""#);
+    }
+
+    #[test]
+    fn adjacent_strings_with_comment() {
+        let input = "f: \"a\" # between\n 'b'";
+        let mut t = Tokenizer::new(input);
+        t.read().unwrap();
+        let tok = t.read().unwrap();
+        assert_eq!(tok.raw, "\"a\" # between\n 'b'");
     }
 
     // ── number lexing ───────────────────────────────────────────────────────

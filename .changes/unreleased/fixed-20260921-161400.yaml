@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Textproto accepts comments between adjacent string literals.** Adjacent quoted literals are concatenated, but the lexer only skipped whitespace between them, so an input such as `value: "foo" # comment\n "bar"` failed when the second literal was parsed as a new token. The lexer and unescaper now share the existing whitespace/comment consumer.
+time: 2026-09-21T16:14:00+02:00
