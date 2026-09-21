@@ -1047,6 +1047,155 @@ fn for_each_set_agrees_with_has_on_containers() {
 }
 
 #[test]
+fn set_fields_visits_exactly_the_fields_has_reports() {
+    let p = pool();
+    let scalars_idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), scalars_idx);
+
+    // Same presence outcomes as `for_each_set_visits_exactly_the_fields_has_reports`:
+    //   implicit + default     -> absent
+    //   implicit + non-default -> present
+    //   explicit + default     -> present
+    msg.set(md.field(3).unwrap(), Value::I32(0));
+    msg.set(md.field(4).unwrap(), Value::I64(7));
+    msg.set(md.field(13).unwrap(), Value::Bool(false));
+    msg.set(md.field(14).unwrap(), Value::String(String::new()));
+    msg.set(md.field(16).unwrap(), Value::I32(0));
+
+    let mut visited: Vec<u32> = msg.set_fields().map(|(fd, _)| fd.number()).collect();
+    visited.sort_unstable();
+
+    let mut reported: Vec<u32> = md
+        .fields()
+        .iter()
+        .filter(|fd| msg.has(fd))
+        .map(|fd| fd.number())
+        .collect();
+    reported.sort_unstable();
+
+    assert_eq!(visited, reported);
+    assert_eq!(visited, vec![4, 16]);
+}
+
+#[test]
+fn set_fields_agrees_with_has_on_containers() {
+    let p = pool();
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let md = p.message_by_name("reflect.test.Containers").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), containers_idx);
+
+    let mut tags = MapValue::new();
+    tags.insert(MapKey::String("k".into()), Value::I32(1));
+
+    // Same shape as `for_each_set_agrees_with_has_on_containers`: an empty
+    // list, a populated list, a populated map, an empty map. `set_fields`
+    // must skip the two empty containers, not just the scalar cases above.
+    msg.set(md.field(1).unwrap(), Value::List(Vec::new()));
+    msg.set(
+        md.field(2).unwrap(),
+        Value::List(vec![Value::String("s".into())]),
+    );
+    msg.set(md.field(3).unwrap(), Value::Map(tags));
+    msg.set(md.field(4).unwrap(), Value::Map(MapValue::new()));
+
+    let mut visited: Vec<u32> = msg.set_fields().map(|(fd, _)| fd.number()).collect();
+    visited.sort_unstable();
+
+    let mut reported: Vec<u32> = md
+        .fields()
+        .iter()
+        .filter(|fd| msg.has(fd))
+        .map(|fd| fd.number())
+        .collect();
+    reported.sort_unstable();
+
+    assert_eq!(visited, reported);
+    assert_eq!(visited, vec![2, 3]);
+}
+
+#[test]
+fn set_fields_on_an_empty_message_yields_nothing() {
+    let p = pool();
+    let scalars_idx = p.message_index("reflect.test.Scalars").unwrap();
+    let msg = DynamicMessage::new(Arc::clone(&p), scalars_idx);
+    assert_eq!(msg.set_fields().count(), 0);
+}
+
+#[test]
+fn set_fields_and_for_each_set_visit_the_same_fields_in_the_same_order() {
+    // `for_each_set` delegates to `set_fields` (dynamic.rs), so this pins
+    // the invariant that delegation is supposed to guarantee: not just that
+    // the two agree on *which* fields are set (the presence-rule tests
+    // above cover that per method), but that they agree on *order* too —
+    // ordered equality, no `sort_unstable`.
+    let p = pool();
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let md = p.message_by_name("reflect.test.Containers").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), containers_idx);
+
+    let mut tags = MapValue::new();
+    tags.insert(MapKey::String("k".into()), Value::I32(1));
+
+    msg.set(md.field(1).unwrap(), Value::List(Vec::new()));
+    msg.set(
+        md.field(2).unwrap(),
+        Value::List(vec![Value::String("s".into())]),
+    );
+    msg.set(md.field(3).unwrap(), Value::Map(tags));
+    // Implicit-presence enum at its default (0 = COLOR_UNSPECIFIED): absent,
+    // same rule as an implicit-presence scalar.
+    msg.set(md.field(6).unwrap(), Value::EnumNumber(0));
+    msg.set(
+        md.field(7).unwrap(),
+        Value::List(vec![Value::EnumNumber(1), Value::EnumNumber(2)]),
+    );
+
+    let via_iter: Vec<u32> = msg.set_fields().map(|(fd, _)| fd.number()).collect();
+    let mut via_callback = Vec::new();
+    msg.for_each_set(&mut |fd, _| via_callback.push(fd.number()));
+
+    assert_eq!(via_iter, via_callback);
+    assert_eq!(via_iter, vec![2, 3, 7]);
+}
+
+#[test]
+fn set_fields_borrow_outlives_the_visit_unlike_for_each_set() {
+    // The point of `set_fields` over `for_each_set`: a nested message it
+    // yields stays borrowed from `&self`, so a caller doing an iterative
+    // (non-recursive) tree walk can collect it into a worklist and read it
+    // after the loop that produced it has ended. `for_each_set`'s callback
+    // is `&mut dyn FnMut(&FieldDescriptor, ValueRef<'_>)`, whose lifetime is
+    // generic per call, so the same attempt does not borrow-check there.
+    let p = pool();
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let containers_md = p.message_by_name("reflect.test.Containers").unwrap();
+    let inner_idx = p.message_index("reflect.test.Inner").unwrap();
+    let inner_md = p.message_by_name("reflect.test.Inner").unwrap();
+
+    let mut inner = DynamicMessage::new(Arc::clone(&p), inner_idx);
+    inner.set(inner_md.field(1).unwrap(), Value::String("child".into()));
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), containers_idx);
+    msg.set(containers_md.field(5).unwrap(), Value::Message(inner));
+
+    let worklist: Vec<_> = msg.set_fields().collect();
+    assert_eq!(worklist.len(), 1);
+
+    // The loop that produced `worklist` has already ended; `nested` is
+    // still a valid borrow of the message set up above.
+    let (fd, value) = worklist[0];
+    assert_eq!(fd.number(), 5);
+    let Value::Message(nested) = value else {
+        panic!("expected a message value, got {value:?}");
+    };
+    match nested.get(inner_md.field(1).unwrap()) {
+        ValueRef::String(s) => assert_eq!(s, "child"),
+        other => panic!("expected a string, got {other:?}"),
+    }
+}
+
+#[test]
 fn which_oneof_resolves_set_member() {
     let p = pool();
     let oneof_idx = p.message_index("reflect.test.OneOf").unwrap();
