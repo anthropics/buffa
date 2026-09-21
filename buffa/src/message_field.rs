@@ -565,7 +565,20 @@ impl<T: Default + Clone, P: ProtoBox<T> + Clone> Clone for MessageField<T, P> {
     }
 }
 
+impl<T: DefaultInstance + PartialEq, P: ProtoBox<T>> MessageField<T, P> {
+    #[inline(never)]
+    fn value_eq_default_instance(value: &T) -> bool {
+        *value == *T::default_instance()
+    }
+
+    #[inline(never)]
+    fn default_instance_eq_value(value: &T) -> bool {
+        *T::default_instance() == *value
+    }
+}
+
 impl<T: DefaultInstance + PartialEq, P: ProtoBox<T>> PartialEq for MessageField<T, P> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         // Compare the pointed-to `T` values (via `**`), not the pointers, so no
         // `P: PartialEq` bound is needed and a set-to-default field equals an
@@ -573,10 +586,10 @@ impl<T: DefaultInstance + PartialEq, P: ProtoBox<T>> PartialEq for MessageField<
         match (&self.inner, &other.inner) {
             (Some(a), Some(b)) => **a == **b,
             (None, None) => true,
-            // An unset field equals a set-to-default field. Use default_instance()
-            // to avoid allocating a temporary value for the comparison.
-            (Some(a), None) => **a == *T::default_instance(),
-            (None, Some(b)) => *T::default_instance() == **b,
+            // Keep the default-instance paths out of the hot Some/Some body so
+            // LLVM can inline ordinary message-field comparisons.
+            (Some(a), None) => Self::value_eq_default_instance(&**a),
+            (None, Some(b)) => Self::default_instance_eq_value(&**b),
         }
     }
 }
@@ -724,10 +737,24 @@ mod tests {
 
     #[test]
     fn test_equality() {
-        let a: MessageField<Inner> = MessageField::none();
-        let b: MessageField<Inner> = MessageField::some(Inner::default());
-        // An unset field and a set-to-default field are equal.
-        assert_eq!(a, b);
+        let unset: MessageField<Inner> = MessageField::none();
+        let default: MessageField<Inner> = MessageField::some(Inner::default());
+        let value: MessageField<Inner> = MessageField::some(Inner {
+            value: 1,
+            ..Default::default()
+        });
+        let same_value: MessageField<Inner> = MessageField::some(Inner {
+            value: 1,
+            ..Default::default()
+        });
+
+        // An unset field and a set-to-default field are equal in both directions.
+        assert_eq!(unset, default);
+        assert_eq!(default, unset);
+
+        assert_ne!(unset, value);
+        assert_ne!(value, unset);
+        assert_eq!(value, same_value);
     }
 
     #[test]
