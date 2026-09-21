@@ -590,6 +590,27 @@ impl DynamicMessage {
             if buf.remaining() < len {
                 return Err(DecodeError::UnexpectedEof);
             }
+            // Fixed-width packed payloads tell us their exact element count.
+            // Bound the hint by the remaining element-memory budget: reserving
+            // directly from an attacker-controlled length prefix could allocate
+            // past the limit before the per-element charge rejects the input.
+            let width = match elem {
+                SingularKind::Scalar(
+                    ScalarType::Double | ScalarType::Fixed64 | ScalarType::Sfixed64,
+                ) => Some(8),
+                SingularKind::Scalar(
+                    ScalarType::Float | ScalarType::Fixed32 | ScalarType::Sfixed32,
+                ) => Some(4),
+                _ => None,
+            };
+            if let Some(width) = width {
+                let elements = len / width;
+                let additional = ctx.remaining_element_memory().map_or(elements, |remaining| {
+                    elements.min(remaining / core::mem::size_of::<Value>())
+                });
+                list.reserve(additional);
+            }
+
             // Take a sub-buffer of `len` bytes and decode elements from it.
             let mut packed = buf.copy_to_bytes(len);
             while packed.has_remaining() {
