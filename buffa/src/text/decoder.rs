@@ -12,7 +12,8 @@ use alloc::vec::Vec;
 use super::error::{ParseError, ParseErrorKind};
 use super::string::{unescape, unescape_str, UnescapeError};
 use super::token::{
-    consume_ws, lex_number, number_for_parse, NumKind, ScalarKind, Token, TokenKind, Tokenizer,
+    consume_ws, lex_number, normalize_bracket_name, number_for_parse, NumKind, ScalarKind, Token,
+    TokenKind, Tokenizer,
 };
 
 /// Stateful textproto reader.
@@ -633,7 +634,7 @@ impl<'a> TextDecoder<'a> {
     /// via [`set_type_registry`]); the registered `text_merge` then consumes
     /// the `{ ... }` body and re-encodes to wire bytes suitable for `Any.value`.
     ///
-    /// Returns `(stripped_url, value_bytes)`.
+    /// Returns `(canonical_url, value_bytes)`.
     ///
     /// # Errors
     ///
@@ -645,16 +646,16 @@ impl<'a> TextDecoder<'a> {
     pub fn read_any_expansion(&mut self, name: &'a str) -> Result<(&'a str, Vec<u8>), ParseError> {
         // read_field_name only returns bracketed names for NameKind::TypeName;
         // a missing bracket here means the caller dispatched wrong.
-        // trim: the grammar permits whitespace inside brackets, and
-        // `Token.raw` is a slice of the input so it preserves that.
-        let url = name
-            .strip_prefix('[')
-            .and_then(|s| s.strip_suffix(']'))
-            .map(str::trim)
+        let url = normalize_bracket_name(name).ok_or_else(|| self.unknown_field())?;
+        let entry = crate::type_registry::global_text_any(url.as_ref())
             .ok_or_else(|| self.unknown_field())?;
-        let entry =
-            crate::type_registry::global_text_any(url).ok_or_else(|| self.unknown_field())?;
         let bytes = (entry.text_merge)(self)?;
+        // If normalization allocated, return the registry's canonical
+        // `&'static str` rather than leaking the temporary owned string.
+        let url = match url {
+            Cow::Borrowed(url) => url,
+            Cow::Owned(_) => entry.type_url,
+        };
         Ok((url, bytes))
     }
 
@@ -680,12 +681,8 @@ impl<'a> TextDecoder<'a> {
         name: &str,
         extendee: &str,
     ) -> Result<Vec<crate::UnknownField>, ParseError> {
-        let full = name
-            .strip_prefix('[')
-            .and_then(|s| s.strip_suffix(']'))
-            .map(str::trim)
-            .ok_or_else(|| self.unknown_field())?;
-        let Some(entry) = crate::type_registry::global_text_ext_by_name(full) else {
+        let full = normalize_bracket_name(name).ok_or_else(|| self.unknown_field())?;
+        let Some(entry) = crate::type_registry::global_text_ext_by_name(full.as_ref()) else {
             return Err(self.unknown_field());
         };
         if entry.extendee != extendee {

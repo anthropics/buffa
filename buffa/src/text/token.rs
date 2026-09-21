@@ -540,11 +540,21 @@ impl<'a> Tokenizer<'a> {
 
         // Bracketed type name: extension or Any URL.
         if rest[0] == b'[' {
-            // Scan to the matching `]`. Whitespace inside is permitted and
-            // preserved in `raw`; the decoder strips it when comparing.
+            // Scan to the matching `]`. Comments inside bracketed names are
+            // trivia, so a `]` inside a `# ...` comment does not close the
+            // name. Whitespace/comments are preserved in `raw`; the decoder
+            // removes them before registry lookup.
             let mut i = 1;
-            while i < rest.len() && rest[i] != b']' {
-                i += 1;
+            while i < rest.len() {
+                match rest[i] {
+                    b']' => break,
+                    b'#' => {
+                        while i < rest.len() && rest[i] != b'\n' {
+                            i += 1;
+                        }
+                    }
+                    _ => i += 1,
+                }
             }
             if i >= rest.len() {
                 return Err(self.err(start, ParseErrorKind::UnexpectedEof));
@@ -949,6 +959,40 @@ pub(super) fn consume_ws(mut s: &[u8]) -> &[u8] {
     }
 }
 
+/// Strip textproto whitespace and comments from inside a bracketed field name.
+///
+/// The Text Format grammar treats these as trivia between every syntactic
+/// element of an extension name or Any URL, including between type-name
+/// segments. Canonical names stay borrowed; only names containing trivia
+/// allocate.
+pub(super) fn normalize_bracket_name(name: &str) -> Option<alloc::borrow::Cow<'_, str>> {
+    let inner = name.strip_prefix('[')?.strip_suffix(']')?;
+    if !inner
+        .as_bytes()
+        .iter()
+        .any(|&b| is_textproto_ws(b) || b == b'#')
+    {
+        return Some(alloc::borrow::Cow::Borrowed(inner));
+    }
+
+    let mut out = alloc::string::String::with_capacity(inner.len());
+    let mut rest = inner;
+    while !rest.is_empty() {
+        let after_trivia = consume_ws(rest.as_bytes());
+        if after_trivia.len() != rest.len() {
+            let consumed = rest.len() - after_trivia.len();
+            debug_assert!(rest.is_char_boundary(consumed));
+            rest = &rest[consumed..];
+            continue;
+        }
+
+        let ch = rest.chars().next()?;
+        out.push(ch);
+        rest = &rest[ch.len_utf8()..];
+    }
+    Some(alloc::borrow::Cow::Owned(out))
+}
+
 /// Lex a run of one-or-more adjacent string literals. Returns the total byte
 /// length including all quotes and any inter-literal whitespace.
 ///
@@ -1138,6 +1182,40 @@ mod tests {
             assert_eq!(tok.name_kind, want_kind, "input: {input}");
             assert_eq!(tok.raw, want_raw, "input: {input}");
             assert_eq!(tok.has_separator, want_sep, "input: {input}");
+        }
+    }
+
+    #[test]
+    fn bracket_name_comment_may_contain_close_bracket() {
+        let input = "[pkg # ] and é are comment text\n .ext]: 1";
+        let mut t = Tokenizer::new(input);
+        let tok = t.read().unwrap();
+        assert_eq!(tok.kind, TokenKind::Name);
+        assert_eq!(tok.name_kind, NameKind::TypeName);
+        assert_eq!(tok.raw, "[pkg # ] and é are comment text\n .ext]");
+    }
+
+    #[test]
+    fn normalize_bracket_name_trivia() {
+        assert!(matches!(
+            normalize_bracket_name("[pkg.ext]"),
+            Some(alloc::borrow::Cow::Borrowed("pkg.ext"))
+        ));
+
+        #[rustfmt::skip]
+        let cases = [
+            ("[ pkg . ext ]", "pkg.ext"),
+            ("[pkg# comment\n.ext]", "pkg.ext"),
+            ("[pkg # ] and é are comment text\n . ext]", "pkg.ext"),
+            ("[type.googleapis.com / pkg . Msg]", "type.googleapis.com/pkg.Msg"),
+            ("[type.googleapis.com/# comment\npkg.Msg]", "type.googleapis.com/pkg.Msg"),
+        ];
+        for (input, want) in cases {
+            assert_eq!(
+                normalize_bracket_name(input).as_deref(),
+                Some(want),
+                "input: {input:?}"
+            );
         }
     }
 
