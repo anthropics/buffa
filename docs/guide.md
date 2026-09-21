@@ -349,8 +349,12 @@ use buffa::{DecodeError, ProtoString, WirePayload};
 
 #[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub struct CompactStr(pub compact_str::CompactString);
-// … Deref<str>, AsRef<str>, From<String>, From<&str> forwards …
+// … Deref<str>, AsRef<str>, From<String> forwards …
 impl ProtoString for CompactStr {
+    fn copy_from_str(value: &str) -> Self {
+        CompactStr(value.into()) // Inline short strings without a temporary String.
+    }
+
     fn from_wire(p: WirePayload<'_>) -> Result<Self, DecodeError> {
         let s = core::str::from_utf8(p.as_slice()).map_err(|_| DecodeError::InvalidUtf8)?;
         Ok(CompactStr(s.into()))
@@ -358,7 +362,11 @@ impl ProtoString for CompactStr {
 }
 ```
 
-If you see a `ProtoString` / `ProtoBytes` bound error pointing at *generated* code, your newtype is missing one of the supertraits — check the full bound list (`Clone + PartialEq + Default + Debug + Send + Sync`, `Deref`, `AsRef`, the `From` conversions, and `from_wire`). If instead you see an *orphan-rule* error (`E0117` / `E0210`) in generated code mentioning `ReflectElement` or `ReflectMapKey`, you used a **foreign** custom type as a `repeated` element or `map` key/value under vtable reflection — wrap it in a crate-local newtype (see the `map`/`repeated` key points below).
+`ProtoString::copy_from_str` copies borrowed JSON text in non-optional singular fields and the string view fields of custom representations into owned storage. Its default goes through `String` and `From<String>`; override it as above to avoid a temporary allocation for inline/shared strings. The trait does not require `From<&str>`, so a string library can keep that conversion's borrowing semantics. The remote derive still requires `From<&str>` for every input lifetime and forwards `copy_from_str` through it; types with a borrowing conversion should implement `ProtoString` by hand.
+
+When migrating generic code that relied on `S: ProtoString` to imply `From<&str>`, use `S::copy_from_str(value)` or add an explicit conversion bound. Regenerate custom-string views before using a representation without the old bound. Hand-written users of `json_helpers::proto_string::deserialize` now need `ProtoString`, not just the two `From` conversions; implement the trait or provide a separate deserializer.
+
+If you see a `ProtoString` / `ProtoBytes` bound error pointing at *generated* code, your newtype may be missing the trait implementation or a supertrait — check `from_wire` and the full bound list (`Clone + PartialEq + Default + Debug + Send + Sync`, `Deref`, `AsRef`, and `From<String>` / `From<Vec<u8>>`). If instead you see an *orphan-rule* error (`E0117` / `E0210`) in generated code mentioning `ReflectElement` or `ReflectMapKey`, you used a **foreign** custom type as a `repeated` element or `map` key/value under vtable reflection — wrap it in a crate-local newtype (see the `map`/`repeated` key points below).
 
 Key points:
 
@@ -366,7 +374,7 @@ Key points:
 - **Only the owned struct field type changes.** The wire format is identical regardless of representation, and view types still borrow `&str` / `&[u8]`.
 - **The rule also covers `map` `string` slots.** A `string_type` rule on a `map<string, V>` / `map<K, string>` field applies to the key and/or value — one rule on the field path covers both slots of a `map<string, string>`. The `map` container itself stays the configured type (the `map_type` knob); only the `string` element type changes. (`bytes` is value-only here, since proto forbids `bytes` map keys.) Because the rule is keyed on the field path, a `map<string, string>` is all-or-nothing: you cannot give the key a custom type and leave the value `String` (or vice versa) on the same field. Asymmetric cases where only one slot is `string` (`map<string, int64>`, `map<int32, string>`) are unaffected.
 - **A custom type needs no `Arbitrary` impl — except in a `map`.** Under `generate_arbitrary`, singular / optional / repeated fields get a generic builder. The `map` arbitrary path currently has no per-key shim, so a custom string used as a `map` key or value must itself derive `Arbitrary` (a one-line derive on the newtype).
-- **JSON of an `optional` or `repeated` custom string, or any custom string in a `map`,** serializes through the element's native `serde`, so such a newtype must derive `Serialize` / `Deserialize` (`buffa-smolstr`'s `serde` feature does this). Singular and oneof string fields use buffa's `proto_string` with-module and need no `serde` impl.
+- **JSON of an `optional`, `repeated`, or `oneof` custom string, or any custom string in a `map`,** serializes through the element's native `serde`, so such a newtype must derive `Serialize` / `Deserialize` (`buffa-smolstr`'s `serde` feature does this). Non-optional singular string fields use buffa's `proto_string` with-module and need no `serde` impl.
 - **A custom string used as a `map` key needs `Hash + Eq`** (for the default / `HashMap` container) or `Ord` (for `map_type(BTreeMap)`). The bound is enforced at the generated map field type, so a missing impl is a clear compile error at that field.
 - **A custom type used as a `repeated` element, or as a `map` key/value, must be crate-local.** Codegen emits per-element `ReflectElement` (vtable reflection), `ReflectMapKey` (vtable, for a custom `string` map key), and base64 `ProtoElemJson` (JSON, bytes only) impls for it, which the orphan rule forbids for a foreign type — a local newtype satisfies this. Singular / optional / oneof uses have no such restriction.
 

@@ -84,6 +84,11 @@ impl From<&str> for SmolStr {
 }
 
 impl ProtoString for SmolStr {
+    #[inline]
+    fn copy_from_str(value: &str) -> Self {
+        Self(smol_str::SmolStr::from(value))
+    }
+
     /// Validate the payload as UTF-8 and build a `SmolStr` directly from the
     /// borrowed `&str` — short strings inline with no heap allocation, avoiding
     /// the transient `String` a `From<String>` decode path would allocate.
@@ -108,6 +113,13 @@ mod tests {
             !s.0.is_heap_allocated(),
             "a short string must decode inline (zero heap allocation)"
         );
+    }
+
+    #[test]
+    fn copying_short_string_keeps_inline_storage() {
+        let copied = SmolStr::copy_from_str("hello");
+        assert_eq!(copied.as_ref(), "hello");
+        assert!(!copied.0.is_heap_allocated());
     }
 
     #[test]

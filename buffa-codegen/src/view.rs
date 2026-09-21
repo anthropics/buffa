@@ -2059,21 +2059,14 @@ fn build_to_owned_fields(
 ///
 /// The default `String` keeps the original `binding.to_string()` (which
 /// auto-derefs through a `&&str` binding), so default output is byte-identical
-/// to before this knob existed. Other representations build via `From<&str>`
-/// with the owned field type driving `Into` inference; `Into::into` takes its
-/// argument by value and does not auto-deref, so `double_ref` sites (iterator
-/// and match-ergonomics bindings that are `&&str`) get one explicit `*`.
-fn str_view_to_owned(
-    repr: crate::StringRepr,
-    binding: TokenStream,
-    double_ref: bool,
-) -> TokenStream {
+/// to before this knob existed. Other representations use
+/// `ProtoString::copy_from_str`, with the field type driving inference.
+/// Both paths auto-deref iterator and match-ergonomics `&&str` bindings.
+fn str_view_to_owned(repr: crate::StringRepr, binding: TokenStream) -> TokenStream {
     if repr.is_default() {
         quote! { #binding.to_string() }
-    } else if double_ref {
-        quote! { ::core::convert::Into::into(*#binding) }
     } else {
-        quote! { ::core::convert::Into::into(#binding) }
+        quote! { ::buffa::ProtoString::copy_from_str(#binding) }
     }
 }
 
@@ -2094,13 +2087,13 @@ pub(crate) fn singular_to_owned(
         return Ok(match ty {
             Type::TYPE_STRING => {
                 // Option<&str>::map. The default keeps `|s| s.to_string()`; for
-                // other reprs pass the `Into::into` fn directly rather than
+                // other reprs pass `ProtoString::copy_from_str` directly rather than
                 // wrapping it in a closure (avoids clippy::redundant_closure in
                 // the consumer crate). Inference picks the target from the field.
                 if field_string_repr(ctx, proto_fqn, field_name).is_default() {
                     quote! { self.#ident.map(|s| s.to_string()) }
                 } else {
-                    quote! { self.#ident.map(::core::convert::Into::into) }
+                    quote! { self.#ident.map(::buffa::ProtoString::copy_from_str) }
                 }
             }
             Type::TYPE_BYTES => {
@@ -2114,7 +2107,6 @@ pub(crate) fn singular_to_owned(
         Type::TYPE_STRING => str_view_to_owned(
             field_string_repr(ctx, proto_fqn, field_name),
             quote! { self.#ident },
-            false,
         ),
         Type::TYPE_BYTES => bytes_to_owned(ctx, proto_fqn, field_name, quote! { self.#ident }),
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
@@ -2150,11 +2142,8 @@ pub(crate) fn repeated_to_owned(
     match ty {
         Type::TYPE_STRING => {
             // RepeatedView<&str>::iter() yields `&&str` (double ref).
-            let conv = str_view_to_owned(
-                field_string_repr(ctx, proto_fqn, field_name),
-                quote! { s },
-                true,
-            );
+            let conv =
+                str_view_to_owned(field_string_repr(ctx, proto_fqn, field_name), quote! { s });
             quote! { self.#ident.iter().map(|s| #conv).collect() }
         }
         Type::TYPE_BYTES => {
@@ -2205,13 +2194,12 @@ pub(crate) fn map_to_owned_expr(
 
     // A custom `string_type` on the outer map field promotes a `string` key /
     // value to the configured owned type, matching the owned-side map type. The
-    // view always yields `&str`, so the custom type constructs from a fresh
-    // `String` (via its required `From<String>`), mirroring the bytes path.
+    // view always yields `&str`, so custom types use their copying constructor.
     let key_string_repr = map_string_repr(ctx, key_ty, proto_fqn, field_name);
     let key_conv = match key_ty {
         Type::TYPE_STRING => match key_string_repr {
             crate::StringRepr::String => quote! { k.to_string() },
-            crate::StringRepr::Custom(_) => quote! { ::core::convert::Into::into(k.to_string()) },
+            crate::StringRepr::Custom(_) => quote! { ::buffa::ProtoString::copy_from_str(k) },
         },
         // utf8_validation = NONE on a string map key: &[u8] → Vec<u8>.
         Type::TYPE_BYTES => quote! { k.to_vec() },
@@ -2228,7 +2216,7 @@ pub(crate) fn map_to_owned_expr(
     let val_conv = match val_ty {
         Type::TYPE_STRING => match val_string_repr {
             crate::StringRepr::String => quote! { v.to_string() },
-            crate::StringRepr::Custom(_) => quote! { ::core::convert::Into::into(v.to_string()) },
+            crate::StringRepr::Custom(_) => quote! { ::buffa::ProtoString::copy_from_str(v) },
         },
         Type::TYPE_BYTES => match value_bytes_repr {
             crate::BytesRepr::Vec => quote! { v.to_vec() },
@@ -2272,11 +2260,7 @@ pub(crate) fn oneof_variant_to_owned(
     match ty {
         Type::TYPE_STRING => {
             // Match ergonomics on `&ViewEnum` binds `v` as `&&str` (double ref).
-            str_view_to_owned(
-                field_string_repr(ctx, proto_fqn, field_name),
-                quote! { v },
-                true,
-            )
+            str_view_to_owned(field_string_repr(ctx, proto_fqn, field_name), quote! { v })
         }
         // match-ergonomics on &ViewEnum → v: &&[u8]. bytes_to_owned handles it.
         Type::TYPE_BYTES => bytes_to_owned(ctx, proto_fqn, field_name, quote! { v }),

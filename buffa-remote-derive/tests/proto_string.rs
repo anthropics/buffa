@@ -28,6 +28,7 @@ fn from_string_and_from_str_round_trip() {
     let from_owned = MyEcoString::from(String::from("owned"));
     let from_borrowed = MyEcoString::from("owned");
     assert_eq!(from_owned, from_borrowed);
+    assert_eq!(MyEcoString::copy_from_str("owned"), from_borrowed);
 }
 
 // Named-field struct shape (not just tuple structs) is also supported.
@@ -41,6 +42,7 @@ struct NamedEcoString {
 fn named_field_struct_works() {
     let s = NamedEcoString::from("named");
     assert_eq!(s.as_ref(), "named");
+    assert_eq!(NamedEcoString::copy_from_str("named"), s);
 }
 
 // A remote type implementing both `AsRef<str>` and `AsRef<[u8]>` would make

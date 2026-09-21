@@ -51,7 +51,7 @@ For the common case the newtype's whole buffa-facing surface can be generated fr
 pub struct FlexStr(pub flexstr::SharedStr);
 ```
 
-The derive expands the `buffa::ProtoString` impl plus the rest of the required surface (`Deref<Target = str>`, `AsRef<str>`, `From<String>`, `From<&str>`), each a one-line forward to the inner type. The other newtypes in this crate hand-write that same surface — `small_bytes.rs` and `small_vec.rs` deliberately so, because their impls carry allocation behavior the generic derive can't express (a `from_wire` with no intermediate `Vec`, a capacity-retaining `clear`) — so the module shows both the generated and the written-out form of the pattern. The `assert_transparent!` macro in [`src/types/mod.rs`](src/types/mod.rs) freezes the zero-cost guarantee — if a second field ever sneaks into the wrapper, the build fails.
+The derive expands the `buffa::ProtoString` impl plus forwarding implementations of `Deref<Target = str>`, `AsRef<str>`, `From<String>`, and `From<&str>`. Its `copy_from_str` calls the inner type's `From<&str>` directly, avoiding an intermediate `String`. The derive requires that conversion for any input lifetime; `ProtoString` itself does not, so a type whose conversion borrows can implement the trait by hand instead. The other newtypes in this crate also show hand-written implementations — `small_bytes.rs` and `small_vec.rs` deliberately so, because their impls carry allocation behavior the generic derive can't express (a `from_wire` with no intermediate `Vec`, a capacity-retaining `clear`). The `assert_transparent!` macro in [`src/types/mod.rs`](src/types/mod.rs) freezes the zero-cost guarantee — if a second field ever sneaks into the wrapper, the build fails.
 
 ## What each newtype needs for JSON
 

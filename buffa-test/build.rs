@@ -10,6 +10,31 @@ fn main() {
         .compile()
         .expect("buffa_build failed for basic.proto");
 
+    // `OwnedStr` is `BorrowingStr<'static>`, whose `From<&'a str>` borrows and
+    // so cannot serve view-to-owned or JSON text of arbitrary lifetime. Compile
+    // every field shape against it: those paths must go through
+    // `ProtoString::copy_from_str`.
+    buffa_build::Config::new()
+        .files(&["protos/string_copy.proto"])
+        .includes(&["protos/"])
+        .string_type_custom("crate::string_copy::OwnedStr")
+        .generate_json(true)
+        .generate_text(true)
+        .compile()
+        .expect("buffa_build failed for string_copy.proto");
+
+    // `CountedStr` counts its `copy_from_str` calls, and its `From<&str>` and
+    // `From<String>` do not: a test can tell whether generated code used
+    // `copy_from_str` for each field shape. It needs its own package because the
+    // generated module is named after the proto package.
+    buffa_build::Config::new()
+        .files(&["protos/string_copy_counted.proto"])
+        .includes(&["protos/"])
+        .string_type_custom("crate::string_copy_counted::CountedStr")
+        .generate_json(true)
+        .compile()
+        .expect("buffa_build failed for string_copy_counted.proto");
+
     // box_type: a crate-LOCAL `CustomBox<T>` pointer (a `ProtoBox<T>` impl) for
     // singular message fields, via the `*`-templated knob. The crate compiling
     // is most of the test — the field type, decode (`get_or_insert_default`),
