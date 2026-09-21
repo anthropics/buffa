@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`DynamicMessage::take_field`** removes a field and returns its owned `Value` when protobuf presence says the field is set, avoiding clone-then-clear in descriptor-driven transforms. Implicit default values are cleared without being returned, while explicit-presence defaults return `Some`.
+time: 2026-09-21T15:34:00+02:00

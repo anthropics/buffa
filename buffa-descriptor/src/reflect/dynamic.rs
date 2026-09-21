@@ -1336,6 +1336,32 @@ impl DynamicMessage {
         self.fields.get_mut(&field.number())
     }
 
+    /// Remove and return a field's value, if it is present.
+    ///
+    /// Presence follows [`ReflectMessage::has`]: an implicit-presence scalar
+    /// stored at its default value is cleared but returns `None`, while an
+    /// explicit-presence field set to its default still returns `Some`.
+    /// The returned [`Value`] is moved out of the message, so callers can
+    /// transform or transfer owned submessages and containers without cloning.
+    ///
+    /// `field` may be a declared field or a registered extension of this
+    /// message; both resolve by number.
+    ///
+    /// # Panics
+    ///
+    /// Debug builds assert that `field` is a member of this message's
+    /// descriptor (a declared field or registered extension).
+    pub fn take_field(&mut self, field: &FieldDescriptor) -> Option<Value> {
+        debug_assert!(
+            self.field_descriptor_is_member(field),
+            "FieldDescriptor passed to take_field() is not a member of {}",
+            self.message_descriptor().full_name,
+        );
+        self.fields
+            .remove(&field.number())
+            .filter(|value| value_is_present(value, field))
+    }
+
     /// Insert a field value by number, bypassing the descriptor-keyed
     /// `ReflectMessageMut::set` API. Used internally by the WKT JSON codecs,
     /// which know the field layout statically and do not need oneof clearing.

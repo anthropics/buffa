@@ -2135,3 +2135,37 @@ fn empty_message_reads_nest_and_do_not_keep_the_pool_alive() {
     drop(p);
     assert!(weak.upgrade().is_none(), "the pool must be freed");
 }
+
+#[test]
+fn take_field_returns_owned_value_and_respects_presence() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+
+    // A non-default implicit-presence value is returned and removed.
+    let text = md.field(14).unwrap();
+    msg.set(text, Value::String("hello".into()));
+    assert_eq!(
+        msg.take_field(text),
+        Some(Value::String("hello".into()))
+    );
+    assert!(msg.field_by_number(14).is_none());
+    assert_eq!(msg.take_field(text), None);
+
+    // A stored implicit default is not semantically present, but is still
+    // cleared from the backing map.
+    let implicit = md.field(3).unwrap();
+    msg.set(implicit, Value::I32(0));
+    assert!(!msg.has(implicit));
+    assert_eq!(msg.field_by_number(3), Some(&Value::I32(0)));
+    assert_eq!(msg.take_field(implicit), None);
+    assert!(msg.field_by_number(3).is_none());
+
+    // Explicit presence preserves a default-valued field as a real value.
+    let explicit = md.field(16).unwrap();
+    msg.set(explicit, Value::I32(0));
+    assert!(msg.has(explicit));
+    assert_eq!(msg.take_field(explicit), Some(Value::I32(0)));
+    assert!(!msg.has(explicit));
+}
