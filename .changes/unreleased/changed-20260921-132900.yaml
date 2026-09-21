@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **Reflective packed fixed-width decode now reserves `Vec<Value>` capacity from the payload's known element count before decoding.** The hint covers packed `float`, `double`, `fixed32`, `sfixed32`, `fixed64`, and `sfixed64` fields and is capped by the remaining element-memory budget so an untrusted length prefix cannot force the reservation itself past the decode limit.
+time: 2026-09-21T13:29:00+02:00
