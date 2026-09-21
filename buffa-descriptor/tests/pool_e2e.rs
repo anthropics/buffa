@@ -508,6 +508,37 @@ fn empty_enums_are_rejected_transactionally() {
 }
 
 #[test]
+fn scalar_fields_with_type_name_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    let mut field = scalar_field("value", 1, Type::TYPE_INT32);
+    field.type_name = Some(".invalid.test.Ignored".into());
+
+    assert_rejected_without_mutating_pool(
+        "scalar-type-name.proto",
+        "invalid.test.ScalarTypeName",
+        DescriptorProto {
+            name: Some("ScalarTypeName".into()),
+            field: vec![field],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::UnexpectedTypeName { field, type_name }
+                    if field == "invalid.test.ScalarTypeName.value"
+                        && type_name == ".invalid.test.Ignored"
+            ));
+            assert_eq!(
+                err.to_string(),
+                "field invalid.test.ScalarTypeName.value with scalar type has type_name \".invalid.test.Ignored\""
+            );
+        },
+    );
+}
+
+#[test]
 fn oneof_links() {
     let p = pool();
     let oneof = p.message_by_name("reflect.test.OneOf").unwrap();

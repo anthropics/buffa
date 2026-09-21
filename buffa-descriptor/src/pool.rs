@@ -210,6 +210,9 @@ pub enum PoolError {
     },
     /// A field had no `type_name` for a `TYPE_MESSAGE`/`TYPE_GROUP`/`TYPE_ENUM`.
     MissingTypeName { field: String },
+    /// A scalar field carries a `type_name`, which is only valid for
+    /// message, group, and enum fields.
+    UnexpectedTypeName { field: String, type_name: String },
     /// A field's `type_name` did not resolve to any registered message or
     /// enum. Carries the dangling name and the field's fully-qualified name.
     UnresolvedTypeName { type_name: String, field: String },
@@ -387,6 +390,10 @@ impl core::fmt::Display for PoolError {
                 )
             }
             Self::MissingTypeName { field } => write!(f, "field {field} has no type_name"),
+            Self::UnexpectedTypeName { field, type_name } => write!(
+                f,
+                "field {field} with scalar type has type_name {type_name:?}"
+            ),
             Self::DuplicateFileName { file } => {
                 write!(f, "file {file} appears more than once in the set")
             }
@@ -2327,6 +2334,12 @@ impl DescriptorPool {
         scope: LinkScope<'_>,
     ) -> Result<SingularKind, PoolError> {
         if let Some(scalar) = ScalarType::from_proto(ty) {
+            if let Some(type_name) = type_name {
+                return Err(PoolError::UnexpectedTypeName {
+                    field: field_fqn.to_string(),
+                    type_name: type_name.to_string(),
+                });
+            }
             return Ok(SingularKind::Scalar(scalar));
         }
         // ENUM, MESSAGE, GROUP — resolve type_name.

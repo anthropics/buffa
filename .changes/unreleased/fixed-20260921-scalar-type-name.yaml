@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects scalar fields carrying `type_name`**, matching `protoc` instead of silently ignoring invalid descriptor metadata.
+time: 2026-09-21T16:15:00+02:00
