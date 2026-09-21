@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`MessageField` equality keeps its common set/set comparison small enough to inline** (refs #450). The mixed set/unset paths still compare against `DefaultInstance::default_instance()`, but those cold paths are outlined so their `OnceBox` machinery no longer keeps the hot `PartialEq::eq` body above LLVM's inlining threshold. Equality semantics are unchanged, including unset == set-to-default.
+time: 2026-09-21T13:29:00+02:00
