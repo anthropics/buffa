@@ -444,13 +444,14 @@ fn proto2_enum_first_value_can_be_nonzero() {
 }
 
 #[test]
-fn open_enum_with_no_values_is_not_rejected_by_the_first_value_rule() {
+fn empty_open_enum_reports_empty_enum_not_the_first_value_rule() {
     use buffa_descriptor::generated::descriptor::{
         EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
     };
 
-    // protoc rejects an empty enum for a different reason; this rule must
-    // not panic or misfire on `value.first()` being `None`.
+    // An empty enum is rejected as `EmptyEnum` (checked first, as protoc
+    // does); the open-enum first-value rule must not be the one that fires,
+    // nor panic on `value.first()` being `None`.
     let result = DescriptorPool::new(FileDescriptorSet {
         file: vec![FileDescriptorProto {
             name: Some("proto3-empty-enum.proto".into()),
@@ -465,11 +466,44 @@ fn open_enum_with_no_values_is_not_rejected_by_the_first_value_rule() {
         ..Default::default()
     });
     assert!(
-        !matches!(
-            result,
-            Err(buffa_descriptor::PoolError::OpenEnumFirstValueNotZero { .. })
+        matches!(
+            &result,
+            Err(buffa_descriptor::PoolError::EmptyEnum { enum_name }) if enum_name == "valid.test.Empty"
         ),
         "{result:?}"
+    );
+}
+
+#[test]
+fn empty_enums_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("empty-enum.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Empty".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "empty-enum.proto",
+        "invalid.test.Empty",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::EmptyEnum { enum_name } if enum_name == "invalid.test.Empty"
+            ));
+        },
     );
 }
 
@@ -482,6 +516,94 @@ fn oneof_links() {
     assert_eq!(o.name(), "variant");
     assert!(!o.is_synthetic());
     assert_eq!(o.field_indices(), vec![0, 1, 2]);
+}
+
+#[test]
+fn duplicate_oneof_names_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, OneofDescriptorProto,
+    };
+
+    // Each oneof gets a member so the descriptor is invalid for the duplicate
+    // name alone (protoc separately rejects an empty oneof).
+    let member = |name: &str, number: i32, oneof: i32| FieldDescriptorProto {
+        oneof_index: Some(oneof),
+        ..scalar_field(name, number, Type::TYPE_INT32)
+    };
+    assert_rejected_without_mutating_pool(
+        "duplicate-oneof-name.proto",
+        "invalid.test.DuplicateOneof",
+        DescriptorProto {
+            name: Some("DuplicateOneof".into()),
+            field: vec![member("a", 1, 0), member("b", 2, 1)],
+            oneof_decl: vec![
+                OneofDescriptorProto {
+                    name: Some("choice".into()),
+                    ..Default::default()
+                },
+                OneofDescriptorProto {
+                    name: Some("choice".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateOneofName { message, name }
+                    if message == "invalid.test.DuplicateOneof" && name == "choice"
+            ));
+            assert_eq!(
+                err.to_string(),
+                "message invalid.test.DuplicateOneof declares oneof name \"choice\" more than once"
+            );
+        },
+    );
+}
+
+#[test]
+fn distinct_oneof_names_are_accepted() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+    };
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    p.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("distinct-oneof-names.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("DistinctOneofs".into()),
+                oneof_decl: vec![
+                    OneofDescriptorProto {
+                        name: Some("first".into()),
+                        ..Default::default()
+                    },
+                    OneofDescriptorProto {
+                        name: Some("second".into()),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .unwrap();
+
+    let message = p.message_by_name("valid.test.DistinctOneofs").unwrap();
+    assert_eq!(
+        message
+            .oneofs()
+            .iter()
+            .map(|oneof| oneof.name())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
 }
 
 #[test]
@@ -810,6 +932,57 @@ fn reserved_message_field_numbers_are_rejected_without_mutating_pool() {
 }
 
 #[test]
+fn invalid_message_reserved_ranges_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ReservedRange;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    // protoc reads an unset bound as 0 and requires `0 < start < end`, so a
+    // missing, zero, negative, empty, or reversed range is one error.
+    for (suffix, start, end) in [
+        ("missing-start", None, Some(8)),
+        ("missing-end", Some(7), None),
+        ("missing-both", None, None),
+        ("zero-start", Some(0), Some(5)),
+        ("negative-start", Some(-3), Some(5)),
+        ("empty", Some(7), Some(7)),
+        ("reversed", Some(9), Some(5)),
+    ] {
+        let file_name = format!("reserved-message-range-{suffix}.proto");
+        let full_name = "invalid.test.BadMessageRange";
+        assert_rejected_without_mutating_pool(
+            &file_name,
+            full_name,
+            DescriptorProto {
+                name: Some("BadMessageRange".into()),
+                reserved_range: vec![ReservedRange {
+                    start,
+                    end,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            move |err| {
+                assert!(
+                    matches!(
+                        err,
+                        PoolError::InvalidMessageReservedRange { message, start: s, end: e }
+                            if message == full_name && (*s, *e) == (start, end)
+                    ),
+                    "unexpected error for {suffix}: {err}"
+                );
+                if suffix == "missing-end" {
+                    assert_eq!(
+                        err.to_string(),
+                        "message invalid.test.BadMessageRange reserved range 7..unset is \
+                         invalid; bounds must satisfy 0 < start < end"
+                    );
+                }
+            },
+        );
+    }
+}
+
+#[test]
 fn reserved_message_field_range_end_is_exclusive() {
     use buffa_descriptor::generated::descriptor::descriptor_proto::ReservedRange;
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
@@ -846,6 +1019,85 @@ fn reserved_message_field_range_end_is_exclusive() {
             .number(),
         8
     );
+}
+
+#[test]
+fn fields_inside_extension_ranges_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    // proto2 throughout: protoc rejects extension ranges in proto3 outright.
+    // Two ranges declared out of order, so both the first- and the
+    // second-sorted range are exercised.
+    let make_set = |package: &str, message_name: &str, number: i32| FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some(format!("field-in-extension-range-{number}.proto")),
+            package: Some(package.into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some(message_name.into()),
+                field: vec![scalar_field("value", number, Type::TYPE_INT32)],
+                extension_range: vec![
+                    ExtensionRange {
+                        start: Some(20),
+                        end: Some(30),
+                        ..Default::default()
+                    },
+                    ExtensionRange {
+                        start: Some(7),
+                        end: Some(10),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    for (suffix, number) in [("start", 7), ("end-minus-one", 9), ("second-range", 25)] {
+        let message_name = format!("FieldInRange{suffix}");
+        let full_name = format!("invalid.test.{message_name}");
+        let file_name = format!("field-in-extension-range-{number}.proto");
+        let expected_message = full_name.clone();
+
+        assert_set_rejected_without_mutating_pool(
+            &file_name,
+            &full_name,
+            make_set("invalid.test", &message_name, number),
+            move |err| {
+                assert!(
+                    matches!(
+                        err,
+                        PoolError::FieldNumberInExtensionRange {
+                            message,
+                            name,
+                            number: actual,
+                        } if message == &expected_message
+                            && name == "value"
+                            && *actual == number as u32
+                    ),
+                    "unexpected error for field {number}: {err}"
+                );
+            },
+        );
+    }
+
+    // `start - 1` and `end` (exclusive) stay available, and the stored ranges
+    // keep declaration order.
+    for (message_name, number) in [("BelowStart", 6), ("AtEnd", 10), ("BetweenRanges", 15)] {
+        let pool = DescriptorPool::new(make_set("valid.test", message_name, number))
+            .unwrap_or_else(|e| panic!("field {number} is outside both ranges: {e}"));
+        let message = pool
+            .message_by_name(&format!("valid.test.{message_name}"))
+            .unwrap();
+        assert!(message.field(number as u32).is_some());
+        assert_eq!(message.extension_ranges(), &[(20, 30), (7, 10)]);
+    }
 }
 
 #[test]
@@ -1059,6 +1311,156 @@ fn invalid_extension_range_bounds_are_rejected_without_mutating_pool() {
             },
         );
     }
+}
+
+#[test]
+
+fn overlapping_extension_ranges_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    /// `expected` is `(later-declared range, earlier-declared range)`.
+    fn assert_rejected(ranges: &[(i32, i32)], expected: ((u32, u32), (u32, u32))) {
+        let extension_range = ranges
+            .iter()
+            .map(|&(start, end)| ExtensionRange {
+                start: Some(start),
+                end: Some(end),
+                ..Default::default()
+            })
+            .collect();
+        // proto2: protoc rejects extension ranges in a proto3 file outright,
+        // so a proto3 fixture would be invalid for an unrelated reason.
+        assert_set_rejected_without_mutating_pool(
+            "overlapping-extension-range.proto",
+            "invalid.test.OverlappingExtensionRange",
+            FileDescriptorSet {
+                file: vec![FileDescriptorProto {
+                    name: Some("overlapping-extension-range.proto".into()),
+                    package: Some("invalid.test".into()),
+                    syntax: Some("proto2".into()),
+                    message_type: vec![DescriptorProto {
+                        name: Some("OverlappingExtensionRange".into()),
+                        extension_range,
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            |err| {
+                assert!(
+                    matches!(
+                        err,
+                        PoolError::OverlappingExtensionRange {
+                            message,
+                            start,
+                            end,
+                            other_start,
+                            other_end,
+                        } if message == "invalid.test.OverlappingExtensionRange"
+                            && ((*start, *end), (*other_start, *other_end)) == expected
+                    ),
+                    "unexpected error for {ranges:?}: {err}"
+                );
+            },
+        );
+    }
+
+    let max = buffa::encoding::MAX_FIELD_NUMBER;
+    // Partial overlap, identical ranges, containment, overlap when the
+    // declarations arrive in reverse order, and overlap at the top of the
+    // field-number space all fail, naming the later declaration first.
+    assert_rejected(&[(10, 20), (19, 30)], ((19, 30), (10, 20)));
+    assert_rejected(&[(10, 20), (10, 20)], ((10, 20), (10, 20)));
+    assert_rejected(&[(10, 30), (15, 20)], ((15, 20), (10, 30)));
+    assert_rejected(&[(20, 30), (10, 25)], ((10, 25), (20, 30)));
+    assert_rejected(
+        &[(1, max as i32 + 1), (max as i32, max as i32 + 1)],
+        ((max, max + 1), (1, max + 1)),
+    );
+    // Three ranges: the first overlap in start order is reported.
+    assert_rejected(&[(10, 100), (50, 60), (20, 30)], ((20, 30), (10, 100)));
+}
+
+#[test]
+fn adjacent_extension_ranges_are_accepted_in_declaration_order() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let ranges = [(30, 40), (40, 50)];
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("adjacent-extension-ranges.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("RangeMessage".into()),
+                extension_range: ranges
+                    .iter()
+                    .map(|&(start, end)| ExtensionRange {
+                        start: Some(start),
+                        end: Some(end),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("adjacent extension ranges do not overlap");
+
+    assert_eq!(
+        pool.message_by_name("valid.test.RangeMessage")
+            .unwrap()
+            .extension_ranges(),
+        &[(30, 40), (40, 50)]
+    );
+}
+
+#[test]
+fn disjoint_extension_ranges_are_accepted_in_declaration_order() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let ranges = [(40, 50), (10, 20)];
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("disjoint-extension-ranges.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("RangeMessage".into()),
+                extension_range: ranges
+                    .iter()
+                    .map(|&(start, end)| ExtensionRange {
+                        start: Some(start),
+                        end: Some(end),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("disjoint extension ranges do not overlap");
+
+    assert_eq!(
+        pool.message_by_name("valid.test.RangeMessage")
+            .unwrap()
+            .extension_ranges(),
+        &[(40, 50), (10, 20)]
+    );
 }
 
 #[test]
@@ -1447,6 +1849,102 @@ fn reserved_enum_value_numbers_are_rejected_transactionally() {
             },
         );
     }
+}
+
+#[test]
+fn enum_reserved_ranges_follow_protoc_bounds_rules() {
+    use buffa_descriptor::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
+    use buffa_descriptor::generated::descriptor::{
+        EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let make_set = |file: &str, package: &str, start, end, values: &[i32]| FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some(file.into()),
+            package: Some(package.into()),
+            syntax: Some("proto2".into()),
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Ranged".into()),
+                value: values
+                    .iter()
+                    .map(|&n| EnumValueDescriptorProto {
+                        name: Some(format!("V{n}")),
+                        number: Some(n),
+                        ..Default::default()
+                    })
+                    .collect(),
+                reserved_range: vec![EnumReservedRange {
+                    start,
+                    end,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    // Unset bounds read as 0 and enum ranges are inclusive and may be
+    // negative, so `..8` (0 to 8), `-3..` (-3 to 0) and `..` (0 to 0) are all
+    // valid — protoc and protobuf-go accept them — provided no value lands
+    // inside.
+    for (suffix, start, end) in [
+        ("unset-start", None, Some(8)),
+        ("unset-end", Some(-3), None),
+        ("unset-both", None, None),
+        ("negative", Some(-5), Some(-3)),
+    ] {
+        let file = format!("enum-range-{suffix}.proto");
+        let pool = DescriptorPool::new(make_set(&file, "valid.test", start, end, &[10, 11]))
+            .unwrap_or_else(|e| panic!("{suffix} should be accepted: {e}"));
+        assert!(pool
+            .enum_by_name("valid.test.Ranged")
+            .unwrap()
+            .value(10)
+            .is_some());
+    }
+
+    // ...and the unset-start range really is honoured as `0 to 8`.
+    let err = DescriptorPool::new(make_set(
+        "enum-range-hit.proto",
+        "invalid.test",
+        None,
+        Some(8),
+        &[5],
+    ))
+    .unwrap_err();
+    assert!(
+        matches!(&err, PoolError::ReservedEnumValueNumber { number: 5, .. }),
+        "unexpected error: {err}"
+    );
+
+    // Only `start > end` is an error.
+    assert_set_rejected_without_mutating_pool(
+        "enum-range-reversed.proto",
+        "invalid.test.Ranged",
+        make_set(
+            "enum-range-reversed.proto",
+            "invalid.test",
+            Some(9),
+            Some(7),
+            &[0],
+        ),
+        |err| {
+            assert!(
+                matches!(
+                    err,
+                    PoolError::InvalidEnumReservedRange { enum_name, start: Some(9), end: Some(7) }
+                        if enum_name == "invalid.test.Ranged"
+                ),
+                "unexpected error: {err}"
+            );
+            assert_eq!(
+                err.to_string(),
+                "enum invalid.test.Ranged reserved range 9 to 7 is invalid; start must not exceed end"
+            );
+        },
+    );
 }
 
 #[test]
@@ -2645,4 +3143,119 @@ mod import_visibility {
         DescriptorPool::decode(super::FDS_BYTES)
             .expect("protoc output satisfies import visibility");
     }
+}
+
+/// `MessageIndex::index` is the descriptor's position in `pool.messages()`,
+/// for every message in a real `protoc`-built pool.
+#[test]
+fn message_index_ordinals_match_slice_positions() {
+    let pool = pool();
+    assert!(
+        pool.messages().len() > 1,
+        "fixture should link several messages"
+    );
+
+    for (position, desc) in pool.messages().iter().enumerate() {
+        let idx = pool
+            .message_index(desc.full_name())
+            .expect("every linked message resolves by its own full name");
+        assert_eq!(idx.index(), position, "message {}", desc.full_name());
+    }
+}
+
+/// `EnumIndex::index` is the descriptor's position in `pool.enums()`.
+#[test]
+fn enum_index_ordinals_match_slice_positions() {
+    let pool = pool();
+    assert!(
+        !pool.enums().is_empty(),
+        "fixture should link at least one enum"
+    );
+
+    for (position, desc) in pool.enums().iter().enumerate() {
+        let idx = pool
+            .enum_index(desc.full_name())
+            .expect("every linked enum resolves by its own full name");
+        assert_eq!(idx.index(), position, "enum {}", desc.full_name());
+    }
+}
+
+/// `ExtensionIndex::index` is the descriptor's position in
+/// `pool.extensions()`.
+#[test]
+fn extension_index_ordinals_match_slice_positions() {
+    let pool = pool();
+    assert!(
+        !pool.extensions().is_empty(),
+        "fixture should link at least one extension"
+    );
+
+    for (position, desc) in pool.extensions().iter().enumerate() {
+        let idx = pool
+            .extension_index(desc.full_name())
+            .expect("every linked extension resolves by its own registration name");
+        assert_eq!(idx.index(), position, "extension {}", desc.full_name());
+    }
+}
+
+/// The ordinals are dense over `0..len`, which is what lets a caller size a
+/// side table once and index it directly instead of hashing or binary
+/// searching.
+#[test]
+fn message_ordinals_are_dense_so_a_side_table_can_be_indexed_directly() {
+    let pool = pool();
+
+    let mut table = vec![None; pool.messages().len()];
+    for desc in pool.messages() {
+        let idx = pool.message_index(desc.full_name()).expect("resolves");
+        table[idx.index()] = Some(desc.full_name());
+    }
+
+    assert!(
+        table.iter().all(Option::is_some),
+        "every slot filled means the ordinals cover 0..len with no gaps"
+    );
+}
+
+/// Adding a file only appends: every existing ordinal is unchanged and the
+/// new message takes the next one, so a side table sized earlier has only to
+/// grow.
+#[test]
+fn index_ordinals_survive_adding_a_file() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let mut pool = DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS");
+    let before: Vec<(String, usize)> = pool
+        .messages()
+        .iter()
+        .map(|desc| {
+            let idx = pool.message_index(desc.full_name()).expect("resolves");
+            (desc.full_name().to_string(), idx.index())
+        })
+        .collect();
+
+    pool.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("ordinal-append.proto".into()),
+            package: Some("ordinal.append".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Late".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("a message-only file links");
+
+    for (name, ordinal) in &before {
+        let idx = pool.message_index(name).expect("still resolves");
+        assert_eq!(idx.index(), *ordinal, "message {name}");
+    }
+    let late = pool.message_index("ordinal.append.Late").expect("added");
+    assert_eq!(late.index(), before.len());
+    assert_eq!(pool.messages().len(), before.len() + 1);
 }

@@ -1609,6 +1609,12 @@ struct BytesKeyWrapper {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
+struct BytesKeyInt64Wrapper {
+    #[serde(with = "bytes_key_map")]
+    m: crate::__private::HashMap<Vec<u8>, i64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
 struct BytesKeyBytesValWrapper {
     #[serde(with = "bytes_key_bytes_val_map")]
     m: crate::__private::HashMap<Vec<u8>, Vec<u8>>,
@@ -1624,6 +1630,26 @@ fn bytes_key_map_roundtrip() {
     assert_eq!(json, r#"{"m":{"a2V5MQ==":42}}"#);
     let back: BytesKeyWrapper = serde_json::from_str(&json).unwrap();
     assert_eq!(back.m.get(b"key1".as_slice()), Some(&42));
+}
+
+#[test]
+fn bytes_key_map_rejects_null_values() {
+    assert!(
+        serde_json::from_str::<BytesKeyWrapper>(r#"{"m":{"a2V5MQ==":null}}"#).is_err(),
+        "null map values must be rejected"
+    );
+}
+
+#[test]
+fn bytes_key_map_uses_protojson_for_int64_values() {
+    let mut m = crate::__private::HashMap::default();
+    m.insert(b"k".to_vec(), 5_i64);
+    let w = BytesKeyInt64Wrapper { m };
+    let json = serde_json::to_string(&w).unwrap();
+    assert_eq!(json, r#"{"m":{"aw==":"5"}}"#);
+
+    let back: BytesKeyInt64Wrapper = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.m.get(b"k".as_slice()), Some(&5));
 }
 
 #[test]
@@ -1690,6 +1716,30 @@ fn float_deserialize_table() {
         ("null",             Some(0.0)),
         // Finite f64 value that overflows f32 → error.
         ("1e300",            None),
+        // Quoted values outside f32 range are rejected, as unquoted ones are.
+        // `"1e400"` also overflows f64, so the parse itself saturates to
+        // infinity; it must not slip through as the "Infinity" token.
+        (r#""3.5e38""#,      None),
+        (r#""-3.5e38""#,     None),
+        (r#""1e400""#,       None),
+        (r#""-1e400""#,      None),
+        // f32::MAX and its negation are in range.
+        (r#""3.4028235e38""#,  Some(f32::MAX)),
+        (r#""-3.4028235e38""#, Some(-f32::MAX)),
+        // Rounds once, straight to f32: one below the exact f32::MAX/2^128
+        // midpoint is f32::MAX, though it rounds to the midpoint in f64 first.
+        (r#""340282356779733661637539395458142568447""#, Some(f32::MAX)),
+        // The midpoint itself ties to even, i.e. 2^128, which is out of range.
+        (r#""340282356779733661637539395458142568448""#, None),
+        // Smallest subnormal survives; underflow to zero is not an error.
+        (r#""1e-45""#,      Some(f32::from_bits(1))),
+        (r#""1e-400""#,     Some(0.0)),
+        // Rust's float grammar accepts these; ProtoJSON only has the three
+        // exact tokens.
+        (r#""inf""#,        None),
+        (r#""-INF""#,       None),
+        (r#""infinity""#,   None),
+        (r#""nan""#,        None),
         // Garbage string → error.
         (r#""not-a-number""#,None),
     ];
@@ -1706,6 +1756,15 @@ fn float_deserialize_table() {
     // NaN case: equality is reflexively false.
     let h: SerdeFloat = serde_json::from_str(r#""NaN""#).unwrap();
     assert!(h.0.is_nan());
+    // Zero comparison above is sign-blind; check the sign separately.
+    for json in [r#""-0.0""#, r#""-1e-400""#] {
+        let h: SerdeFloat = serde_json::from_str(json).unwrap();
+        assert!(
+            h.0 == 0.0 && h.0.is_sign_negative(),
+            "input: {json}, got {}",
+            h.0
+        );
+    }
 }
 
 #[test]
@@ -1736,8 +1795,22 @@ fn double_deserialize_table() {
         (r#""-Infinity""#,   Some(f64::NEG_INFINITY)),
         (r#""2.5""#,         Some(2.5)),
         ("null",             Some(0.0)),
-        // f64 has no overflow check (all JSON numbers fit in f64 domain).
         ("1e308",            Some(1e308)),
+        (r#""1e308""#,       Some(1e308)),
+        (r#""1.7976931348623157e308""#,  Some(f64::MAX)),
+        (r#""-1.7976931348623157e308""#, Some(-f64::MAX)),
+        // Unquoted out-of-range numbers never reach the visitor (serde_json
+        // rejects them); quoted ones must be rejected here.
+        ("1e400",            None),
+        (r#""1e400""#,       None),
+        (r#""-1e400""#,      None),
+        (r#""1.8e308""#,     None),
+        (r#""5e-324""#,      Some(f64::from_bits(1))),
+        (r#""1e-400""#,      Some(0.0)),
+        (r#""inf""#,         None),
+        (r#""-INF""#,        None),
+        (r#""infinity""#,    None),
+        (r#""nan""#,         None),
         (r#""garbage""#,     None),
     ];
     for &(json, expected) in cases {
@@ -1752,6 +1825,47 @@ fn double_deserialize_table() {
     }
     let h: SerdeDouble = serde_json::from_str(r#""NaN""#).unwrap();
     assert!(h.0.is_nan());
+    for json in [r#""-0.0""#, r#""-1e-400""#] {
+        let h: SerdeDouble = serde_json::from_str(json).unwrap();
+        assert!(
+            h.0 == 0.0 && h.0.is_sign_negative(),
+            "input: {json}, got {}",
+            h.0
+        );
+    }
+}
+
+// Repeated, map-value and optional fields all reach the singular modules
+// through `ProtoElemJson` / `opt_serde_module!`.
+#[test]
+fn quoted_float_overflow_rejected_in_every_field_shape() {
+    #[derive(serde::Deserialize)]
+    struct SeqF32(#[serde(with = "proto_seq")] Vec<f32>);
+    #[derive(serde::Deserialize)]
+    struct OptF32(#[serde(with = "opt_float")] Option<f32>);
+    #[derive(serde::Deserialize)]
+    struct OptF64(#[serde(with = "opt_double")] Option<f64>);
+
+    assert!(serde_json::from_str::<SeqF32>(r#"["1.5","3.5e38"]"#).is_err());
+    assert!(serde_json::from_str::<SeqF32>(r#"["1e400"]"#).is_err());
+    assert!(serde_json::from_str::<SeqF64Holder>(r#"["1e400"]"#).is_err());
+    assert!(serde_json::from_str::<MapBoolF64Holder>(r#"{"true":"1e400"}"#).is_err());
+    assert!(serde_json::from_str::<OptF32>(r#""3.5e38""#).is_err());
+    assert!(serde_json::from_str::<OptF32>(r#""1e400""#).is_err());
+    assert!(serde_json::from_str::<OptF64>(r#""1e400""#).is_err());
+    // In-range quoted values still decode in each shape.
+    assert_eq!(
+        serde_json::from_str::<SeqF32>(r#"["1.5","-2"]"#).unwrap().0,
+        [1.5, -2.0]
+    );
+    assert_eq!(
+        serde_json::from_str::<OptF32>(r#""1.5""#).unwrap().0,
+        Some(1.5)
+    );
+    assert_eq!(
+        serde_json::from_str::<OptF64>(r#""1e308""#).unwrap().0,
+        Some(1e308)
+    );
 }
 
 // ── Adapter newtypes (generated-code plumbing) ──────────────────────────────

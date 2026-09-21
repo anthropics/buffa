@@ -514,19 +514,16 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn float_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        let f: f32 = match v {
-            serde_json::Value::Number(num) => {
-                num.as_f64()
-                    .ok_or_else(|| format!("field {n}: not a number"))? as f32
-            }
-            serde_json::Value::String(s) => match s.as_str() {
-                "NaN" => f32::NAN,
-                "Infinity" => f32::INFINITY,
-                "-Infinity" => f32::NEG_INFINITY,
-                _ => s.parse().map_err(|e| format!("field {n}: {e}"))?,
-            },
-            _ => return Err(format!("field {n}: expected number or string")),
-        };
+        // The shared `float` module owns the ProtoJSON rules: the three
+        // special tokens, and rejection of values outside the f32 range.
+        if !matches!(
+            v,
+            serde_json::Value::Number(_) | serde_json::Value::String(_)
+        ) {
+            return Err(format!("field {n}: expected number or string"));
+        }
+        let f =
+            crate::json_helpers::float::deserialize(v).map_err(|e| format!("field {n}: {e}"))?;
         Ok(alloc::vec![UnknownField {
             number: n,
             data: UnknownFieldData::Fixed32(f.to_bits()),
@@ -549,18 +546,14 @@ pub mod helpers {
             .ok_or_else(|| missing(n))
     }
     pub fn double_from_json(v: serde_json::Value, n: u32) -> Result<Vec<UnknownField>, String> {
-        let f: f64 = match v {
-            serde_json::Value::Number(num) => num
-                .as_f64()
-                .ok_or_else(|| format!("field {n}: not a number"))?,
-            serde_json::Value::String(s) => match s.as_str() {
-                "NaN" => f64::NAN,
-                "Infinity" => f64::INFINITY,
-                "-Infinity" => f64::NEG_INFINITY,
-                _ => s.parse().map_err(|e| format!("field {n}: {e}"))?,
-            },
-            _ => return Err(format!("field {n}: expected number or string")),
-        };
+        if !matches!(
+            v,
+            serde_json::Value::Number(_) | serde_json::Value::String(_)
+        ) {
+            return Err(format!("field {n}: expected number or string"));
+        }
+        let f =
+            crate::json_helpers::double::deserialize(v).map_err(|e| format!("field {n}: {e}"))?;
         Ok(alloc::vec![UnknownField {
             number: n,
             data: UnknownFieldData::Fixed64(f.to_bits()),
@@ -1163,6 +1156,53 @@ mod tests {
             panic!()
         };
         assert!(f32::from_bits(b).is_nan());
+    }
+
+    #[test]
+    fn float_and_double_from_json_reject_out_of_range() {
+        use serde_json::json;
+        // Quoted or not, a value outside the type's range is an error rather
+        // than infinity, and only the exact special tokens name a non-finite.
+        for v in [
+            json!("3.5e38"),
+            json!(3.5e38),
+            json!("-3.5e38"),
+            json!("1e400"),
+            json!("inf"),
+            json!("nan"),
+        ] {
+            let err = float_from_json(v.clone(), 7).unwrap_err();
+            assert!(err.starts_with("field 7: "), "float {v}: {err}");
+        }
+        for v in [
+            json!("1e400"),
+            json!("-1e400"),
+            json!("1.8e308"),
+            json!("-INF"),
+            json!("nan"),
+        ] {
+            let err = double_from_json(v.clone(), 7).unwrap_err();
+            assert!(err.starts_with("field 7: "), "double {v}: {err}");
+        }
+        assert!(repeated_float_from_json(json!(["1.5", "3.5e38"]), 7).is_err());
+        assert!(repeated_double_from_json(json!(["1.5", "1e400"]), 7).is_err());
+
+        let fixed32 = |v| match float_from_json(v, 1).unwrap()[0].data {
+            UnknownFieldData::Fixed32(b) => f32::from_bits(b),
+            _ => panic!("expected fixed32"),
+        };
+        assert_eq!(fixed32(json!("3.4028235e38")), f32::MAX);
+        assert_eq!(fixed32(json!(-3.4028235e38_f64)), -f32::MAX);
+        assert_eq!(fixed32(json!(1.5)), 1.5);
+        assert_eq!(fixed32(json!(-7)), -7.0);
+        assert_eq!(fixed32(json!("Infinity")), f32::INFINITY);
+        let fixed64 = |v| match double_from_json(v, 1).unwrap()[0].data {
+            UnknownFieldData::Fixed64(b) => f64::from_bits(b),
+            _ => panic!("expected fixed64"),
+        };
+        assert_eq!(fixed64(json!("1.7976931348623157e308")), f64::MAX);
+        assert_eq!(fixed64(json!("-Infinity")), f64::NEG_INFINITY);
+        assert!(double_from_json(json!(true), 1).is_err());
     }
 
     #[test]

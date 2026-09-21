@@ -368,8 +368,8 @@ pub mod map_type {
 /// `HashMap` key bound and every JSON dispatch path. The type is crate-local
 /// because vtable reflection emits `impl ReflectMapKey` / `impl ReflectElement`
 /// for it (a foreign type would be an orphan-rule error — exactly as for a
-/// custom `repeated` element). The fields cover all six custom-string-key/value
-/// JSON dispatch modules; exercised by `tests/string_map.rs`.
+/// custom `repeated` element). The seven fields cover every custom-string-key/value
+/// JSON dispatch path; exercised by `src/tests/string_map.rs`.
 #[allow(clippy::derivable_impls, non_camel_case_types)]
 pub mod string_map {
     /// `String`-backed newtype satisfying `buffa::ProtoString`, plus the
@@ -549,6 +549,14 @@ pub mod lazyviewslean {
     buffa::include_proto!("test.lazyviewslean");
 }
 
+/// `preserve_unknown_fields(false)` + `preserve_unknown_fields_in(&[".test.scopedunknown.Keep"])`
+/// with views, lazy views, JSON, text and vtable reflection all on: a mixed
+/// build where `Keep` preserves unknown fields and `Drop` does not.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod scopedunknown {
+    buffa::include_proto!("test.scopedunknown");
+}
+
 // unbox_oneof: `Envelope.body.small` is stored inline (opted out of Box),
 // `large` stays boxed. Compiling this module exercises every boxing site for
 // both shapes; runtime round-trips live in `tests/unbox_oneof.rs`.
@@ -584,6 +592,11 @@ pub mod reflectcollide {
 #[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
 pub mod prelude_shadow {
     buffa::include_proto!("test.prelude_shadow");
+}
+
+#[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
+pub mod float_default_shadow {
+    buffa::include_proto!("f32");
 }
 
 // Nested-package pair, wrapped exactly the way `buffa-build`'s

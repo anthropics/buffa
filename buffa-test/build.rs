@@ -256,6 +256,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for prelude_shadow.proto");
 
+    // Special float defaults in a package named `f32` must not resolve
+    // against generated `f32`/`f64` modules. The nested extension constants
+    // deliberately occupy all six shadowable paths; compilation is the
+    // regression assertion.
+    buffa_build::Config::new()
+        .files(&["protos/float_default_shadow.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .compile()
+        .expect("buffa_build failed for float_default_shadow.proto");
+
     // Nested-package pair (gh#80) — `test.nestpkg` + `test.nestpkg.inner`.
     // `lib.rs` wraps these with the same `pub mod a { use super::*; pub mod
     // a_b { use super::*; … } }` chain that `buffa-build`'s `_include.rs`
@@ -776,6 +787,23 @@ fn main() {
         .preserve_unknown_fields(false)
         .compile()
         .expect("buffa_build failed for lazy_views_lean.proto");
+
+    // Path-scoped unknown-field preservation: global off, `Keep` re-enabled.
+    // Every codec that reads the flag per message (owned, view, lazy view,
+    // text, JSON extension wrapper, ExtensionSet, reflection) is compiled for
+    // both a preserving and a non-preserving message in one crate; runtime
+    // checks are in `src/tests/scoped_unknown_fields.rs`.
+    buffa_build::Config::new()
+        .files(&["protos/scoped_unknown_fields.proto"])
+        .includes(&["protos/"])
+        .preserve_unknown_fields(false)
+        .preserve_unknown_fields_in(&[".test.scopedunknown.Keep"])
+        .lazy_views(true)
+        .generate_json(true)
+        .generate_text(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for scoped_unknown_fields.proto");
 
     // Shared descriptor pool, `$OUT_DIR` mode — the real build-script flow:
     // cargo sets OUT_DIR, the descriptor-set sidecar is written there, and the

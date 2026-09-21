@@ -9,7 +9,8 @@ use std::sync::Arc;
 use buffa::encoding::{encode_varint, Tag, WireType};
 use buffa::DecodeError;
 use buffa_descriptor::reflect::{
-    DynamicMessage, MapKey, MapValue, ReflectError, ReflectMessage, ReflectMessageMut, Value,
+    DynamicMessage, MapKey, MapValue, ReflectCow, ReflectError, ReflectMessage, ReflectMessageMut,
+    Value, ValueRef,
 };
 use buffa_descriptor::DescriptorPool;
 
@@ -223,6 +224,319 @@ fn dynamic_message_containers_round_trip() {
 
     // The encoded length should match the actual bytes written.
     assert_eq!(msg.encoded_len(), bytes.len());
+}
+
+#[test]
+fn map_message_values_reject_group_wire_encoding() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+
+    // `children` is map<int32, Inner>. Map values always use the
+    // length-delimited message encoding, even though ordinary message fields
+    // may also use the legacy group encoding.
+    let mut entry = Vec::new();
+    Tag::new(1, WireType::Varint).encode(&mut entry);
+    encode_varint(7, &mut entry);
+    Tag::new(2, WireType::StartGroup).encode(&mut entry);
+    Tag::new(1, WireType::LengthDelimited).encode(&mut entry);
+    buffa::types::encode_string("group", &mut entry);
+    Tag::new(2, WireType::EndGroup).encode(&mut entry);
+
+    let mut wire = Vec::new();
+    Tag::new(4, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(entry.len() as u64, &mut wire);
+    wire.extend_from_slice(&entry);
+
+    assert_eq!(
+        DynamicMessage::decode(Arc::clone(&p), idx, &wire),
+        Err(DecodeError::WireTypeMismatch {
+            field_number: 2,
+            expected: WireType::LengthDelimited as u8,
+            actual: WireType::StartGroup as u8,
+        })
+    );
+}
+
+/// `mapwire.M` with one map field per key type (`map<K, int32>`) and one per
+/// value type (`map<int32, V>`), numbered from 1. Returns the pool and, per
+/// field, `(number, key wire type, value wire type)`.
+fn map_wire_type_pool() -> (Arc<DescriptorPool>, Vec<(u32, WireType, WireType)>) {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, EnumDescriptorProto, EnumValueDescriptorProto, FieldDescriptorProto,
+        FileDescriptorProto, FileDescriptorSet, MessageOptions,
+    };
+    use Type::*;
+    use WireType::{Fixed32, Fixed64, LengthDelimited, Varint};
+
+    let keys = [
+        (TYPE_INT32, Varint),
+        (TYPE_SINT32, Varint),
+        (TYPE_SFIXED32, Fixed32),
+        (TYPE_INT64, Varint),
+        (TYPE_SINT64, Varint),
+        (TYPE_SFIXED64, Fixed64),
+        (TYPE_UINT32, Varint),
+        (TYPE_FIXED32, Fixed32),
+        (TYPE_UINT64, Varint),
+        (TYPE_FIXED64, Fixed64),
+        (TYPE_BOOL, Varint),
+        (TYPE_STRING, LengthDelimited),
+    ];
+    let values = [
+        (TYPE_DOUBLE, None, Fixed64),
+        (TYPE_FLOAT, None, Fixed32),
+        (TYPE_INT64, None, Varint),
+        (TYPE_UINT64, None, Varint),
+        (TYPE_INT32, None, Varint),
+        (TYPE_FIXED64, None, Fixed64),
+        (TYPE_FIXED32, None, Fixed32),
+        (TYPE_BOOL, None, Varint),
+        (TYPE_STRING, None, LengthDelimited),
+        (TYPE_BYTES, None, LengthDelimited),
+        (TYPE_UINT32, None, Varint),
+        (TYPE_SFIXED32, None, Fixed32),
+        (TYPE_SFIXED64, None, Fixed64),
+        (TYPE_SINT32, None, Varint),
+        (TYPE_SINT64, None, Varint),
+        (TYPE_ENUM, Some(".mapwire.E"), Varint),
+        (TYPE_MESSAGE, Some(".mapwire.Leaf"), LengthDelimited),
+    ];
+    let specs: Vec<(Type, WireType, Type, Option<&str>, WireType)> = keys
+        .iter()
+        .map(|&(kt, kw)| (kt, kw, TYPE_INT32, None, Varint))
+        .chain(
+            values
+                .iter()
+                .map(|&(vt, name, vw)| (TYPE_INT32, Varint, vt, name, vw)),
+        )
+        .collect();
+
+    let field = |name: &str, number: i32, label: Label, ty: Type, type_name: Option<&str>| {
+        FieldDescriptorProto {
+            name: Some(name.into()),
+            number: Some(number),
+            label: Some(label),
+            r#type: Some(ty),
+            type_name: type_name.map(Into::into),
+            ..Default::default()
+        }
+    };
+    let mut m = DescriptorProto {
+        name: Some("M".into()),
+        ..Default::default()
+    };
+    let mut wires = Vec::new();
+    for (i, (kt, kw, vt, vname, vw)) in specs.into_iter().enumerate() {
+        let number = i as i32 + 1;
+        let entry = format!("E{number}");
+        m.nested_type.push(DescriptorProto {
+            name: Some(entry.clone()),
+            field: vec![
+                field("key", 1, Label::LABEL_OPTIONAL, kt, None),
+                field("value", 2, Label::LABEL_OPTIONAL, vt, vname),
+            ],
+            options: Some(MessageOptions {
+                map_entry: Some(true),
+                ..Default::default()
+            })
+            .into(),
+            ..Default::default()
+        });
+        m.field.push(field(
+            &format!("f{number}"),
+            number,
+            Label::LABEL_REPEATED,
+            TYPE_MESSAGE,
+            Some(&format!(".mapwire.M.{entry}")),
+        ));
+        wires.push((number as u32, kw, vw));
+    }
+    let file = FileDescriptorProto {
+        name: Some("mapwire.proto".into()),
+        package: Some("mapwire".into()),
+        syntax: Some("proto3".into()),
+        message_type: vec![
+            m,
+            DescriptorProto {
+                name: Some("Leaf".into()),
+                ..Default::default()
+            },
+        ],
+        enum_type: vec![EnumDescriptorProto {
+            name: Some("E".into()),
+            value: vec![EnumValueDescriptorProto {
+                name: Some("E_ZERO".into()),
+                number: Some(0),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![file],
+        ..Default::default()
+    })
+    .expect("pool builds from hand-built descriptor");
+    (Arc::new(pool), wires)
+}
+
+/// A map entry field 1 or 2 tagged with any wire type but the one its declared
+/// key or value type uses is a decode error, as in the owned map codec
+/// (`map_codec::merge_entry`), for every key type and every value type. The
+/// tag is checked before the payload is read, so the mismatch is reported
+/// rather than the field being decoded as a value of the wrong shape.
+#[test]
+fn map_entry_key_and_value_wire_types_are_checked() {
+    use WireType::{EndGroup, Fixed32, Fixed64, LengthDelimited, StartGroup, Varint};
+
+    let (p, maps) = map_wire_type_pool();
+    let idx = p.message_index("mapwire.M").unwrap();
+
+    // Well formed for every field type whose wire type is `wt`: a varint that
+    // is valid as bool/enum/int, fixed-width bytes, an empty string/bytes/
+    // message.
+    let entry_field = |number: u32, wt: WireType| {
+        let mut b = Vec::new();
+        Tag::new(number, wt).encode(&mut b);
+        match wt {
+            Varint => b.push(1),
+            Fixed64 => b.extend_from_slice(&[1; 8]),
+            Fixed32 => b.extend_from_slice(&[1; 4]),
+            LengthDelimited => b.push(0),
+            _ => {}
+        }
+        b
+    };
+    let decode = |number: u32, key: Vec<u8>, value: Vec<u8>| {
+        let mut entry = key;
+        entry.extend_from_slice(&value);
+        let mut wire = Vec::new();
+        Tag::new(number, LengthDelimited).encode(&mut wire);
+        encode_varint(entry.len() as u64, &mut wire);
+        wire.extend_from_slice(&entry);
+        DynamicMessage::decode(Arc::clone(&p), idx, &wire)
+    };
+
+    for (number, key_wt, value_wt) in maps {
+        let control = decode(number, entry_field(1, key_wt), entry_field(2, value_wt));
+        assert!(control.is_ok(), "map field {number}: {control:?}");
+
+        for wt in [
+            Varint,
+            Fixed64,
+            LengthDelimited,
+            StartGroup,
+            EndGroup,
+            Fixed32,
+        ] {
+            if wt != key_wt {
+                assert_eq!(
+                    decode(number, entry_field(1, wt), entry_field(2, value_wt)),
+                    Err(DecodeError::WireTypeMismatch {
+                        field_number: 1,
+                        expected: key_wt as u8,
+                        actual: wt as u8,
+                    }),
+                    "map field {number}: key tagged {wt:?}, expected {key_wt:?}"
+                );
+            }
+            if wt != value_wt {
+                assert_eq!(
+                    decode(number, entry_field(1, key_wt), entry_field(2, wt)),
+                    Err(DecodeError::WireTypeMismatch {
+                        field_number: 2,
+                        expected: value_wt as u8,
+                        actual: wt as u8,
+                    }),
+                    "map field {number}: value tagged {wt:?}, expected {value_wt:?}"
+                );
+            }
+        }
+    }
+}
+
+/// `merge_closed_enum_map_field` is a separate decoder from the generic map
+/// path: a closed-enum map value or key with the wrong wire type is an error
+/// there too, not an unknown-enum entry preserved verbatim.
+#[test]
+fn closed_enum_map_entry_wire_types_are_checked() {
+    let p = pool();
+    let idx = p.message_index("reflect.closed.Contexts").unwrap();
+
+    // `labels` is map<string, Status>: key length-delimited, value varint.
+    let decode = |key_wt: WireType, value_wt: WireType| {
+        let mut entry = Vec::new();
+        Tag::new(1, key_wt).encode(&mut entry);
+        match key_wt {
+            WireType::LengthDelimited => entry.extend_from_slice(&[1, b'k']),
+            _ => entry.push(1),
+        }
+        Tag::new(2, value_wt).encode(&mut entry);
+        match value_wt {
+            WireType::Fixed32 => entry.extend_from_slice(&[1; 4]),
+            _ => entry.push(99),
+        }
+        let mut wire = Vec::new();
+        Tag::new(5, WireType::LengthDelimited).encode(&mut wire);
+        encode_varint(entry.len() as u64, &mut wire);
+        wire.extend_from_slice(&entry);
+        DynamicMessage::decode(Arc::clone(&p), idx, &wire)
+    };
+
+    // Control: well-typed, and the unknown value 99 still takes the
+    // preserved-entry path.
+    let ok = decode(WireType::LengthDelimited, WireType::Varint).unwrap();
+    assert_eq!(ok.unknown_fields().iter().count(), 1);
+
+    assert_eq!(
+        decode(WireType::Varint, WireType::Varint),
+        Err(DecodeError::WireTypeMismatch {
+            field_number: 1,
+            expected: WireType::LengthDelimited as u8,
+            actual: WireType::Varint as u8,
+        })
+    );
+    assert_eq!(
+        decode(WireType::LengthDelimited, WireType::Fixed32),
+        Err(DecodeError::WireTypeMismatch {
+            field_number: 2,
+            expected: WireType::Varint as u8,
+            actual: WireType::Fixed32 as u8,
+        })
+    );
+}
+
+/// Negative control for the map wire-type checks: a message-typed field that
+/// is not a map value may still arrive group-encoded, singular or repeated.
+#[test]
+fn group_encoded_message_fields_outside_maps_still_decode() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+
+    let mut wire = Vec::new();
+    // `nested` (5) and `inners` (8) are Inner { string id = 1; }.
+    for number in [5, 8] {
+        Tag::new(number, WireType::StartGroup).encode(&mut wire);
+        Tag::new(1, WireType::LengthDelimited).encode(&mut wire);
+        buffa::types::encode_string("g", &mut wire);
+        Tag::new(number, WireType::EndGroup).encode(&mut wire);
+    }
+
+    let msg = DynamicMessage::decode(Arc::clone(&p), idx, &wire).unwrap();
+    let id_of = |m: &DynamicMessage| m.field_by_number(1).cloned();
+    let Some(Value::Message(nested)) = msg.field_by_number(5) else {
+        panic!("nested group not decoded");
+    };
+    assert_eq!(id_of(nested), Some(Value::String("g".into())));
+    let Some(Value::List(inners)) = msg.field_by_number(8) else {
+        panic!("repeated group not decoded");
+    };
+    let [Value::Message(inner)] = inners.as_slice() else {
+        panic!("expected one repeated element, got {inners:?}");
+    };
+    assert_eq!(id_of(inner), Some(Value::String("g".into())));
 }
 
 #[test]
@@ -659,6 +973,77 @@ fn dynamic_message_empty_containers_have_returns_false() {
     let mut count = 0;
     msg.for_each_set(&mut |_, _| count += 1);
     assert_eq!(count, 0);
+}
+
+#[test]
+fn for_each_set_visits_exactly_the_fields_has_reports() {
+    let p = pool();
+    let scalars_idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), scalars_idx);
+
+    // One of each presence outcome, so neither side can be right by accident:
+    //   implicit + default     -> absent
+    //   implicit + non-default -> present
+    //   explicit + default     -> present
+    msg.set(md.field(3).unwrap(), Value::I32(0));
+    msg.set(md.field(4).unwrap(), Value::I64(7));
+    msg.set(md.field(13).unwrap(), Value::Bool(false));
+    msg.set(md.field(14).unwrap(), Value::String(String::new()));
+    msg.set(md.field(16).unwrap(), Value::I32(0));
+
+    let mut visited = Vec::new();
+    msg.for_each_set(&mut |fd, _| visited.push(fd.number()));
+    visited.sort_unstable();
+
+    let mut reported: Vec<u32> = md
+        .fields()
+        .iter()
+        .filter(|fd| msg.has(fd))
+        .map(|fd| fd.number())
+        .collect();
+    reported.sort_unstable();
+
+    assert_eq!(visited, reported);
+    // Pin the set itself too, so the parity assertion cannot pass by both
+    // sides being empty. Field 16 is the discriminating case: `optional
+    // int32` holding 0 is present, while implicit field 3 holding 0 is not.
+    assert_eq!(visited, vec![4, 16]);
+}
+
+#[test]
+fn for_each_set_agrees_with_has_on_containers() {
+    let p = pool();
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let md = p.message_by_name("reflect.test.Containers").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), containers_idx);
+
+    let mut tags = MapValue::new();
+    tags.insert(MapKey::String("k".into()), Value::I32(1));
+
+    msg.set(md.field(1).unwrap(), Value::List(Vec::new()));
+    msg.set(
+        md.field(2).unwrap(),
+        Value::List(vec![Value::String("s".into())]),
+    );
+    msg.set(md.field(3).unwrap(), Value::Map(tags));
+    msg.set(md.field(4).unwrap(), Value::Map(MapValue::new()));
+
+    let mut visited = Vec::new();
+    msg.for_each_set(&mut |fd, _| visited.push(fd.number()));
+    visited.sort_unstable();
+
+    let mut reported: Vec<u32> = md
+        .fields()
+        .iter()
+        .filter(|fd| msg.has(fd))
+        .map(|fd| fd.number())
+        .collect();
+    reported.sort_unstable();
+
+    assert_eq!(visited, reported);
+    // The empty list (1) and empty map (4) are skipped; the populated ones stay.
+    assert_eq!(visited, vec![2, 3]);
 }
 
 #[test]
@@ -1665,4 +2050,88 @@ fn a_map_inside_a_group_is_normalized() {
             "key {k} must be findable after a group decode"
         );
     }
+}
+
+// ── Unset message fields ────────────────────────────────────────────────────
+
+/// `get()` on message field `number` of `msg`, which must be message-typed.
+fn get_message(msg: &dyn ReflectMessage, number: u32) -> ReflectCow<'_> {
+    let fd = msg
+        .message_descriptor()
+        .field(number)
+        .expect("field declared");
+    match msg.get(fd) {
+        ValueRef::Message(cow) => cow,
+        other => panic!("field {number} is not a message: {other:?}"),
+    }
+}
+
+#[test]
+fn unset_message_field_reads_as_a_borrowed_empty_message() {
+    let p = pool();
+    let inner_idx = p.message_index("reflect.test.Inner").unwrap();
+    let nested_fd = p
+        .message_by_name("reflect.test.Containers")
+        .unwrap()
+        .field(5)
+        .unwrap();
+    let mut msg = DynamicMessage::new_by_name(Arc::clone(&p), "reflect.test.Containers").unwrap();
+    let count = Arc::strong_count(&p);
+
+    let cow = get_message(&msg, 5);
+    assert!(matches!(cow, ReflectCow::Empty(_)));
+    assert_eq!(
+        Arc::strong_count(&p),
+        count,
+        "get() must not clone the pool"
+    );
+
+    let inner: &dyn ReflectMessage = &*cow;
+    let imd = inner.message_descriptor();
+    assert_eq!(imd.full_name(), "reflect.test.Inner");
+    assert!(Arc::ptr_eq(inner.pool(), &p));
+    assert!(inner.unknown_fields().is_empty());
+    assert!(imd.fields().iter().all(|fd| !inner.has(fd)));
+    assert!(matches!(
+        inner.get(imd.field(1).unwrap()),
+        ValueRef::String("")
+    ));
+    assert!(matches!(inner.get(imd.field(2).unwrap()), ValueRef::I32(0)));
+    let empty = DynamicMessage::new(Arc::clone(&p), inner_idx);
+    assert_eq!(cow.to_dynamic(), empty);
+
+    // Materializing the default and setting it makes the field present.
+    let owned = msg.get(nested_fd).to_owned();
+    assert_eq!(owned, Value::Message(empty));
+    msg.set(nested_fd, owned);
+    assert!(msg.has(nested_fd));
+    assert!(matches!(get_message(&msg, 5), ReflectCow::Borrowed(_)));
+}
+
+#[test]
+fn empty_message_reads_nest_and_do_not_keep_the_pool_alive() {
+    let fds = include_bytes!("protos/reflect_test_options.fds");
+    let p = Arc::new(DescriptorPool::decode(fds).unwrap());
+    let weak = Arc::downgrade(&p);
+    let file =
+        DynamicMessage::new_by_name(Arc::clone(&p), "google.protobuf.FileDescriptorProto").unwrap();
+    {
+        let options = get_message(&file, 8);
+        // `get()` on the empty message returns another empty message.
+        let features = get_message(&*options, 50);
+        assert!(matches!(options, ReflectCow::Empty(_)));
+        assert!(matches!(features, ReflectCow::Empty(_)));
+        assert_eq!(
+            features.message_descriptor().full_name(),
+            "google.protobuf.FeatureSet"
+        );
+        assert_eq!(Arc::strong_count(&p), 2);
+        // An owned snapshot takes a count and releases it on drop.
+        let snapshot = features.to_dynamic();
+        assert_eq!(Arc::strong_count(&p), 3);
+        drop(snapshot);
+    }
+    drop(file);
+    drop(p);
+    assert!(weak.upgrade().is_none(), "the pool must be freed");
 }

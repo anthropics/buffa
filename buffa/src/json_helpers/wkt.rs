@@ -25,6 +25,24 @@ pub const MAX_TIMESTAMP_SECS: i64 = 253_402_300_799;
 /// Largest valid `Duration.seconds` magnitude (10 000 years).
 pub const MAX_DURATION_SECS: i64 = 315_576_000_000;
 
+/// Parse a digits-only RFC 3339 component, requiring every byte to be an
+/// ASCII digit.
+///
+/// Integer `from_str` accepts a leading `+` — for the unsigned types too, so
+/// `"+1".parse::<u8>()` is `Ok(1)` — which would let a component take a sign
+/// the grammar does not allow and parse to a silently wrong value
+/// (`"+999-01-01T00:00:00Z"` as year 999). The digit check runs first, so
+/// `err` names the offending component either way.
+fn parse_component<T: core::str::FromStr>(s: &str, err: &'static str) -> Result<T, &'static str> {
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(err);
+    }
+    // Unreachable at every current call site — the widths bound the value
+    // below each target type's maximum (4 digits into `i64`, 2 into `u8`,
+    // 9 into `i32`) — so this arm is defensive rather than covered by a test.
+    s.parse().map_err(|_| err)
+}
+
 // ── Timestamp ───────────────────────────────────────────────────────────────
 
 /// Format unix `(seconds, nanos)` as an RFC 3339 timestamp with a `Z` suffix
@@ -67,7 +85,9 @@ pub fn fmt_timestamp(secs: i64, nanos: i32) -> Result<String, &'static str> {
 ///
 /// Accepts an uppercase `Z` suffix and `+HH:MM` / `-HH:MM` UTC offsets.
 /// Rejects lowercase `t`/`z` (the proto3 JSON spec requires uppercase) and
-/// anything outside the proto3 `Timestamp` range.
+/// anything outside the proto3 `Timestamp` range. Every component is
+/// digits-only, so a signed one — `"+999-01-01T00:00:00Z"` — is rejected
+/// even though integer `from_str` would accept it.
 ///
 /// # Errors
 ///
@@ -94,10 +114,8 @@ pub fn parse_timestamp(s: &str) -> Result<(i64, i32), &'static str> {
         if s.as_bytes()[len - 3] != b':' {
             return Err("malformed timezone offset");
         }
-        let oh: i64 = s[len - 5..len - 3]
-            .parse()
-            .map_err(|_| "bad offset hours")?;
-        let om: i64 = s[len - 2..].parse().map_err(|_| "bad offset minutes")?;
+        let oh: i64 = parse_component(&s[len - 5..len - 3], "bad offset hours")?;
+        let om: i64 = parse_component(&s[len - 2..], "bad offset minutes")?;
         if !(0..=23).contains(&oh) || !(0..=59).contains(&om) {
             return Err("offset out of range");
         }
@@ -117,12 +135,12 @@ pub fn parse_timestamp(s: &str) -> Result<(i64, i32), &'static str> {
         return Err("malformed separators");
     }
 
-    let year: i64 = date[0..4].parse().map_err(|_| "bad year")?;
-    let month: u8 = date[5..7].parse().map_err(|_| "bad month")?;
-    let day: u8 = date[8..10].parse().map_err(|_| "bad day")?;
-    let hour: i64 = time[0..2].parse().map_err(|_| "bad hour")?;
-    let min: i64 = time[3..5].parse().map_err(|_| "bad minute")?;
-    let sec: i64 = time[6..8].parse().map_err(|_| "bad second")?;
+    let year: i64 = parse_component(&date[0..4], "bad year")?;
+    let month: u8 = parse_component(&date[5..7], "bad month")?;
+    let day: u8 = parse_component(&date[8..10], "bad day")?;
+    let hour: i64 = parse_component(&time[0..2], "bad hour")?;
+    let min: i64 = parse_component(&time[3..5], "bad minute")?;
+    let sec: i64 = parse_component(&time[6..8], "bad second")?;
     // Proto3 Timestamp uses unix epoch seconds, which has no leap-second
     // representation, so reject second 60.
     if !(0..=23).contains(&hour) || !(0..=59).contains(&min) || !(0..=59).contains(&sec) {
@@ -134,12 +152,10 @@ pub fn parse_timestamp(s: &str) -> Result<(i64, i32), &'static str> {
             return Err("malformed fractional seconds");
         }
         let frac = &time[9..];
-        // All chars must be digits — `i32::parse` accepts '-' and '+', which
-        // would let "T23:59:59.-3Z" produce negative nanos.
-        if frac.is_empty() || frac.len() > 9 || !frac.bytes().all(|b| b.is_ascii_digit()) {
+        if frac.len() > 9 {
             return Err("bad fractional seconds");
         }
-        let n: i32 = frac.parse().map_err(|_| "bad fractional seconds")?;
+        let n: i32 = parse_component(frac, "bad fractional seconds")?;
         n * 10_i32.pow(9 - frac.len() as u32)
     } else {
         0
@@ -206,10 +222,10 @@ pub fn parse_duration(s: &str) -> Result<(i64, i32), &'static str> {
     let abs_nanos: i32 = if nano_str.is_empty() {
         0
     } else {
-        if nano_str.len() > 9 || !nano_str.bytes().all(|b| b.is_ascii_digit()) {
+        if nano_str.len() > 9 {
             return Err("bad fractional seconds");
         }
-        let n: i32 = nano_str.parse().map_err(|_| "bad fractional seconds")?;
+        let n: i32 = parse_component(nano_str, "bad fractional seconds")?;
         n * 10_i32.pow(9 - nano_str.len() as u32)
     };
     let (secs, nanos) = if negative {
@@ -435,6 +451,35 @@ mod tests {
         assert!(parse_timestamp("ñotrfc3339").is_err()); // non-ASCII
         assert!(fmt_timestamp(MAX_TIMESTAMP_SECS + 1, 0).is_err());
         assert!(fmt_timestamp(0, -1).is_err());
+    }
+
+    #[test]
+    fn timestamp_rejects_non_digit_components() {
+        // Integer `from_str` accepts a leading '+' for both signed and
+        // unsigned types, so a component handed straight to `parse` would
+        // take a sign RFC 3339 does not allow. The error names the component.
+        let cases = [
+            ("+999-01-01T00:00:00Z", "bad year"),
+            ("2021-+1-01T00:00:00Z", "bad month"),
+            ("2021-01-+1T00:00:00Z", "bad day"),
+            ("2021-01-01T+1:00:00Z", "bad hour"),
+            ("2021-01-01T00:+1:00Z", "bad minute"),
+            ("2021-01-01T00:00:+1Z", "bad second"),
+            ("2021-01-01T00:00:00++1:00", "bad offset hours"),
+            ("2021-01-01T00:00:00+01:+1", "bad offset minutes"),
+            ("2021-01-01T00:00:00.+1Z", "bad fractional seconds"),
+            ("2021-01-01T00:00:00.Z", "bad fractional seconds"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(parse_timestamp(input), Err(expected), "{input}");
+        }
+        // The digit check is a subset filter over the grammar, not a new
+        // restriction: a numeric offset still parses.
+        assert_eq!(parse_timestamp("1970-01-01T05:00:00+05:00"), Ok((0, 0)));
+        assert_eq!(
+            parse_timestamp("1970-01-01T00:00:00-23:59"),
+            Ok((86_340, 0))
+        );
     }
 
     #[test]
