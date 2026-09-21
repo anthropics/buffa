@@ -1019,3 +1019,4 @@ pub mod basic_no_uf {
 mod tests;
 
 pub mod string_copy;
+pub mod string_copy_counted;

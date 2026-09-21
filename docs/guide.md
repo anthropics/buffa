@@ -362,7 +362,7 @@ impl ProtoString for CompactStr {
 }
 ```
 
-`ProtoString::copy_from_str` copies borrowed JSON text in non-optional singular fields and all string view fields into owned storage. Its default goes through `String` and `From<String>`; override it as above to avoid a temporary allocation for inline/shared strings. The trait does not require `From<&str>`, so a string library can keep that conversion's borrowing semantics. The remote derive still requires `From<&str>` for every input lifetime and forwards `copy_from_str` through it; types with a borrowing conversion should implement `ProtoString` by hand.
+`ProtoString::copy_from_str` copies borrowed JSON text in non-optional singular fields and the string view fields of custom representations into owned storage. Its default goes through `String` and `From<String>`; override it as above to avoid a temporary allocation for inline/shared strings. The trait does not require `From<&str>`, so a string library can keep that conversion's borrowing semantics. The remote derive still requires `From<&str>` for every input lifetime and forwards `copy_from_str` through it; types with a borrowing conversion should implement `ProtoString` by hand.
 
 When migrating generic code that relied on `S: ProtoString` to imply `From<&str>`, use `S::copy_from_str(value)` or add an explicit conversion bound. Regenerate custom-string views before using a representation without the old bound. Hand-written users of `json_helpers::proto_string::deserialize` now need `ProtoString`, not just the two `From` conversions; implement the trait or provide a separate deserializer.
 

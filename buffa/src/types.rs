@@ -1296,8 +1296,8 @@ pub fn string_encoded_len(value: &str) -> usize {
 /// - `From<String>` — constructs fields from owned JSON strings, text-format
 ///   parsing, and proto2 defaults.
 /// - [`copy_from_str`](ProtoString::copy_from_str) — copies borrowed JSON
-///   strings in non-optional singular fields and all string view fields into
-///   owned storage. Binary decoding uses [`from_wire`](ProtoString::from_wire).
+///   strings in non-optional singular fields, and the text of string view
+///   fields of custom representations, into owned storage. Binary decoding uses [`from_wire`](ProtoString::from_wire).
 ///
 /// For the default `String` representation every conversion is the identity, so
 /// the generic path costs nothing relative to the specialized one.
@@ -1317,6 +1317,9 @@ pub fn string_encoded_len(value: &str) -> usize {
 ///   decode uses `from_wire` while JSON / text / view→owned use the other
 ///   constructors, so a representation must not transform the text (e.g.
 ///   case-fold) in one path but not the other.
+/// - `copy_from_str(s)` is value-equivalent to `From::from(s.to_owned())` — an
+///   override exists only to skip the intermediate `String`, so it must not
+///   change the resulting value.
 ///
 /// # Limitations
 ///
@@ -1364,11 +1367,19 @@ pub trait ProtoString:
     /// Copy text into storage that does not borrow from `value`.
     ///
     /// The default constructs a [`String`] and passes it to `From<String>`.
-    /// Inline or shared-string implementations can override this to avoid the
-    /// intermediate allocation. Unlike `From<&str>`, this method does not tie
-    /// the result's lifetime to the input, so a type can retain a separate
-    /// borrowing `From<&str>` implementation.
-    /// The explicit name also avoids confusion with the fallible `FromStr` trait.
+    /// Unlike `From<&str>`, this method does not tie the result's lifetime to
+    /// the input, so a type can retain a separate borrowing `From<&str>`
+    /// implementation.
+    ///
+    /// Override it if the type stores short strings inline or shares them. The
+    /// default cannot call `From<&str>`, so a type with a cheaper
+    /// borrowed-text constructor that does not override this method pays the
+    /// intermediate `String` allocation wherever generated code copies borrowed
+    /// text: view-to-owned conversion of singular, optional, repeated, map and
+    /// oneof string fields, and JSON deserialization of non-optional singular
+    /// fields. The values are unchanged; only the cost differs.
+    /// `#[derive(buffa_remote_derive::ProtoString)]` forwards this method to
+    /// the remote type's `From<&str>`, so derived types are already covered.
     #[inline]
     fn copy_from_str(value: &str) -> Self {
         Self::from(String::from(value))

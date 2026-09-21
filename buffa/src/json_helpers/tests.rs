@@ -1338,9 +1338,9 @@ fn proto_string_null_is_empty() {
 }
 
 /// A stand-in for a configurable string type (`SmolStr`/`EcoString`/...): it
-/// implements the `ProtoString` surface without `From<&str>`, which the
-/// generic `proto_string` path relies on, proving the with-module deserializes
-/// into an arbitrary target type without a per-type shim.
+/// implements `ProtoString` with no `From<&str>` impl at all, proving the
+/// generic `proto_string` with-module deserializes into an arbitrary target
+/// type without a per-type shim.
 #[derive(Clone, PartialEq, Debug, Default)]
 struct MyStr(alloc::string::String);
 impl From<alloc::string::String> for MyStr {
@@ -1372,7 +1372,7 @@ struct SerdeCustomStr(#[serde(with = "proto_string")] MyStr);
 fn proto_string_deserializes_into_custom_type() {
     let recovered: SerdeCustomStr = serde_json::from_str(r#""hello""#).unwrap();
     assert_eq!(recovered.0, MyStr("hello".into()));
-    // null still maps to the empty value via the `From<String>` conversion.
+    // null still maps to the empty value, built by `copy_from_str("")`.
     let empty: SerdeCustomStr = serde_json::from_str("null").unwrap();
     assert_eq!(empty.0, MyStr::default());
     // Round-trips back out, serialized via `AsRef<str>`.
