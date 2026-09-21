@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Textproto extension and `Any` names accept whitespace and comments inside brackets.** The Text Format grammar allows trivia between syntactic elements in `[pkg.ext]` and `[type.googleapis.com/pkg.Msg]`, including comments that split name segments. Buffa previously only trimmed the bracket body, so valid names with internal trivia missed the type registry; a `]` inside a comment could also terminate the token early. Bracket trivia is now removed before lookup and comment text no longer closes the token.
+time: 2026-09-21T16:14:00+02:00
