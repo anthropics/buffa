@@ -1,0 +1,14 @@
+// A message carrying `google.protobuf.Value` and `Struct` fields, for the
+// reflective JSON element-memory budget: these are the open-schema WKTs
+// whose parse accumulates straight from untrusted input.
+syntax = "proto3";
+
+package reflect.json;
+
+import "google/protobuf/struct.proto";
+
+message Payload {
+  google.protobuf.Value value = 1;
+  google.protobuf.Struct meta = 2;
+  repeated google.protobuf.Value items = 3;
+}

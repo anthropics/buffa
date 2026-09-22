@@ -19,6 +19,8 @@
 //! types, and CEL evaluation requires the pool to carry the full schema
 //! anyway.
 
+use core::cell::Cell;
+
 use alloc::borrow::ToOwned;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -311,6 +313,44 @@ impl Serialize for MapKeyRef<'_> {
 }
 
 // ── Deserialize ─────────────────────────────────────────────────────────────
+//
+// What a parse *materializes* is bounded by an element-memory budget, the
+// JSON twin of the one `DecodeContext` carries for the binary codec. A
+// `DecodeContext` never reaches this parser — `serde::Deserialize` has no
+// context parameter — so the budget is minted at the top-level seed and
+// threaded by reference through the visitors, exactly as `ignore_unknown`
+// is threaded by hand.
+//
+// It is needed for the same reason the binary one is: an empty repeated
+// message element is three JSON bytes (`{},`) and `size_of::<Value>()` in
+// the `Vec` it lands in, so a payload well inside any input-size cap still
+// expands by two orders of magnitude. The charges match the reflective
+// binary decoder's (`reflect/dynamic.rs`) element for element, so the same
+// message costs the same budget whichever codec it arrived on.
+
+/// Charge `bytes` of element footprint against the parse's shared budget.
+///
+/// Leaves the budget unchanged when it fails, mirroring
+/// [`buffa::DecodeContext::register_element_memory`].
+///
+/// Containers charge as they *admit* an element rather than before reading
+/// it: `SeqAccess`/`MapAccess` have no peek, so whether another element
+/// exists is only known once it has been read. The reflective binary
+/// decoder charges at the same point for the same reason, and the overshoot
+/// is one element — whatever that element materialized inside itself was
+/// charged as it was built. `FieldMask`, whose paths are countable up
+/// front, does charge before allocating.
+fn charge<E: de::Error>(budget: &Cell<usize>, bytes: usize) -> Result<(), E> {
+    let remaining = budget.get();
+    if bytes > remaining {
+        return Err(E::custom(
+            "element memory limit exceeded (raise it with \
+             DynamicMessageSeed::with_element_memory_limit)",
+        ));
+    }
+    budget.set(remaining - bytes);
+    Ok(())
+}
 
 impl DynamicMessage {
     /// Parse proto3 canonical JSON into a `DynamicMessage`.
@@ -319,10 +359,16 @@ impl DynamicMessage {
     /// parsing (a transcoding gateway accepting input from a newer schema
     /// revision), use [`Self::from_json_ignoring_unknown`].
     ///
+    /// The parse is bounded by
+    /// [`buffa::DEFAULT_ELEMENT_MEMORY_LIMIT`] (32 MiB) of element
+    /// footprint; raise or lower it with
+    /// [`DynamicMessageSeed::with_element_memory_limit`].
+    ///
     /// # Errors
     ///
-    /// Returns a `serde_json::Error` if the input is not valid JSON or does
-    /// not match the message descriptor.
+    /// Returns a `serde_json::Error` if the input is not valid JSON, does
+    /// not match the message descriptor, or would materialize more element
+    /// memory than the default budget allows.
     #[cfg(feature = "std")]
     pub fn from_json(
         pool: Arc<DescriptorPool>,
@@ -349,10 +395,15 @@ impl DynamicMessage {
     /// null elements in repeated fields, malformed values on *known*
     /// fields — remain errors.
     ///
+    /// The element-memory budget applies here too — `ignore_unknown`
+    /// relaxes the unknown-field check, not the bound. See
+    /// [`Self::from_json`].
+    ///
     /// # Errors
     ///
-    /// Returns a `serde_json::Error` if the input is not valid JSON or a
-    /// *known* field does not match its descriptor.
+    /// Returns a `serde_json::Error` if the input is not valid JSON, a
+    /// *known* field does not match its descriptor, or the parse would
+    /// exceed the element-memory budget.
     #[cfg(feature = "std")]
     pub fn from_json_ignoring_unknown(
         pool: Arc<DescriptorPool>,
@@ -397,6 +448,7 @@ pub struct DynamicMessageSeed {
     pool: Arc<DescriptorPool>,
     msg_idx: MessageIndex,
     ignore_unknown: bool,
+    element_memory_limit: usize,
 }
 
 impl DynamicMessageSeed {
@@ -407,6 +459,7 @@ impl DynamicMessageSeed {
             pool,
             msg_idx,
             ignore_unknown: false,
+            element_memory_limit: buffa::DEFAULT_ELEMENT_MEMORY_LIMIT,
         }
     }
 
@@ -419,31 +472,95 @@ impl DynamicMessageSeed {
         self.ignore_unknown = ignore;
         self
     }
+
+    /// Set the element-memory budget for this parse (default:
+    /// [`buffa::DEFAULT_ELEMENT_MEMORY_LIMIT`], 32 MiB).
+    ///
+    /// Bounds what the parse *materializes* rather than how much JSON it
+    /// reads: repeated elements, map entries, `Struct` members, `ListValue`
+    /// elements and `FieldMask` paths are charged their footprint as they
+    /// are admitted, and the budget is shared by the whole parse —
+    /// nested messages and `Any` payloads draw on the same allowance rather
+    /// than each getting a fresh one. Exhausting it is a serde error.
+    ///
+    /// This is the JSON counterpart of
+    /// [`DecodeOptions::with_element_memory_limit`](buffa::DecodeOptions::with_element_memory_limit),
+    /// which bounds only the binary codec, and of textproto's
+    /// `TextDecoder::with_element_memory_limit` (not linked: `buffa::text`
+    /// is behind a feature this crate does not enable).
+    /// Charges match the reflective binary decoder's — `size_of::<Value>()`
+    /// per repeated element including scalars, `size_of::<MapKey>() +
+    /// size_of::<Value>()` per map entry — so a message costs the same
+    /// budget whichever codec it arrived on. Pass `usize::MAX` to disable.
+    #[must_use]
+    pub fn with_element_memory_limit(mut self, bytes: usize) -> Self {
+        self.element_memory_limit = bytes;
+        self
+    }
 }
 
 impl<'de> DeserializeSeed<'de> for DynamicMessageSeed {
     type Value = DynamicMessage;
 
     fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+        // The one place the budget is minted; every nested message goes
+        // through `NestedSeed`, which borrows this cell rather than starting
+        // a fresh allowance.
+        let budget = Cell::new(self.element_memory_limit);
+        NestedSeed {
+            pool: self.pool,
+            msg_idx: self.msg_idx,
+            ignore_unknown: self.ignore_unknown,
+            budget: &budget,
+        }
+        .deserialize(d)
+    }
+}
+
+/// The internal twin of [`DynamicMessageSeed`] that borrows the parse's
+/// element-memory budget instead of owning a limit.
+///
+/// Every recursion site uses this, so one top-level parse draws on one
+/// allowance. The budget stays a borrow — an `Rc`/`Arc<Cell<_>>` field on
+/// the public seed would make it `!Send`.
+struct NestedSeed<'a> {
+    pool: Arc<DescriptorPool>,
+    msg_idx: MessageIndex,
+    ignore_unknown: bool,
+    budget: &'a Cell<usize>,
+}
+
+impl<'de> DeserializeSeed<'de> for NestedSeed<'_> {
+    type Value = DynamicMessage;
+
+    fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
         let md = self.pool.message(self.msg_idx);
         if let Some(wkt) = WktKind::from_full_name(&md.full_name) {
-            return wkt.deserialize_message(self.pool, self.msg_idx, d, self.ignore_unknown);
+            return wkt.deserialize_message(
+                self.pool,
+                self.msg_idx,
+                d,
+                self.ignore_unknown,
+                self.budget,
+            );
         }
         d.deserialize_map(MessageVisitor {
             pool: self.pool,
             msg_idx: self.msg_idx,
             ignore_unknown: self.ignore_unknown,
+            budget: self.budget,
         })
     }
 }
 
-struct MessageVisitor {
+struct MessageVisitor<'a> {
     pool: Arc<DescriptorPool>,
     msg_idx: MessageIndex,
     ignore_unknown: bool,
+    budget: &'a Cell<usize>,
 }
 
-impl<'de> Visitor<'de> for MessageVisitor {
+impl<'de> Visitor<'de> for MessageVisitor<'_> {
     type Value = DynamicMessage;
 
     fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
@@ -530,6 +647,7 @@ impl<'de> Visitor<'de> for MessageVisitor {
                 kind,
                 enum_type,
                 ignore_unknown: self.ignore_unknown,
+                budget: self.budget,
             })?;
             // null → leave the field unset (per spec, except NullValue which
             // FieldSeed handles).
@@ -591,6 +709,7 @@ struct FieldSeed<'a> {
     kind: FieldKind,
     enum_type: Option<EnumType>,
     ignore_unknown: bool,
+    budget: &'a Cell<usize>,
 }
 
 impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
@@ -606,6 +725,7 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
                 kind: sk,
                 enum_type: self.enum_type,
                 ignore_unknown: self.ignore_unknown,
+                budget: self.budget,
             }
             .deserialize(d),
             FieldKind::List(sk) => d.deserialize_any(ListVisitor {
@@ -613,6 +733,7 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
                 kind: sk,
                 enum_type: self.enum_type,
                 ignore_unknown: self.ignore_unknown,
+                budget: self.budget,
             }),
             FieldKind::Map { key, value } => d.deserialize_any(MapFieldVisitor {
                 pool: self.pool,
@@ -620,6 +741,7 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
                 value,
                 enum_type: self.enum_type,
                 ignore_unknown: self.ignore_unknown,
+                budget: self.budget,
             }),
         }
     }
@@ -630,6 +752,7 @@ struct SingularSeed<'a> {
     kind: SingularKind,
     enum_type: Option<EnumType>,
     ignore_unknown: bool,
+    budget: &'a Cell<usize>,
 }
 
 impl<'de> DeserializeSeed<'de> for SingularSeed<'_> {
@@ -644,16 +767,21 @@ impl<'de> DeserializeSeed<'de> for SingularSeed<'_> {
                 // `null_value` member, not "unset" — dispatch straight to the
                 // WKT seed so its visitor sees the unit token.
                 if self.pool.message(midx).full_name == "google.protobuf.Value" {
-                    return DynamicMessageSeed::new(Arc::clone(self.pool), midx)
-                        .ignore_unknown_fields(self.ignore_unknown)
-                        .deserialize(d)
-                        .map(|m| Some(Value::Message(m)));
+                    return NestedSeed {
+                        pool: Arc::clone(self.pool),
+                        msg_idx: midx,
+                        ignore_unknown: self.ignore_unknown,
+                        budget: self.budget,
+                    }
+                    .deserialize(d)
+                    .map(|m| Some(Value::Message(m)));
                 }
                 // Otherwise, JSON `null` maps to `None` ("unset").
                 d.deserialize_option(NestedMessageVisitor {
                     pool: self.pool,
                     midx,
                     ignore_unknown: self.ignore_unknown,
+                    budget: self.budget,
                 })
             }
         }
@@ -688,6 +816,7 @@ struct NestedMessageVisitor<'a> {
     pool: &'a Arc<DescriptorPool>,
     midx: MessageIndex,
     ignore_unknown: bool,
+    budget: &'a Cell<usize>,
 }
 
 impl<'de> Visitor<'de> for NestedMessageVisitor<'_> {
@@ -706,10 +835,14 @@ impl<'de> Visitor<'de> for NestedMessageVisitor<'_> {
     }
 
     fn visit_some<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
-        DynamicMessageSeed::new(Arc::clone(self.pool), self.midx)
-            .ignore_unknown_fields(self.ignore_unknown)
-            .deserialize(d)
-            .map(|m| Some(Value::Message(m)))
+        NestedSeed {
+            pool: Arc::clone(self.pool),
+            msg_idx: self.midx,
+            ignore_unknown: self.ignore_unknown,
+            budget: self.budget,
+        }
+        .deserialize(d)
+        .map(|m| Some(Value::Message(m)))
     }
 }
 
@@ -920,6 +1053,7 @@ struct ListVisitor<'a> {
     kind: SingularKind,
     enum_type: Option<EnumType>,
     ignore_unknown: bool,
+    budget: &'a Cell<usize>,
 }
 
 impl<'de> Visitor<'de> for ListVisitor<'_> {
@@ -937,9 +1071,14 @@ impl<'de> Visitor<'de> for ListVisitor<'_> {
             kind: self.kind,
             enum_type: self.enum_type,
             ignore_unknown: self.ignore_unknown,
+            budget: self.budget,
         })? {
             // Per the spec, repeated fields cannot contain null elements.
             let v = v.ok_or_else(|| de::Error::custom("null element in repeated field"))?;
+            // Charged, like the reflective binary decoder and unlike the
+            // generated one: that exemption is sized for a `Vec<i32>`, and
+            // this store is a `Vec<Value>`.
+            charge(self.budget, core::mem::size_of::<Value>())?;
             out.push(v);
         }
         Ok(Some(Value::List(out)))
@@ -952,6 +1091,7 @@ struct MapFieldVisitor<'a> {
     value: SingularKind,
     enum_type: Option<EnumType>,
     ignore_unknown: bool,
+    budget: &'a Cell<usize>,
 }
 
 impl<'de> Visitor<'de> for MapFieldVisitor<'_> {
@@ -973,8 +1113,14 @@ impl<'de> Visitor<'de> for MapFieldVisitor<'_> {
                 kind: self.value,
                 enum_type: self.enum_type,
                 ignore_unknown: self.ignore_unknown,
+                budget: self.budget,
             })?;
             let v = v.ok_or_else(|| de::Error::custom("null value in map field"))?;
+            // Same charge the reflective binary decoder applies per entry.
+            charge(
+                self.budget,
+                core::mem::size_of::<MapKey>() + core::mem::size_of::<Value>(),
+            )?;
             out.push((k, v));
         }
         Ok(Some(Value::Map(MapValue::from_entries(out))))

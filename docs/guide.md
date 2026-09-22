@@ -1155,11 +1155,13 @@ The default `Message::decode` / `decode_from_slice` methods use the defaults (10
 
 Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. The carve-outs are `ReflectMessage::to_dynamic` and the generated-message bridge (`DynamicMessage::from_message` / `try_from_message*`), whose internal round-trip re-decodes bytes buffa just encoded with memory bounds scaled to the encoded length: 128 bytes of element memory per encoded byte and one unknown-field slot per encoded byte, each floored at its default. They read messages you already hold, not wire input, so this avoids false rejection by the fixed defaults without making the second representation unbounded. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
 
-Textproto is the exception among the non-binary formats: `decode_from_str` applies the element-memory limit on its own. The amplification there is very nearly as large as on the wire — `{},` is three input bytes for the same element footprint that costs two encoded — so the parser needs the same bound, and carries its own because `DecodeContext` never reaches it. Raise it with `buffa::text::decode_from_str_with_element_memory_limit`. The recursion limit already applied there, enforced by the tokenizer.
+The reflective JSON parser is the one carve-out. `DynamicMessage::from_json` owns its `Deserializer`, so it carries its own element-memory budget the way textproto does: 32 MiB by default, charged per repeated element, map entry, `Struct` member, `ListValue` element and `FieldMask` path, shared across the whole parse including `google.protobuf.Any` payloads, and raised or lowered with `DynamicMessageSeed::new(..).with_element_memory_limit(n)`. The charges match the reflective binary decoder's, so the same message costs the same budget on either codec. The recursion and message-size limits still do not reach it, and generated-message JSON is unbounded as described above.
 
-The one JSON-side bound is on reflective *serialization*: `DynamicMessage`'s `Serialize` impl caps message nesting at `RECURSION_LIMIT` (100), counting `google.protobuf.Any` payloads — which it decodes at serialize time — toward the same budget, and fails with a serde error beyond it. That cap is fixed rather than read from `DecodeOptions`, and decode success alone does not imply the message will serialize — an over-deep `Any` chain decodes fine as opaque bytes — so serialize at ingest if you need that guarantee.
+Textproto is the other non-binary format that bounds itself: `decode_from_str` applies the element-memory limit on its own. The amplification there is very nearly as large as on the wire — `{},` is three input bytes for the same element footprint that costs two encoded — so the parser needs the same bound, and carries its own because `DecodeContext` never reaches it. Raise it with `buffa::text::decode_from_str_with_element_memory_limit`. The recursion limit already applied there, enforced by the tokenizer.
 
-If you accept untrusted JSON, impose your own bound before parsing; capping the input length is the simplest form and is the one thing that transfers. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
+Reflective JSON *serialization* is bounded too, by nesting rather than by footprint: `DynamicMessage`'s `Serialize` impl caps message nesting at `RECURSION_LIMIT` (100), counting `google.protobuf.Any` payloads — which it decodes at serialize time — toward the same budget, and fails with a serde error beyond it. That cap is fixed rather than read from `DecodeOptions`, and decode success alone does not imply the message will serialize — an over-deep `Any` chain decodes fine as opaque bytes — so serialize at ingest if you need that guarantee.
+
+If you accept untrusted JSON into a *generated* message, impose your own bound before parsing; capping the input length is the simplest form and is the one thing that transfers. Which mechanism that path should use is still open in [#330](https://github.com/anthropics/buffa/issues/330).
 
 ### `Any` expansion is separately capped
 
@@ -1561,7 +1563,10 @@ Because JSON parsing goes straight from `serde_json` into the generated
 `Deserialize` impls, buffa is never handed a `DecodeOptions` on this path, so
 [the decode limits](#what-these-limits-do-and-do-not-bound) that bound the
 binary codec do not bound JSON. Cap the input yourself before parsing untrusted
-JSON. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
+JSON. Which mechanism the generated path should use is still open in
+[#330](https://github.com/anthropics/buffa/issues/330). The reflective parser
+(`DynamicMessage::from_json`) is already bounded — see
+[the limits section](#what-these-limits-do-and-do-not-bound).
 
 ### JSON parse options
 

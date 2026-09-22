@@ -1122,6 +1122,12 @@ pub trait MessageName {
 /// be bounded needs a bound imposed by the caller, for example by capping the
 /// input length before parsing.
 ///
+/// One JSON path carries its own bound rather than needing the caller's:
+/// `buffa_descriptor`'s reflective parser (`DynamicMessage::from_json`)
+/// applies [`DEFAULT_ELEMENT_MEMORY_LIMIT`] to what it materializes, raised
+/// or lowered on its seed rather than here. Generated-message JSON is still
+/// the caller's to bound.
+///
 /// # Examples
 ///
 /// ```no_run
