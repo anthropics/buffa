@@ -1200,6 +1200,22 @@ mod tests {
         assert_eq!(tok.raw, "\"a\" # between\n 'b'");
     }
 
+    #[test]
+    fn trailing_comment_is_not_part_of_string_token() {
+        let mut t = Tokenizer::new("f: \"a\" # \"not a literal\"\ng: 1");
+        t.read().unwrap();
+        assert_eq!(t.read().unwrap().raw, "\"a\"");
+        assert_eq!(t.read().unwrap().raw, "g");
+    }
+
+    #[test]
+    fn unterminated_literal_after_comment_is_an_error() {
+        let mut t = Tokenizer::new("f: \"a\" # c\n \"b");
+        t.read().unwrap();
+        let err = t.read().unwrap_err();
+        assert!(matches!(err.kind, ParseErrorKind::InvalidString(_)));
+    }
+
     // ── number lexing ───────────────────────────────────────────────────────
 
     #[test]

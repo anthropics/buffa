@@ -1079,6 +1079,7 @@ mod tests {
             (r#"f: 'world'"#,         Some("world")),
             (r#"f: "say \"hi\"""#,    Some("say \"hi\"")),
             (r#"f: "foo" "bar""#,     Some("foobar")),
+            ("f: \"foo\" # c\n \"bar\"", Some("foobar")),
             (r#"f: """#,              Some("")),
             (r#"f: 42"#,              None),  // not a string
             (r#"f: "\xFF""#,          None),  // invalid UTF-8

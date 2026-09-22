@@ -42,9 +42,9 @@ pub enum UnescapeError {
 /// into a byte vector.
 ///
 /// `raw` must begin with `"` or `'`. Adjacent literals (`"foo" 'bar'`) are
-/// concatenated: whitespace and comments between them are consumed, the enclosing
-/// quotes are stripped, and escapes are resolved. This matches the textproto grammar's
-/// treatment of `"a" "b"` as a single scalar value `"ab"`.
+/// concatenated: whitespace and `#` comments between them are consumed, the
+/// enclosing quotes are stripped, and escapes are resolved. This matches the
+/// textproto grammar's treatment of `"a" "b"` as a single scalar value `"ab"`.
 ///
 /// # Errors
 ///
@@ -155,7 +155,7 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
                 }
             }
         }
-        // After a closing quote: skip whitespace/comments, then check for another quote.
+        // Skip whitespace and comments; continue only if another quote follows.
         s = super::token::consume_ws(s);
         if !matches!(s.first(), Some(b'"') | Some(b'\'')) {
             break;
@@ -338,7 +338,10 @@ mod tests {
             (r#""foo" "bar""#,         Some(b"foobar")),        // adjacent concat
             (r#""foo"'bar'"baz""#,     Some(b"foobarbaz")),     // no ws required
             (r#""a"  "b""#,            Some(b"ab")),            // ws between is ok
-            ("\"a\" # between\n \"b\"",       Some(b"ab")),        // comments between are ok
+            ("\"a\" # between\n \"b\"", Some(b"ab")),          // comment between is ok
+            ("\"a\" # \"x\"\n \"b\"",   Some(b"ab")),          // a quote in a comment is not a literal
+            ("\"a\" # trailing",       Some(b"a")),           // comment running to EOF
+            (r##""a#" "#b""##,         Some(b"a##b")),          // `#` inside a literal is data
             // errors:
             (r#""unterminated"#,       None),
             (r#""\"#,                  None),  // lone backslash
