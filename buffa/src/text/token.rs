@@ -540,10 +540,8 @@ impl<'a> Tokenizer<'a> {
 
         // Bracketed type name: extension or Any URL.
         if rest[0] == b'[' {
-            // Scan to the matching `]`. Comments inside bracketed names are
-            // trivia, so a `]` inside a `# ...` comment does not close the
-            // name. Whitespace/comments are preserved in `raw`; the decoder
-            // removes them before registry lookup.
+            // Scan to the matching `]`, skipping `# ...` comments so a `]`
+            // inside one does not close the name. `raw` keeps the trivia.
             let mut i = 1;
             while i < rest.len() {
                 match rest[i] {
@@ -959,36 +957,29 @@ pub(super) fn consume_ws(mut s: &[u8]) -> &[u8] {
     }
 }
 
-/// Strip textproto whitespace and comments from inside a bracketed field name.
+/// Strip the brackets, whitespace and comments from a bracketed field name.
+/// Returns `None` if `name` is not bracketed.
 ///
-/// The Text Format grammar treats these as trivia between every syntactic
-/// element of an extension name or Any URL, including between type-name
-/// segments. Canonical names stay borrowed; only names containing trivia
-/// allocate.
+/// Whitespace and comments may appear anywhere between `[` and `]`, even
+/// inside an identifier: `[pkg.e xt]` names `pkg.ext`. protobuf-go and C++
+/// both collect the name characters and discard everything else. A name with
+/// no trivia stays borrowed.
 pub(super) fn normalize_bracket_name(name: &str) -> Option<alloc::borrow::Cow<'_, str>> {
+    let is_trivia_start = |b: u8| is_textproto_ws(b) || b == b'#';
     let inner = name.strip_prefix('[')?.strip_suffix(']')?;
-    if !inner
-        .as_bytes()
-        .iter()
-        .any(|&b| is_textproto_ws(b) || b == b'#')
-    {
+    if !inner.bytes().any(is_trivia_start) {
         return Some(alloc::borrow::Cow::Borrowed(inner));
     }
 
     let mut out = alloc::string::String::with_capacity(inner.len());
     let mut rest = inner;
     while !rest.is_empty() {
-        let after_trivia = consume_ws(rest.as_bytes());
-        if after_trivia.len() != rest.len() {
-            let consumed = rest.len() - after_trivia.len();
-            debug_assert!(rest.is_char_boundary(consumed));
-            rest = &rest[consumed..];
-            continue;
-        }
-
-        let ch = rest.chars().next()?;
-        out.push(ch);
-        rest = &rest[ch.len_utf8()..];
+        // `consume_ws` cuts at 0, after an ASCII byte or at the end of input,
+        // and `position` finds an ASCII byte, so both cuts are char boundaries.
+        rest = &rest[rest.len() - consume_ws(rest.as_bytes()).len()..];
+        let end = rest.bytes().position(is_trivia_start).unwrap_or(rest.len());
+        out.push_str(&rest[..end]);
+        rest = &rest[end..];
     }
     Some(alloc::borrow::Cow::Owned(out))
 }
@@ -1209,6 +1200,14 @@ mod tests {
             ("[pkg # ] and é are comment text\n . ext]", "pkg.ext"),
             ("[type.googleapis.com / pkg . Msg]", "type.googleapis.com/pkg.Msg"),
             ("[type.googleapis.com/# comment\npkg.Msg]", "type.googleapis.com/pkg.Msg"),
+            // Trivia inside an identifier.
+            ("[pkg.e xt]", "pkg.ext"),
+            ("[pkg.e# comment\nxt]", "pkg.ext"),
+            // Non-ASCII characters pass through unchanged.
+            ("[ pkg.é ]", "pkg.é"),
+            // A comment with no newline runs to the end of the name.
+            ("[pkg.ext # comment]", "pkg.ext"),
+            ("[ # only a comment\n ]", ""),
         ];
         for (input, want) in cases {
             assert_eq!(
@@ -1216,6 +1215,18 @@ mod tests {
                 Some(want),
                 "input: {input:?}"
             );
+        }
+
+        for unbracketed in ["pkg.ext", "[pkg.ext", "pkg.ext]", ""] {
+            assert_eq!(normalize_bracket_name(unbracketed), None);
+        }
+    }
+
+    #[test]
+    fn bracket_name_closed_only_inside_a_comment_is_unterminated() {
+        for input in ["[pkg # ]", "[pkg # ]\n .ext"] {
+            let err = Tokenizer::new(input).read().unwrap_err();
+            assert_eq!(err.kind, ParseErrorKind::UnexpectedEof, "input: {input:?}");
         }
     }
 

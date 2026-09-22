@@ -629,12 +629,14 @@ impl<'a> TextDecoder<'a> {
     ///
     /// `name` is the bracketed name as returned by
     /// [`read_field_name`](Self::read_field_name), e.g.
-    /// `"[type.googleapis.com/pkg.Foo]"`. The brackets are stripped here and
-    /// the result is looked up in the global text-format `Any` map (installed
-    /// via [`set_type_registry`]); the registered `text_merge` then consumes
-    /// the `{ ... }` body and re-encodes to wire bytes suitable for `Any.value`.
+    /// `"[type.googleapis.com/pkg.Foo]"`. The brackets, and any whitespace or
+    /// `#` comments between them, are stripped here and the result is looked
+    /// up in the global text-format `Any` map (installed via
+    /// [`set_type_registry`]); the registered `text_merge` then consumes the
+    /// `{ ... }` body and re-encodes to wire bytes suitable for `Any.value`.
     ///
-    /// Returns `(canonical_url, value_bytes)`.
+    /// Returns `(type_url, value_bytes)`, where `type_url` is the registered
+    /// URL with no brackets, whitespace or comments.
     ///
     /// # Errors
     ///
@@ -650,20 +652,16 @@ impl<'a> TextDecoder<'a> {
         let entry = crate::type_registry::global_text_any(url.as_ref())
             .ok_or_else(|| self.unknown_field())?;
         let bytes = (entry.text_merge)(self)?;
-        // If normalization allocated, return the registry's canonical
-        // `&'static str` rather than leaking the temporary owned string.
-        let url = match url {
-            Cow::Borrowed(url) => url,
-            Cow::Owned(_) => entry.type_url,
-        };
-        Ok((url, bytes))
+        // The registry is keyed by `type_url`, so this is the normalized URL.
+        Ok((entry.type_url, bytes))
     }
 
     /// Parse an extension bracket body: the `[pkg.ext] { ... }` form.
     ///
     /// `name` is the bracketed name as returned by
-    /// [`read_field_name`](Self::read_field_name). The brackets are stripped
-    /// and the result is looked up by `full_name` in the global text-format
+    /// [`read_field_name`](Self::read_field_name). The brackets, and any
+    /// whitespace or `#` comments between them, are stripped and the result
+    /// is looked up by `full_name` in the global text-format
     /// extension map (installed via [`set_type_registry`]); the registered
     /// `text_merge` consumes the value and produces unknown-field records at
     /// the extension's field number.
