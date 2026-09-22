@@ -362,7 +362,9 @@ impl DynamicMessage {
     /// The parse is bounded by
     /// [`buffa::DEFAULT_ELEMENT_MEMORY_LIMIT`] (32 MiB) of element
     /// footprint; raise or lower it with
-    /// [`DynamicMessageSeed::with_element_memory_limit`].
+    /// [`DynamicMessageSeed::with_element_memory_limit`], which also names
+    /// the one input shape that budget does not bound
+    /// (`google.protobuf.Any`).
     ///
     /// # Errors
     ///
@@ -482,6 +484,17 @@ impl DynamicMessageSeed {
     /// are admitted, and the budget is shared by the whole parse —
     /// nested messages and `Any` payloads draw on the same allowance rather
     /// than each getting a fresh one. Exhausting it is a serde error.
+    ///
+    /// `google.protobuf.Any` is the carve-out. Only the *charge accounting*
+    /// is shared across an `Any`; the buffer that precedes it is not charged
+    /// at all. `@type` may follow the fields it types, so the payload object
+    /// is read into a `serde_json::Value` tree before any of it can be
+    /// interpreted, and only the `DynamicMessage` built from that tree draws
+    /// on the budget. Peak memory for `Any`-bearing input therefore tracks
+    /// input length whatever this is set to: 30 MB of JSON carrying one
+    /// `Any` full of empty submessages peaks at the same 805 MB of live
+    /// heap under the 32 MiB default and under a budget of zero. Cap the
+    /// input length for that shape; this budget will not do it.
     ///
     /// This is the JSON counterpart of
     /// [`DecodeOptions::with_element_memory_limit`](buffa::DecodeOptions::with_element_memory_limit),
