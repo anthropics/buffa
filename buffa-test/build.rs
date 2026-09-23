@@ -75,7 +75,8 @@ fn compile_extern_children() {
             &holder,
             format!(
                 "syntax = \"proto3\";\npackage xf{suffix};\nimport \"xe.proto\";\n\
-                 message Holder {{ xe.Leaf leaf = 1; repeated xe.Leaf leaves = 2; int32 tail = 3; }}\n"
+                 message Holder {{ xe.Leaf leaf = 1; repeated xe.Leaf leaves = 2; int32 tail = 3;\n\
+                   oneof pick {{ int32 n = 4; xe.Leaf pl = 5; }} }}\n"
             ),
         )
         .expect("write proto");
@@ -296,7 +297,7 @@ fn main() {
             &[],
             |config| config.preserve_unknown_fields(false),
         );
-        
+
         compile_cross_package();
         compile_extern_children();
         // `bytes` fields as `bytes::Bytes`, which the messages that hold one
