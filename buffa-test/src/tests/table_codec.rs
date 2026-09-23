@@ -12,6 +12,8 @@ use buffa::{DecodeError, Message};
 
 use super::{length_delimited_field, varint_field};
 
+mod maps;
+
 /// The error, or the value's re-encoding and `Debug` text.
 type Outcome = Result<(Vec<u8>, String), DecodeError>;
 
@@ -385,10 +387,9 @@ fn invalid_utf8_is_rejected() {
 }
 
 #[test]
-fn a_message_with_a_oneof_and_a_holder_of_a_message_with_a_map_round_trip() {
-    // A message with a oneof is a table. A message with a map is unrolled, and
-    // the messages that hold it are tables that reach it through their
-    // `Message` impl.
+fn messages_with_a_oneof_or_maps_and_their_holders_round_trip() {
+    // A message with a oneof, a message with maps and the messages that hold
+    // them are all tables.
     let with_oneof = crate::tct::WithOneof {
         choice: Some(crate::tct::with_oneof::Choice::B("x".into())),
         c: 4,
@@ -413,7 +414,7 @@ fn a_message_with_a_oneof_and_a_holder_of_a_message_with_a_map_round_trip() {
 }
 
 #[test]
-fn messages_with_a_map_stay_unrolled_and_work() {
+fn a_table_message_with_a_map_round_trips() {
     let with_map = crate::tct::WithMap {
         m: [("k".to_string(), 3)].into_iter().collect(),
         ..Default::default()
@@ -939,6 +940,7 @@ fn the_messages_the_table_can_handle_use_it() {
         crate::tct::__BUFFA_TABLE_HoldsMap,
         crate::tct::__BUFFA_TABLE_Mixed,
         crate::tct::__BUFFA_TABLE_WithOneof,
+        crate::tct::__BUFFA_TABLE_WithMap,
         crate::tc2t::__BUFFA_TABLE_Req,
         crate::tc2t::__BUFFA_TABLE_AllRequired,
         crate::tc2t::__BUFFA_TABLE_AllRepeated,
@@ -1030,6 +1032,24 @@ fn messages_held_across_packages_agree_in_every_layout() {
                 cold: MessageField::some(cold(7)),
                 colds: vec![$xa::Cold::default(), cold(8)],
                 pick,
+                // One entry each, so that the bytes do not depend on the
+                // iteration order of the `HashMap`s.
+                by_name: [("n".to_string(), leaf(10))].into_iter().collect(),
+                subs: [(
+                    8,
+                    $xb::holder::Sub {
+                        l: MessageField::some(leaf(9)),
+                        ..Default::default()
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                modes: [("m".to_string(), buffa::EnumValue::from($xa::Mode::M1))]
+                    .into_iter()
+                    .collect(),
+                // Unrolled in the table layouts: a map value reached through
+                // its `Message` impl.
+                cold_map: [("c".to_string(), cold(11))].into_iter().collect(),
                 ..Default::default()
             })
             .collect::<Vec<_>>()
