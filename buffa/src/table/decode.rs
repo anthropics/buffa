@@ -6,8 +6,8 @@
 use super::scalar::Sc;
 use super::{
     Bool, Double, Entry, EnumVt, Fixed32, Fixed64, Float, Int32, Int64, Kind, MessageTable,
-    Sfixed32, Sfixed64, Sint32, Sint64, Uint32, Uint64, IMPLICIT, NO_UNKNOWN, OPTIONAL, PACKED,
-    REPEATED, REQUIRED,
+    OneofVt, Sfixed32, Sfixed64, Sint32, Sint64, Uint32, Uint64, IMPLICIT, NO_UNKNOWN, OPTIONAL,
+    PACKED, REPEATED, REQUIRED,
 };
 use crate::alloc::{string::String, vec::Vec};
 use crate::bytes::Buf;
@@ -220,9 +220,226 @@ macro_rules! merge_dispatch {
     (@arm Msg $ty:ident $card:ident $table:ident $e:ident $base:ident $slot:ident $tag:ident $buf:ident $ctx:ident) => {
         merge_msg::<$card>($table, $e, $slot, $tag, $buf, $ctx)
     };
+    (@arm Oneof $ty:ident $card:ident $table:ident $e:ident $base:ident $slot:ident $tag:ident $buf:ident $ctx:ident) => {
+        merge_oneof($table, $e, $base, $slot, $tag, $buf, $ctx)
+    };
 }
 
 kind_table!(merge_dispatch);
+
+/// Decode the member of a oneof that the entry `e` describes into the oneof.
+///
+/// # Safety
+///
+/// `slot` points to the `Option` of the oneof enum that `e`'s group describes,
+/// inside the live message at `base` of the type `table` describes.
+#[inline(never)]
+unsafe fn merge_oneof(
+    table: &MessageTable,
+    e: &Entry,
+    base: *mut u8,
+    slot: *mut u8,
+    tag: Tag,
+    buf: &mut &[u8],
+    ctx: DecodeContext<'_>,
+) -> Result<(), DecodeError> {
+    let m = table.member(e);
+    let payload_entry = Entry {
+        kind: m.kind,
+        aux: m.aux,
+        ..*e
+    };
+    let oneof = OneofSlot {
+        group: table.group(m),
+        slot,
+    };
+    // SAFETY: forwarded from the caller.
+    unsafe { merge_payload(table, &payload_entry, &oneof, base, tag, buf, ctx) }
+}
+
+/// A oneof inside the message that is being decoded: the `Option` of its enum
+/// and its descriptor.
+struct OneofSlot<'a> {
+    group: &'a OneofVt,
+    slot: *mut u8,
+}
+
+impl OneofSlot<'_> {
+    /// Make the member `number` the one that is set, and return a pointer to
+    /// its value.
+    ///
+    /// # Safety
+    ///
+    /// `slot` points to a live `Option` of the enum that `group` describes,
+    /// and `number` is a member of it.
+    #[inline]
+    unsafe fn place(&self, number: u32) -> *mut u8 {
+        // SAFETY: forwarded from the caller.
+        unsafe { (self.group.place)(self.slot, number) }
+    }
+}
+
+/// Defines `merge_payload`, which decodes a oneof member's value by its
+/// payload kind. Every arm decodes the value before it replaces the member
+/// that is set, so a value that is rejected, or that a closed enum does not
+/// know, leaves the oneof as it was.
+macro_rules! merge_payload_dispatch {
+    ($fname:ident; $($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
+        /// # Safety
+        ///
+        /// `payload_entry` is the entry of a member of the oneof `oneof`
+        /// describes, with its payload's kind and aux index, and the oneof is
+        /// inside the live message at `base` of the type `table` describes.
+        #[inline]
+        unsafe fn $fname(
+            table: &MessageTable,
+            payload_entry: &Entry,
+            oneof: &OneofSlot<'_>,
+            base: *mut u8,
+            tag: Tag,
+            buf: &mut &[u8],
+            ctx: DecodeContext<'_>,
+        ) -> Result<(), DecodeError> {
+            let number = payload_entry.number();
+            // SAFETY: each arm stores into the member the entry describes.
+            unsafe {
+                match payload_entry.kind {
+                    $(Kind::$name => merge_payload_dispatch!(
+                        @arm $fam $ty table payload_entry oneof number base tag buf ctx
+                    ),)*
+                    // The kinds the list leaves out are ruled out by `Table::new`.
+                    #[allow(unreachable_patterns)]
+                    _ => unreachable!("`Table::new` checked the payload kinds"),
+                }
+            }
+        }
+    };
+    (@arm Scalar $ty:ident $table:ident $pe:ident $o:ident $n:ident $base:ident $tag:ident $buf:ident $ctx:ident) => {
+        merge_oneof_scalar::<$ty>($o, $n, $tag, $buf)
+    };
+    (@arm Str $ty:ident $table:ident $pe:ident $o:ident $n:ident $base:ident $tag:ident $buf:ident $ctx:ident) => {
+        merge_oneof_str($o, $n, $tag, $buf)
+    };
+    (@arm Bytes $ty:ident $table:ident $pe:ident $o:ident $n:ident $base:ident $tag:ident $buf:ident $ctx:ident) => {
+        merge_oneof_bytes($o, $n, $tag, $buf)
+    };
+    (@arm Enum $ty:ident $table:ident $pe:ident $o:ident $n:ident $base:ident $tag:ident $buf:ident $ctx:ident) => {
+        merge_oneof_enum($table, $pe, $o, $base, $tag, $buf, $ctx)
+    };
+    (@arm Msg $ty:ident $table:ident $pe:ident $o:ident $n:ident $base:ident $tag:ident $buf:ident $ctx:ident) => {
+        merge_oneof_msg($table, $pe, $o, $tag, $buf, $ctx)
+    };
+}
+
+payload_kind_table!(merge_payload_dispatch, merge_payload);
+
+/// # Safety
+///
+/// `oneof` is a live oneof whose member `number` has the scalar type `S`.
+#[inline]
+unsafe fn merge_oneof_scalar<S: Sc>(
+    oneof: &OneofSlot<'_>,
+    number: u32,
+    tag: Tag,
+    buf: &mut &[u8],
+) -> Result<(), DecodeError> {
+    check_wire_type(tag, S::WIRE)?;
+    let value = S::read(buf)?;
+    // SAFETY: the caller's contract gives the member's type.
+    unsafe { *oneof.place(number).cast::<S::V>() = value };
+    Ok(())
+}
+
+/// # Safety
+///
+/// `oneof` is a live oneof whose member `number` is a `String`.
+#[inline]
+unsafe fn merge_oneof_str(
+    oneof: &OneofSlot<'_>,
+    number: u32,
+    tag: Tag,
+    buf: &mut &[u8],
+) -> Result<(), DecodeError> {
+    check_wire_type(tag, WireType::LengthDelimited)?;
+    let value = types::decode_string(buf)?;
+    // SAFETY: the caller's contract gives the member's type.
+    unsafe { *oneof.place(number).cast::<String>() = value };
+    Ok(())
+}
+
+/// # Safety
+///
+/// `oneof` is a live oneof whose member `number` is a `Vec<u8>`.
+#[inline]
+unsafe fn merge_oneof_bytes(
+    oneof: &OneofSlot<'_>,
+    number: u32,
+    tag: Tag,
+    buf: &mut &[u8],
+) -> Result<(), DecodeError> {
+    check_wire_type(tag, WireType::LengthDelimited)?;
+    let value = types::decode_bytes(buf)?;
+    // SAFETY: the caller's contract gives the member's type.
+    unsafe { *oneof.place(number).cast::<Vec<u8>>() = value };
+    Ok(())
+}
+
+/// A closed enum's value with no variant goes to the unknown fields, like an
+/// ordinary field, and leaves the member that is set as it is.
+///
+/// # Safety
+///
+/// `payload_entry` is the entry of an enum member of the live oneof `oneof`,
+/// with its payload's kind and aux index, which is inside the live message at
+/// `base` of the type `table` describes.
+#[inline]
+unsafe fn merge_oneof_enum(
+    table: &MessageTable,
+    payload_entry: &Entry,
+    oneof: &OneofSlot<'_>,
+    base: *mut u8,
+    tag: Tag,
+    buf: &mut &[u8],
+    ctx: DecodeContext<'_>,
+) -> Result<(), DecodeError> {
+    check_wire_type(tag, WireType::Varint)?;
+    let raw = types::decode_int32(buf)?;
+    let vt = table.enum_vt(payload_entry);
+    if !(vt.accepts)(raw) {
+        // SAFETY: forwarded from the caller.
+        return unsafe { enum_reject(table, payload_entry, base, raw, ctx) };
+    }
+    // SAFETY: the member is stored in the shape `vt` was built for.
+    unsafe {
+        (vt.set)(oneof.place(payload_entry.number()), raw);
+    }
+    Ok(())
+}
+
+/// # Safety
+///
+/// `payload_entry` is the entry of a message member of the live oneof `oneof`,
+/// with its payload's kind and aux index, whose descriptor is for the
+/// message's type and reaches it through a pointer to the message.
+#[inline]
+unsafe fn merge_oneof_msg(
+    table: &MessageTable,
+    payload_entry: &Entry,
+    oneof: &OneofSlot<'_>,
+    tag: Tag,
+    buf: &mut &[u8],
+    ctx: DecodeContext<'_>,
+) -> Result<(), DecodeError> {
+    check_wire_type(tag, WireType::LengthDelimited)?;
+    let vt = table.msg_vt(payload_entry);
+    // SAFETY: as above. A member that is already set is merged into, as a
+    // singular message field is; a different member is replaced by the default
+    // message first.
+    unsafe {
+        let child = oneof.place(payload_entry.number());
+        vt.child.merge_sub(child, buf, ctx)
+    }
+}
 
 /// # Safety
 ///
@@ -427,7 +644,28 @@ unsafe fn enum_store(
     ctx: DecodeContext<'_>,
 ) -> Result<(), DecodeError> {
     // SAFETY: `slot` matches the shape `vt` was built for.
-    if unsafe { (vt.set)(slot, raw) } || table.unknown == NO_UNKNOWN {
+    if unsafe { (vt.set)(slot, raw) } {
+        return Ok(());
+    }
+    // SAFETY: forwarded from the caller.
+    unsafe { enum_reject(table, e, base, raw, ctx) }
+}
+
+/// Handle a value that a closed enum has no variant for: keep it as an unknown
+/// field, or drop it if the message keeps none.
+///
+/// # Safety
+///
+/// `base` points to a live message of the type `table` describes.
+#[inline]
+unsafe fn enum_reject(
+    table: &MessageTable,
+    e: &Entry,
+    base: *mut u8,
+    raw: i32,
+    ctx: DecodeContext<'_>,
+) -> Result<(), DecodeError> {
+    if table.unknown == NO_UNKNOWN {
         return Ok(());
     }
     ctx.register_unknown_field()?;

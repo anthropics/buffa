@@ -1512,3 +1512,691 @@ fn a_child_can_be_written_by_calling_write_to_on_a_buffer() {
     assert_eq!(out.len(), size as usize);
     assert_eq!(out, msg.encode_to_vec());
 }
+
+// ---------------------------------------------------------------------------
+// Oneofs
+// ---------------------------------------------------------------------------
+
+/// `oneof pick { int32 num = 2; string text = 4; bytes blob = 5; Color open = 7;
+/// Color strict = 8; Inner child = 9; }`, with the message boxed.
+#[derive(Clone, Debug, PartialEq)]
+enum Pick {
+    Num(i32),
+    Text(String),
+    Blob(Vec<u8>),
+    Open(EnumValue<Color>),
+    Strict(Color),
+    Child(crate::alloc::boxed::Box<Inner>),
+}
+
+impl OneofEnum for Pick {
+    fn number(&self) -> u32 {
+        match self {
+            Self::Num(_) => 2,
+            Self::Text(_) => 4,
+            Self::Blob(_) => 5,
+            Self::Open(_) => 7,
+            Self::Strict(_) => 8,
+            Self::Child(_) => 9,
+        }
+    }
+
+    fn payload(&self) -> *const u8 {
+        match self {
+            Self::Num(v) => (v as *const i32).cast(),
+            Self::Text(v) => (v as *const String).cast(),
+            Self::Blob(v) => (v as *const Vec<u8>).cast(),
+            Self::Open(v) => (v as *const EnumValue<Color>).cast(),
+            Self::Strict(v) => (v as *const Color).cast(),
+            Self::Child(v) => (&**v as *const Inner).cast(),
+        }
+    }
+
+    fn payload_mut(&mut self) -> *mut u8 {
+        match self {
+            Self::Num(v) => (v as *mut i32).cast(),
+            Self::Text(v) => (v as *mut String).cast(),
+            Self::Blob(v) => (v as *mut Vec<u8>).cast(),
+            Self::Open(v) => (v as *mut EnumValue<Color>).cast(),
+            Self::Strict(v) => (v as *mut Color).cast(),
+            Self::Child(v) => (&mut **v as *mut Inner).cast(),
+        }
+    }
+
+    fn with_default(number: u32) -> Option<Self> {
+        Some(match number {
+            2 => Self::Num(Default::default()),
+            4 => Self::Text(Default::default()),
+            5 => Self::Blob(Default::default()),
+            7 => Self::Open(Default::default()),
+            8 => Self::Strict(Default::default()),
+            9 => Self::Child(Default::default()),
+            _ => return None,
+        })
+    }
+}
+
+/// `oneof other { float x = 6; Inner y = 10; }`, with the message inline.
+#[derive(Clone, Debug, PartialEq)]
+enum Alt {
+    X(f32),
+    Y(Inner),
+}
+
+impl OneofEnum for Alt {
+    fn number(&self) -> u32 {
+        match self {
+            Self::X(_) => 6,
+            Self::Y(_) => 10,
+        }
+    }
+
+    fn payload(&self) -> *const u8 {
+        match self {
+            Self::X(v) => (v as *const f32).cast(),
+            Self::Y(v) => (v as *const Inner).cast(),
+        }
+    }
+
+    fn payload_mut(&mut self) -> *mut u8 {
+        match self {
+            Self::X(v) => (v as *mut f32).cast(),
+            Self::Y(v) => (v as *mut Inner).cast(),
+        }
+    }
+
+    fn with_default(number: u32) -> Option<Self> {
+        Some(match number {
+            6 => Self::X(Default::default()),
+            10 => Self::Y(Default::default()),
+            _ => return None,
+        })
+    }
+}
+
+/// `int32 a = 1; oneof pick {...}; int32 b = 3; oneof other {...}`, keeping
+/// unknown fields. `pick` has members either side of `b`, so where its
+/// members are written shows.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Holder {
+    a: i32,
+    pick: Option<Pick>,
+    b: i32,
+    other: Option<Alt>,
+    unknown: UnknownFields,
+}
+
+static HOLDER: Table<Holder> = crate::__table!(
+    Holder,
+    abi = ABI,
+    entries = [
+        crate::__table_entry!(Holder, a, Int32Implicit, 1),
+        crate::__table_entry!(
+            Holder,
+            pick,
+            oneof(Int32Required),
+            2,
+            aux = 2,
+            slot = Option<Pick>
+        ),
+        crate::__table_entry!(Holder, b, Int32Implicit, 3),
+        crate::__table_entry!(
+            Holder,
+            pick,
+            oneof(StrRequired),
+            4,
+            aux = 3,
+            slot = Option<Pick>
+        ),
+        crate::__table_entry!(
+            Holder,
+            pick,
+            oneof(BytesRequired),
+            5,
+            aux = 4,
+            slot = Option<Pick>
+        ),
+        crate::__table_entry!(
+            Holder,
+            other,
+            oneof(FloatRequired),
+            6,
+            aux = 5,
+            slot = Option<Alt>
+        ),
+        crate::__table_entry!(
+            Holder,
+            pick,
+            oneof(EnumRequired),
+            7,
+            aux = 6,
+            slot = Option<Pick>
+        ),
+        crate::__table_entry!(
+            Holder,
+            pick,
+            oneof(EnumRequired),
+            8,
+            aux = 7,
+            slot = Option<Pick>
+        ),
+        crate::__table_entry!(
+            Holder,
+            pick,
+            oneof(MsgSingular),
+            9,
+            aux = 10,
+            slot = Option<Pick>
+        ),
+        crate::__table_entry!(
+            Holder,
+            other,
+            oneof(MsgSingular),
+            10,
+            aux = 12,
+            slot = Option<Alt>
+        ),
+    ],
+    dense = &dense::<11>(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+    aux = [
+        Aux::Group(&OneofVt::new::<Pick>(
+            crate::table::offset_of!(Holder, pick),
+            2
+        )),
+        Aux::Group(&OneofVt::new::<Alt>(
+            crate::table::offset_of!(Holder, other),
+            6
+        )),
+        Aux::Member(Member::new(0, Kind::Int32Required, 0, true)),
+        Aux::Member(Member::new(0, Kind::StrRequired, 0, false)),
+        Aux::Member(Member::new(0, Kind::BytesRequired, 0, false)),
+        Aux::Member(Member::new(1, Kind::FloatRequired, 0, true)),
+        Aux::Member(Member::new(0, Kind::EnumRequired, 8, false)),
+        Aux::Member(Member::new(0, Kind::EnumRequired, 9, false)),
+        Aux::Enum(&EnumVt::new::<ImplicitOpen<Color>>()),
+        Aux::Enum(&EnumVt::new::<ImplicitClosed<Color>>()),
+        Aux::Member(Member::new(0, Kind::MsgSingular, 11, false)),
+        Aux::Msg(&MsgVt::direct(&INNER)),
+        Aux::Member(Member::new(1, Kind::MsgSingular, 11, false)),
+    ],
+    unknown = unknown,
+);
+
+table_message!(Holder, HOLDER);
+
+fn child(id: i32) -> Pick {
+    Pick::Child(crate::alloc::boxed::Box::new(Inner {
+        id,
+        ..Inner::default()
+    }))
+}
+
+fn holder(pick: Pick) -> Holder {
+    Holder {
+        pick: Some(pick),
+        ..Holder::default()
+    }
+}
+
+#[test]
+fn a_oneof_is_written_where_its_lowest_member_would_be() {
+    // a = 1; the child (9) of `pick`, whose lowest member is 2, comes before b
+    // = 7 (3), not after it.
+    let msg = Holder {
+        a: 1,
+        pick: Some(child(5)),
+        b: 7,
+        ..Holder::default()
+    };
+    let wire = [0x08, 0x01, 0x4a, 0x02, 0x08, 0x05, 0x18, 0x07];
+    assert_eq!(msg.encode_to_vec(), wire);
+    assert_eq!(msg.encoded_len() as usize, wire.len());
+    assert_eq!(Holder::decode_from_slice(&wire).unwrap(), msg);
+
+    // The other oneof is written at 6, after b, when it is the one that is set.
+    let msg = Holder {
+        b: 7,
+        other: Some(Alt::X(1.0)),
+        ..Holder::default()
+    };
+    assert_eq!(
+        msg.encode_to_vec(),
+        [0x18, 0x07, 0x35, 0x00, 0x00, 0x80, 0x3f]
+    );
+}
+
+#[test]
+fn every_member_round_trips_and_a_default_value_is_still_written() {
+    let picks = [
+        Pick::Num(0),
+        Pick::Num(-1),
+        Pick::Text(String::new()),
+        Pick::Text("héllo".into()),
+        Pick::Blob(Vec::new()),
+        Pick::Blob(vec![1, 2, 3]),
+        Pick::Open(EnumValue::from(0)),
+        Pick::Open(EnumValue::from(9)),
+        Pick::Strict(Color::Red),
+        Pick::Strict(Color::Blue),
+        Pick::Child(Default::default()),
+        child(3),
+    ];
+    for pick in picks {
+        let msg = holder(pick);
+        let wire = msg.encode_to_vec();
+        assert!(!wire.is_empty(), "{msg:?} wrote nothing");
+        assert_eq!(wire.len() as u32, msg.encoded_len());
+        assert_eq!(Holder::decode_from_slice(&wire).unwrap(), msg);
+    }
+    for other in [
+        Alt::X(0.0),
+        Alt::X(-2.5),
+        Alt::Y(Inner::default()),
+        Alt::Y(Inner {
+            id: 4,
+            label: "y".into(),
+            ..Inner::default()
+        }),
+    ] {
+        let msg = Holder {
+            other: Some(other),
+            ..Holder::default()
+        };
+        let wire = msg.encode_to_vec();
+        assert!(!wire.is_empty());
+        assert_eq!(Holder::decode_from_slice(&wire).unwrap(), msg);
+    }
+    assert!(Holder::default().encode_to_vec().is_empty());
+    assert_eq!(holder(Pick::Num(0)).encode_to_vec(), [0x10, 0x00]);
+}
+
+#[test]
+fn the_last_member_on_the_wire_wins() {
+    // num = 5, then text = "hi".
+    let wire = [0x10, 0x05, 0x22, 0x02, b'h', b'i'];
+    assert_eq!(
+        Holder::decode_from_slice(&wire).unwrap().pick,
+        Some(Pick::Text("hi".into()))
+    );
+    // text, then num, then num again.
+    let wire = [0x22, 0x02, b'h', b'i', 0x10, 0x05, 0x10, 0x06];
+    assert_eq!(
+        Holder::decode_from_slice(&wire).unwrap().pick,
+        Some(Pick::Num(6))
+    );
+    // The two oneofs are independent.
+    let wire = [0x10, 0x05, 0x35, 0x00, 0x00, 0x00, 0x40];
+    let msg = Holder::decode_from_slice(&wire).unwrap();
+    assert_eq!(msg.pick, Some(Pick::Num(5)));
+    assert_eq!(msg.other, Some(Alt::X(2.0)));
+}
+
+#[test]
+fn a_message_member_that_is_set_is_merged_into_and_a_different_one_replaces_it() {
+    // child {id = 5}, child {label = "ab"}: merged.
+    let wire = [0x4a, 0x02, 0x08, 0x05, 0x4a, 0x04, 0x12, 0x02, b'a', b'b'];
+    let merged = Holder::decode_from_slice(&wire).unwrap();
+    assert_eq!(
+        merged.pick,
+        Some(Pick::Child(crate::alloc::boxed::Box::new(Inner {
+            id: 5,
+            label: "ab".into(),
+            ..Inner::default()
+        })))
+    );
+    // Then num = 7 replaces the child, and a new child starts from nothing.
+    let mut wire = wire.to_vec();
+    wire.extend_from_slice(&[0x10, 0x07]);
+    assert_eq!(
+        Holder::decode_from_slice(&wire).unwrap().pick,
+        Some(Pick::Num(7))
+    );
+    wire.extend_from_slice(&[0x4a, 0x02, 0x08, 0x01]);
+    assert_eq!(Holder::decode_from_slice(&wire).unwrap().pick, Some(child(1)));
+
+    // The same for the inline message of the other oneof.
+    let wire = [0x52, 0x02, 0x08, 0x05, 0x52, 0x04, 0x12, 0x02, b'a', b'b'];
+    assert_eq!(
+        Holder::decode_from_slice(&wire).unwrap().other,
+        Some(Alt::Y(Inner {
+            id: 5,
+            label: "ab".into(),
+            ..Inner::default()
+        }))
+    );
+}
+
+#[test]
+fn merging_into_a_message_keeps_a_member_that_the_input_does_not_set() {
+    let mut msg = holder(Pick::Text("keep".into()));
+    msg.merge_from_slice(&[0x08, 0x02]).unwrap();
+    assert_eq!(msg.a, 2);
+    assert_eq!(msg.pick, Some(Pick::Text("keep".into())));
+}
+
+#[test]
+fn a_closed_enum_value_the_member_does_not_know_leaves_the_oneof_alone() {
+    // text = "hi", then strict (8) = 7, which Color has no variant for.
+    let wire = [0x22, 0x02, b'h', b'i', 0x40, 0x07];
+    let msg = Holder::decode_from_slice(&wire).unwrap();
+    assert_eq!(msg.pick, Some(Pick::Text("hi".into())));
+    let unknown: Vec<_> = msg.unknown.iter().map(|u| u.number).collect();
+    assert_eq!(unknown, [8]);
+    assert!(matches!(
+        msg.unknown.iter().next().unwrap().data,
+        UnknownFieldData::Varint(7)
+    ));
+    // Nothing was set before, and nothing is now.
+    assert_eq!(Holder::decode_from_slice(&[0x40, 0x07]).unwrap().pick, None);
+    // A known value replaces the member, and an open enum keeps any value.
+    assert_eq!(
+        Holder::decode_from_slice(&[0x22, 0x00, 0x40, 0x02])
+            .unwrap()
+            .pick,
+        Some(Pick::Strict(Color::Blue))
+    );
+    assert_eq!(
+        Holder::decode_from_slice(&[0x22, 0x00, 0x38, 0x09])
+            .unwrap()
+            .pick,
+        Some(Pick::Open(EnumValue::from(9)))
+    );
+}
+
+#[test]
+fn a_rejected_member_value_leaves_the_oneof_as_it_was() {
+    let mut msg = holder(Pick::Num(5));
+    // A string that is not UTF-8, a value the wire type does not fit, and a
+    // truncated varint each fail without touching the member that is set.
+    for wire in [
+        &[0x22, 0x01, 0xff][..],
+        &[0x12, 0x00][..],
+        &[0x38, 0x80][..],
+    ] {
+        assert!(msg.merge_from_slice(wire).is_err(), "{wire:02x?}");
+        assert_eq!(msg.pick, Some(Pick::Num(5)), "{wire:02x?}");
+    }
+    assert!(matches!(
+        Holder::decode_from_slice(&[0x22, 0x01, 0xff]),
+        Err(DecodeError::InvalidUtf8)
+    ));
+}
+
+#[test]
+fn a_member_with_the_wrong_wire_type_is_an_error() {
+    // num (varint) sent as length-delimited; text sent as a varint; a message
+    // sent as a fixed32.
+    for wire in [[0x12, 0x00], [0x20, 0x01], [0x4d, 0x00]] {
+        assert!(matches!(
+            Holder::decode_from_slice(&wire),
+            Err(DecodeError::WireTypeMismatch { .. })
+        ));
+    }
+}
+
+#[test]
+fn a_message_member_that_is_cut_short_is_an_error() {
+    let wire = holder(child(5)).encode_to_vec();
+    for end in 0..wire.len() {
+        // A prefix ends the message at a field boundary or is an error, and
+        // never yields a member the input did not hold.
+        if let Ok(msg) = Holder::decode_from_slice(&wire[..end]) {
+            assert_eq!(msg, Holder::default(), "prefix of {end}");
+        }
+    }
+}
+
+#[test]
+fn oneof_members_decode_from_a_buffer_of_two_chunks() {
+    let msg = Holder {
+        a: 1,
+        pick: Some(Pick::Text("split".into())),
+        b: 2,
+        other: Some(Alt::Y(Inner {
+            id: 3,
+            label: "in".into(),
+            ..Inner::default()
+        })),
+        ..Holder::default()
+    };
+    let wire = msg.encode_to_vec();
+    for split in 0..=wire.len() {
+        let (head, tail) = wire.split_at(split);
+        let mut chained = head.chain(tail);
+        let mut decoded = Holder::default();
+        with_ctx(|ctx| decoded.merge(&mut chained, ctx)).unwrap();
+        assert_eq!(decoded, msg, "split at {split}");
+    }
+}
+
+#[test]
+fn oneof_members_encode_into_every_sink() {
+    let msg = Holder {
+        a: 1,
+        pick: Some(Pick::Blob(vec![0xcd; 300])),
+        other: Some(Alt::Y(Inner {
+            id: 3,
+            ..Inner::default()
+        })),
+        ..Holder::default()
+    };
+    let expected = msg.encode_to_vec();
+    let mut rope = Rope::new();
+    msg.encode(&mut rope);
+    assert_eq!(&rope.to_contiguous_bytes()[..], &expected[..]);
+    let mut bytes_mut = crate::bytes::BytesMut::new();
+    msg.encode(&mut bytes_mut);
+    assert_eq!(&bytes_mut[..], &expected[..]);
+}
+
+#[test]
+fn find_reaches_every_oneof_member() {
+    for (number, kind) in [(2, Kind::OneofMember), (9, Kind::OneofMember)] {
+        assert_eq!(HOLDER.raw.find(number).unwrap().kind, kind);
+    }
+    let pe = HOLDER.raw.payload_entry(4);
+    assert_eq!(pe.kind, Kind::StrRequired);
+    assert_eq!(pe.number(), 4);
+    let pe = HOLDER.raw.payload_entry(9);
+    assert_eq!(pe.kind, Kind::MsgSingular);
+    assert_eq!(pe.aux, 11);
+}
+
+#[test]
+fn the_accessors_keep_a_member_that_is_set_and_replace_any_other() {
+    let vt = OneofVt::new::<Pick>(0, 2);
+    let mut slot = Some(Pick::Text("kept".into()));
+    let slot_ptr = (&mut slot as *mut Option<Pick>).cast::<u8>();
+    // SAFETY: `slot` is a live `Option<Pick>` and 4 and 2 are members of it.
+    unsafe {
+        let (number, payload) = (vt.get)(slot_ptr);
+        assert_eq!(number, 4);
+        assert_eq!(*payload.cast::<String>(), "kept");
+        let payload = (vt.place)(slot_ptr, 4);
+        assert_eq!(*payload.cast::<String>(), "kept");
+        let payload = (vt.place)(slot_ptr, 2);
+        assert_eq!(*payload.cast::<i32>(), 0);
+        *payload.cast::<i32>() = 8;
+    }
+    assert_eq!(slot, Some(Pick::Num(8)));
+    let mut none: Option<Pick> = None;
+    // SAFETY: as above.
+    let (number, payload) = unsafe { (vt.get)((&mut none as *mut Option<Pick>).cast()) };
+    assert_eq!((number, payload.is_null()), (0, true));
+}
+
+#[test]
+#[should_panic(expected = "does not match the oneof enum")]
+fn placing_a_member_the_enum_does_not_have_panics() {
+    let vt = OneofVt::new::<Pick>(0, 2);
+    let mut slot: Option<Pick> = None;
+    // SAFETY: `slot` is a live `Option<Pick>`; 99 is not a member, which the
+    // accessor reports by panicking.
+    unsafe { (vt.place)((&mut slot as *mut Option<Pick>).cast(), 99) };
+}
+
+/// Building a table that violates the checks on oneofs is a compile error in
+/// a `static`, so these run the checks at run time.
+mod invalid_oneof_tables {
+    use super::*;
+
+    static PICK: OneofVt = OneofVt::new::<Pick>(0, 2);
+    static INT_MEMBERS: [Aux; 2] = [
+        Aux::Group(&PICK),
+        Aux::Member(Member::new(0, Kind::Int32Required, 0, true)),
+    ];
+
+    /// `Table::new` on a `Holder`, which is never used to access a message.
+    fn holder_table(entries: &'static [Entry], aux: &'static [Aux]) -> Table<Holder> {
+        // SAFETY: the table is dropped without being used.
+        unsafe { Table::new(ABI, entries, &[], aux, None) }
+    }
+
+    /// The `pick` field, at the offset the group above was built for.
+    const fn member(kind: Kind, number: u32, aux: u16) -> Entry {
+        Entry::oneof_member(kind, number, 0, aux)
+    }
+
+    #[test]
+    fn a_valid_table_is_accepted() {
+        const E: Entry = member(Kind::Int32Required, 2, 1);
+        let _ = holder_table(&[E], &INT_MEMBERS);
+    }
+
+    #[test]
+    #[should_panic(expected = "payload must be a `Required`")]
+    fn a_payload_must_be_a_kind_a_member_can_have() {
+        let _ = Entry::oneof_member(Kind::Int32Optional, 2, 0, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "wire type is its payload kind's")]
+    fn an_entry_of_the_member_kind_needs_the_constructor_for_members() {
+        let _ = Entry::new(Kind::OneofMember, 2, 0, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "wrong variant")]
+    fn a_member_entry_needs_a_member_aux() {
+        const E: Entry = member(Kind::Int32Required, 2, 0);
+        let _ = holder_table(&[E], &INT_MEMBERS);
+    }
+
+    #[test]
+    #[should_panic(expected = "group index is out of range")]
+    fn a_member_needs_its_group() {
+        static AUX: [Aux; 1] = [Aux::Member(Member::new(3, Kind::Int32Required, 0, true))];
+        const E: Entry = member(Kind::Int32Required, 2, 0);
+        let _ = holder_table(&[E], &AUX);
+    }
+
+    #[test]
+    #[should_panic(expected = "not a oneof descriptor")]
+    fn a_members_group_must_be_a_group() {
+        static AUX: [Aux; 1] = [Aux::Member(Member::new(0, Kind::Int32Required, 0, true))];
+        const E: Entry = member(Kind::Int32Required, 2, 0);
+        let _ = holder_table(&[E], &AUX);
+    }
+
+    #[test]
+    #[should_panic(expected = "payload kind is not one a payload can have")]
+    fn a_members_kind_must_be_a_payload_kind() {
+        static AUX: [Aux; 2] = [
+            Aux::Group(&PICK),
+            Aux::Member(Member::new(0, Kind::Int32Optional, 0, true)),
+        ];
+        const E: Entry = member(Kind::Int32Required, 2, 1);
+        let _ = holder_table(&[E], &AUX);
+    }
+
+    #[test]
+    #[should_panic(expected = "wire type")]
+    fn a_members_tag_must_have_its_kinds_wire_type() {
+        static AUX: [Aux; 2] = [
+            Aux::Group(&PICK),
+            Aux::Member(Member::new(0, Kind::FloatRequired, 0, true)),
+        ];
+        const E: Entry = member(Kind::Int32Required, 2, 1);
+        let _ = holder_table(&[E], &AUX);
+    }
+
+    #[test]
+    #[should_panic(expected = "payload aux index is out of range")]
+    fn a_message_member_needs_its_payload_descriptor() {
+        static AUX: [Aux; 2] = [
+            Aux::Group(&PICK),
+            Aux::Member(Member::new(0, Kind::MsgSingular, 5, true)),
+        ];
+        const E: Entry = member(Kind::MsgSingular, 2, 1);
+        let _ = holder_table(&[E], &AUX);
+    }
+
+    #[test]
+    #[should_panic(expected = "wrong variant for its kind")]
+    fn a_members_payload_descriptor_must_be_of_its_kinds_variant() {
+        static AUX: [Aux; 3] = [
+            Aux::Group(&PICK),
+            Aux::Member(Member::new(0, Kind::MsgSingular, 2, true)),
+            Aux::Enum(&EnumVt::new::<ImplicitClosed<Color>>()),
+        ];
+        const E: Entry = member(Kind::MsgSingular, 2, 1);
+        let _ = holder_table(&[E], &AUX);
+    }
+
+    #[test]
+    #[should_panic(expected = "singular field")]
+    fn a_members_enum_descriptor_must_be_singular() {
+        static AUX: [Aux; 3] = [
+            Aux::Group(&PICK),
+            Aux::Member(Member::new(0, Kind::EnumRequired, 2, true)),
+            Aux::Enum(&EnumVt::new::<RepeatedClosed<Color>>()),
+        ];
+        const E: Entry = member(Kind::EnumRequired, 2, 1);
+        let _ = holder_table(&[E], &AUX);
+    }
+
+    #[test]
+    #[should_panic(expected = "offset differs from its oneof's")]
+    fn a_members_offset_must_be_its_oneofs() {
+        const E: Entry = Entry::oneof_member(Kind::Int32Required, 2, 4, 1);
+        let _ = holder_table(&[E], &INT_MEMBERS);
+    }
+
+    #[test]
+    #[should_panic(expected = "numbered below its oneof's lowest")]
+    fn a_member_cannot_be_numbered_below_its_oneofs_lowest() {
+        const E: Entry = member(Kind::Int32Required, 1, 1);
+        let _ = holder_table(&[E], &INT_MEMBERS);
+    }
+
+    #[test]
+    #[should_panic(expected = "leader of a oneof must be exactly")]
+    fn the_leader_is_the_lowest_member() {
+        static AUX: [Aux; 2] = [
+            Aux::Group(&PICK),
+            Aux::Member(Member::new(0, Kind::Int32Required, 0, false)),
+        ];
+        const E: Entry = member(Kind::Int32Required, 2, 1);
+        let _ = holder_table(&[E], &AUX);
+    }
+
+    #[test]
+    #[should_panic(expected = "exactly one leading member")]
+    fn every_oneof_needs_a_leader() {
+        // The only member is numbered above the oneof's lowest, so nothing
+        // leads.
+        static AUX: [Aux; 2] = [
+            Aux::Group(&PICK),
+            Aux::Member(Member::new(0, Kind::Int32Required, 0, false)),
+        ];
+        const E: Entry = member(Kind::Int32Required, 3, 1);
+        let _ = holder_table(&[E], &AUX);
+    }
+
+    #[test]
+    #[should_panic(expected = "exactly one leading member")]
+    fn a_oneof_without_members_is_rejected() {
+        static AUX: [Aux; 1] = [Aux::Group(&PICK)];
+        let _ = holder_table(&[], &AUX);
+    }
+}
