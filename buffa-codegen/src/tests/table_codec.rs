@@ -26,12 +26,12 @@ fn scalar(name: &str, number: i32, ty: Type) -> FieldDescriptorProto {
 /// Package `t` with:
 ///
 /// - `Plain`, `Leaf`, and `HasLeaf` (holds a `Leaf`), which can use the table;
-/// - `Oneofy` (has a string with a custom type, which the table does not
-///   support), which cannot, and `HasOneofy` (holds an `Oneofy`), which can,
+/// - `CustomStr` (has a string with a custom type, which the table does not
+///   support), which cannot, and `HoldsCustomStr` (holds an `CustomStr`), which can,
 ///   because a table message may hold a message that has no table;
 /// - `Outer` with a nested `Inner`, both plain.
 fn schema() -> FileDescriptorProto {
-    let oneofy = message("Oneofy", vec![scalar("a", 1, Type::TYPE_STRING)]);
+    let custom_str = message("CustomStr", vec![scalar("a", 1, Type::TYPE_STRING)]);
     let mut outer = message("Outer", vec![scalar("x", 1, Type::TYPE_INT32)]);
     outer.nested_type = vec![message("Inner", vec![scalar("y", 1, Type::TYPE_STRING)])];
     FileDescriptorProto {
@@ -46,19 +46,23 @@ fn schema() -> FileDescriptorProto {
             ),
             message("Leaf", vec![scalar("x", 1, Type::TYPE_INT32)]),
             message("HasLeaf", vec![message_field("leaf", 1, ".t.Leaf")]),
-            oneofy,
-            message("HasOneofy", vec![message_field("o", 1, ".t.Oneofy")]),
+            custom_str,
+            message(
+                "HoldsCustomStr",
+                vec![message_field("o", 1, ".t.CustomStr")],
+            ),
             outer,
         ],
         ..proto3_file("t.proto")
     }
 }
 
-/// `.t.Oneofy.a` has a custom string type, which the table cannot use.
+/// `.t.CustomStr.a` has a custom string type, which the table cannot use.
+/// [`run`] applies it to every config it is given.
 fn with_custom_string(config: &CodeGenConfig) -> CodeGenConfig {
     let mut config = config.clone();
     config.string_fields.push((
-        ".t.Oneofy.a".to_string(),
+        ".t.CustomStr.a".to_string(),
         StringRepr::Custom("crate::Str".to_string()),
     ));
     config
@@ -73,7 +77,7 @@ fn run(config: &CodeGenConfig) -> Result<(String, Vec<CodeGenWarning>), CodeGenE
     Ok((joined(&files), warnings))
 }
 
-/// The reason `Oneofy` cannot use the table.
+/// The reason `CustomStr` cannot use the table.
 const CUSTOM: &str = "has a field with a custom string, bytes or collection type";
 
 fn table_config(strategy: CodecStrategy) -> CodeGenConfig {
@@ -152,7 +156,7 @@ fn the_global_setting_gives_a_table_to_every_message_that_can_use_one() {
     let (code, warnings) = run(&table_config(CodecStrategy::Table)).unwrap();
     assert_eq!(
         tables(&code),
-        ["Plain", "Leaf", "HasLeaf", "HasOneofy", "Outer", "Inner"]
+        ["Plain", "Leaf", "HasLeaf", "HoldsCustomStr", "Outer", "Inner"]
     );
     // The one with a custom string falls back, and one warning covers the run.
     let (counts, reasons) = summary(&warnings);
@@ -160,7 +164,7 @@ fn the_global_setting_gives_a_table_to_every_message_that_can_use_one() {
     assert_eq!(reasons, [(CUSTOM, 1)]);
     let text = table_warnings(&warnings)[0].to_string();
     assert!(text.starts_with("1 of 7 messages selected for the table codec"));
-    assert!(text.contains(&format!("{CUSTOM} (1: .t.Oneofy)")), "{text}");
+    assert!(text.contains(&format!("{CUSTOM} (1: .t.CustomStr)")), "{text}");
     assert!(text.contains("codec_strategy_in=<path>=unrolled"), "{text}");
 }
 
@@ -195,17 +199,17 @@ fn a_child_message_is_referenced_through_its_own_table() {
 fn a_child_without_a_table_is_reached_through_its_message_impl() {
     let (code, _) = run(&table_config(CodecStrategy::Table)).unwrap();
     let code = squashed(&code);
-    // `HasOneofy` is a table message that holds `Oneofy`, which is unrolled.
-    let holder = code.split("static__BUFFA_TABLE_HasOneofy").nth(1).unwrap();
+    // `HoldsCustomStr` is a table message that holds `CustomStr`, which is unrolled.
+    let holder = code.split("static__BUFFA_TABLE_HoldsCustomStr").nth(1).unwrap();
     let holder = holder
-        .split("impl::buffa::MessageforHasOneofy")
+        .split("impl::buffa::MessageforHoldsCustomStr")
         .next()
         .unwrap();
     assert!(
-        holder.contains("Aux::Msg(&::buffa::table::MsgVt::new_via_message::<::buffa::MessageField<Oneofy,::buffa::Inline<Oneofy>>>())"),
+        holder.contains("Aux::Msg(&::buffa::table::MsgVt::new_via_message::<::buffa::MessageField<CustomStr,::buffa::Inline<CustomStr>>>())"),
         "{holder}"
     );
-    assert!(!holder.contains("__BUFFA_TABLE_Oneofy"), "{holder}");
+    assert!(!holder.contains("__BUFFA_TABLE_CustomStr"), "{holder}");
 }
 
 #[test]
@@ -219,16 +223,16 @@ fn a_repeated_child_without_a_table_is_reached_through_its_message_impl() {
     )
     .unwrap();
     let code = squashed(&joined(&files));
-    let holder = code.split("static__BUFFA_TABLE_HasOneofy").nth(1).unwrap();
+    let holder = code.split("static__BUFFA_TABLE_HoldsCustomStr").nth(1).unwrap();
     let holder = holder
-        .split("impl::buffa::MessageforHasOneofy")
+        .split("impl::buffa::MessageforHoldsCustomStr")
         .next()
         .unwrap();
     assert!(
-        holder.contains("Aux::Rep(&::buffa::table::RepVt::new_via_message::<Oneofy>())"),
+        holder.contains("Aux::Rep(&::buffa::table::RepVt::new_via_message::<CustomStr>())"),
         "{holder}"
     );
-    assert!(holder.contains("Vec<Oneofy>"), "{holder}");
+    assert!(holder.contains("Vec<CustomStr>"), "{holder}");
 }
 
 #[test]
@@ -303,7 +307,7 @@ fn the_last_matching_rule_wins() {
     };
     let (code, _) = run(&config).unwrap();
     // `Outer` is unrolled, though its nested message is a table.
-    assert_eq!(tables(&code), ["Leaf", "HasLeaf", "HasOneofy", "Inner"]);
+    assert_eq!(tables(&code), ["Leaf", "HasLeaf", "HoldsCustomStr", "Inner"]);
 }
 
 #[test]
@@ -357,29 +361,29 @@ fn a_rule_for_a_message_does_not_select_the_messages_it_holds() {
 fn every_exact_path_rule_that_cannot_be_honoured_is_reported_at_once() {
     let mut file = schema();
     let mut second = file.message_type[3].clone();
-    second.name = Some("Oneofy2".to_string());
+    second.name = Some("CustomStr2".to_string());
     file.message_type.push(second);
     let config = CodeGenConfig {
         codec_strategy_in: vec![
-            (".t.Oneofy".to_string(), CodecStrategy::Table),
-            (".t.Oneofy2".to_string(), CodecStrategy::Table),
-            (".t.HasOneofy".to_string(), CodecStrategy::Table),
+            (".t.CustomStr".to_string(), CodecStrategy::Table),
+            (".t.CustomStr2".to_string(), CodecStrategy::Table),
+            (".t.HoldsCustomStr".to_string(), CodecStrategy::Table),
         ],
         ..Default::default()
     };
     let mut config = with_custom_string(&config);
     config.string_fields.push((
-        ".t.Oneofy2.a".to_string(),
+        ".t.CustomStr2.a".to_string(),
         StringRepr::Custom("crate::Str".to_string()),
     ));
     let err = generate_with_diagnostics(&[file], &["t.proto".to_string()], &config)
         .unwrap_err()
         .to_string();
-    // `HasOneofy` can use the table, so it is not among them.
+    // `HoldsCustomStr` can use the table, so it is not among them.
     assert!(
-        err.contains("rule '.t.Oneofy'")
-            && err.contains("rule '.t.Oneofy2'")
-            && !err.contains("rule '.t.HasOneofy'"),
+        err.contains("rule '.t.CustomStr'")
+            && err.contains("rule '.t.CustomStr2'")
+            && !err.contains("rule '.t.HoldsCustomStr'"),
         "{err}"
     );
 }
@@ -387,7 +391,7 @@ fn every_exact_path_rule_that_cannot_be_honoured_is_reported_at_once() {
 #[test]
 fn an_exact_path_rule_for_a_message_that_cannot_use_the_table_is_an_error() {
     let config = CodeGenConfig {
-        codec_strategy_in: vec![(".t.Oneofy".to_string(), CodecStrategy::Table)],
+        codec_strategy_in: vec![(".t.CustomStr".to_string(), CodecStrategy::Table)],
         ..Default::default()
     };
     let err = run(&config).unwrap_err().to_string();
@@ -407,7 +411,7 @@ fn a_broad_rule_that_covers_such_a_message_only_warns() {
     let (code, warnings) = run(&config).unwrap();
     assert_eq!(
         tables(&code),
-        ["Plain", "Leaf", "HasLeaf", "HasOneofy", "Outer", "Inner"]
+        ["Plain", "Leaf", "HasLeaf", "HoldsCustomStr", "Outer", "Inner"]
     );
     // Messages a rule selects are counted like the ones the global setting does.
     assert_eq!(summary(&warnings).0, (1, 7));
@@ -424,7 +428,7 @@ fn setting_a_message_to_unrolled_does_not_affect_the_messages_that_hold_it() {
     // anyway. The warning counts the messages selected, which leaves out `Leaf`.
     assert_eq!(
         tables(&code),
-        ["Plain", "HasLeaf", "HasOneofy", "Outer", "Inner"]
+        ["Plain", "HasLeaf", "HoldsCustomStr", "Outer", "Inner"]
     );
     assert_eq!(summary(&warnings).0, (1, 6));
 
@@ -433,7 +437,7 @@ fn setting_a_message_to_unrolled_does_not_affect_the_messages_that_hold_it() {
     let config = CodeGenConfig {
         codec_strategy_in: vec![
             (".t.Leaf".to_string(), CodecStrategy::Unrolled),
-            (".t.Oneofy".to_string(), CodecStrategy::Unrolled),
+            (".t.CustomStr".to_string(), CodecStrategy::Unrolled),
         ],
         ..table_config(CodecStrategy::Table)
     };
@@ -1119,7 +1123,16 @@ fn the_oneof_enum_implements_the_accessors_the_table_reads_it_through() {
     assert!(imp.contains("Self::Leaf(_)=>5u32"), "{imp}");
     // A boxed message is reached through its box (by deref coercion), and a
     // new one starts empty.
-    assert!(imp.contains("Self::Leaf(v)=>{letvalue:&Leaf=v;"), "{imp}");
+    assert!(
+        imp.contains("Self::Leaf(v)=>{letvalue:&Leaf=v;letptr:*constLeaf=value;ptr.cast::<u8>()}"),
+        "{imp}"
+    );
+    assert!(
+        imp.contains("Self::Leaf(v)=>{letvalue:&mutLeaf=v;letptr:*mutLeaf=value;ptr.cast::<u8>()}"),
+        "{imp}"
+    );
+    // Neither is a cast of the reference, which `trivial_casts` flags.
+    assert!(!imp.contains("valueas"), "{imp}");
     assert!(
         imp.contains(
             "5u32=>{::core::option::Option::Some(Self::Leaf(::buffa::alloc::boxed::Box::default()"
@@ -1132,7 +1145,7 @@ fn the_oneof_enum_implements_the_accessors_the_table_reads_it_through() {
 }
 
 #[test]
-fn an_unrolled_message_with_a_oneof_is_unchanged() {
+fn an_unrolled_message_with_a_oneof_has_no_oneof_enum_impl() {
     let (code, warnings) = run_oneof(&CodeGenConfig::default());
     assert!(tables(&code).is_empty());
     assert!(!code.contains("OneofEnum"));
