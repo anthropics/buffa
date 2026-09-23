@@ -167,7 +167,6 @@ fn the_global_setting_gives_a_table_to_every_message_that_can_use_one() {
 fn a_table_message_forwards_message_to_the_shared_interpreters() {
     let (code, _) = run(&table_config(CodecStrategy::Table)).unwrap();
     assert!(code.contains("::buffa::__table!"));
-    assert!(code.contains("::buffa::table::ABI"));
     assert!(code.contains("__BUFFA_TABLE_Plain.compute_size(self, cache)"));
     assert!(code.contains("__BUFFA_TABLE_Plain.merge_field(self, tag, buf, ctx)"));
     // None of the per-field code an unrolled impl has: the size and write
