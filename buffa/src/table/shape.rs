@@ -75,7 +75,8 @@ unsafe fn get_impl<F: MsgSlot>(slot: *const u8) -> *const u8 {
 }
 
 impl MsgVt {
-    /// Describe a field of type `F`, whose messages `table` describes.
+    /// Describe a field of type `F`, whose message is a table message and
+    /// `table` is its table.
     #[must_use]
     pub const fn new<F: MsgSlot>(table: &'static Table<F::Msg>) -> Self {
         Self {
@@ -85,12 +86,12 @@ impl MsgVt {
         }
     }
 
-    /// Describe a field of type `F` whose message has no table here: a
-    /// message generated with the unrolled codec, by another crate, or one of
-    /// the well-known types. The child is reached through its [`Message`]
-    /// impl, so it may use any codec.
+    /// Describe a field of type `F` whose message is reached through its
+    /// [`Message`] impl, for a message whose table is not visible here.
+    /// Prefer [`MsgVt::new`] when it is, because the interpreters then decode
+    /// the child without a function call.
     #[must_use]
-    pub const fn new_dyn<F: MsgSlot>() -> Self
+    pub const fn new_via_message<F: MsgSlot>() -> Self
     where
         F::Msg: Message,
     {
@@ -161,7 +162,8 @@ unsafe fn parts_impl<T>(slot: *const u8) -> (*const u8, usize) {
 }
 
 impl RepVt {
-    /// Describe a `Vec<T>` field, whose messages `table` describes.
+    /// Describe a `Vec<T>` field whose messages are table messages, `table`
+    /// being their table.
     #[must_use]
     pub const fn new<T: Default>(table: &'static Table<T>) -> Self {
         Self {
@@ -173,10 +175,10 @@ impl RepVt {
         }
     }
 
-    /// Describe a `Vec<T>` field whose messages have no table here; see
-    /// [`MsgVt::new_dyn`].
+    /// Describe a `Vec<T>` field whose messages are reached through their
+    /// [`Message`] impl; see [`MsgVt::new_via_message`].
     #[must_use]
-    pub const fn new_dyn<T: Message>() -> Self {
+    pub const fn new_via_message<T: Message>() -> Self {
         Self {
             child: Child::of::<T>(),
             size: core::mem::size_of::<T>(),

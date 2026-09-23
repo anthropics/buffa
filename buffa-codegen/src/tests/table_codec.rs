@@ -195,7 +195,7 @@ fn a_child_without_a_table_is_reached_through_its_message_impl() {
         .next()
         .unwrap();
     assert!(
-        holder.contains("Aux::Msg(&::buffa::table::MsgVt::new_dyn::<::buffa::MessageField<Oneofy,::buffa::Inline<Oneofy>>>())"),
+        holder.contains("Aux::Msg(&::buffa::table::MsgVt::new_via_message::<::buffa::MessageField<Oneofy,::buffa::Inline<Oneofy>>>())"),
         "{holder}"
     );
     assert!(!holder.contains("__BUFFA_TABLE_Oneofy"), "{holder}");
@@ -240,7 +240,7 @@ fn a_message_can_have_a_table_when_it_holds_a_message_set_to_unrolled() {
     let (code, warnings) = run(&config).unwrap();
     assert_eq!(tables(&code), ["HasLeaf"]);
     assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
-    assert!(squashed(&code).contains("MsgVt::new_dyn::<"));
+    assert!(squashed(&code).contains("MsgVt::new_via_message::<"));
 }
 
 #[test]
@@ -255,7 +255,7 @@ fn a_rule_for_a_message_does_not_select_the_messages_it_holds() {
     assert_eq!(tables(&code), ["HasLeaf"]);
     assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
     let code = squashed(&code);
-    assert!(code.contains("MsgVt::new_dyn::<"), "{code}");
+    assert!(code.contains("MsgVt::new_via_message::<"), "{code}");
     assert!(!code.contains("(&__BUFFA_TABLE_Leaf)"), "{code}");
 
     // A rule for the child as well gives both a table, and the parent then
@@ -272,7 +272,7 @@ fn a_rule_for_a_message_does_not_select_the_messages_it_holds() {
     assert!(table_warnings(&warnings).is_empty());
     let code = squashed(&code);
     assert!(code.contains("(&__BUFFA_TABLE_Leaf)"), "{code}");
-    assert!(!code.contains("new_dyn"), "{code}");
+    assert!(!code.contains("new_via_message"), "{code}");
 }
 
 #[test]
@@ -400,7 +400,7 @@ fn a_message_type_from_another_crate_is_reached_through_its_message_impl() {
     let code = squashed(&code);
     let holder = code.split("static__BUFFA_TABLE_HasLeaf").nth(1).unwrap();
     assert!(
-        holder.contains("MsgVt::new_dyn::<::buffa::MessageField<::other_crate::Foreign"),
+        holder.contains("MsgVt::new_via_message::<::buffa::MessageField<::other_crate::Foreign"),
         "{holder}"
     );
 }

@@ -1168,12 +1168,12 @@ static BRIDGED: Table<Bridged> = crate::__table!(
     ],
     dense = &dense::<8>(&[1, 2, 3, 4, 5, 6, 7]),
     aux = [
-        Aux::Msg(&MsgVt::new_dyn::<MessageField<Hand>>()),
-        Aux::Rep(&RepVt::new_dyn::<Hand>()),
-        Aux::Msg(&MsgVt::new_dyn::<MessageField<Inner>>()),
-        Aux::Rep(&RepVt::new_dyn::<Inner>()),
+        Aux::Msg(&MsgVt::new_via_message::<MessageField<Hand>>()),
+        Aux::Rep(&RepVt::new_via_message::<Hand>()),
+        Aux::Msg(&MsgVt::new_via_message::<MessageField<Inner>>()),
+        Aux::Rep(&RepVt::new_via_message::<Inner>()),
         Aux::Msg(&MsgVt::new::<MessageField<Inner>>(&INNER)),
-        Aux::Msg(&MsgVt::new_dyn::<MessageField<Hand, Inline<Hand>>>()),
+        Aux::Msg(&MsgVt::new_via_message::<MessageField<Hand, Inline<Hand>>>()),
     ],
     unknown = unknown,
 );
@@ -1297,8 +1297,8 @@ fn a_child_without_a_table_reaches_every_sink() {
     msg.encode(&mut roomy);
     assert_eq!(roomy, expected);
 
-    // A sink whose chunk is shorter than the message is written through a
-    // scratch buffer first, and so is every message in a Rope.
+    // A sink whose chunk is shorter than the message receives the whole
+    // message from a scratch buffer.
     let mut small = crate::bytes::BytesMut::with_capacity(1);
     msg.encode_length_delimited(&mut small);
     let mut framed = Vec::new();
@@ -1429,55 +1429,86 @@ fn a_length_that_runs_past_a_child_without_a_table_is_an_error() {
     );
 }
 
-#[test]
-#[cfg(debug_assertions)]
-#[should_panic(expected = "two-pass traversal mismatch")]
-fn a_child_that_writes_what_it_did_not_size_is_caught_in_a_scratch_buffer() {
-    /// Sizes itself as empty and writes a byte.
-    #[derive(Clone, Default, PartialEq)]
-    struct Liar;
-    crate::impl_default_instance!(Liar);
-    impl Message for Liar {
-        fn compute_size(&self, _: &mut SizeCache) -> u32 {
-            0
-        }
-        fn write_to(&self, _: &mut SizeCache, buf: &mut impl EncodeSink) {
+/// Declares `size` bytes and writes `writes` of them.
+#[derive(Clone, Default, PartialEq)]
+struct Liar {
+    size: u32,
+    writes: u8,
+}
+crate::impl_default_instance!(Liar);
+
+impl Message for Liar {
+    fn compute_size(&self, _: &mut SizeCache) -> u32 {
+        self.size
+    }
+    fn write_to(&self, _: &mut SizeCache, buf: &mut impl EncodeSink) {
+        for _ in 0..self.writes {
             buf.put_u8(1);
         }
-        fn merge_field(
-            &mut self,
-            _: Tag,
-            _: &mut impl Buf,
-            _: DecodeContext<'_>,
-        ) -> Result<(), DecodeError> {
-            unreachable!()
-        }
-        fn clear(&mut self) {}
     }
-    #[derive(Clone, Default, PartialEq)]
-    struct HoldsLiar {
-        liar: MessageField<Liar>,
+    fn merge_field(
+        &mut self,
+        _: Tag,
+        _: &mut impl Buf,
+        _: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        unreachable!()
     }
-    static HOLDS_LIAR: Table<HoldsLiar> = crate::__table!(
+    fn clear(&mut self) {}
+}
+
+#[derive(Clone, Default, PartialEq)]
+struct HoldsLiar {
+    liar: MessageField<Liar>,
+}
+
+static HOLDS_LIAR: Table<HoldsLiar> = crate::__table!(
+    HoldsLiar,
+    abi = ABI,
+    entries = [crate::__table_entry!(
         HoldsLiar,
-        abi = ABI,
-        entries = [crate::__table_entry!(
-            HoldsLiar,
-            liar,
-            MsgSingular,
-            1,
-            aux = 0,
-            slot = MessageField<Liar>
-        )],
-        dense = &dense::<2>(&[1]),
-        aux = [Aux::Msg(&MsgVt::new_dyn::<MessageField<Liar>>())],
-        unknown = none,
-    );
-    table_message!(HoldsLiar, HOLDS_LIAR);
-    let msg = HoldsLiar {
-        liar: MessageField::some(Liar),
-    };
-    // Written into a Rope, the child goes through a scratch buffer sized by
-    // `compute_size`, which its write overruns.
-    msg.encode(&mut Rope::new());
+        liar,
+        MsgSingular,
+        1,
+        aux = 0,
+        slot = MessageField<Liar>
+    )],
+    dense = &dense::<2>(&[1]),
+    aux = [Aux::Msg(&MsgVt::new_via_message::<MessageField<Liar>>())],
+    unknown = none,
+);
+table_message!(HoldsLiar, HOLDS_LIAR);
+
+fn holds_liar(size: u32, writes: u8) -> HoldsLiar {
+    HoldsLiar {
+        liar: MessageField::some(Liar { size, writes }),
+    }
+}
+
+#[test]
+#[should_panic(expected = "more bytes than compute_size declared")]
+fn a_child_that_writes_more_than_it_sized_panics_in_the_scratch_buffer() {
+    // A Rope is not written through the cursor, so the child is staged in a
+    // buffer of the size `compute_size` gave, which the write overruns.
+    holds_liar(0, 1).encode(&mut Rope::new());
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "different byte count than compute_size declared")]
+fn a_child_that_writes_less_than_it_sized_panics_in_debug_builds() {
+    holds_liar(3, 1).encode(&mut Rope::new());
+}
+
+#[test]
+fn a_child_can_be_written_by_calling_write_to_on_a_buffer() {
+    // `write_to` on a `Vec` is not the pre-sized path `encode` takes, so each
+    // child is staged and copied. The bytes are the same.
+    let msg = bridged();
+    let mut cache = SizeCache::new();
+    let size = msg.compute_size(&mut cache);
+    let mut out = Vec::new();
+    msg.write_to(&mut cache, &mut out);
+    assert_eq!(out.len(), size as usize);
+    assert_eq!(out, msg.encode_to_vec());
 }

@@ -241,7 +241,7 @@ fn field_entry(
             let (slot, aux_item) = if f.card == Card::Repeated {
                 let vt = match &child_table {
                     Some(table) => quote! { ::buffa::table::RepVt::new::<#child_ty>(&#table) },
-                    None => quote! { ::buffa::table::RepVt::new_dyn::<#child_ty>() },
+                    None => quote! { ::buffa::table::RepVt::new_via_message::<#child_ty>() },
                 };
                 (
                     quote! { ::buffa::alloc::vec::Vec<#child_ty> },
@@ -251,7 +251,7 @@ fn field_entry(
                 let slot = classify_field(scope, msg, field, resolver)?.rust_type;
                 let vt = match &child_table {
                     Some(table) => quote! { ::buffa::table::MsgVt::new::<#slot>(&#table) },
-                    None => quote! { ::buffa::table::MsgVt::new_dyn::<#slot>() },
+                    None => quote! { ::buffa::table::MsgVt::new_via_message::<#slot>() },
                 };
                 (slot, quote! { ::buffa::table::Aux::Msg(&#vt) })
             };
