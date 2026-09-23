@@ -2274,7 +2274,7 @@ fn place_with_merges_into_the_member_that_is_set_and_replaces_another_only_on_su
         assert_eq!(slot, Some(Pick::Text("kept+more".into())));
         // Another member is decoded into a new default one, which a failure
         // discards.
-        let r = (vt.place_with)(slot_ptr, 2, &mut |p| {
+        let r = (vt.place_with)(raw(&mut slot), 2, &mut |p| {
             assert_eq!(*p.cast::<i32>(), 0);
             *p.cast::<i32>() = 9;
             Err(DecodeError::UnexpectedEof)
@@ -2282,7 +2282,7 @@ fn place_with_merges_into_the_member_that_is_set_and_replaces_another_only_on_su
         assert_eq!(r, Err(DecodeError::UnexpectedEof));
         assert_eq!(slot, Some(Pick::Text("kept+more".into())));
         // Success replaces it.
-        let r = (vt.place_with)(slot_ptr, 2, &mut |p| {
+        let r = (vt.place_with)(raw(&mut slot), 2, &mut |p| {
             *p.cast::<i32>() = 9;
             Ok(())
         });
@@ -2329,6 +2329,58 @@ impl OneofEnum for LyingEnum {
     fn with_default(_number: u32) -> Option<Self> {
         Some(LyingEnum)
     }
+}
+
+/// An enum whose payload pointers are null, which breaks the contract of
+/// [`OneofEnum`].
+#[derive(Debug, PartialEq)]
+struct NullPayload;
+
+impl OneofEnum for NullPayload {
+    fn number(&self) -> u32 {
+        1
+    }
+    fn payload(&self) -> *const u8 {
+        core::ptr::null()
+    }
+    fn payload_mut(&mut self) -> *mut u8 {
+        core::ptr::null_mut()
+    }
+    fn with_default(number: u32) -> Option<Self> {
+        (number == 1).then_some(NullPayload)
+    }
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "`OneofEnum::payload` returned null")]
+fn a_null_payload_is_caught_when_the_member_is_read() {
+    let vt = OneofVt::new::<NullPayload>(0, 1);
+    let mut slot = Some(NullPayload);
+    // SAFETY: `slot` is a live `Option<NullPayload>`.
+    let _ = unsafe { (vt.get)((&mut slot as *mut Option<NullPayload>).cast()) };
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "`OneofEnum::payload_mut` returned null")]
+fn a_null_payload_is_caught_when_the_member_is_placed() {
+    let vt = OneofVt::new::<NullPayload>(0, 1);
+    let mut slot: Option<NullPayload> = None;
+    // SAFETY: `slot` is a live `Option<NullPayload>` and 1 is a member.
+    let _ = unsafe { (vt.place)((&mut slot as *mut Option<NullPayload>).cast(), 1) };
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "`OneofEnum::payload_mut` returned null")]
+fn a_null_payload_is_caught_when_the_member_is_decoded_into() {
+    let vt = OneofVt::new::<NullPayload>(0, 1);
+    let mut slot: Option<NullPayload> = None;
+    // SAFETY: as above.
+    let _ = unsafe {
+        (vt.place_with)((&mut slot as *mut Option<NullPayload>).cast(), 1, &mut |_| Ok(()))
+    };
 }
 
 #[test]
