@@ -646,12 +646,12 @@ impl<M> Table<M> {
     /// - `Enum*`: the storage the entry's [`EnumVt`] was built for;
     /// - `MsgSingular`: the storage the [`MsgVt`] was built for, and
     ///   `MsgRepeated`: the `Vec` the [`RepVt`] was built for;
-    /// - `OneofLeader` and `OneofFollower`: an `Option<E>`, where the [`OneofVt`] of the member's
-    ///   group was built for `E`, and `E`'s [`OneofEnum`] implementation
-    ///   gives, for the member's number, a pointer to a value of the member's
-    ///   payload kind, under the same rules as the kinds above (for
-    ///   `MsgSingular`, a [`MsgVt::direct`] or [`MsgVt::direct_via_message`]
-    ///   descriptor of the message).
+    /// - `OneofLeader` and `OneofFollower`: an `Option<E>`, where the
+    ///   [`OneofVt`] of the member's group was built for `E`, and `E`'s
+    ///   [`OneofEnum`] implementation gives, for the member's number, a pointer
+    ///   to a value of the member's payload kind, under the same rules as the
+    ///   kinds above (for `MsgSingular`, a [`MsgVt::direct`] or
+    ///   [`MsgVt::direct_via_message`] descriptor of the message).
     ///
     /// `unknown`, if present, must be the offset of a field of type
     /// `UnknownFields`. The `__table_entry!` macro checks the field types
