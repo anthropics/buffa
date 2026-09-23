@@ -1,0 +1,79 @@
+syntax = "proto2";
+
+// See table_codec.proto: compiled as `tc2u` (unrolled) and `tc2t` (table).
+package tc2;
+
+// Closed, and its first value is not zero.
+enum Color {
+  RED = 1;
+  GREEN = 2;
+  BLUE = 3;
+}
+
+message Inner {
+  optional int32 id = 1;
+}
+
+message Req {
+  required int32 a = 1;
+  required string s = 2;
+  optional int32 d = 3 [default = 7];
+  repeated int32 unpacked = 4;
+  repeated int32 packed = 5 [packed = true];
+  optional Color c = 6;
+  repeated Color cs = 7;
+  repeated Color packed_cs = 9 [packed = true];
+  optional Inner i = 8;
+  required Inner ri = 10;
+  optional bytes by = 11 [default = "ab"];
+  optional string st = 12 [default = "xyz"];
+  optional bool flag = 13 [default = true];
+}
+
+// A group field, which the table cannot handle, and the group's own type.
+message Grouped {
+  optional int32 a = 1;
+  optional group G = 2 {
+    optional int32 x = 1;
+  }
+}
+
+// Required fields of every type, and repeated fields of every type, which are
+// unpacked in proto2.
+message AllRequired {
+  required int32 i32 = 1;
+  required int64 i64 = 2;
+  required uint32 u32 = 3;
+  required uint64 u64 = 4;
+  required sint32 s32 = 5;
+  required sint64 s64 = 6;
+  required bool b = 7;
+  required fixed32 f32 = 8;
+  required fixed64 f64 = 9;
+  required sfixed32 sf32 = 10;
+  required sfixed64 sf64 = 11;
+  required float fl = 12;
+  required double db = 13;
+  required string s = 14;
+  required bytes by = 15;
+  required Color color = 16;
+}
+
+message AllRepeated {
+  repeated int32 i32 = 1;
+  repeated int64 i64 = 2;
+  repeated uint32 u32 = 3;
+  repeated uint64 u64 = 4;
+  repeated sint32 s32 = 5;
+  repeated sint64 s64 = 6;
+  repeated bool b = 7;
+  repeated fixed32 f32 = 8;
+  repeated fixed64 f64 = 9;
+  repeated sfixed32 sf32 = 10;
+  repeated sfixed64 sf64 = 11;
+  repeated float fl = 12;
+  repeated double db = 13;
+  repeated string s = 14;
+  repeated bytes by = 15;
+  repeated Color color = 16;
+}

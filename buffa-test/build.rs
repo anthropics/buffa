@@ -1,4 +1,188 @@
+/// Compile a schema twice, with its `package <base>` renamed to `<base>u` and
+/// generated with the default unrolled codec, and to `<base>t` and generated
+/// with `codec_strategy = Table`. A test compares the two codecs on the same
+/// schema. `file` names the schema in messages.
+fn compile_both_codecs(file: &str, source: &str, base: &str) {
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    let package = format!("package {base};");
+    assert!(source.contains(&package), "{file} must declare `{package}`");
+    for (suffix, strategy) in [
+        ("u", buffa_build::CodecStrategy::Unrolled),
+        ("t", buffa_build::CodecStrategy::Table),
+    ] {
+        let renamed = out.join(format!("{base}{suffix}.proto"));
+        std::fs::write(
+            &renamed,
+            source.replace(&package, &format!("package {base}{suffix};")),
+        )
+        .expect("write renamed proto");
+        buffa_build::Config::new()
+            .files(&[renamed])
+            .includes(&[&out])
+            .generate_json(true)
+            .generate_text(true)
+            .codec_strategy(strategy)
+            .compile()
+            .unwrap_or_else(|e| panic!("buffa_build failed for {file} ({suffix}): {e}"));
+    }
+}
+
+/// Two packages, the second holding messages of the first, compiled three
+/// ways: unrolled (`xau`, `xbu`), table (`xat`, `xbt`), and table with
+/// `file_per_package` and `idiomatic_imports` (`xati`, `xbti`), which shortens
+/// the paths of types in other packages and so changes what a table path may
+/// be.
+fn compile_cross_package() {
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    let sources = |suffix: &str| {
+        let dep = format!(
+            "syntax = \"proto3\";\npackage xa{suffix};\n\
+             message Leaf {{ int32 x = 1; string s = 2; }}\n\
+             message Wrap {{ Leaf leaf = 1; repeated Leaf leaves = 2; }}\n"
+        );
+        let user = format!(
+            "syntax = \"proto3\";\npackage xb{suffix};\nimport \"xa{suffix}.proto\";\n\
+             message Holder {{\n\
+               xa{suffix}.Leaf leaf = 1;\n\
+               repeated xa{suffix}.Leaf leaves = 2;\n\
+               xa{suffix}.Wrap wrap = 3;\n\
+               Sub sub = 4;\n\
+               message Sub {{ xa{suffix}.Leaf l = 1; }}\n\
+             }}\n"
+        );
+        (dep, user)
+    };
+    for (suffix, strategy, idiomatic) in [
+        ("u", buffa_build::CodecStrategy::Unrolled, false),
+        ("t", buffa_build::CodecStrategy::Table, false),
+        ("ti", buffa_build::CodecStrategy::Table, true),
+    ] {
+        let (dep, user) = sources(suffix);
+        let (dep_path, user_path) = (
+            out.join(format!("xa{suffix}.proto")),
+            out.join(format!("xb{suffix}.proto")),
+        );
+        std::fs::write(&dep_path, dep).expect("write proto");
+        std::fs::write(&user_path, user).expect("write proto");
+        let mut config = buffa_build::Config::new()
+            .files(&[dep_path, user_path])
+            .includes(&[&out])
+            .codec_strategy(strategy);
+        if idiomatic {
+            let dir = out.join("cross_package_idiomatic");
+            std::fs::create_dir_all(&dir).expect("create dir");
+            config = config
+                .file_per_package(true)
+                .idiomatic_imports(true)
+                .include_file("_include.rs")
+                .out_dir(dir);
+        }
+        config.compile().unwrap_or_else(|e| {
+            panic!("buffa_build failed for the cross-package schema ({suffix}): {e}")
+        });
+    }
+}
+
+/// The source of `protos/<file>`, which the build depends on.
+fn read_proto(file: &str) -> String {
+    println!("cargo:rerun-if-changed=protos/{file}");
+    std::fs::read_to_string(format!("protos/{file}")).expect("read proto")
+}
+
+/// A message with 300 fields, of which 280 are messages, so that a table needs
+/// more than 255 entries (which turns off its dense array) and more than 255
+/// field descriptors.
+fn wide_proto() -> String {
+    let mut proto = String::from(
+        "syntax = \"proto3\";\npackage wide;\nmessage Leaf { int32 x = 1; }\nmessage Wide {\n",
+    );
+    for n in 1..=280 {
+        proto.push_str(&format!("  Leaf f{n} = {n};\n"));
+    }
+    for n in 281..=300 {
+        proto.push_str(&format!("  int32 f{n} = {n};\n"));
+    }
+    proto.push_str("}\n");
+    // Messages one field either side of the 255 that a dense array cannot
+    // index.
+    for count in [254, 255, 256] {
+        proto.push_str(&format!("message W{count} {{\n"));
+        for n in 1..=count {
+            proto.push_str(&format!("  int32 f{n} = {n};\n"));
+        }
+        proto.push_str("}\n");
+    }
+    proto
+}
+
+/// Compile `protos/<file>` as package `<base>x` with the table codec and the
+/// options that change the names and fields the table refers to: a type name
+/// prefix (`RpcScalars`), no unknown-field slot, boxed message fields, and the
+/// lazy view and reflection code that read the same fields.
+fn compile_table_with_options(file: &str, base: &str) {
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    let source = read_proto(file);
+    let renamed = out.join(format!("{base}x.proto"));
+    std::fs::write(
+        &renamed,
+        source.replace(&format!("package {base};"), &format!("package {base}x;")),
+    )
+    .expect("write renamed proto");
+    buffa_build::Config::new()
+        .files(&[renamed])
+        .includes(&[&out])
+        .codec_strategy(buffa_build::CodecStrategy::Table)
+        .type_name_prefix("Rpc")
+        .preserve_unknown_fields(false)
+        .box_type(buffa_build::PointerRepr::Box)
+        .lazy_views(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .unwrap_or_else(|e| panic!("buffa_build failed for {file} (options): {e}"));
+}
+
+/// The minor version of the compiler building this crate.
+fn rustc_minor() -> u32 {
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let output = std::process::Command::new(rustc)
+        .arg("--version")
+        .output()
+        .expect("run rustc --version");
+    // "rustc 1.75.0 (82e1608df 2023-12-21)"
+    let version = String::from_utf8_lossy(&output.stdout);
+    version
+        .split_whitespace()
+        .nth(1)
+        .and_then(|v| v.split('.').nth(1))
+        .and_then(|minor| minor.parse().ok())
+        .unwrap_or_else(|| panic!("cannot read the rustc version from {version:?}"))
+}
+
 fn main() {
+    // Each schema in `tests::table_codec` is compiled once with the unrolled
+    // codec and once with the table codec, under renamed packages, so a test can
+    // compare them.
+    // Generated table code needs `core::mem::offset_of!`, stable in Rust 1.77,
+    // and the workspace MSRV is 1.75, where it is a compile error by design.
+    println!("cargo:rustc-check-cfg=cfg(has_table_codec)");
+    if rustc_minor() >= 77 {
+        println!("cargo:rustc-cfg=has_table_codec");
+        compile_both_codecs("table_codec.proto", &read_proto("table_codec.proto"), "tc");
+        compile_both_codecs(
+            "table_codec2.proto",
+            &read_proto("table_codec2.proto"),
+            "tc2",
+        );
+        compile_both_codecs(
+            "table_codec3.proto",
+            &read_proto("table_codec3.proto"),
+            "tc3",
+        );
+        compile_both_codecs("the generated wide schema", &wide_proto(), "wide");
+        compile_cross_package();
+        compile_table_with_options("table_codec.proto", "tc");
+    }
+
     // Basic proto — the original test file. Also the codegen target for
     // bridge-mode reflection (`generate_reflection(true)` emits
     // `impl Reflectable` per message + a per-package descriptor pool).
