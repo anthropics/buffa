@@ -1634,7 +1634,7 @@ static HOLDER: Table<Holder> = crate::__table!(
         crate::__table_entry!(
             Holder,
             pick,
-            oneof(Int32Required),
+            oneof(Int32Required, true),
             2,
             aux = 2,
             slot = Option<Pick>
@@ -1643,7 +1643,7 @@ static HOLDER: Table<Holder> = crate::__table!(
         crate::__table_entry!(
             Holder,
             pick,
-            oneof(StrRequired),
+            oneof(StrRequired, false),
             4,
             aux = 3,
             slot = Option<Pick>
@@ -1651,7 +1651,7 @@ static HOLDER: Table<Holder> = crate::__table!(
         crate::__table_entry!(
             Holder,
             pick,
-            oneof(BytesRequired),
+            oneof(BytesRequired, false),
             5,
             aux = 4,
             slot = Option<Pick>
@@ -1659,7 +1659,7 @@ static HOLDER: Table<Holder> = crate::__table!(
         crate::__table_entry!(
             Holder,
             other,
-            oneof(FloatRequired),
+            oneof(FloatRequired, true),
             6,
             aux = 5,
             slot = Option<Alt>
@@ -1667,7 +1667,7 @@ static HOLDER: Table<Holder> = crate::__table!(
         crate::__table_entry!(
             Holder,
             pick,
-            oneof(EnumRequired),
+            oneof(EnumRequired, false),
             7,
             aux = 6,
             slot = Option<Pick>
@@ -1675,7 +1675,7 @@ static HOLDER: Table<Holder> = crate::__table!(
         crate::__table_entry!(
             Holder,
             pick,
-            oneof(EnumRequired),
+            oneof(EnumRequired, false),
             8,
             aux = 7,
             slot = Option<Pick>
@@ -1683,7 +1683,7 @@ static HOLDER: Table<Holder> = crate::__table!(
         crate::__table_entry!(
             Holder,
             pick,
-            oneof(MsgSingular),
+            oneof(MsgSingular, false),
             9,
             aux = 10,
             slot = Option<Pick>
@@ -1691,7 +1691,7 @@ static HOLDER: Table<Holder> = crate::__table!(
         crate::__table_entry!(
             Holder,
             other,
-            oneof(MsgSingular),
+            oneof(MsgSingular, false),
             10,
             aux = 12,
             slot = Option<Alt>
@@ -1707,17 +1707,17 @@ static HOLDER: Table<Holder> = crate::__table!(
             crate::table::offset_of!(Holder, other),
             6
         )),
-        Aux::Member(Member::new(0, Kind::Int32Required, 0, true)),
-        Aux::Member(Member::new(0, Kind::StrRequired, 0, false)),
-        Aux::Member(Member::new(0, Kind::BytesRequired, 0, false)),
-        Aux::Member(Member::new(1, Kind::FloatRequired, 0, true)),
-        Aux::Member(Member::new(0, Kind::EnumRequired, 8, false)),
-        Aux::Member(Member::new(0, Kind::EnumRequired, 9, false)),
+        Aux::Member(Member::new(0, Kind::Int32Required, 0)),
+        Aux::Member(Member::new(0, Kind::StrRequired, 0)),
+        Aux::Member(Member::new(0, Kind::BytesRequired, 0)),
+        Aux::Member(Member::new(1, Kind::FloatRequired, 0)),
+        Aux::Member(Member::new(0, Kind::EnumRequired, 8)),
+        Aux::Member(Member::new(0, Kind::EnumRequired, 9)),
         Aux::Enum(&EnumVt::new::<ImplicitOpen<Color>>()),
         Aux::Enum(&EnumVt::new::<ImplicitClosed<Color>>()),
-        Aux::Member(Member::new(0, Kind::MsgSingular, 11, false)),
+        Aux::Member(Member::new(0, Kind::MsgSingular, 11)),
         Aux::Msg(&MsgVt::direct(&INNER)),
-        Aux::Member(Member::new(1, Kind::MsgSingular, 11, false)),
+        Aux::Member(Member::new(1, Kind::MsgSingular, 11)),
     ],
     unknown = unknown,
 );
@@ -1991,7 +1991,7 @@ fn oneof_members_encode_into_every_sink() {
 
 #[test]
 fn find_reaches_every_oneof_member() {
-    for (number, kind) in [(2, Kind::OneofMember), (9, Kind::OneofMember)] {
+    for (number, kind) in [(2, Kind::OneofLeader), (9, Kind::OneofFollower)] {
         assert_eq!(HOLDER.raw.find(number).unwrap().kind, kind);
     }
     let pe = HOLDER.raw.payload_entry(4);
@@ -2043,7 +2043,7 @@ mod invalid_oneof_tables {
     static PICK: OneofVt = OneofVt::new::<Pick>(0, 2);
     static INT_MEMBERS: [Aux; 2] = [
         Aux::Group(&PICK),
-        Aux::Member(Member::new(0, Kind::Int32Required, 0, true)),
+        Aux::Member(Member::new(0, Kind::Int32Required, 0)),
     ];
 
     /// `Table::new` on a `Holder`, which is never used to access a message.
@@ -2052,9 +2052,10 @@ mod invalid_oneof_tables {
         unsafe { Table::new(ABI, entries, &[], aux, None) }
     }
 
-    /// The `pick` field, at the offset the group above was built for.
+    /// A member of `pick` (whose lowest number is 2), at its offset, leading
+    /// it if it is number 2.
     const fn member(kind: Kind, number: u32, aux: u16) -> Entry {
-        Entry::oneof_member(kind, number, 0, aux)
+        Entry::oneof_member(kind, number == 2, number, 0, aux)
     }
 
     #[test]
@@ -2066,13 +2067,13 @@ mod invalid_oneof_tables {
     #[test]
     #[should_panic(expected = "payload must be a `Required`")]
     fn a_payload_must_be_a_kind_a_member_can_have() {
-        let _ = Entry::oneof_member(Kind::Int32Optional, 2, 0, 1);
+        let _ = Entry::oneof_member(Kind::Int32Optional, true, 2, 0, 1);
     }
 
     #[test]
     #[should_panic(expected = "wire type is its payload kind's")]
     fn an_entry_of_the_member_kind_needs_the_constructor_for_members() {
-        let _ = Entry::new(Kind::OneofMember, 2, 0, 1);
+        let _ = Entry::new(Kind::OneofFollower, 2, 0, 1);
     }
 
     #[test]
@@ -2085,7 +2086,7 @@ mod invalid_oneof_tables {
     #[test]
     #[should_panic(expected = "group index is out of range")]
     fn a_member_needs_its_group() {
-        static AUX: [Aux; 1] = [Aux::Member(Member::new(3, Kind::Int32Required, 0, true))];
+        static AUX: [Aux; 1] = [Aux::Member(Member::new(3, Kind::Int32Required, 0))];
         const E: Entry = member(Kind::Int32Required, 2, 0);
         let _ = holder_table(&[E], &AUX);
     }
@@ -2093,7 +2094,7 @@ mod invalid_oneof_tables {
     #[test]
     #[should_panic(expected = "not a oneof descriptor")]
     fn a_members_group_must_be_a_group() {
-        static AUX: [Aux; 1] = [Aux::Member(Member::new(0, Kind::Int32Required, 0, true))];
+        static AUX: [Aux; 1] = [Aux::Member(Member::new(0, Kind::Int32Required, 0))];
         const E: Entry = member(Kind::Int32Required, 2, 0);
         let _ = holder_table(&[E], &AUX);
     }
@@ -2103,7 +2104,7 @@ mod invalid_oneof_tables {
     fn a_members_kind_must_be_a_payload_kind() {
         static AUX: [Aux; 2] = [
             Aux::Group(&PICK),
-            Aux::Member(Member::new(0, Kind::Int32Optional, 0, true)),
+            Aux::Member(Member::new(0, Kind::Int32Optional, 0)),
         ];
         const E: Entry = member(Kind::Int32Required, 2, 1);
         let _ = holder_table(&[E], &AUX);
@@ -2114,7 +2115,7 @@ mod invalid_oneof_tables {
     fn a_members_tag_must_have_its_kinds_wire_type() {
         static AUX: [Aux; 2] = [
             Aux::Group(&PICK),
-            Aux::Member(Member::new(0, Kind::FloatRequired, 0, true)),
+            Aux::Member(Member::new(0, Kind::FloatRequired, 0)),
         ];
         const E: Entry = member(Kind::Int32Required, 2, 1);
         let _ = holder_table(&[E], &AUX);
@@ -2125,7 +2126,7 @@ mod invalid_oneof_tables {
     fn a_message_member_needs_its_payload_descriptor() {
         static AUX: [Aux; 2] = [
             Aux::Group(&PICK),
-            Aux::Member(Member::new(0, Kind::MsgSingular, 5, true)),
+            Aux::Member(Member::new(0, Kind::MsgSingular, 5)),
         ];
         const E: Entry = member(Kind::MsgSingular, 2, 1);
         let _ = holder_table(&[E], &AUX);
@@ -2136,7 +2137,7 @@ mod invalid_oneof_tables {
     fn a_members_payload_descriptor_must_be_of_its_kinds_variant() {
         static AUX: [Aux; 3] = [
             Aux::Group(&PICK),
-            Aux::Member(Member::new(0, Kind::MsgSingular, 2, true)),
+            Aux::Member(Member::new(0, Kind::MsgSingular, 2)),
             Aux::Enum(&EnumVt::new::<ImplicitClosed<Color>>()),
         ];
         const E: Entry = member(Kind::MsgSingular, 2, 1);
@@ -2148,7 +2149,7 @@ mod invalid_oneof_tables {
     fn a_members_enum_descriptor_must_be_singular() {
         static AUX: [Aux; 3] = [
             Aux::Group(&PICK),
-            Aux::Member(Member::new(0, Kind::EnumRequired, 2, true)),
+            Aux::Member(Member::new(0, Kind::EnumRequired, 2)),
             Aux::Enum(&EnumVt::new::<RepeatedClosed<Color>>()),
         ];
         const E: Entry = member(Kind::EnumRequired, 2, 1);
@@ -2158,7 +2159,7 @@ mod invalid_oneof_tables {
     #[test]
     #[should_panic(expected = "offset differs from its oneof's")]
     fn a_members_offset_must_be_its_oneofs() {
-        const E: Entry = Entry::oneof_member(Kind::Int32Required, 2, 4, 1);
+        const E: Entry = Entry::oneof_member(Kind::Int32Required, true, 2, 4, 1);
         let _ = holder_table(&[E], &INT_MEMBERS);
     }
 
@@ -2171,13 +2172,16 @@ mod invalid_oneof_tables {
 
     #[test]
     #[should_panic(expected = "leader of a oneof must be exactly")]
-    fn the_leader_is_the_lowest_member() {
-        static AUX: [Aux; 2] = [
-            Aux::Group(&PICK),
-            Aux::Member(Member::new(0, Kind::Int32Required, 0, false)),
-        ];
-        const E: Entry = member(Kind::Int32Required, 2, 1);
-        let _ = holder_table(&[E], &AUX);
+    fn the_lowest_member_must_lead() {
+        const E: Entry = Entry::oneof_member(Kind::Int32Required, false, 2, 0, 1);
+        let _ = holder_table(&[E], &INT_MEMBERS);
+    }
+
+    #[test]
+    #[should_panic(expected = "leader of a oneof must be exactly")]
+    fn no_other_member_may_lead() {
+        const E: Entry = Entry::oneof_member(Kind::Int32Required, true, 3, 0, 1);
+        let _ = holder_table(&[E], &INT_MEMBERS);
     }
 
     #[test]
@@ -2187,7 +2191,7 @@ mod invalid_oneof_tables {
         // leads.
         static AUX: [Aux; 2] = [
             Aux::Group(&PICK),
-            Aux::Member(Member::new(0, Kind::Int32Required, 0, false)),
+            Aux::Member(Member::new(0, Kind::Int32Required, 0)),
         ];
         const E: Entry = member(Kind::Int32Required, 3, 1);
         let _ = holder_table(&[E], &AUX);

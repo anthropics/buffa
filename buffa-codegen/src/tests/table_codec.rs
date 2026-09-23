@@ -1079,17 +1079,18 @@ fn a_message_with_a_oneof_gets_a_table_with_one_entry_per_member() {
     let table = code.split("static__BUFFA_TABLE_WithOneof").nth(1).unwrap();
     let table = table.split("impl::buffa::Message").next().unwrap();
     // The members carry their payload kinds, in field-number order with `c`
-    // (3) between them, and all name the field that holds the oneof.
+    // (3) between them, and all name the field that holds the oneof. Only
+    // the lowest leads.
     for entry in [
-        "(WithOneof,choice,oneof(Int32Required),1u32,",
-        "(WithOneof,choice,oneof(StrRequired),2u32,",
+        "(WithOneof,choice,oneof(Int32Required,true),1u32,",
+        "(WithOneof,choice,oneof(StrRequired,false),2u32,",
         "(WithOneof,c,Int32Implicit,3u32)",
-        "(WithOneof,choice,oneof(MsgSingular),5u32,",
+        "(WithOneof,choice,oneof(MsgSingular,false),5u32,",
     ] {
         assert!(table.contains(entry), "{entry} in {table}");
     }
-    // One descriptor for the oneof, at the lowest member number, and only the
-    // first member leads it.
+    // One descriptor for the oneof, at the lowest member number, and a member
+    // item for each of the three.
     assert_eq!(table.matches("Aux::Group(").count(), 1, "{table}");
     assert!(table.contains("OneofVt::new::<"), "{table}");
     assert!(
@@ -1097,8 +1098,6 @@ fn a_message_with_a_oneof_gets_a_table_with_one_entry_per_member() {
         "{table}"
     );
     assert_eq!(table.matches("Member::new(0u16,").count(), 3, "{table}");
-    assert_eq!(table.matches(",true,)").count(), 1, "{table}");
-    assert_eq!(table.matches(",false,)").count(), 2, "{table}");
     // The message member's child is reached through its own table.
     assert!(
         table.contains("MsgVt::direct(&__BUFFA_TABLE_Leaf)"),
