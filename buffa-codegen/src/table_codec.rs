@@ -36,6 +36,11 @@ fn table_path(type_path: &str) -> Result<TokenStream, CodeGenError> {
     Ok(rust_path_to_tokens(&format!("{head}__BUFFA_TABLE_{last}")))
 }
 
+/// The table ABI this generator emits, which `buffa::table::ABI` must equal
+/// for the generated tables to build. Bump both when the meaning of an existing
+/// table entry changes.
+pub(crate) const TABLE_ABI: u32 = 1;
+
 /// The static table and `impl Message` of a message the plan selected.
 ///
 /// # Errors
@@ -74,6 +79,7 @@ pub(crate) fn generate_table_impl(
     }
 
     let dense = dense_lookup(&fields);
+    let abi = proc_macro2::Literal::u32_unsuffixed(TABLE_ABI);
 
     let unknown = if ctx.preserve_unknown_fields(proto_fqn) {
         quote! { __buffa_unknown_fields }
@@ -86,7 +92,7 @@ pub(crate) fn generate_table_impl(
         #[allow(non_upper_case_globals)]
         pub(crate) static #table: ::buffa::table::Table<#name> = ::buffa::__table!(
             #name,
-            abi = ::buffa::table::ABI,
+            abi = #abi,
             entries = [#(#entries),*],
             dense = &[#(#dense),*],
             aux = [#(#aux),*],

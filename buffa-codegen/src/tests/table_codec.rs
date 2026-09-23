@@ -577,3 +577,18 @@ fn a_child_the_user_did_not_choose_does_not_hide_one_that_cannot_use_the_table()
     let text = table_warnings(&warnings)[0].to_string();
     assert!(text.contains(".t.Both"), "{text}");
 }
+
+#[test]
+fn the_generated_abi_is_a_literal_that_matches_the_runtime() {
+    // The runtime refuses a table generated for another ABI, so the generator
+    // must emit its own number: passing `buffa::table::ABI` would compare the
+    // runtime's constant with itself.
+    assert_eq!(crate::table_codec::TABLE_ABI, buffa::table::ABI);
+    let (code, _) = run(&table_config(CodecStrategy::Table)).unwrap();
+    let code = squashed(&code);
+    assert!(
+        code.contains(&format!("abi={},", crate::table_codec::TABLE_ABI)),
+        "the table must carry the literal ABI: {code}"
+    );
+    assert!(!code.contains("abi=::buffa::table::ABI"), "{code}");
+}
