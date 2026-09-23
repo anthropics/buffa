@@ -21,6 +21,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RUNNER="${ROOT}/.local/bin/conformance_test_runner"
 CONF="${ROOT}/conformance"
 
+# rust-toolchain.toml selects the toolchain from the working directory, so the
+# builds below run from the repository root whatever the caller's directory is.
+cd "${ROOT}"
+
 if [ ! -x "${RUNNER}" ]; then
     echo "conformance_test_runner not found at ${RUNNER}."
     echo "Run: task conformance-tools-local"
@@ -33,7 +37,6 @@ fi
 
 echo "=== Building conformance binaries (std + table + no_std) ==="
 cargo build --release --manifest-path "${CONF}/Cargo.toml"
-# Needs Rust 1.77 (offset_of!); buffa-build refuses an older compiler.
 cargo build --release --manifest-path "${CONF}/Cargo.toml" \
     --features table --target-dir "${CONF}/target-table"
 cargo build --release --manifest-path "${CONF}/Cargo.toml" \
@@ -100,8 +103,6 @@ BUFFA_VIA_VTABLE=1 run_suite vtable \
     --maximum_edition 2024 \
     "${STD_BIN}"
 
-# Via-table mode: a build whose test messages use CodecStrategy::Table, run
-# through the full binary, JSON and text suites like the std run.
 run_suite table \
     "${RUNNER}" \
     --failure_list "${CONF}/known_failures_table.txt" \
