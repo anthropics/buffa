@@ -1266,74 +1266,54 @@ impl DynamicMessage {
         self.fields.get(&number)
     }
 
-    /// Borrowing iterator over this message's set fields.
+    /// Iterates over this message's set fields, yielding each field's
+    /// descriptor and its stored [`Value`].
     ///
-    /// In ascending field-number order (`self.fields` is a `BTreeMap`),
-    /// declared fields and extensions interleaved by number, same presence
-    /// rule as [`for_each_set`](ReflectMessage::for_each_set) — "set" means
-    /// [`has`](ReflectMessage::has) would return `true`. **Unknown fields
-    /// are excluded**, same as `for_each_set`: they have no
-    /// [`FieldDescriptor`], so a walk over only this iterator silently skips
-    /// any field added by a schema revision newer than this pool's; visit
-    /// [`unknown_fields()`](ReflectMessage::unknown_fields) separately.
-    /// Extensions are told apart from declared fields the same way
-    /// `for_each_set` documents: `message_descriptor().field(fd.number())`
-    /// returns `None` for an extension's descriptor.
+    /// Items borrow from `&self`, so a nested `Value::Message` can outlive
+    /// the iteration: a non-recursive walk can push it onto a worklist and
+    /// read it later. The callback of
+    /// [`for_each_set`](ReflectMessage::for_each_set) does not allow that,
+    /// because the `ValueRef<'_>` it receives is valid only for the call. To
+    /// borrow a single field's value, use
+    /// [`field_by_number`](Self::field_by_number).
     ///
-    /// The difference from `for_each_set` is the item: `&Value`, borrowed
-    /// directly from this message, instead of that trait method's
-    /// `ValueRef<'_>`. `for_each_set` is dyn-safe (`f: &mut dyn
-    /// FnMut(&FieldDescriptor, ValueRef<'_>)`), which makes the `ValueRef`'s
-    /// lifetime higher-ranked per call rather than tied to `&self` — a
-    /// `Value::Message` handed to it cannot be kept past the call, and the
-    /// only way to retain one is `to_owned()`, a full `DynamicMessage`
-    /// clone of that subtree. This method's return type carries no such
-    /// constraint, so retaining a nested message costs a borrow instead: on
-    /// a `Containers` message with one nested `Inner` (a 200-byte string
-    /// field), `for_each_set` + `to_owned()` to retain it cost ~85 ns/call
-    /// against ~5 ns/call through `set_fields`, release build — the gap
-    /// scales with the retained subtree's size, not a fixed constant. A
-    /// caller doing an iterative (non-recursive) walk over nested messages
-    /// can `collect` this into a worklist and come back to a borrowed
-    /// `&DynamicMessage` later. To keep such a walk on `&Value` throughout,
-    /// descend with the nested message's own `set_fields()` rather than
-    /// `get()`, which returns `ValueRef` instead — and note this method is
-    /// inherent to `DynamicMessage` specifically: [`Value`] is the
-    /// map-backed storage representation, so it has no equivalent on a
-    /// future vtable-mode generated message, which hands out `ValueRef`
-    /// through the trait either way.
+    /// Presence follows the same rule as `for_each_set`. Unknown fields are
+    /// excluded because they have no `FieldDescriptor`; read them through
+    /// [`unknown_fields`](ReflectMessage::unknown_fields). Extensions are
+    /// yielded alongside declared fields, matching protobuf-go's
+    /// `Message.Range`; `message_descriptor().field(fd.number())` returns
+    /// `None` for an extension's descriptor. Fields are yielded in ascending
+    /// field-number order, which the trait method does not promise.
     ///
     /// ```no_run
     /// # use buffa_descriptor::reflect::{DynamicMessage, Value};
-    /// // An iterative (non-recursive) walk: push nested messages onto a
-    /// // worklist instead of recursing. Each `&DynamicMessage` popped here
-    /// // stays a valid borrow of `root`, even after the `for` loop that
-    /// // produced it has ended.
+    /// // Counts the messages nested anywhere under `root`, including those in
+    /// // repeated and map fields, with a worklist instead of recursion.
     /// fn count_nested(root: &DynamicMessage) -> usize {
     ///     let mut count = 0;
-    ///     let mut worklist: Vec<&DynamicMessage> = vec![root];
-    ///     while let Some(msg) = worklist.pop() {
-    ///         for (_, value) in msg.set_fields() {
-    ///             if let Value::Message(inner) = value {
+    ///     let mut worklist: Vec<&Value> = root.iter_set_fields().map(|(_, v)| v).collect();
+    ///     while let Some(value) = worklist.pop() {
+    ///         match value {
+    ///             Value::Message(msg) => {
     ///                 count += 1;
-    ///                 worklist.push(inner);
+    ///                 worklist.extend(msg.iter_set_fields().map(|(_, v)| v));
     ///             }
+    ///             Value::List(items) => worklist.extend(items),
+    ///             Value::Map(entries) => worklist.extend(entries.iter().map(|(_, v)| v)),
+    ///             _ => {}
     ///         }
     ///     }
     ///     count
     /// }
     /// ```
-    pub fn set_fields(
+    #[must_use]
+    pub fn iter_set_fields(
         &self,
     ) -> impl Clone + DoubleEndedIterator<Item = (&FieldDescriptor, &Value)> + FusedIterator + '_
     {
         self.fields.iter().filter_map(|(&number, value)| {
-            // `field_or_extension` resolved `fd` *by* `number`, so `value`
-            // is the one `has(fd)` would look up. Applying the presence
-            // rule to it directly — rather than calling `has(fd)`, which
-            // would look it up again — keeps each field to a single
-            // resolution; `for_each_set` delegates to this method for the
-            // same reason.
+            // `value` is the one stored under `number`, so presence needs no
+            // second lookup through `has`.
             let fd = self.field_or_extension(number)?;
             value_is_present(value, fd).then_some((fd, value))
         })
@@ -1715,14 +1695,8 @@ impl ReflectMessage for DynamicMessage {
     }
 
     fn for_each_set(&self, f: &mut dyn FnMut(&FieldDescriptor, ValueRef<'_>)) {
-        // Extensions present on this message are visited alongside declared
-        // fields, matching protobuf-go's `Message.Range`; see `set_fields`'s
-        // doc for how to tell them apart from declared fields.
-        //
-        // Delegates to `set_fields` so the two cannot disagree on which
-        // fields are visited; only the item type differs (`ValueRef<'_>`
-        // here, via `.as_ref()`, vs. the inherent method's `&Value`).
-        for (fd, value) in self.set_fields() {
+        // Delegates to `iter_set_fields` so the two cannot disagree.
+        for (fd, value) in self.iter_set_fields() {
             f(fd, value.as_ref());
         }
     }
@@ -2229,7 +2203,7 @@ fn map_key_shape(key: &MapKey) -> &'static str {
 /// they appear in the field map.
 ///
 /// `value` must be the one stored under `field.number()`. `has` looks it up;
-/// `for_each_set` already holds it.
+/// `iter_set_fields` already holds it.
 fn value_is_present(value: &Value, field: &FieldDescriptor) -> bool {
     match value {
         Value::List(l) => !l.is_empty(),
@@ -2776,6 +2750,23 @@ mod tests {
         assert!(decode(&one_level, 1).is_ok());
         // Depth 0 still admits a flat message: `{ name: "n" }`.
         assert!(decode(&[0x0A, 0x01, b'n'], 0).is_ok());
+    }
+
+    #[test]
+    fn iter_set_fields_skips_a_number_with_no_descriptor() {
+        use alloc::sync::Arc;
+
+        use crate::reflect::Value;
+        use crate::DescriptorPool;
+
+        let fds = include_bytes!("../../tests/protos/reflect_test.fds");
+        let pool = Arc::new(DescriptorPool::decode(fds).unwrap());
+        let idx = pool.message_index("reflect.test.Inner").unwrap();
+        let mut msg = DynamicMessage::new(pool, idx);
+        msg.insert_value(999, Value::I32(1));
+
+        assert!(msg.field_by_number(999).is_some());
+        assert_eq!(msg.iter_set_fields().count(), 0);
     }
 
     mod empty_message {

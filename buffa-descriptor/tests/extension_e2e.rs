@@ -43,11 +43,8 @@ fn extension_set_get_has_through_reflect_message() {
     seen.sort_unstable();
     assert_eq!(seen, vec![1, 100]);
 
-    // set_fields does the same — this is not just transitive through
-    // for_each_set's delegation, it is the promise set_fields's own doc
-    // makes ("extensions ... visited alongside declared fields").
-    let mut seen_via_iter: Vec<u32> = msg.set_fields().map(|(fd, _)| fd.number()).collect();
-    seen_via_iter.sort_unstable();
+    // iter_set_fields yields the declared field before the extension, by number.
+    let seen_via_iter: Vec<u32> = msg.iter_set_fields().map(|(fd, _)| fd.number()).collect();
     assert_eq!(seen_via_iter, vec![1, 100]);
 }
 
