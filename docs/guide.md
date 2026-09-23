@@ -1100,10 +1100,11 @@ The option changes only the binary `Message` implementation. The wire format and
 - `clear()` resets a table message to `Default`, so it releases the capacity of its strings and vectors instead of keeping it.
 - Encoding into any sink other than the cursor that `Message::encode` and its siblings write a `BufMut` through stages each child reached through its `Message` impl in a scratch buffer first. Those sinks are a `Rope`, a sink defined outside `buffa`, and a `BufMut` passed straight to `Message::write_to`. A `Rope` copies the child again and cannot share the `bytes` fields inside it by reference count.
 - Codegen cannot see the fields of a message from another crate, so a table message that holds one with a `bytes` field of a non-default type copies it on decode. The well-known type `google.protobuf.Any` is one, because its `value` is `bytes::Bytes`. To keep the payload shared with a `Bytes` input, set the holder to `Unrolled` with `codec_strategy_in`.
+- If a message member of a `oneof` fails to decode in place of a different member that was set, the `oneof` is left holding the part of the message that was read. `decode` returns no message after an error, so this shows only to code that merges into a message it keeps and reads it after the error.
 
 These stay unrolled, whatever the setting:
 
-- a message with a `oneof`, a `map`, or a group field;
+- a message with a `map` or a group field;
 - the message type of a group field;
 - a message that uses the `MessageSet` wire format;
 - a message with extension ranges, when JSON code is generated and unknown fields are preserved;
