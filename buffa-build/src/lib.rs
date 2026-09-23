@@ -1496,13 +1496,10 @@ impl Config {
     /// names the message by its exact path. A rule that matches no message
     /// produces a warning.
     ///
-    /// A table message holds only table messages, and a rule does not extend
-    /// to the messages a message holds. Selecting a message with a rule
-    /// therefore also needs rules for everything it holds, unless the global
-    /// setting is [`CodecStrategy::Table`]. Choosing [`CodecStrategy::Unrolled`]
-    /// for a message keeps every message that holds it unrolled, with no
-    /// warning, and that usually includes the root message an application
-    /// encodes.
+    /// A rule does not extend to the messages a message holds. A table message
+    /// reaches a child that is not a table message, such as one set to
+    /// [`CodecStrategy::Unrolled`], through the child's `Message` impl, so
+    /// keeping a hot message unrolled does not affect the messages that hold it.
     #[must_use]
     pub fn codec_strategy_in(mut self, strategy: CodecStrategy, paths: &[impl AsRef<str>]) -> Self {
         for raw in paths.iter().map(AsRef::as_ref) {

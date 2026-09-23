@@ -26,7 +26,8 @@ fn scalar(name: &str, number: i32, ty: Type) -> FieldDescriptorProto {
 /// Package `t` with:
 ///
 /// - `Plain`, `Leaf`, and `HasLeaf` (holds a `Leaf`), which can use the table;
-/// - `Oneofy` (has a oneof) and `HasOneofy` (holds an `Oneofy`), which cannot;
+/// - `Oneofy` (has a oneof), which cannot, and `HasOneofy` (holds an `Oneofy`),
+///   which can, because a table message may hold a message that has no table;
 /// - `Outer` with a nested `Inner`, both plain.
 fn schema() -> FileDescriptorProto {
     let mut oneofy = message(
@@ -144,22 +145,15 @@ fn the_global_setting_gives_a_table_to_every_message_that_can_use_one() {
     let (code, warnings) = run(&table_config(CodecStrategy::Table)).unwrap();
     assert_eq!(
         tables(&code),
-        ["Plain", "Leaf", "HasLeaf", "Outer", "Inner"]
+        ["Plain", "Leaf", "HasLeaf", "HasOneofy", "Outer", "Inner"]
     );
-    // The other two fall back, and one warning covers the run.
+    // The one with a oneof falls back, and one warning covers the run.
     let (counts, reasons) = summary(&warnings);
-    assert_eq!(counts, (2, 7));
-    assert_eq!(
-        reasons,
-        [("has a oneof", 1), ("holds a message that has a oneof", 1),]
-    );
+    assert_eq!(counts, (1, 7));
+    assert_eq!(reasons, [("has a oneof", 1)]);
     let text = table_warnings(&warnings)[0].to_string();
-    assert!(text.starts_with("2 of 7 messages selected for the table codec"));
+    assert!(text.starts_with("1 of 7 messages selected for the table codec"));
     assert!(text.contains("has a oneof (1: .t.Oneofy)"), "{text}");
-    assert!(
-        text.contains("holds a message that has a oneof (1: .t.HasOneofy)"),
-        "{text}"
-    );
     assert!(text.contains("codec_strategy_in=<path>=unrolled"), "{text}");
 }
 
@@ -191,6 +185,20 @@ fn a_child_message_is_referenced_through_its_own_table() {
 }
 
 #[test]
+fn a_child_without_a_table_is_reached_through_its_message_impl() {
+    let (code, _) = run(&table_config(CodecStrategy::Table)).unwrap();
+    let code = squashed(&code);
+    // `HasOneofy` is a table message that holds `Oneofy`, which is unrolled.
+    let holder = code.split("static__BUFFA_TABLE_HasOneofy").nth(1).unwrap();
+    let holder = holder.split("impl::buffa::MessageforHasOneofy").next().unwrap();
+    assert!(
+        holder.contains("Aux::Msg(&::buffa::table::MsgVt::new_dyn::<::buffa::MessageField<Oneofy,::buffa::Inline<Oneofy>>>())"),
+        "{holder}"
+    );
+    assert!(!holder.contains("__BUFFA_TABLE_Oneofy"), "{holder}");
+}
+
+#[test]
 fn a_rule_selects_messages_when_the_global_setting_is_unrolled() {
     let config = CodeGenConfig {
         codec_strategy_in: vec![(".t.Plain".to_string(), CodecStrategy::Table)],
@@ -214,11 +222,11 @@ fn the_last_matching_rule_wins() {
     };
     let (code, _) = run(&config).unwrap();
     // `Outer` is unrolled, though its nested message is a table.
-    assert_eq!(tables(&code), ["Leaf", "HasLeaf", "Inner"]);
+    assert_eq!(tables(&code), ["Leaf", "HasLeaf", "HasOneofy", "Inner"]);
 }
 
 #[test]
-fn an_exact_path_rule_for_a_message_that_holds_an_unrolled_child_is_an_error() {
+fn a_message_can_have_a_table_when_it_holds_a_message_set_to_unrolled() {
     let config = CodeGenConfig {
         codec_strategy_in: vec![
             (".t.HasLeaf".to_string(), CodecStrategy::Table),
@@ -226,33 +234,29 @@ fn an_exact_path_rule_for_a_message_that_holds_an_unrolled_child_is_an_error() {
         ],
         ..Default::default()
     };
-    // The exact-path rule for `HasLeaf` cannot be honoured: its `Leaf` has no
-    // table, so this is an error and not a warning.
-    let err = run(&config).unwrap_err().to_string();
-    assert!(
-        err.contains("codec_strategy_in rule '.t.HasLeaf'")
-            && err.contains("`.t.Leaf`, which is set to the unrolled codec")
-            && err.contains("codec_strategy_in=.t.HasLeaf=unrolled"),
-        "{err}"
-    );
+    let (code, warnings) = run(&config).unwrap();
+    assert_eq!(tables(&code), ["HasLeaf"]);
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    assert!(squashed(&code).contains("MsgVt::new_dyn::<"));
 }
 
 #[test]
-fn an_exact_path_rule_does_not_select_the_messages_the_message_holds() {
-    // The global setting stays unrolled, so `Leaf` has not been selected.
+fn a_rule_for_a_message_does_not_select_the_messages_it_holds() {
+    // The global setting stays unrolled, so `Leaf` is not selected, and
+    // `HasLeaf` reaches it through its `Message` impl.
     let config = CodeGenConfig {
         codec_strategy_in: vec![(".t.HasLeaf".to_string(), CodecStrategy::Table)],
         ..Default::default()
     };
-    let err = run(&config).unwrap_err().to_string();
-    assert!(
-        err.contains("`.t.Leaf`, which is not selected for the table codec")
-            && err.contains("codec_strategy_in(CodecStrategy::Table, &[\".t.Leaf\"])")
-            && !err.contains("set to the unrolled"),
-        "{err}"
-    );
+    let (code, warnings) = run(&config).unwrap();
+    assert_eq!(tables(&code), ["HasLeaf"]);
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    let code = squashed(&code);
+    assert!(code.contains("MsgVt::new_dyn::<"), "{code}");
+    assert!(!code.contains("(&__BUFFA_TABLE_Leaf)"), "{code}");
 
-    // A rule for the child as well gives both a table.
+    // A rule for the child as well gives both a table, and the parent then
+    // uses the child's.
     let config = CodeGenConfig {
         codec_strategy_in: vec![
             (".t.HasLeaf".to_string(), CodecStrategy::Table),
@@ -263,20 +267,33 @@ fn an_exact_path_rule_does_not_select_the_messages_the_message_holds() {
     let (code, warnings) = run(&config).unwrap();
     assert_eq!(tables(&code), ["Leaf", "HasLeaf"]);
     assert!(table_warnings(&warnings).is_empty());
+    let code = squashed(&code);
+    assert!(code.contains("(&__BUFFA_TABLE_Leaf)"), "{code}");
+    assert!(!code.contains("new_dyn"), "{code}");
 }
 
 #[test]
 fn every_exact_path_rule_that_cannot_be_honoured_is_reported_at_once() {
+    let mut file = schema();
+    let mut second = file.message_type[3].clone();
+    second.name = Some("Oneofy2".to_string());
+    file.message_type.push(second);
     let config = CodeGenConfig {
         codec_strategy_in: vec![
             (".t.Oneofy".to_string(), CodecStrategy::Table),
+            (".t.Oneofy2".to_string(), CodecStrategy::Table),
             (".t.HasOneofy".to_string(), CodecStrategy::Table),
         ],
         ..Default::default()
     };
-    let err = run(&config).unwrap_err().to_string();
+    let err = generate_with_diagnostics(&[file], &["t.proto".to_string()], &config)
+        .unwrap_err()
+        .to_string();
+    // `HasOneofy` can use the table, so it is not among them.
     assert!(
-        err.contains("rule '.t.Oneofy'") && err.contains("rule '.t.HasOneofy'"),
+        err.contains("rule '.t.Oneofy'")
+            && err.contains("rule '.t.Oneofy2'")
+            && !err.contains("rule '.t.HasOneofy'"),
         "{err}"
     );
 }
@@ -301,30 +318,28 @@ fn a_broad_rule_that_covers_such_a_message_only_warns() {
     let (code, warnings) = run(&config).unwrap();
     assert_eq!(
         tables(&code),
-        ["Plain", "Leaf", "HasLeaf", "Outer", "Inner"]
+        ["Plain", "Leaf", "HasLeaf", "HasOneofy", "Outer", "Inner"]
     );
     // Messages a rule selects are counted like the ones the global setting does.
-    assert_eq!(summary(&warnings).0, (2, 7));
+    assert_eq!(summary(&warnings).0, (1, 7));
 }
 
 #[test]
-fn setting_a_message_to_unrolled_keeps_the_messages_that_hold_it_unrolled_quietly() {
+fn setting_a_message_to_unrolled_does_not_affect_the_messages_that_hold_it() {
     let config = CodeGenConfig {
         codec_strategy_in: vec![(".t.Leaf".to_string(), CodecStrategy::Unrolled)],
         ..table_config(CodecStrategy::Table)
     };
     let (code, warnings) = run(&config).unwrap();
-    // `HasLeaf` holds the `Leaf` the user set to unrolled: not a table, and
-    // not in the warning either, which is left with the two that cannot.
-    assert_eq!(tables(&code), ["Plain", "Outer", "Inner"]);
-    let (counts, reasons) = summary(&warnings);
-    assert_eq!(counts, (2, 5));
-    assert!(
-        reasons.iter().all(|(r, _)| !r.contains("set to")),
-        "{reasons:?}"
+    // `HasLeaf` holds the `Leaf` the user set to unrolled and has a table
+    // anyway. The warning counts the messages selected, which leaves out `Leaf`.
+    assert_eq!(
+        tables(&code),
+        ["Plain", "HasLeaf", "HasOneofy", "Outer", "Inner"]
     );
+    assert_eq!(summary(&warnings).0, (1, 6));
 
-    // With the two that cannot set to unrolled as well, nothing is left to say.
+    // With the one that cannot set to unrolled as well, nothing is left to say.
     let config = CodeGenConfig {
         codec_strategy_in: vec![
             (".t.Leaf".to_string(), CodecStrategy::Unrolled),
@@ -360,7 +375,7 @@ fn a_rule_that_matches_no_message_warns() {
 }
 
 #[test]
-fn a_message_type_from_another_crate_is_not_a_table() {
+fn a_message_type_from_another_crate_is_reached_through_its_message_impl() {
     // `HasLeaf.leaf` now names a type mapped to another crate.
     let mut file = schema();
     file.message_type[2].field[0].type_name = Some(".other.Foreign".to_string());
@@ -376,18 +391,19 @@ fn a_message_type_from_another_crate_is_not_a_table() {
     let (files, warnings) =
         generate_with_diagnostics(&[file, other], &["t.proto".to_string()], &config).unwrap();
     let code = joined(&files);
-    assert!(!tables(&code).contains(&"HasLeaf".to_string()), "{code}");
+    assert!(tables(&code).contains(&"HasLeaf".to_string()), "{code}");
     assert!(tables(&code).contains(&"Leaf".to_string()));
-    let text = table_warnings(&warnings)[0].to_string();
-    assert!(text.contains(".t.HasLeaf"), "{text}");
+    assert!(table_warnings(&warnings).len() == 1, "{warnings:?}");
+    let code = squashed(&code);
+    let holder = code.split("static__BUFFA_TABLE_HasLeaf").nth(1).unwrap();
     assert!(
-        text.contains("holds a message that another crate or run generates"),
-        "{text}"
+        holder.contains("MsgVt::new_dyn::<::buffa::MessageField<::other_crate::Foreign"),
+        "{holder}"
     );
 }
 
 #[test]
-fn a_child_mapped_to_another_crate_falls_back_though_this_run_generates_it_too() {
+fn a_child_mapped_to_another_crate_is_not_a_table_though_this_run_generates_it_too() {
     let mut file = schema();
     file.message_type[2].field[0].type_name = Some(".other.Foreign".to_string());
     let other = FileDescriptorProto {
@@ -400,19 +416,18 @@ fn a_child_mapped_to_another_crate_falls_back_though_this_run_generates_it_too()
         ..table_config(CodecStrategy::Table)
     };
     // Both files are generated, but `HasLeaf` names `::other_crate::Foreign`,
-    // which has no table here, so this must be a fallback and not an error.
-    let (files, warnings) = generate_with_diagnostics(
+    // which has no table here, so it is reached through its `Message` impl and
+    // its table is not looked up, which would not build.
+    let (files, _) = generate_with_diagnostics(
         &[file, other],
         &["t.proto".to_string(), "other.proto".to_string()],
         &config,
     )
     .unwrap();
     let code = joined(&files);
-    assert!(!tables(&code).contains(&"HasLeaf".to_string()), "{code}");
+    assert!(tables(&code).contains(&"HasLeaf".to_string()), "{code}");
     assert!(!tables(&code).contains(&"Foreign".to_string()));
-    assert!(table_warnings(&warnings)[0]
-        .to_string()
-        .contains(".t.HasLeaf"));
+    assert!(!code.contains("__BUFFA_TABLE_Foreign"), "{code}");
 }
 
 #[test]
@@ -552,29 +567,6 @@ fn the_plan_judges_fields_under_the_same_features_as_the_generator() {
     .expect("the plan and the emitter must agree");
     assert!(tables(&joined(&files)).is_empty());
     assert_eq!(summary(&warnings).0, (2, 2));
-}
-
-#[test]
-fn a_child_the_user_did_not_choose_does_not_hide_one_that_cannot_use_the_table() {
-    // `Both` holds `Leaf`, which the user sets to unrolled, and then
-    // `HasOneofy`, which cannot use the table. The first child alone would
-    // make the fallback silent, but `Both` falls back for the second too.
-    let mut file = schema();
-    file.message_type.push(message(
-        "Both",
-        vec![
-            message_field("leaf", 1, ".t.Leaf"),
-            message_field("o", 2, ".t.HasOneofy"),
-        ],
-    ));
-    let config = CodeGenConfig {
-        codec_strategy_in: vec![(".t.Leaf".to_string(), CodecStrategy::Unrolled)],
-        ..table_config(CodecStrategy::Table)
-    };
-    let (_, warnings) =
-        generate_with_diagnostics(&[file], &["t.proto".to_string()], &config).unwrap();
-    let text = table_warnings(&warnings)[0].to_string();
-    assert!(text.contains(".t.Both"), "{text}");
 }
 
 #[test]

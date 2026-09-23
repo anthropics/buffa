@@ -2,13 +2,13 @@
 //! table field looks like.
 //!
 //! A message can use the table if the interpreters in `buffa::table` cover
-//! every field and every message it holds is a table message too, because a
-//! table records the tables of its children. The set of table messages is the
-//! largest set of requested, locally eligible messages closed under that
-//! rule, found by removing messages until none is left holding a non-table
-//! child.
+//! every field it has. A message it holds does not have to be a table message:
+//! a table reaches a child that has a table through it, and any other child
+//! through its `Message` impl, so unrolled messages, messages of other crates
+//! and well-known types all work as children. The set of table messages is
+//! therefore the requested messages that are locally eligible.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::context::CodeGenContext;
 use crate::features::ResolvedFeatures;
@@ -86,21 +86,10 @@ fn type_stem(ty: Type, card: Card) -> Option<&'static str> {
 #[derive(Clone, Debug)]
 pub(crate) struct Ineligible {
     /// The reason in a few words, which the summary warning groups messages
-    /// by. For a message that holds another that cannot use the table, this
-    /// includes the other's reason.
+    /// by.
     pub(crate) reason: String,
     /// The reason for this message, naming the field or type.
     pub(crate) detail: String,
-    /// The message's own reason if it is the cause of a fallback, and
-    /// otherwise the cause of the message it holds, which is followed down to
-    /// the message that cannot use the table itself.
-    pub(crate) root: String,
-    /// Whether the fallback follows from a strategy the user chose (a message
-    /// it holds is set to `Unrolled`), so that it needs no warning.
-    pub(crate) silent: bool,
-    /// What to do about it when a rule that names the message exactly asked
-    /// for the table, if it differs from the general advice.
-    pub(crate) hint: Option<String>,
 }
 
 /// An [`Ineligible`] whose reason needs no more detail.
@@ -109,13 +98,9 @@ fn same(reason: &str) -> Ineligible {
 }
 
 fn ineligible(reason: impl Into<String>, detail: impl Into<String>) -> Ineligible {
-    let reason = reason.into();
     Ineligible {
-        root: reason.clone(),
-        reason,
+        reason: reason.into(),
         detail: detail.into(),
-        silent: false,
-        hint: None,
     }
 }
 
@@ -219,8 +204,6 @@ pub(crate) fn table_fields<'a>(
 /// One message of the run and what the plan needs to know about it.
 struct Candidate<'a> {
     fqn: String,
-    /// The proto paths of the message types of its fields.
-    children: Vec<String>,
     fields: Result<Vec<TableField<'a>>, Ineligible>,
 }
 
@@ -256,18 +239,14 @@ fn collect<'a>(
             .rust_type_relative(&fqn, package, 0)
             .is_some_and(|path| path.starts_with("::") || path.starts_with("crate::"));
         if !is_map_entry && !is_extern {
-            let mut children = Vec::new();
             for f in &msg.field {
-                match effective_type(ctx, f, &features) {
-                    Type::TYPE_MESSAGE => children.extend(f.type_name.clone()),
-                    Type::TYPE_GROUP => group_types.extend(f.type_name.clone()),
-                    _ => {}
+                if effective_type(ctx, f, &features) == Type::TYPE_GROUP {
+                    group_types.extend(f.type_name.clone());
                 }
             }
             out.push(Candidate {
                 fields: table_fields(ctx, msg, &fqn, &features),
                 fqn: fqn.clone(),
-                children,
             });
         }
         collect(
@@ -295,64 +274,10 @@ impl TablePlan {
     }
 }
 
-/// Why a message that holds `child` cannot use the table, when `child` has no
-/// table.
-fn child_without_table(
-    ctx: &CodeGenContext,
-    child: &str,
-    reasons: &HashMap<&str, Ineligible>,
-    generated: &HashSet<&str>,
-) -> Ineligible {
-    if let Some(held) = reasons.get(child) {
-        return Ineligible {
-            reason: format!("holds a message that {}", held.root),
-            detail: format!(
-                "it has a field of message type `{child}`, which {}",
-                held.root
-            ),
-            root: held.root.clone(),
-            silent: held.silent,
-            hint: held.hint.clone(),
-        };
-    }
-    if !generated.contains(child) {
-        return ineligible(
-            "holds a message that another crate or run generates",
-            format!("it has a field of message type `{child}`, which is not generated here"),
-        );
-    }
-    // Not selected: the strategy for it is unrolled, by the user's rule or by
-    // the global default.
-    if ctx.codec_strategy_rule(child).is_some() {
-        Ineligible {
-            silent: true,
-            ..ineligible(
-                "holds a message set to the unrolled codec",
-                format!(
-                    "it has a field of message type `{child}`, which is set to the unrolled codec"
-                ),
-            )
-        }
-    } else {
-        Ineligible {
-            hint: Some(format!(
-                "Select `{child}` as well, and every message it holds (buffa-build: \
-                 `.codec_strategy_in(CodecStrategy::Table, &[\"{child}\"])`; plugin: \
-                 `codec_strategy_in={child}=table`)"
-            )),
-            ..ineligible(
-                "holds a message not selected for the table",
-                format!("it has a field of message type `{child}`, which is not selected for the table codec"),
-            )
-        }
-    }
-}
-
 /// Decide which messages of `files_to_generate` use the table codec.
 ///
 /// Returns the plan and a summary warning about the messages that asked for
-/// the table and cannot have it, unless the user's own choice of `Unrolled`
-/// for a message they hold is the only reason.
+/// the table and cannot have it.
 ///
 /// # Errors
 ///
@@ -386,117 +311,41 @@ pub(crate) fn plan(
             &mut group_types,
         );
     }
-    let generated: HashSet<&str> = candidates.iter().map(|c| c.fqn.as_str()).collect();
 
     // The messages that asked for the table, each with the reason it cannot
     // have it, if there is one.
-    let mut reasons: HashMap<&str, Ineligible> = HashMap::new();
-    let mut selected: Vec<&Candidate> = Vec::new();
+    let mut tables = HashSet::new();
+    let mut selected = 0;
+    let mut errors = Vec::new();
+    let mut summary: Vec<TableCodecFallbackReason> = Vec::new();
+    let mut fallbacks = 0;
     for c in &candidates {
         if ctx.codec_strategy(&c.fqn) != CodecStrategy::Table {
             continue;
         }
-        selected.push(c);
-        if let Err(why) = &c.fields {
-            reasons.insert(&c.fqn, why.clone());
-        } else if group_types.contains(&c.fqn) {
-            reasons.insert(&c.fqn, same("is the type of a group field"));
-        }
-    }
-
-    // Remove every message that holds a child without a table, until none is
-    // left.
-    let mut remaining: HashSet<&str> = selected
-        .iter()
-        .filter(|c| !reasons.contains_key(c.fqn.as_str()))
-        .map(|c| c.fqn.as_str())
-        .collect();
-    loop {
-        let mut removed = Vec::new();
-        for c in selected
-            .iter()
-            .filter(|c| remaining.contains(c.fqn.as_str()))
-        {
-            // The reason for the first child without a table that the user did
-            // not choose, if there is one, and otherwise for the first without
-            // one at all.
-            let whys: Vec<Ineligible> = c
-                .children
-                .iter()
-                .filter(|ch| !remaining.contains(ch.as_str()))
-                .map(|child| child_without_table(ctx, child, &reasons, &generated))
-                .collect();
-            if let Some(why) = whys.iter().find(|w| !w.silent).or(whys.first()) {
-                removed.push((c.fqn.as_str(), why.clone()));
+        selected += 1;
+        let why = match &c.fields {
+            Err(why) => why.clone(),
+            Ok(_) if group_types.contains(&c.fqn) => same("is the type of a group field"),
+            Ok(_) => {
+                tables.insert(c.fqn.clone());
+                continue;
             }
-        }
-        if removed.is_empty() {
-            break;
-        }
-        for (fqn, why) in removed {
-            remaining.remove(fqn);
-            reasons.insert(fqn, why);
-        }
-    }
-
-    // A holder removed early may have looked like it fell back only because of
-    // a message the user set to `Unrolled`, before a message it also holds was
-    // itself removed for a reason of its own. Look again with the final
-    // reasons, until no silent holder changes.
-    loop {
-        let mut changed = Vec::new();
-        for c in selected.iter().filter(|c| {
-            reasons
-                .get(c.fqn.as_str())
-                .is_some_and(|why| why.silent && !c.children.is_empty())
-        }) {
-            let loud = c
-                .children
-                .iter()
-                .filter(|ch| !remaining.contains(ch.as_str()))
-                .map(|child| child_without_table(ctx, child, &reasons, &generated))
-                .find(|why| !why.silent);
-            if let Some(why) = loud {
-                changed.push((c.fqn.as_str(), why));
-            }
-        }
-        if changed.is_empty() {
-            break;
-        }
-        reasons.extend(changed);
-    }
-
-    // A rule that names a message exactly and cannot be honoured is an error,
-    // and all of them are reported together. The rest are counted by reason in
-    // one warning, except for the messages whose fallback the user chose.
-    let mut errors = Vec::new();
-    let mut summary: Vec<TableCodecFallbackReason> = Vec::new();
-    let mut fallbacks = 0;
-    let mut held_back = 0;
-    for c in &selected {
-        let Some(why) = reasons.get(c.fqn.as_str()) else {
-            continue;
         };
+        // A rule that names a message exactly and cannot be honoured is an
+        // error, and all of them are reported together. The rest are counted
+        // by reason in one warning.
         if let Some((rule, _)) = ctx.codec_strategy_rule(&c.fqn) {
             if *rule == c.fqn {
-                let advice = why.hint.clone().unwrap_or_else(|| {
-                    format!(
-                        "Select the unrolled codec for it instead (buffa-build: \
-                         `.codec_strategy_in(CodecStrategy::Unrolled, &[\"{rule}\"])`; plugin: \
-                         `codec_strategy_in={rule}=unrolled`), or remove the rule"
-                    )
-                });
                 errors.push(format!(
                     "codec_strategy_in rule '{rule}' selects the table codec for a message that \
-                     cannot use it: {}. {advice}",
+                     cannot use it: {}. Select the unrolled codec for it instead (buffa-build: \
+                     `.codec_strategy_in(CodecStrategy::Unrolled, &[\"{rule}\"])`; plugin: \
+                     `codec_strategy_in={rule}=unrolled`), or remove the rule",
                     why.detail
                 ));
                 continue;
             }
-        }
-        if why.silent {
-            held_back += 1;
-            continue;
         }
         fallbacks += 1;
         let entry = match summary.iter().position(|r| r.reason == why.reason) {
@@ -519,11 +368,9 @@ pub(crate) fn plan(
         summary.sort_by_key(|reason| std::cmp::Reverse(reason.messages.len()));
         warnings.push(CodeGenWarning::TableCodecFallbackSummary {
             fallbacks,
-            selected: selected.len() - held_back,
+            selected,
             reasons: summary,
         });
     }
-
-    let tables = remaining.into_iter().map(str::to_string).collect();
     Ok((TablePlan { tables }, warnings))
 }

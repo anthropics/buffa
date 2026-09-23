@@ -225,23 +225,35 @@ fn field_entry(
     match f.ty {
         Type::TYPE_MESSAGE => {
             let child = type_path("message")?;
-            let child_table = table_path(&unshortened_path()?)?;
             let child_ty = rust_path_to_tokens(&child);
+            let type_name = field
+                .type_name
+                .as_deref()
+                .ok_or(CodeGenError::MissingField("field.type_name"))?;
+            // A child with a table is reached through it, and any other, an
+            // unrolled message, a message of another crate or a well-known
+            // type, through its `Message` impl.
+            let child_table = if ctx.uses_table_codec(type_name) {
+                Some(table_path(&unshortened_path()?)?)
+            } else {
+                None
+            };
             let (slot, aux_item) = if f.card == Card::Repeated {
+                let vt = match &child_table {
+                    Some(table) => quote! { ::buffa::table::RepVt::new::<#child_ty>(&#table) },
+                    None => quote! { ::buffa::table::RepVt::new_dyn::<#child_ty>() },
+                };
                 (
                     quote! { ::buffa::alloc::vec::Vec<#child_ty> },
-                    quote! {
-                        ::buffa::table::Aux::Rep(&::buffa::table::RepVt::new::<#child_ty>(&#child_table))
-                    },
+                    quote! { ::buffa::table::Aux::Rep(&#vt) },
                 )
             } else {
                 let slot = classify_field(scope, msg, field, resolver)?.rust_type;
-                (
-                    slot.clone(),
-                    quote! {
-                        ::buffa::table::Aux::Msg(&::buffa::table::MsgVt::new::<#slot>(&#child_table))
-                    },
-                )
+                let vt = match &child_table {
+                    Some(table) => quote! { ::buffa::table::MsgVt::new::<#slot>(&#table) },
+                    None => quote! { ::buffa::table::MsgVt::new_dyn::<#slot>() },
+                };
+                (slot, quote! { ::buffa::table::Aux::Msg(&#vt) })
             };
             let aux = aux_u16()?;
             Ok((
