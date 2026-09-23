@@ -48,7 +48,9 @@
 //!   [`MsgVt::new_via_message`]) has the same wire format and accepts the same
 //!   input, but it is staged in a scratch buffer and copied when it is written
 //!   to any sink other than the cursor that `Message::encode` and its siblings
-//!   write a [`BufMut`](crate::bytes::BufMut) through.
+//!   write a [`BufMut`](crate::bytes::BufMut) through, and its `bytes::Bytes`
+//!   fields are copied out of the slice it is decoded from, where unrolled
+//!   code decoding from a `Bytes` shares them with the input.
 //!
 //! # Where the code is compiled
 //!

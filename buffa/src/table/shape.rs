@@ -89,7 +89,9 @@ impl MsgVt {
     /// Describe a field of type `F` whose message is reached through its
     /// [`Message`] impl, for a message whose table is not visible here.
     /// Prefer [`MsgVt::new`] when it is, because the interpreters then decode
-    /// the child without a function call.
+    /// the child without a function call. The child is decoded from a slice,
+    /// so its `bytes::Bytes` fields are copied, where unrolled code decoding
+    /// from a `Bytes` shares them.
     #[must_use]
     pub const fn new_via_message<F: MsgSlot>() -> Self
     where
@@ -176,7 +178,8 @@ impl RepVt {
     }
 
     /// Describe a `Vec<T>` field whose messages are reached through their
-    /// [`Message`] impl; see [`MsgVt::new_via_message`].
+    /// [`Message`] impl. Like [`MsgVt::new_via_message`], it copies the
+    /// `bytes::Bytes` fields of the elements when it decodes.
     #[must_use]
     pub const fn new_via_message<T: Message>() -> Self {
         Self {

@@ -1073,11 +1073,11 @@ pub enum CodecStrategy {
     #[default]
     Unrolled,
     /// Emit one static table per message and forward `Message` to interpreters
-    /// shared by every message, in the `buffa` crate. On a schema the table
-    /// fully covers, it roughly halves the compiled size at
-    /// `opt-level = "z"`; a message that cannot use it keeps its size. It costs
-    /// run time on messages made of many small fields. The measurements are in
-    /// anthropics/buffa#463.
+    /// shared by every message, in the `buffa` crate. On a large schema it
+    /// makes the compiled code about 40% smaller at `opt-level = "z"`; a
+    /// message that cannot use it keeps its size. It costs run time on messages
+    /// made of many small fields. The guide's "Smaller generated code" section
+    /// has the measurements.
     ///
     /// Not every message can use it. These stay [`Unrolled`](Self::Unrolled):
     ///
@@ -1102,7 +1102,7 @@ pub enum CodecStrategy {
     /// function call per child. Selecting a message does not select the
     /// messages it holds, and keeping a child [`Unrolled`](Self::Unrolled) does
     /// not keep the messages that hold it unrolled: to keep a whole path
-    /// specialised, select its holders too.
+    /// specialised, set its holders to `Unrolled` too.
     ///
     /// A table message differs from an unrolled one in these ways. A field that
     /// declares a length past the end of its enclosing message fails at once
@@ -1119,8 +1119,10 @@ pub enum CodecStrategy {
     /// buffer, and a `Rope` copies it again and cannot share the `bytes`
     /// fields inside it by reference count. Codegen cannot see the fields of a
     /// message from another crate, so a table message that holds one with a
-    /// `bytes` field of a non-default type copies it on decode; set the holder
-    /// to [`Unrolled`](Self::Unrolled) by hand.
+    /// `bytes` field of a non-default type copies it on decode. The well-known
+    /// type `google.protobuf.Any` is one, because its `value` is
+    /// `bytes::Bytes`. To keep the payload shared with a `Bytes` input, set the
+    /// holder to [`Unrolled`](Self::Unrolled) with `codec_strategy_in`.
     ///
     /// A message that another crate or codegen run uses as the type of a group
     /// or editions `DELIMITED` field must not be selected, because
@@ -2473,7 +2475,7 @@ impl core::fmt::Display for CodeGenWarning {
                 write!(
                     f,
                     "{fallbacks} of {selected} messages selected for the table codec use the \
-                     unrolled codec instead, which works but is larger"
+                     unrolled codec instead"
                 )?;
                 for (i, r) in reasons.iter().enumerate() {
                     let sep = if i == 0 { ": " } else { "; " };

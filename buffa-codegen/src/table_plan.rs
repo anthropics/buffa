@@ -3,10 +3,11 @@
 //!
 //! A message can use the table if the interpreters in `buffa::table` cover
 //! every field it has, with one exception that depends on the messages it
-//! holds: a child stored with a non-default bytes type would lose its
-//! zero-copy decode inside a table message, so the messages that hold one stay
-//! unrolled. Any other child is reached through its table or its `Message`
-//! impl, so it need not be a table message itself.
+//! holds: a message with a bytes field of a non-default type would lose its
+//! zero-copy decode inside a table message, so the messages that hold one,
+//! directly or through other messages, stay unrolled. Any other child is
+//! reached through its table or its `Message` impl, so it need not be a table
+//! message itself.
 
 use std::collections::{HashMap, HashSet};
 

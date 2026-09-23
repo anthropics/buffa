@@ -1096,7 +1096,7 @@ pub mod tcx {
 }
 
 // `bru` is `table_bridge.proto` unrolled, and `brt` has the table codec except
-// for `Hot`, so tables and unrolled messages hold each other. `xe` is a package
+// for `Hot`, so table and unrolled messages hold each other. `xe` is a package
 // of table messages that `xfu` (unrolled) and `xft` (table) hold through an
 // `extern_path`.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
@@ -1125,8 +1125,8 @@ pub mod xft {
     buffa::include_proto!("xft");
 }
 
-// `tbz` has `bytes` fields stored as `bytes::Bytes`, and the table codec, which
-// the messages that hold those fields must not use.
+// `tbz` has the table codec and `bytes` fields stored as `bytes::Bytes`. The
+// messages that have or hold such a field stay unrolled.
 #[cfg(has_table_codec)]
 pub mod tbz {
     buffa::include_proto!("tbz");

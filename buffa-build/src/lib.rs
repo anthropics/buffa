@@ -1449,13 +1449,13 @@ impl Config {
     /// Choose how the binary `Message` implementation of every message is
     /// generated (default: [`CodecStrategy::Unrolled`]).
     ///
-    /// On a schema it fully covers, [`CodecStrategy::Table`] makes the
-    /// compiled size about half as big at `opt-level = "z"`, and it slows
-    /// messages made of many small fields; a message that cannot use it keeps
-    /// its size. [`CodecStrategy::Table`] says which messages stay unrolled and
-    /// how a table message behaves differently, and this build reports the
-    /// messages that stay unrolled in one `cargo:warning`. The option never
-    /// changes the wire format. The generated code needs Rust 1.77 or later, and `compile`
+    /// On a large schema, [`CodecStrategy::Table`] makes the compiled code
+    /// about 40% smaller at `opt-level = "z"`, and it slows messages made of
+    /// many small fields; a message that cannot use it keeps its size.
+    /// [`CodecStrategy::Table`] says which messages stay unrolled and how a
+    /// table message behaves differently, and this build reports the messages
+    /// that stay unrolled in one `cargo:warning`. The option never changes the
+    /// wire format. The generated code needs Rust 1.77 or later, and `compile`
     /// returns an error on an older compiler when a build script runs it (the
     /// compiler is read from `RUSTC`).
     ///
