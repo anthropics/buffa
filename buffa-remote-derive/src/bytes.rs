@@ -2,6 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::DeriveInput;
 
+use crate::forwarders;
 use crate::remote_field::{self, RemoteField};
 
 pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
@@ -40,6 +41,15 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     });
 
+    // The canonical seed is `Vec<u8>`, matching `buffa`'s own
+    // `__private::arbitrary_proto_bytes` builder byte for byte.
+    let arbitrary_impl = forwarders::arbitrary(
+        &remote,
+        &quote! { ::buffa::alloc::vec::Vec<u8> },
+        &remote.construct(quote! { #from_vec(__buffa_seed) }),
+        &[],
+    );
+
     Ok(quote! {
         impl #impl_generics ::core::ops::Deref for #ident #ty_generics #where_clause {
             type Target = [u8];
@@ -73,5 +83,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
 
             #as_shared_impl
         }
+
+        #arbitrary_impl
     })
 }

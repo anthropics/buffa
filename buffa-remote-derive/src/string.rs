@@ -2,6 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::DeriveInput;
 
+use crate::forwarders;
 use crate::remote_field::{self, RemoteField};
 
 pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
@@ -32,6 +33,15 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let ctor_from_string = remote.construct(quote! { #from_string(s) });
     let ctor_from_str = remote.construct(quote! { #from_str(s) });
     let ctor_from_wire = remote.construct(quote! { #from_str(s) });
+
+    // The canonical seed is `String`, matching `buffa`'s own
+    // `__private::arbitrary_proto_string` builder byte for byte.
+    let arbitrary_impl = forwarders::arbitrary(
+        &remote,
+        &quote! { ::buffa::alloc::string::String },
+        &remote.construct(quote! { #from_string(__buffa_seed) }),
+        &[],
+    );
 
     Ok(quote! {
         impl #impl_generics ::core::ops::Deref for #ident #ty_generics #where_clause {
@@ -76,5 +86,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
                 payload.to_str().map(|s| #ctor_from_wire)
             }
         }
+
+        #arbitrary_impl
     })
 }

@@ -2,6 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::DeriveInput;
 
+use crate::forwarders;
 use crate::remote_field::{self, RemoteField};
 
 pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
@@ -31,6 +32,15 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
 
     let ctor_new = remote.construct(quote! { #new_call(value) });
 
+    // The canonical seed is the pointee, matching `arbitrary`'s own
+    // `Box<T>` impl (`T::arbitrary(u).map(Box::new)`).
+    let arbitrary_impl = forwarders::arbitrary(
+        &remote,
+        &quote! { #element_ty },
+        &remote.construct(quote! { #new_call(__buffa_seed) }),
+        &[],
+    );
+
     Ok(quote! {
         impl #impl_generics ::core::ops::Deref for #ident #ty_generics #where_clause {
             type Target = #element_ty;
@@ -58,5 +68,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
                 #into_inner_call(#accessor)
             }
         }
+
+        #arbitrary_impl
     })
 }

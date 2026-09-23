@@ -5,6 +5,8 @@ use quote::quote;
 use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Fields, GenericParam};
 
+use crate::forwarders::{self, Flags};
+
 /// The single field a remote-derive newtype wraps, plus the struct's name and
 /// generics.
 pub struct RemoteField {
@@ -19,6 +21,10 @@ pub struct RemoteField {
     /// `Some(name)` for a named-field struct, `None` for a tuple struct —
     /// used to build a `Self { name: value }` vs. `Self(value)` constructor.
     pub field_name: Option<syn::Ident>,
+    /// The optional forwarder families named by bare `#[buffa(..)]` keys (see
+    /// [`crate::forwarders`]). Every derive honors them, so they are parsed
+    /// here rather than per-derive.
+    pub flags: Flags,
 }
 
 /// Extracts the single field from a tuple or named-field struct, and the
@@ -50,7 +56,7 @@ pub fn parse_with_overrides(
     input: &DeriveInput,
     allowed_overrides: &[&str],
 ) -> syn::Result<(RemoteField, HashMap<String, syn::Path>)> {
-    let overrides = parse_overrides(input, allowed_overrides)?;
+    let (overrides, flags) = parse_attrs(input, allowed_overrides)?;
     let (field_ty, accessor, field_name) = single_field(input)?;
 
     Ok((
@@ -60,6 +66,7 @@ pub fn parse_with_overrides(
             field_ty,
             accessor,
             field_name,
+            flags,
         },
         overrides,
     ))
@@ -105,13 +112,16 @@ fn single_field(input: &DeriveInput) -> syn::Result<(syn::Type, TokenStream, Opt
 
 /// Validates that `#[buffa(remote = ...)]` is present and its value parses as
 /// a type (catching typos, without using the parsed type for codegen — see
-/// [`parse`] for why), and collects any of `allowed_overrides` present
-/// alongside it (e.g. `#[buffa(remote = ..., into_inner = MyType::unwrap)]`).
-fn parse_overrides(
+/// [`parse`] for why), and collects the other keys present alongside it: any of
+/// `allowed_overrides` as a `key = path` pair (e.g.
+/// `#[buffa(remote = ..., into_inner = MyType::unwrap)]`), and the bare
+/// forwarder flags every derive accepts (e.g. `#[buffa(remote = ..., arbitrary)]`).
+fn parse_attrs(
     input: &DeriveInput,
     allowed_overrides: &[&str],
-) -> syn::Result<HashMap<String, syn::Path>> {
+) -> syn::Result<(HashMap<String, syn::Path>, Flags)> {
     let mut overrides = HashMap::new();
+    let mut flags = Flags::default();
     let mut has_remote = false;
     for attr in &input.attrs {
         if !attr.path().is_ident("buffa") {
@@ -122,6 +132,15 @@ fn parse_overrides(
                 let _: syn::Type = meta.value()?.parse()?;
                 has_remote = true;
                 Ok(())
+            } else if meta.path.is_ident(forwarders::ARBITRARY) {
+                if meta.input.peek(syn::Token![=]) {
+                    return Err(meta.error(
+                        "`arbitrary` selects the Arbitrary forwarder and takes no value; \
+                         write it as a bare `#[buffa(remote = ..., arbitrary)]`",
+                    ));
+                }
+                flags.arbitrary = true;
+                Ok(())
             } else if let Some(key) = allowed_overrides
                 .iter()
                 .find(|key| meta.path.is_ident(*key))
@@ -131,7 +150,7 @@ fn parse_overrides(
                 Ok(())
             } else {
                 Err(meta.error(format!(
-                    "unsupported `buffa` attribute key, expected `remote`{}",
+                    "unsupported `buffa` attribute key, expected `remote` or `arbitrary`{}",
                     allowed_overrides
                         .iter()
                         .map(|k| format!(" or `{k}`"))
@@ -146,7 +165,7 @@ fn parse_overrides(
             "missing `#[buffa(remote = ...)]` naming the foreign type this newtype wraps",
         ));
     }
-    Ok(overrides)
+    Ok((overrides, flags))
 }
 
 /// Requires the struct to have exactly one type parameter and returns it —

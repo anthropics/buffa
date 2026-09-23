@@ -127,6 +127,7 @@ dependencies = [
 name = "buffa-remote-derive"
 version = "0.9.2"
 dependencies = [
+ "arbitrary",
  "buffa",
  "ecow",
  "indexmap",
