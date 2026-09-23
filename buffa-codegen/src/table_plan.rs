@@ -50,9 +50,9 @@ pub(crate) struct TableField<'a> {
     pub(crate) number: u32,
     pub(crate) ty: Type,
     pub(crate) card: Card,
-    /// The name of the `buffa::table::Kind` variant of this field. For a oneof
-    /// member this is `OneofMember`, and `payload_kind` is the kind of its
-    /// value.
+    /// The name of the `buffa::table::Kind` variant of this field. A oneof
+    /// member is `OneofFollower` here, whichever it is, and `oneof` gives the
+    /// kind of its value; the emitter marks the leader.
     pub(crate) kind: String,
     /// For an enum field: whether the enum is closed.
     pub(crate) closed_enum: bool,
@@ -214,7 +214,7 @@ pub(crate) fn table_fields<'a>(
         };
         let (kind, oneof) = match oneof {
             Some((index, name)) => (
-                "OneofMember".to_string(),
+                "OneofFollower".to_string(),
                 Some(OneofMembership {
                     index,
                     name,
