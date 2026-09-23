@@ -23,6 +23,24 @@ pub struct Flags {
     pub arbitrary: bool,
 }
 
+/// Whether the emitted impl overrides `arbitrary_take_rest`, chosen per family
+/// so the newtype consumes the same bytes as the representation it replaces.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum TakeRest {
+    /// Forward to the seed's. Correct when the seed *is* the default
+    /// representation and overrides `arbitrary_take_rest` — `String`,
+    /// `Vec<u8>`, `Vec<T>`, `Vec<(K, V)>` all do, so leaving the trait default
+    /// in place would stop short of the buffer's end where the default
+    /// representation runs to it.
+    Seed,
+    /// Leave the trait default (`Self::arbitrary`). Correct when the default
+    /// representation does not override `arbitrary_take_rest`: `arbitrary`'s
+    /// `Box<T>` doesn't, so forwarding to the *pointee's* would consume more
+    /// bytes than `Box<T>` for every pointee that does override it — which is
+    /// every derived message whose last field is a `String`, `Vec` or map.
+    TraitDefault,
+}
+
 /// Emits `impl arbitrary::Arbitrary` for the newtype, or nothing when
 /// `#[buffa(arbitrary)]` is absent.
 ///
@@ -39,6 +57,9 @@ pub struct Flags {
 /// (`MapStorage`'s `FromIterator`) names its bound there, so the forwarder
 /// applies exactly where that impl does rather than failing to compile.
 ///
+/// `take_rest` says whether `arbitrary_take_rest` is overridden; see
+/// [`TakeRest`] for why it is per-family rather than always on.
+///
 /// `size_hint` forwards to the seed's instead of the trait's `(0, None)`
 /// default, mirroring `arbitrary`'s own `Box<str>`-to-`String` forwarder.
 /// `try_size_hint` is deliberately not emitted: it arrived in `arbitrary` 1.4
@@ -49,6 +70,7 @@ pub fn arbitrary(
     remote: &RemoteField,
     seed: &TokenStream,
     build: &TokenStream,
+    take_rest: TakeRest,
     extra_predicates: &[WherePredicate],
 ) -> TokenStream {
     if !remote.flags.arbitrary {
@@ -78,6 +100,19 @@ pub fn arbitrary(
     let (impl_generics, _, arb_where_clause) = arb_generics.split_for_impl();
     let (_, ty_generics, _) = generics.split_for_impl();
 
+    let take_rest_fn = match take_rest {
+        TakeRest::Seed => quote! {
+            #[inline]
+            fn arbitrary_take_rest(
+                u: ::arbitrary::Unstructured<#lifetime>,
+            ) -> ::arbitrary::Result<Self> {
+                let __buffa_seed: #seed = ::arbitrary::Arbitrary::arbitrary_take_rest(u)?;
+                ::core::result::Result::Ok(#build)
+            }
+        },
+        TakeRest::TraitDefault => quote! {},
+    };
+
     quote! {
         #[cfg(feature = "arbitrary")]
         impl #impl_generics ::arbitrary::Arbitrary<#lifetime> for #ident #ty_generics
@@ -91,13 +126,7 @@ pub fn arbitrary(
                 ::core::result::Result::Ok(#build)
             }
 
-            #[inline]
-            fn arbitrary_take_rest(
-                u: ::arbitrary::Unstructured<#lifetime>,
-            ) -> ::arbitrary::Result<Self> {
-                let __buffa_seed: #seed = ::arbitrary::Arbitrary::arbitrary_take_rest(u)?;
-                ::core::result::Result::Ok(#build)
-            }
+            #take_rest_fn
 
             #[inline]
             fn size_hint(depth: usize) -> (usize, ::core::option::Option<usize>) {
@@ -226,6 +255,21 @@ mod tests {
             assert!(
                 !flagged.contains("Remote as :: arbitrary"),
                 "{name}: forwarder leans on the remote type's own Arbitrary:\n{flagged}"
+            );
+        }
+    }
+
+    /// `arbitrary_take_rest` is overridden exactly where the representation
+    /// the newtype replaces overrides it. `String` and the `Vec`s do, so those
+    /// four forward to the seed; `arbitrary`'s `Box<T>` does not, so the box
+    /// family keeps the trait default and consumes what `Box<T>` consumes.
+    #[test]
+    fn take_rest_is_overridden_per_family() {
+        for (name, _, flagged) in expansions() {
+            assert_eq!(
+                flagged.contains("fn arbitrary_take_rest"),
+                name != "box",
+                "{name}: wrong `arbitrary_take_rest` decision:\n{flagged}"
             );
         }
     }

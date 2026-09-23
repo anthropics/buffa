@@ -195,6 +195,30 @@ fn take_rest_forwards_to_the_seed() {
     assert_ne!(want, plain, "seed must distinguish the two entry points");
 }
 
+/// The box family deliberately does *not* override `arbitrary_take_rest`.
+/// `arbitrary`'s `Box<T>` leaves it at the trait default, so forwarding to the
+/// *pointee's* would run to the end of the buffer where `Box<T>` stops short —
+/// for `String`, and for every derived message whose last field is a `String`,
+/// `Vec` or map. A boxed oneof variant stores the pointer bare in a derived
+/// enum (`buffa-codegen/src/lib.rs:760-763`), so that call is reachable.
+#[test]
+fn box_take_rest_matches_canonical_box() {
+    let got =
+        MyBox::<String>::arbitrary_take_rest(Unstructured::new(SEED)).expect("take_rest builds");
+    let want =
+        Box::<String>::arbitrary_take_rest(Unstructured::new(SEED)).expect("take_rest builds");
+    assert_eq!(&*got, &*want);
+
+    // The pointee has to be one that overrides `arbitrary_take_rest`, or the
+    // assertion above holds vacuously: `String`'s runs to the end of the
+    // buffer, while `Box<String>` stops where `String::arbitrary` stops.
+    let unboxed = String::arbitrary_take_rest(Unstructured::new(SEED)).expect("take_rest builds");
+    assert_ne!(
+        *want, unboxed,
+        "pointee must distinguish the two entry points"
+    );
+}
+
 #[test]
 fn size_hint_forwards_to_the_seed() {
     assert_eq!(

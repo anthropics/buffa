@@ -47,6 +47,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         &remote,
         &quote! { ::buffa::alloc::vec::Vec<u8> },
         &remote.construct(quote! { #from_vec(__buffa_seed) }),
+        forwarders::TakeRest::Seed,
         &[],
     );
 

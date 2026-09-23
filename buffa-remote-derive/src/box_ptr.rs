@@ -33,11 +33,14 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let ctor_new = remote.construct(quote! { #new_call(value) });
 
     // The canonical seed is the pointee, matching `arbitrary`'s own
-    // `Box<T>` impl (`T::arbitrary(u).map(Box::new)`).
+    // `Box<T>` impl (`T::arbitrary(u).map(Box::new)`). `Box<T>` leaves
+    // `arbitrary_take_rest` at the trait default, so this must too: forwarding
+    // to the pointee's would outrun `Box<T>` for any pointee that overrides it.
     let arbitrary_impl = forwarders::arbitrary(
         &remote,
         &quote! { #element_ty },
         &remote.construct(quote! { #new_call(__buffa_seed) }),
+        forwarders::TakeRest::TraitDefault,
         &[],
     );
 

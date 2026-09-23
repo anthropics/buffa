@@ -40,6 +40,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         &remote,
         &quote! { ::buffa::alloc::string::String },
         &remote.construct(quote! { #from_string(__buffa_seed) }),
+        forwarders::TakeRest::Seed,
         &[],
     );
 

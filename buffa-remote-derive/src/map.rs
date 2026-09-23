@@ -40,6 +40,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         &remote,
         &quote! { ::buffa::alloc::vec::Vec<(#key_ty, #value_ty)> },
         &from_iter,
+        forwarders::TakeRest::Seed,
         &[parse_quote! { Self: ::core::iter::FromIterator<(#key_ty, #value_ty)> }],
     );
 
