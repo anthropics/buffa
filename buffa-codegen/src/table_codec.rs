@@ -434,7 +434,7 @@ impl Oneofs {
                 // `Message` impl.
                 let msg_vt = if ctx.uses_table_codec(field_type_name(field)?) {
                     let child_table = table_path(&unshortened_path(scope, field)?)?;
-                    quote! { ::buffa::table::MsgVt::direct(&#child_table) }
+                    quote! { ::buffa::table::MsgVt::direct::<#child>(&#child_table) }
                 } else {
                     quote! { ::buffa::table::MsgVt::direct_via_message::<#child>() }
                 };

@@ -1130,7 +1130,7 @@ fn a_message_with_a_oneof_gets_a_table_with_one_entry_per_member() {
     assert_eq!(table.matches("Member::new(0u16,").count(), 3, "{table}");
     // The message member's child is reached through its own table.
     assert!(
-        table.contains("MsgVt::direct(&__BUFFA_TABLE_Leaf)"),
+        table.contains("MsgVt::direct::<Leaf>(&__BUFFA_TABLE_Leaf)"),
         "{table}"
     );
 }
@@ -1153,7 +1153,7 @@ fn a_oneof_member_whose_child_has_no_table_is_reached_through_its_message_impl()
         table.contains("MsgVt::direct_via_message::<Leaf>()"),
         "{table}"
     );
-    assert!(!table.contains("MsgVt::direct(&"), "{table}");
+    assert!(!table.contains("MsgVt::direct::<"), "{table}");
 }
 
 #[test]
