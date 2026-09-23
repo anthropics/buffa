@@ -192,15 +192,7 @@ fn field_entry(
     let kind = format_ident!("{}", f.kind);
     let number = f.number;
 
-    let aux_u16 = || {
-        u16::try_from(aux_index).map_err(|_| {
-            CodeGenError::Other(format!(
-                "table codec: {}.{field_name}: a message has more than 65535 fields \
-                 that need a descriptor",
-                scope.proto_fqn
-            ))
-        })
-    };
+    let aux_u16 = || u16::try_from(aux_index).map_err(|_| too_many_descriptors(scope));
     let type_path = |what: &str| type_path(scope, field, what);
     let unshortened_path = || unshortened_path(scope, field);
     let type_name = || field_type_name(field);
@@ -282,6 +274,15 @@ fn field_type_name(field: &FieldDescriptorProto) -> Result<&str, CodeGenError> {
         .ok_or(CodeGenError::MissingField("field.type_name"))
 }
 
+/// The error for a message whose table needs more descriptors than an aux
+/// index can name.
+fn too_many_descriptors(scope: MessageScope<'_>) -> CodeGenError {
+    CodeGenError::Other(format!(
+        "table codec: {}: a message has more than 65535 fields that need a descriptor",
+        scope.proto_fqn
+    ))
+}
+
 /// The Rust path of the message or enum type of `field`, as seen from the
 /// message's scope. `what` names the kind of type in the error.
 fn type_path(
@@ -297,8 +298,8 @@ fn type_path(
 }
 
 /// The path of the message type of `field` before `idiomatic_imports` shortens
-/// it. The table is not among the imports that shortens paths with, so its
-/// path is built from this one.
+/// it. The table is not among the names that `idiomatic_imports` shortens, so
+/// its path is built from this one.
 fn unshortened_path(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
@@ -345,12 +346,12 @@ struct Oneofs {
 impl Oneofs {
     fn new(scope: MessageScope<'_>, msg: &DescriptorProto, fields: &[TableField<'_>]) -> Self {
         let mut first: HashMap<usize, u32> = HashMap::new();
-        for member in fields
+        for (oneof, f) in fields
             .iter()
-            .filter_map(|f| f.oneof.as_ref().map(|m| (m, f)))
+            .filter_map(|f| f.oneof.as_ref().map(|oneof| (oneof, f)))
         {
-            let lowest = first.entry(member.0.index).or_insert(member.1.number);
-            *lowest = (*lowest).min(member.1.number);
+            let lowest = first.entry(oneof.index).or_insert(f.number);
+            *lowest = (*lowest).min(f.number);
         }
         Self {
             prefix: ancillary_prefix(
@@ -391,12 +392,7 @@ impl Oneofs {
         let ctx = scope.ctx;
         let field = f.field;
         let field_name = field.name.as_deref().unwrap_or("");
-        let too_many = || {
-            CodeGenError::Other(format!(
-                "table codec: {}: a message has more than 65535 fields that need a descriptor",
-                scope.proto_fqn
-            ))
-        };
+        let too_many = || too_many_descriptors(scope);
         let enum_ident = self.enum_idents.get(&member.index).ok_or_else(|| {
             CodeGenError::Other(format!(
                 "table codec: {}.{field_name}: the oneof `{}` has no enum",
@@ -408,7 +404,7 @@ impl Oneofs {
         let oneof_field = ctx.oneof_ident(member.name);
         let variant = crate::oneof::oneof_variant_ident(field_name);
         let number = f.number;
-        let payload_kind = format_ident!("{}", member.payload_kind);
+        let payload_kind = format_ident!("{}", f.kind);
         let first = self.first[&member.index];
 
         // The oneof's descriptor, made when its first member is met.
@@ -427,10 +423,8 @@ impl Oneofs {
         };
 
         // What the member's value is: the type the accessors give a pointer
-        // to, written as an ascription so that a variant of another type does
-        // not compile (a boxed message coerces to its message), the
-        // descriptor of the value, and the value a member has when it is
-        // first set.
+        // to, the descriptor of the value, and the value a member has when it
+        // is first set.
         let variant_fqn = format!(".{}.{}.{field_name}", scope.proto_fqn, member.name);
         let default = quote! { ::core::default::Default::default() };
         let (slot, value_aux, new) = match f.ty {
@@ -485,16 +479,23 @@ impl Oneofs {
 
         let arms = self.arms.entry(member.index).or_default();
         arms.number.push(quote! { Self::#variant(_) => #number, });
+        // The pointers come from references of the type `slot`, so a variant of
+        // another type does not compile (a boxed message coerces to its
+        // message). They are coerced and not cast, which `trivial_casts`
+        // would flag, and `ptr::from_ref` needs a Rust newer than the MSRV of
+        // some crates that build this code.
         arms.payload.push(quote! {
             Self::#variant(v) => {
                 let value: &#slot = v;
-                (value as *const #slot).cast::<u8>()
+                let ptr: *const #slot = value;
+                ptr.cast::<u8>()
             }
         });
         arms.payload_mut.push(quote! {
             Self::#variant(v) => {
                 let value: &mut #slot = v;
-                (value as *mut #slot).cast::<u8>()
+                let ptr: *mut #slot = value;
+                ptr.cast::<u8>()
             }
         });
         arms.with_default

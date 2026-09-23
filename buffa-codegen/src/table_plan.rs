@@ -50,9 +50,9 @@ pub(crate) struct TableField<'a> {
     pub(crate) number: u32,
     pub(crate) ty: Type,
     pub(crate) card: Card,
-    /// The name of the `buffa::table::Kind` variant of this field. A oneof
-    /// member is `OneofFollower` here, whichever it is, and `oneof` gives the
-    /// kind of its value; the emitter marks the leader.
+    /// The name of the `buffa::table::Kind` variant of this field's value. For
+    /// a oneof member, the emitter wraps it in the member kind that `oneof`
+    /// says it needs.
     pub(crate) kind: String,
     /// For an enum field: whether the enum is closed.
     pub(crate) closed_enum: bool,
@@ -65,8 +65,6 @@ pub(crate) struct OneofMembership<'a> {
     /// The index of the oneof in the message's `oneof_decl`.
     pub(crate) index: usize,
     pub(crate) name: &'a str,
-    /// The name of the `buffa::table::Kind` variant of the member's value.
-    pub(crate) payload_kind: String,
 }
 
 /// The `Kind` variant name of a field type, or `None` for a group, which has
@@ -212,17 +210,6 @@ pub(crate) fn table_fields<'a>(
         } else {
             format!("{stem}{}", card.name())
         };
-        let (kind, oneof) = match oneof {
-            Some((index, name)) => (
-                "OneofFollower".to_string(),
-                Some(OneofMembership {
-                    index,
-                    name,
-                    payload_kind: kind,
-                }),
-            ),
-            None => (kind, None),
-        };
         fields.push(TableField {
             field: f,
             number,
@@ -230,7 +217,7 @@ pub(crate) fn table_fields<'a>(
             card,
             kind,
             closed_enum,
-            oneof,
+            oneof: oneof.map(|(index, name)| OneofMembership { index, name }),
         });
     }
     fields.sort_by_key(|f| f.number);
