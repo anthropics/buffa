@@ -647,7 +647,8 @@ impl<M> Table<M> {
     /// - `MsgSingular`: the storage the [`MsgVt`] was built for, and
     ///   `MsgRepeated`: the `Vec` the [`RepVt`] was built for;
     /// - `OneofLeader` and `OneofFollower`: an `Option<E>`, where the
-    ///   [`OneofVt`] of the member's group was built for `E`, and `E`'s
+    ///   [`OneofVt`] of the member's group was built for `E` (with
+    ///   [`OneofVt::with_messages`] if a member is a message), and `E`'s
     ///   [`OneofEnum`] implementation gives, for the member's number, a pointer
     ///   to a value of the member's payload kind, under the same rules as the
     ///   kinds above (for `MsgSingular`, a [`MsgVt::direct`] or

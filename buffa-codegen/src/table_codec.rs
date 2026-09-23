@@ -4,7 +4,7 @@
 //! Which messages get one is decided by [`crate::table_plan`]; this module
 //! emits the code for a message the plan selected.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -335,6 +335,8 @@ struct Oneofs {
     enum_idents: HashMap<usize, proc_macro2::Ident>,
     /// The lowest member number of each oneof.
     first: HashMap<usize, u32>,
+    /// The oneofs that have a member of message type.
+    with_messages: HashSet<usize>,
     /// The aux index of each oneof's descriptor, once it has one.
     group_aux: HashMap<usize, usize>,
     /// The aux index of each payload descriptor, by its tokens, so that
@@ -346,12 +348,16 @@ struct Oneofs {
 impl Oneofs {
     fn new(scope: MessageScope<'_>, msg: &DescriptorProto, fields: &[TableField<'_>]) -> Self {
         let mut first: HashMap<usize, u32> = HashMap::new();
+        let mut with_messages = HashSet::new();
         for (oneof, f) in fields
             .iter()
             .filter_map(|f| f.oneof.as_ref().map(|oneof| (oneof, f)))
         {
             let lowest = first.entry(oneof.index).or_insert(f.number);
             *lowest = (*lowest).min(f.number);
+            if f.ty == Type::TYPE_MESSAGE {
+                with_messages.insert(oneof.index);
+            }
         }
         Self {
             prefix: ancillary_prefix(
@@ -362,6 +368,7 @@ impl Oneofs {
             ),
             enum_idents: crate::oneof::resolve_oneof_idents(msg),
             first,
+            with_messages,
             group_aux: HashMap::new(),
             payload_aux: HashMap::new(),
             arms: BTreeMap::new(),
@@ -411,8 +418,13 @@ impl Oneofs {
         let group = match self.group_aux.get(&member.index) {
             Some(&group) => group,
             None => {
+                let ctor = if self.with_messages.contains(&member.index) {
+                    format_ident!("with_messages")
+                } else {
+                    format_ident!("new")
+                };
                 aux.push(quote! {
-                    ::buffa::table::Aux::Group(&::buffa::table::OneofVt::new::<#enum_path>(
+                    ::buffa::table::Aux::Group(&::buffa::table::OneofVt::#ctor::<#enum_path>(
                         ::buffa::table::offset_of!(#message, #oneof_field),
                         #first,
                     ))

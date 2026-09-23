@@ -1699,11 +1699,11 @@ static HOLDER: Table<Holder> = crate::__table!(
     ],
     dense = &dense::<11>(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
     aux = [
-        Aux::Group(&OneofVt::new::<Pick>(
+        Aux::Group(&OneofVt::with_messages::<Pick>(
             crate::table::offset_of!(Holder, pick),
             2
         )),
-        Aux::Group(&OneofVt::new::<Alt>(
+        Aux::Group(&OneofVt::with_messages::<Alt>(
             crate::table::offset_of!(Holder, other),
             6
         )),
@@ -1792,7 +1792,7 @@ static VIA_HOLDER: Table<ViaHolder> = crate::__table!(
     ],
     dense = &dense::<3>(&[1, 2]),
     aux = [
-        Aux::Group(&OneofVt::new::<ViaPick>(
+        Aux::Group(&OneofVt::with_messages::<ViaPick>(
             crate::table::offset_of!(ViaHolder, pick),
             1
         )),
@@ -2236,7 +2236,7 @@ fn a_field_that_is_not_in_a_oneof_is_not_a_member() {
 
 #[test]
 fn the_accessors_keep_a_member_that_is_set_and_replace_any_other() {
-    let vt = OneofVt::new::<Pick>(0, 2);
+    let vt = OneofVt::with_messages::<Pick>(0, 2);
     let mut slot = Some(Pick::Text("kept".into()));
     let slot_ptr = (&mut slot as *mut Option<Pick>).cast::<u8>();
     // SAFETY: `slot` is a live `Option<Pick>` and 4 and 2 are members of it.
@@ -2259,7 +2259,7 @@ fn the_accessors_keep_a_member_that_is_set_and_replace_any_other() {
 
 #[test]
 fn place_with_merges_into_the_member_that_is_set_and_replaces_another_only_on_success() {
-    let vt = OneofVt::new::<Pick>(0, 2);
+    let vt = OneofVt::with_messages::<Pick>(0, 2);
     // The pointer is derived from `slot` again for each call, because reading
     // `slot` in between ends the use of an earlier one.
     fn raw(slot: &mut Option<Pick>) -> *mut u8 {
@@ -2308,7 +2308,7 @@ fn place_with_merges_into_the_member_that_is_set_and_replaces_another_only_on_su
 #[test]
 #[should_panic(expected = "does not match the oneof enum")]
 fn place_with_a_member_the_enum_does_not_have_panics() {
-    let vt = OneofVt::new::<Pick>(0, 2);
+    let vt = OneofVt::with_messages::<Pick>(0, 2);
     let mut slot: Option<Pick> = None;
     // SAFETY: `slot` is a live `Option<Pick>`; 99 is not a member, which the
     // accessor reports by panicking.
@@ -2379,7 +2379,7 @@ fn a_null_payload_is_caught_when_the_member_is_placed() {
 #[cfg(debug_assertions)]
 #[should_panic(expected = "`OneofEnum::payload_mut` returned null")]
 fn a_null_payload_is_caught_when_the_member_is_decoded_into() {
-    let vt = OneofVt::new::<NullPayload>(0, 1);
+    let vt = OneofVt::with_messages::<NullPayload>(0, 1);
     let mut slot: Option<NullPayload> = None;
     // SAFETY: as above.
     let _ = unsafe {
@@ -2400,7 +2400,7 @@ fn placing_a_member_whose_default_has_another_number_panics() {
 #[test]
 #[should_panic(expected = "does not match the oneof enum")]
 fn place_with_a_member_whose_default_has_another_number_panics() {
-    let vt = OneofVt::new::<LyingEnum>(0, 1);
+    let vt = OneofVt::with_messages::<LyingEnum>(0, 1);
     let mut slot: Option<LyingEnum> = None;
     // SAFETY: as above.
     let _ = unsafe { (vt.place_with)((&mut slot as *mut Option<LyingEnum>).cast(), 2, &mut |_| Ok(())) };
@@ -2409,7 +2409,7 @@ fn place_with_a_member_whose_default_has_another_number_panics() {
 #[test]
 #[should_panic(expected = "does not match the oneof enum")]
 fn placing_a_member_the_enum_does_not_have_panics() {
-    let vt = OneofVt::new::<Pick>(0, 2);
+    let vt = OneofVt::with_messages::<Pick>(0, 2);
     let mut slot: Option<Pick> = None;
     // SAFETY: `slot` is a live `Option<Pick>`; 99 is not a member, which the
     // accessor reports by panicking.
@@ -2430,7 +2430,7 @@ fn an_ordinary_message_field_cannot_use_a_direct_descriptor() {
 mod invalid_oneof_tables {
     use super::*;
 
-    static PICK: OneofVt = OneofVt::new::<Pick>(0, 2);
+    static PICK: OneofVt = OneofVt::with_messages::<Pick>(0, 2);
     static INT_MEMBERS: [Aux; 2] = [
         Aux::Group(&PICK),
         Aux::Member(Member::new(0, Kind::Int32Required, 0)),
@@ -2543,6 +2543,30 @@ mod invalid_oneof_tables {
             Aux::Msg(&MsgVt::new::<MessageField<Inner>>(&INNER)),
         ];
         const E: Entry = member(Kind::MsgSingular, 2, 1);
+        let _ = holder_table(&[E], &AUX);
+    }
+
+    #[test]
+    #[should_panic(expected = "must be built with `OneofVt::with_messages`")]
+    fn a_message_member_needs_a_oneof_built_with_messages() {
+        static NO_MESSAGES: OneofVt = OneofVt::new::<Pick>(0, 2);
+        static AUX: [Aux; 3] = [
+            Aux::Group(&NO_MESSAGES),
+            Aux::Member(Member::new(0, Kind::MsgSingular, 2)),
+            Aux::Msg(&MsgVt::direct::<Inner>(&INNER)),
+        ];
+        const E: Entry = member(Kind::MsgSingular, 2, 1);
+        let _ = holder_table(&[E], &AUX);
+    }
+
+    #[test]
+    fn a_oneof_built_without_messages_accepts_the_other_members() {
+        static NO_MESSAGES: OneofVt = OneofVt::new::<Pick>(0, 2);
+        static AUX: [Aux; 2] = [
+            Aux::Group(&NO_MESSAGES),
+            Aux::Member(Member::new(0, Kind::Int32Required, 0)),
+        ];
+        const E: Entry = member(Kind::Int32Required, 2, 1);
         let _ = holder_table(&[E], &AUX);
     }
 
