@@ -1724,6 +1724,144 @@ static HOLDER: Table<Holder> = crate::__table!(
 
 table_message!(Holder, HOLDER);
 
+/// `oneof pick { int32 n = 1; Hand hand = 2; }`, with the message boxed and
+/// reached through its `Message` impl.
+#[derive(Clone, Debug, PartialEq)]
+enum ViaPick {
+    N(i32),
+    Hand(crate::alloc::boxed::Box<Hand>),
+}
+
+impl OneofEnum for ViaPick {
+    fn number(&self) -> u32 {
+        match self {
+            Self::N(_) => 1,
+            Self::Hand(_) => 2,
+        }
+    }
+
+    fn payload(&self) -> *const u8 {
+        match self {
+            Self::N(v) => (v as *const i32).cast(),
+            Self::Hand(v) => (&**v as *const Hand).cast(),
+        }
+    }
+
+    fn payload_mut(&mut self) -> *mut u8 {
+        match self {
+            Self::N(v) => (v as *mut i32).cast(),
+            Self::Hand(v) => (&mut **v as *mut Hand).cast(),
+        }
+    }
+
+    fn with_default(number: u32) -> Option<Self> {
+        Some(match number {
+            1 => Self::N(Default::default()),
+            2 => Self::Hand(Default::default()),
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct ViaHolder {
+    pick: Option<ViaPick>,
+    unknown: UnknownFields,
+}
+
+static VIA_HOLDER: Table<ViaHolder> = crate::__table!(
+    ViaHolder,
+    abi = ABI,
+    entries = [
+        crate::__table_entry!(
+            ViaHolder,
+            pick,
+            oneof(Int32Required, true),
+            1,
+            aux = 1,
+            slot = Option<ViaPick>
+        ),
+        crate::__table_entry!(
+            ViaHolder,
+            pick,
+            oneof(MsgSingular, false),
+            2,
+            aux = 2,
+            slot = Option<ViaPick>
+        ),
+    ],
+    dense = &dense::<3>(&[1, 2]),
+    aux = [
+        Aux::Group(&OneofVt::new::<ViaPick>(
+            crate::table::offset_of!(ViaHolder, pick),
+            1
+        )),
+        Aux::Member(Member::new(0, Kind::Int32Required, 0)),
+        Aux::Member(Member::new(0, Kind::MsgSingular, 3)),
+        Aux::Msg(&MsgVt::direct_via_message::<Hand>()),
+    ],
+    unknown = unknown,
+);
+
+table_message!(ViaHolder, VIA_HOLDER);
+
+fn via_hand(n: i32, s: &str) -> ViaHolder {
+    ViaHolder {
+        pick: Some(ViaPick::Hand(crate::alloc::boxed::Box::new(Hand {
+            n,
+            s: s.into(),
+            ..Hand::default()
+        }))),
+        ..ViaHolder::default()
+    }
+}
+
+#[test]
+fn a_oneof_member_reached_through_its_message_impl_round_trips_into_every_sink() {
+    for msg in [
+        ViaHolder::default(),
+        ViaHolder {
+            pick: Some(ViaPick::N(-3)),
+            ..ViaHolder::default()
+        },
+        via_hand(0, ""),
+        via_hand(4, "hand"),
+    ] {
+        let wire = msg.encode_to_vec();
+        assert_eq!(wire.len() as u32, msg.encoded_len());
+        assert_eq!(ViaHolder::decode_from_slice(&wire).unwrap(), msg);
+        // A rope is not written through the cursor, so the child is staged.
+        let mut rope = Rope::new();
+        msg.encode(&mut rope);
+        assert_eq!(&rope.to_contiguous_bytes()[..], &wire[..]);
+    }
+}
+
+#[test]
+fn a_oneof_member_reached_through_its_message_impl_merges_in_place() {
+    // hand { n = 1 }, then hand { s = "x" }: one message with both.
+    let wire = [0x12, 0x02, 0x08, 0x01, 0x12, 0x03, 0x12, 0x01, b'x'];
+    assert_eq!(ViaHolder::decode_from_slice(&wire).unwrap(), via_hand(1, "x"));
+    // Another member replaces it, and then a message starts from a default.
+    let wire = [0x12, 0x02, 0x08, 0x01, 0x08, 0x05, 0x12, 0x03, 0x12, 0x01, b'y'];
+    assert_eq!(ViaHolder::decode_from_slice(&wire).unwrap(), via_hand(0, "y"));
+}
+
+#[test]
+fn a_oneof_member_reached_through_its_message_impl_that_fails_leaves_the_member_alone() {
+    let mut msg = via_hand(1, "keep");
+    let bad = [0x12, 0x03, 0x12, 0x05, b'x'];
+    assert!(msg.merge_from_slice(&bad).is_err());
+    assert_eq!(msg, via_hand(1, "keep"));
+    // Where another member was set, the discarded default is not left behind.
+    let mut msg = ViaHolder {
+        pick: Some(ViaPick::N(9)),
+        ..ViaHolder::default()
+    };
+    assert!(msg.merge_from_slice(&bad).is_err());
+    assert_eq!(msg.pick, Some(ViaPick::N(9)));
+}
+
 fn child(id: i32) -> Pick {
     Pick::Child(crate::alloc::boxed::Box::new(Inner {
         id,
