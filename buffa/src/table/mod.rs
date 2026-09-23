@@ -51,26 +51,11 @@
 //!   write a [`BufMut`](crate::bytes::BufMut) through, and its `bytes::Bytes`
 //!   fields are copied out of the slice it is decoded from, where unrolled
 //!   code decoding from a `Bytes` shares them with the input.
-//! - If decoding a message member of a oneof fails, the oneof may hold that
-//!   member with the part of it that was decoded, where unrolled code leaves
-//!   the oneof as it was when the member was not already set. A failed decode
-//!   returns the error and no message, so this shows only to a caller that
-//!   merges into a message it keeps and reads it after an error.
 //!
 //! # Oneofs
 //!
-//! A oneof is an `Option` of a generated enum, whose layout is not specified,
-//! so an entry cannot address a member through an offset. The table has one
-//! entry of kind [`Kind::OneofLeader`] or [`Kind::OneofFollower`] per member, all at the offset of the
-//! `Option`, and generated code implements [`OneofEnum`] for the enum, which
-//! gives the interpreters the number of the member that is set, a pointer to
-//! its value, and a way to set another member. The value is read and written
-//! by the arm of the member's *payload kind*, the same kind an ordinary field
-//! of that type has, in its `Required` cardinality because a member is
-//! written whenever it is set. Only the member with the lowest number, the
-//! *leader*, sizes and writes the oneof, at its own place among the fields,
-//! which is where unrolled code writes it, so the bytes are the same. The
-//! other members only decode.
+//! A oneof has one entry per member, and its members are reached through
+//! [`OneofEnum`]; the `oneof` module's documentation has the mechanism.
 //!
 //! # Where the code is compiled
 //!
@@ -149,9 +134,12 @@ const PACKED: u8 = 4;
 /// after `$fname;` if one is given, which names the function a dispatch macro
 /// defines.
 ///
-/// The families are `Scalar`, `Str`, `Bytes`, `Enum`, `Msg` and `Oneof`. The
-/// one list generates the enum and the three dispatch functions, so a kind
-/// cannot be added to one and not the others.
+/// The families are `Scalar`, `Str`, `Bytes`, `Enum`, `Msg` and `Oneof`. This
+/// list generates the [`Kind`] enum and the three dispatch functions over
+/// entries (size, write and merge), so a kind cannot be added to one and not
+/// the others. [`payload_kind_table!`] is a second list, of the kinds a oneof
+/// member's value can have, which generates the three dispatch functions over
+/// those values.
 macro_rules! kind_table {
     ($callback:ident $(, $fname:ident)?) => {
         $callback! {

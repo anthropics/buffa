@@ -1081,7 +1081,7 @@ pub enum CodecStrategy {
     ///
     /// Not every message can use it. These stay [`Unrolled`](Self::Unrolled):
     ///
-    /// - a message with a `oneof`, a `map` field, or a group field;
+    /// - a message with a `map` field or a group field;
     /// - the message type of a group field;
     /// - a message that uses the `MessageSet` wire format;
     /// - a message with extension ranges, when JSON code is generated and
@@ -1143,7 +1143,7 @@ pub enum CodecStrategy {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct TableCodecFallbackReason {
-    /// The reason as a predicate, such as `has a oneof`. The wording is for
+    /// The reason as a predicate, such as `has a map field`. The wording is for
     /// people and may change between releases.
     pub reason: String,
     /// The proto paths of all of them, with a leading dot, in declaration
