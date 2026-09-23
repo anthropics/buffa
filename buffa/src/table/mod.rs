@@ -649,7 +649,8 @@ impl<M> Table<M> {
     ///   group was built for `E`, and `E`'s [`OneofEnum`] implementation
     ///   gives, for the member's number, a pointer to a value of the member's
     ///   payload kind, under the same rules as the kinds above (for
-    ///   `MsgSingular`, a [`MsgVt::direct`] descriptor of the message).
+    ///   `MsgSingular`, a [`MsgVt::direct`] or [`MsgVt::direct_via_message`]
+    ///   descriptor of the message).
     ///
     /// `unknown`, if present, must be the offset of a field of type
     /// `UnknownFields`. The `__table_entry!` macro checks the field types

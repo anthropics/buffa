@@ -259,7 +259,7 @@ pub(super) const fn check_member(e: &Entry, m: Member, aux: &[super::Aux]) -> bo
         if let super::Aux::Msg(vt) = a {
             assert!(
                 vt.direct,
-                "buffa table: a oneof member's message descriptor must be a `MsgVt::direct` one"
+                "buffa table: a oneof member's message descriptor must be a `MsgVt::direct` or `MsgVt::direct_via_message` one"
             );
         }
     }
