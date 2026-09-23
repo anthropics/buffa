@@ -385,10 +385,10 @@ fn invalid_utf8_is_rejected() {
 }
 
 #[test]
-fn a_table_message_may_hold_one_that_has_a_map() {
-    // A message with a map is unrolled, and the messages that hold it are
-    // tables that reach it through their `Message` impl. A table message with
-    // a oneof sits next to them.
+fn a_message_with_a_oneof_and_a_holder_of_a_message_with_a_map_round_trip() {
+    // A message with a oneof is a table. A message with a map is unrolled, and
+    // the messages that hold it are tables that reach it through their
+    // `Message` impl.
     let with_oneof = crate::tct::WithOneof {
         choice: Some(crate::tct::with_oneof::Choice::B("x".into())),
         c: 4,
