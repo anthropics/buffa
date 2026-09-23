@@ -2470,7 +2470,7 @@ mod invalid_oneof_tables {
     }
 
     #[test]
-    #[should_panic(expected = "`MsgVt::direct` one")]
+    #[should_panic(expected = "`MsgVt::direct_via_message` one")]
     fn a_message_member_needs_a_descriptor_that_reaches_the_message_directly() {
         static AUX: [Aux; 3] = [
             Aux::Group(&PICK),
