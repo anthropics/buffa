@@ -105,8 +105,7 @@ fn main() {
 
 /// The generator configuration shared by every schema. With the crate's
 /// `table` feature it selects [`buffa_build::CodecStrategy::Table`], so that
-/// the via-table run drives the table codec through the corpus; the feature
-/// needs Rust 1.77, which `compile()` checks.
+/// the via-table run drives the table codec through the corpus.
 fn config() -> buffa_build::Config {
     let config = buffa_build::Config::new();
     if std::env::var_os("CARGO_FEATURE_TABLE").is_some() {
