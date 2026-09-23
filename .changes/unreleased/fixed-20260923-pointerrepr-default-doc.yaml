@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`PointerRepr`'s type-level doc said the default is `Box`** (#429). It has been `Inline` since 0.9; the variant docs on the same enum already said so, so the type-level line contradicted them and told readers their singular message fields are heap-allocated when they are stored inline.
+time: 2026-09-23T20:10:00+03:00
