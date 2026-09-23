@@ -400,6 +400,7 @@ pub fn generate_message_impl(
     oneof_idents: &std::collections::HashMap<usize, proc_macro2::Ident>,
     oneof_prefix: &TokenStream,
     nesting: usize,
+    table_impl: Option<TokenStream>,
 ) -> Result<TokenStream, CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
 
@@ -418,7 +419,10 @@ pub fn generate_message_impl(
     let mut write_stmts: Vec<TokenStream> = Vec::with_capacity(fields.len());
     let mut merge_arms: Vec<TokenStream> = Vec::with_capacity(fields.len());
     let mut clear_stmts: Vec<TokenStream> = Vec::with_capacity(fields.len());
-    for kind in &fields {
+    // A table message forwards its `Message` methods to the shared
+    // interpreters, so it needs none of the per-field statements.
+    let per_field: &[_] = if table_impl.is_some() { &[] } else { &fields };
+    for kind in per_field {
         match kind {
             FieldKind::Scalar(f) => {
                 compute_stmts.push(scalar_compute_size_stmt(ctx, f, features)?);
@@ -671,6 +675,62 @@ pub fn generate_message_impl(
         quote! {}
     };
 
+    let message_impl = table_impl.unwrap_or_else(|| {
+        quote! {
+            impl ::buffa::Message for #name_ident {
+                /// Returns the total encoded size in bytes.
+                ///
+                /// Accumulates in `u64` (which cannot overflow for in-memory
+                /// data) and saturates to `u32` at return, so a message whose
+                /// encoded size exceeds the 2 GiB protobuf limit yields a value
+                /// above [`::buffa::MAX_MESSAGE_BYTES`] that the encode entry
+                /// points reject, never a silently wrapped size.
+                #[allow(clippy::let_and_return)]
+                fn compute_size(&self, #cache_ident: &mut ::buffa::SizeCache) -> u32 {
+                    #[allow(unused_imports)]
+                    use ::buffa::Enumeration as _;
+                    #size_decl
+                    #(#compute_stmts)*
+                    #unknown_fields_size_stmt
+                    ::buffa::saturate_size(size)
+                }
+
+                fn write_to(
+                    &self,
+                    #cache_ident: &mut ::buffa::SizeCache,
+                    #buf_param,
+                ) {
+                    #[allow(unused_imports)]
+                    use ::buffa::Enumeration as _;
+                    #(#write_stmts)*
+                    #unknown_fields_write_stmt
+                }
+
+                fn merge_field(
+                    &mut self,
+                    tag: ::buffa::encoding::Tag,
+                    buf: &mut impl ::buffa::bytes::Buf,
+                    ctx: ::buffa::DecodeContext<'_>,
+                ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+                    #[allow(unused_imports)]
+                    use ::buffa::bytes::Buf as _;
+                    #[allow(unused_imports)]
+                    use ::buffa::Enumeration as _;
+                    match tag.field_number() {
+                        #(#merge_arms)*
+                        #unknown_fields_merge_arm
+                    }
+                    ::core::result::Result::Ok(())
+                }
+
+                fn clear(&mut self) {
+                    #(#clear_stmts)*
+                    #unknown_fields_clear_stmt
+                }
+            }
+        }
+    });
+
     Ok(quote! {
         ::buffa::impl_default_instance!(#name_ident);
 
@@ -678,57 +738,7 @@ pub fn generate_message_impl(
 
         #message_name_impl
 
-        impl ::buffa::Message for #name_ident {
-            /// Returns the total encoded size in bytes.
-            ///
-            /// Accumulates in `u64` (which cannot overflow for in-memory
-            /// data) and saturates to `u32` at return, so a message whose
-            /// encoded size exceeds the 2 GiB protobuf limit yields a value
-            /// above [`::buffa::MAX_MESSAGE_BYTES`] that the encode entry
-            /// points reject, never a silently wrapped size.
-            #[allow(clippy::let_and_return)]
-            fn compute_size(&self, #cache_ident: &mut ::buffa::SizeCache) -> u32 {
-                #[allow(unused_imports)]
-                use ::buffa::Enumeration as _;
-                #size_decl
-                #(#compute_stmts)*
-                #unknown_fields_size_stmt
-                ::buffa::saturate_size(size)
-            }
-
-            fn write_to(
-                &self,
-                #cache_ident: &mut ::buffa::SizeCache,
-                #buf_param,
-            ) {
-                #[allow(unused_imports)]
-                use ::buffa::Enumeration as _;
-                #(#write_stmts)*
-                #unknown_fields_write_stmt
-            }
-
-            fn merge_field(
-                &mut self,
-                tag: ::buffa::encoding::Tag,
-                buf: &mut impl ::buffa::bytes::Buf,
-                ctx: ::buffa::DecodeContext<'_>,
-            ) -> ::core::result::Result<(), ::buffa::DecodeError> {
-                #[allow(unused_imports)]
-                use ::buffa::bytes::Buf as _;
-                #[allow(unused_imports)]
-                use ::buffa::Enumeration as _;
-                match tag.field_number() {
-                    #(#merge_arms)*
-                    #unknown_fields_merge_arm
-                }
-                ::core::result::Result::Ok(())
-            }
-
-            fn clear(&mut self) {
-                #(#clear_stmts)*
-                #unknown_fields_clear_stmt
-            }
-        }
+        #message_impl
 
         #extension_set_impl
     })

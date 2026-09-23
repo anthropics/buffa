@@ -1,0 +1,38 @@
+edition = "2023";
+
+// See table_codec.proto: compiled as `tc3u` (unrolled) and `tc3t` (table).
+// Editions features that change a field's presence, packing, enum openness, or
+// UTF-8 handling.
+package tc3;
+
+enum Closed {
+  option features.enum_type = CLOSED;
+  C_A = 0;
+  C_B = 1;
+}
+
+enum OpenE {
+  O_A = 0;
+  O_B = 1;
+}
+
+message Child {
+  int32 z = 1;
+}
+
+message E {
+  int32 explicit = 1;
+  int32 implicit = 2 [features.field_presence = IMPLICIT];
+  int32 required = 3 [features.field_presence = LEGACY_REQUIRED];
+  Closed closed = 4;
+  repeated int32 expanded = 6 [features.repeated_field_encoding = EXPANDED];
+  repeated int32 packed = 7;
+  repeated Closed closed_rep = 8;
+  OpenE open = 9;
+  string s = 10;
+  bytes b = 11;
+  string raw = 12 [features.utf8_validation = NONE];
+  Child child = 13;
+  repeated Child children = 14;
+  string implicit_s = 15 [features.field_presence = IMPLICIT];
+}

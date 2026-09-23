@@ -39,7 +39,7 @@ pub use buffa_codegen::FeatureGateNames;
 #[doc(inline)]
 pub use buffa_codegen::ReflectMode;
 #[doc(inline)]
-pub use buffa_codegen::{BytesRepr, MapRepr, PointerRepr, RepeatedRepr, StringRepr};
+pub use buffa_codegen::{BytesRepr, CodecStrategy, MapRepr, PointerRepr, RepeatedRepr, StringRepr};
 #[doc(inline)]
 pub use buffa_codegen::{EnumTypeOverride, FeatureOverride};
 
@@ -1446,6 +1446,81 @@ impl Config {
         self
     }
 
+    /// Choose how the binary `Message` implementation of every message is
+    /// generated (default: [`CodecStrategy::Unrolled`]).
+    ///
+    /// On a schema it fully covers, [`CodecStrategy::Table`] makes the
+    /// compiled size about half as big at `opt-level = "z"`, and it slows
+    /// messages made of many small fields; a message that cannot use it keeps
+    /// its size. [`CodecStrategy::Table`] has the measurements, says which
+    /// messages stay unrolled, and lists how a table message behaves
+    /// differently. This build reports
+    /// those in one `cargo:warning`. The option never changes the wire
+    /// format. The generated code needs Rust 1.77 or later, and `compile`
+    /// returns an error on an older compiler when a build script runs it (the
+    /// compiler is read from `RUSTC`).
+    ///
+    /// Path-scoped rules for individual messages go in
+    /// [`codec_strategy_in`](Self::codec_strategy_in), and take precedence
+    /// over this setting whatever the call order.
+    ///
+    /// ```rust,ignore
+    /// // build.rs
+    /// buffa_build::Config::new()
+    ///     .files(&["proto/wa.proto"])
+    ///     .includes(&["proto/"])
+    ///     .codec_strategy(buffa_build::CodecStrategy::Table)
+    ///     .codec_strategy_in(buffa_build::CodecStrategy::Unrolled, &[".wa.Message"])
+    ///     .compile()?;
+    /// ```
+    #[must_use]
+    pub fn codec_strategy(mut self, strategy: CodecStrategy) -> Self {
+        self.codegen_config.codec_strategy = strategy;
+        self
+    }
+
+    /// Choose the [`CodecStrategy`] of the matching messages, on top of the
+    /// global [`codec_strategy`](Self::codec_strategy).
+    ///
+    /// Each path is a fully-qualified proto path prefix, e.g. `".wa.Message"`
+    /// for one message or `".wa"` for a package (same matching as
+    /// [`preserve_unknown_fields_in`](Self::preserve_unknown_fields_in));
+    /// `"."` matches every message. A leading dot is added if missing,
+    /// trailing dots are trimmed, and a path that is empty after that prints a
+    /// `cargo:warning` and is ignored. A rule covers the message it names
+    /// **and every message nested inside it**. The **last** matching rule wins,
+    /// so call this after any broader rule.
+    ///
+    /// A message selected for the table by a rule that cannot use it stays
+    /// unrolled and is counted in the warning, and it is an error if the rule
+    /// names the message by its exact path. A rule that matches no message
+    /// produces a warning.
+    ///
+    /// A table message holds only table messages, and a rule does not extend
+    /// to the messages a message holds. Selecting a message with a rule
+    /// therefore also needs rules for everything it holds, unless the global
+    /// setting is [`CodecStrategy::Table`]. Choosing [`CodecStrategy::Unrolled`]
+    /// for a message keeps every message that holds it unrolled, with no
+    /// warning, and that usually includes the root message an application
+    /// encodes.
+    #[must_use]
+    pub fn codec_strategy_in(mut self, strategy: CodecStrategy, paths: &[impl AsRef<str>]) -> Self {
+        for raw in paths.iter().map(AsRef::as_ref) {
+            let normalized = normalize_override_path(raw);
+            if normalized.is_empty() {
+                println!(
+                    "cargo:warning=buffa: codec_strategy_in path '{raw}' \
+                     normalizes to empty and will be ignored"
+                );
+                continue;
+            }
+            self.codegen_config
+                .codec_strategy_in
+                .push((normalized, strategy));
+        }
+        self
+    }
+
     /// Map every message field (and boxed oneof variant) to the given [`PointerRepr`].
     /// Convenience for `.box_type_in(repr, &["."])`. Call before any
     /// [`box_type_in`](Self::box_type_in) overrides, since the last matching
@@ -1905,9 +1980,35 @@ impl Config {
     ///   missing imports, etc.)
     /// - a precompiled descriptor set file cannot be read
     /// - the descriptor set bytes cannot be decoded as a `FileDescriptorSet`
-    /// - code generation fails (e.g. unsupported proto feature)
+    /// - code generation fails (e.g. unsupported proto feature), including a
+    ///   [`codec_strategy_in`](Self::codec_strategy_in) rule that names by its
+    ///   exact path a message that cannot use the table codec
+    /// - [`CodecStrategy::Table`] is requested and the compiler is older than
+    ///   Rust 1.77
     /// - the output directory cannot be created or written to
     pub fn compile(self) -> Result<(), Box<dyn std::error::Error>> {
+        // Table code needs `offset_of!`, stable in Rust 1.77. Say so once here,
+        // and not once per field in the compiler's output.
+        let table_codec_requested = self.codegen_config.codec_strategy == CodecStrategy::Table
+            || self
+                .codegen_config
+                .codec_strategy_in
+                .iter()
+                .any(|(_, strategy)| *strategy == CodecStrategy::Table);
+        // Outside a build script `RUSTC` is unset, and the toolchain that
+        // compiles the generated code is unknown, so it is not checked.
+        if table_codec_requested {
+            if let Some(minor) = rustc_minor_version() {
+                if minor < 77 {
+                    return Err(format!(
+                        "CodecStrategy::Table needs Rust 1.77 or later, and this build uses \
+                         1.{minor}; use a newer compiler or select CodecStrategy::Unrolled"
+                    )
+                    .into());
+                }
+            }
+        }
+
         // Reject malformed `exclude_package` entries before protoc runs; the
         // codegen normalizes them again, but a typo should not cost a protoc
         // invocation to surface.
@@ -2156,6 +2257,29 @@ fn normalize_attr_path(mut path: String) -> String {
         }
     }
     path
+}
+
+/// The minor version of the compiler that builds the crate, if `RUSTC` names
+/// one and it can be read.
+fn rustc_minor_version() -> Option<u32> {
+    let rustc = std::env::var_os("RUSTC")?;
+    let output = std::process::Command::new(rustc)
+        .arg("--version")
+        .output()
+        .ok()?;
+    parse_rustc_minor_version(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// The minor version in the output of `rustc --version`, such as `75` in
+/// `rustc 1.75.0 (82e1608df 2023-12-21)`.
+fn parse_rustc_minor_version(version_output: &str) -> Option<u32> {
+    version_output
+        .split_whitespace()
+        .nth(1)?
+        .split('.')
+        .nth(1)?
+        .parse()
+        .ok()
 }
 
 /// Normalize an `override_feature_in` / `preserve_unknown_fields_in` /
@@ -2588,6 +2712,46 @@ mod tests {
                 ".my.pkg.Other".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn codec_strategy_in_normalizes_paths_and_keeps_rule_order() {
+        let config = Config::new()
+            .codec_strategy(CodecStrategy::Table)
+            .codec_strategy_in(CodecStrategy::Unrolled, &["my.pkg.Msg", ".my.pkg.Other."])
+            .codec_strategy_in(CodecStrategy::Table, &[" .my.pkg.Msg.Inner ", "."])
+            .codegen_config;
+        assert_eq!(config.codec_strategy, CodecStrategy::Table);
+        assert_eq!(
+            config.codec_strategy_in,
+            vec![
+                (".my.pkg.Msg".to_string(), CodecStrategy::Unrolled),
+                (".my.pkg.Other".to_string(), CodecStrategy::Unrolled),
+                (".my.pkg.Msg.Inner".to_string(), CodecStrategy::Table),
+                (".".to_string(), CodecStrategy::Table),
+            ]
+        );
+    }
+
+    #[test]
+    fn rustc_minor_version_is_read_from_the_version_line() {
+        assert_eq!(
+            parse_rustc_minor_version("rustc 1.75.0 (82e1608df 2023-12-21)"),
+            Some(75)
+        );
+        assert_eq!(
+            parse_rustc_minor_version("rustc 1.98.0-nightly (abc 2027-01-01)\n"),
+            Some(98)
+        );
+        assert_eq!(parse_rustc_minor_version(""), None);
+        assert_eq!(parse_rustc_minor_version("not rustc"), None);
+    }
+
+    #[test]
+    fn codec_strategy_defaults_to_unrolled() {
+        let config = Config::new().codegen_config;
+        assert_eq!(config.codec_strategy, CodecStrategy::Unrolled);
+        assert!(config.codec_strategy_in.is_empty());
     }
 
     #[test]

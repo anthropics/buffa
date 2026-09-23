@@ -36,6 +36,7 @@ Buffa fills this gap: a pure Rust implementation designed from the ground up wit
 The runtime library that generated code depends on. Contains:
 
 - **`Message` trait**: The central trait for owned message types, with two-pass `compute_size()` / `write_to()` serialization.
+- **`table`** (hidden): the interpreters behind table-driven message codecs; see [decision 13](#13-table-driven-codec-codecstrategytable).
 - **`MessageView` trait**: The trait for borrowed/zero-copy message views.
 - **`OwnedView<V>`**: Self-referential container that pairs a `Bytes` buffer with a decoded view, producing a `'static + Send + Sync` type suitable for async and RPC frameworks.
 - **`MessageField<T>`**: Ergonomic wrapper for optional message fields that dereferences to a default instance when unset.
@@ -554,6 +555,18 @@ The one ergonomic consequence is that buffa does **not** re-export the alternati
 Generating the *same* `.proto` in two crates without `extern_path`, and choosing different representations, produces two unrelated Rust types (`a::Foo`, `b::Foo`) that do not substitute for each other. This is the existing "don't generate one proto twice" anti-pattern, and `extern_path` — one definition, zero conversions — is the real fix. When a two-representation boundary is genuinely unavoidable, the conversion options are bounded by one fact: **every path must allocate the destination's string and bytes fields**, because two representations own separate buffers and ownership cannot transfer across them. That caps the achievable saving over a wire round-trip at the varint coding plus the intermediate buffer plus the reparse — real, but linear and modest.
 
 Within that bound, the shortcuts do not pay off. `merge` does not help: it consumes wire bytes, so a `Foo` must still be encoded first, and merging only reuses the target allocation rather than avoiding the round-trip. Reflection does not help today either — `a::Foo` can be read reflectively into a `DynamicMessage` (which erases the representation, since `ValueRef::String` is `&str`), but `ReflectMessageMut` is implemented only on `DynamicMessage`, not on generated types, so the return leg falls back to encode/decode. The theoretically cheapest conversion is a static field-by-field `impl From<a::Foo> for b::Foo` — no varint, no buffer, no dynamic dispatch, only the unavoidable destination allocations — but it must name both types, because Rust has no structural typing on which to hang a generic conversion. The recommendation is therefore to avoid the divergence with `extern_path`, and where a genuine two-representation boundary exists, to hand-write the `From` rather than reach for a wire round-trip or new machinery.
+
+### 13. Table-Driven Codec (`CodecStrategy::Table`)
+
+The size, write, and merge code of an unrolled message is specialised to its fields. `CodecStrategy::Table` (a per-message option, `Unrolled` by default) replaces it with a static `buffa::table::Table<M>` and a `Message` impl that forwards to interpreters in `buffa::table`. The measurements and the decision to keep `Unrolled` as the default are in [#463](https://github.com/anthropics/buffa/issues/463).
+
+A table holds a sorted array of 12-byte entries `{tag, offset, kind, tag_len, aux}`, a dense array that maps field numbers below 64 to entries, and the offset of the unknown-fields slot. `kind` is the field type crossed with its cardinality, so the interpreter dispatches once per field. Message, repeated-message, and enum fields carry a small descriptor (`Aux`) with the accessors that their storage needs, because a `MessageField`, a `Vec`, and an `EnumValue` cannot be read through an offset alone. Offsets come from `core::mem::offset_of!`, so the table needs Rust 1.77 and the generated code refers to it through `buffa::__table!`, which is a compile error on an older compiler.
+
+Three decisions shape the runtime:
+
+- **The `unsafe` lives in `buffa`.** `__table!` and `__table_entry!` contain the `unsafe` blocks and witness each field's type against its kind, so a table that names the wrong kind for a field does not compile, and generated code compiles under `#![forbid(unsafe_code)]`. `Table::new` also checks the layout constants at compile time. The interpreters run under Miri in CI.
+- **The interpreters are not generic over the sink or the input where that is avoidable.** `Message::encode` and its siblings write any `BufMut` through one shared, non-generic cursor (`buffa/src/encode_sink.rs`), and decoding runs over a contiguous `&[u8]`, so the interpreters are compiled once in `buffa`, at its `opt-level`, and not once per caller.
+- **A table refers to the tables of its children,** so a message can use the table only if every message it holds does. The planner in `buffa-codegen` (`table_plan.rs`) starts from the messages that asked for the table, removes those the interpreters cannot handle (oneofs, maps, groups and the types of group fields, `MessageSet`, extension ranges with JSON, custom string, bytes, or collection types), and then removes every message that holds a removed one, until none is left. A message that holds a type from another crate, such as a well-known type, is removed the same way, because the static table of that type is not visible.
 
 ### Owned decode: intentional throughput trade-offs
 

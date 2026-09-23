@@ -21,7 +21,7 @@ use buffa_codegen::generated::compiler::code_generator_response::File as CodeGen
 use buffa_codegen::generated::compiler::CodeGeneratorResponse;
 use buffa_codegen::generated::descriptor::Edition;
 
-use buffa_codegen::{CodeGenConfig, EnumTypeOverride, FeatureOverride};
+use buffa_codegen::{CodeGenConfig, CodecStrategy, EnumTypeOverride, FeatureOverride};
 
 const HELP: &str = "\
 protoc-gen-buffa — protoc plugin for generating Rust code with buffa.
@@ -324,6 +324,25 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     .unboxed_oneof_fields
                     .push(normalize_unbox_oneof_path(value.trim())?);
             }
+            // `codec_strategy=table` generates the binary `Message` impl of
+            // every message from a static table and shared interpreters
+            // (default `unrolled`). Path-scoped rules use the repeatable
+            // `codec_strategy_in=<path>=<strategy>`, whatever the option
+            // order; the last matching rule wins.
+            "codec_strategy" => codegen.codec_strategy = parse_codec_strategy(value)?,
+            "codec_strategy_in" => {
+                let (path, strategy) = value.rsplit_once('=').ok_or_else(|| {
+                    format!(
+                        "invalid codec_strategy_in format '{value}', expected \
+                         'codec_strategy_in=<proto_path>=<strategy>' \
+                         (e.g. 'codec_strategy_in=.my.pkg.Msg=unrolled')"
+                    )
+                })?;
+                codegen.codec_strategy_in.push((
+                    normalize_proto_path(path.trim(), "codec_strategy_in")?,
+                    parse_codec_strategy(strategy)?,
+                ));
+            }
             // `type_name_prefix=Rpc` prepends a prefix to every generated
             // message/enum type name (and their view types). The value is
             // passed through verbatim; buffa-codegen rejects anything that
@@ -475,6 +494,16 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
     }
 
     Ok(PluginConfig { codegen })
+}
+
+fn parse_codec_strategy(value: &str) -> Result<CodecStrategy, String> {
+    match value.trim() {
+        "unrolled" => Ok(CodecStrategy::Unrolled),
+        "table" => Ok(CodecStrategy::Table),
+        other => Err(format!(
+            "invalid codec strategy '{other}', expected 'unrolled' or 'table'"
+        )),
+    }
 }
 
 fn parse_bool(key: &str, value: &str) -> Result<bool, String> {
@@ -742,6 +771,42 @@ mod tests {
             assert!(err.contains("unbox_oneof_in rules"), "{params:?}: {err}");
             assert!(err.contains("non-empty proto path"), "{params:?}: {err}");
         }
+    }
+
+    #[test]
+    fn codec_strategy_sets_the_global_default_and_rules_are_repeatable() {
+        let config = parse_config(
+            "codec_strategy=table,codec_strategy_in=my.pkg.Msg=unrolled,\
+             codec_strategy_in= .my.pkg.Other. =table",
+        )
+        .unwrap();
+        assert_eq!(config.codegen.codec_strategy, CodecStrategy::Table);
+        assert_eq!(
+            config.codegen.codec_strategy_in,
+            vec![
+                (".my.pkg.Msg".to_string(), CodecStrategy::Unrolled),
+                (".my.pkg.Other".to_string(), CodecStrategy::Table),
+            ]
+        );
+        assert_eq!(
+            parse_config("").unwrap().codegen.codec_strategy,
+            CodecStrategy::Unrolled
+        );
+    }
+
+    #[test]
+    fn codec_strategy_rejects_unknown_strategies_and_malformed_rules() {
+        let err = parse_err("codec_strategy=fast");
+        assert!(err.contains("invalid codec strategy 'fast'"), "{err}");
+        let err = parse_err("codec_strategy_in=.my.pkg.Msg");
+        assert!(
+            err.contains("codec_strategy_in=<proto_path>=<strategy>"),
+            "{err}"
+        );
+        let err = parse_err("codec_strategy_in=.my.pkg.Msg=");
+        assert!(err.contains("invalid codec strategy ''"), "{err}");
+        let err = parse_err("codec_strategy_in==table");
+        assert!(err.contains("non-empty proto path"), "{err}");
     }
 
     #[test]

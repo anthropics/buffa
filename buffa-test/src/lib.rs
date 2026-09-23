@@ -1035,3 +1035,92 @@ mod tests;
 
 pub mod string_copy;
 pub mod string_copy_counted;
+
+// The table codec is tested by compiling a schema twice under renamed packages
+// and comparing the results (see `tests::table_codec`). `tcu`, `tc2u`, `tc3u`
+// and `wideu` use the default unrolled codec; `tct`, `tc2t`, `tc3t` and `widet`
+// are the same schemas with `codec_strategy = Table`, and `tcx` is `tct` again
+// with options that change the names and fields a table refers to. They exist
+// only on Rust 1.77 or later (see build.rs). The table modules forbid unsafe
+// code, which checks that the `unsafe` a table needs stays inside `buffa`'s
+// macros.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcu {
+    buffa::include_proto!("tcu");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tct {
+    buffa::include_proto!("tct");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc2u {
+    buffa::include_proto!("tc2u");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc2t {
+    buffa::include_proto!("tc2t");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc3u {
+    buffa::include_proto!("tc3u");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc3t {
+    buffa::include_proto!("tc3t");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod wideu {
+    buffa::include_proto!("wideu");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod widet {
+    buffa::include_proto!("widet");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcx {
+    buffa::include_proto!("tcx");
+}
+
+// Two packages, the second holding messages of the first: `xau`/`xbu` unrolled,
+// `xat`/`xbt` with the table codec, and `xti` with the table codec and
+// `file_per_package` with `idiomatic_imports`, which holds `xati` and `xbti`.
+#[cfg(has_table_codec)]
+pub mod xau {
+    buffa::include_proto!("xau");
+}
+#[cfg(has_table_codec)]
+pub mod xbu {
+    buffa::include_proto!("xbu");
+}
+#[forbid(unsafe_code)]
+#[cfg(has_table_codec)]
+pub mod xat {
+    buffa::include_proto!("xat");
+}
+#[forbid(unsafe_code)]
+#[cfg(has_table_codec)]
+pub mod xbt {
+    buffa::include_proto!("xbt");
+}
+#[forbid(unsafe_code)]
+#[cfg(has_table_codec)]
+pub mod xti {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/cross_package_idiomatic/_include.rs"
+    ));
+}

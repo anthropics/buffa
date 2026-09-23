@@ -121,6 +121,10 @@ pub struct CodeGenContext<'a> {
     ///
     /// [`generate_with_diagnostics`]: crate::generate_with_diagnostics
     warnings: std::cell::RefCell<Vec<crate::CodeGenWarning>>,
+    /// The messages generated with the table codec, planned by
+    /// [`plan_table_codec`](Self::plan_table_codec). Unset, which is the same
+    /// as empty, unless a table codec was requested.
+    table_plan: std::cell::OnceCell<crate::table_plan::TablePlan>,
     /// Field-rename exceptions for `CodeGenConfig::idiomatic_field_names`:
     /// `(proto_name, field_number)` → final Rust source name, present only
     /// for fields whose context-free snake_case conversion was adjusted by a
@@ -477,6 +481,7 @@ impl<'a> CodeGenContext<'a> {
             nested_module_names,
             unboxed_oneof_variants,
             inlined_message_fields,
+            table_plan: std::cell::OnceCell::new(),
             field_renames,
             oneof_keep_verbatim,
             warnings: std::cell::RefCell::new(plan_warnings),
@@ -1097,6 +1102,84 @@ impl<'a> CodeGenContext<'a> {
             .rev()
             .find(|(prefix, _)| matches_proto_prefix(prefix, &dotted))
             .map_or(self.config.preserve_unknown_fields, |(_, enabled)| *enabled)
+    }
+
+    /// The last [`CodeGenConfig::codec_strategy_in`] rule that covers this
+    /// message, if any: the rule that decided its strategy, as opposed to the
+    /// global default. `msg_fqn` is the message's proto path, with or without
+    /// a leading dot.
+    pub(crate) fn codec_strategy_rule(
+        &self,
+        msg_fqn: &str,
+    ) -> Option<&'a (String, crate::CodecStrategy)> {
+        let dotted = if msg_fqn.starts_with('.') {
+            Cow::Borrowed(msg_fqn)
+        } else {
+            Cow::Owned(format!(".{msg_fqn}"))
+        };
+        self.config
+            .codec_strategy_in
+            .iter()
+            .rev()
+            .find(|(prefix, _)| matches_proto_prefix(prefix, &dotted))
+    }
+
+    /// The codec strategy requested for this message.
+    ///
+    /// Starts from [`CodeGenConfig::codec_strategy`] and applies
+    /// [`CodeGenConfig::codec_strategy_in`]; the **last** matching rule wins.
+    /// This is what was asked for, and a message that cannot use
+    /// [`CodecStrategy::Table`] still gets it here: whether it does is
+    /// [`uses_table_codec`](Self::uses_table_codec).
+    pub(crate) fn codec_strategy(&self, msg_fqn: &str) -> crate::CodecStrategy {
+        self.codec_strategy_rule(msg_fqn)
+            .map_or(self.config.codec_strategy, |(_, strategy)| *strategy)
+    }
+
+    /// Whether any message may be asked for the table codec, so that
+    /// [`plan_table_codec`](Self::plan_table_codec) has work to do.
+    pub(crate) fn table_codec_requested(&self) -> bool {
+        self.config.codec_strategy == crate::CodecStrategy::Table
+            || self
+                .config
+                .codec_strategy_in
+                .iter()
+                .any(|(_, s)| *s == crate::CodecStrategy::Table)
+    }
+
+    /// Decide which messages use the table codec. Call once, after
+    /// construction, when [`table_codec_requested`](Self::table_codec_requested)
+    /// is true; warnings go to the diagnostics sink.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a `codec_strategy_in` rule that names, by its exact
+    /// path, a message that cannot use the table codec.
+    pub(crate) fn plan_table_codec(
+        &self,
+        files: &[crate::generated::descriptor::FileDescriptorProto],
+        files_to_generate: &[String],
+    ) -> Result<(), crate::CodeGenError> {
+        let (plan, warnings) = crate::table_plan::plan(self, files, files_to_generate)?;
+        for w in warnings {
+            self.warn(w);
+        }
+        let planned = self.table_plan.set(plan);
+        debug_assert!(planned.is_ok(), "the table codec is planned once per run");
+        Ok(())
+    }
+
+    /// Whether this message is generated with the table codec.
+    /// `msg_fqn` is the message's proto path, with or without a leading dot.
+    pub(crate) fn uses_table_codec(&self, msg_fqn: &str) -> bool {
+        let Some(plan) = self.table_plan.get() else {
+            return false;
+        };
+        if msg_fqn.starts_with('.') {
+            plan.contains(msg_fqn)
+        } else {
+            plan.contains(&format!(".{msg_fqn}"))
+        }
     }
 
     /// Whether this message's generated JSON deserializer rejects unknown

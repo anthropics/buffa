@@ -215,6 +215,8 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.extern_path(proto, rust)` | — | Map a proto package or a single type to an external Rust path (see below) |
 | `.exclude_package(pkg)` | — | Drop a proto package (and its sub-packages) from code generation. Useful when directory globbing pulls in option-only packages (e.g. `buf.validate`) that you don't want Rust types for. A leading dot is accepted and stripped. Pair with `.extern_path` if kept files reference types from the excluded package; the generator emits a `cargo:warning` for each such cross-package reference. |
 | `.type_name_prefix(prefix)` | `""` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`); modules, oneof enums, extern-mapped types, and the wire format are unaffected. A crate referencing these types via `extern_path` must spell out the prefixed name (`::crate_a::RpcUser`) |
+| `.codec_strategy(strategy)` | `Unrolled` | Generate each message's binary `Message` code specialised to its fields (`CodecStrategy::Unrolled`), or from a static table and interpreters shared by every message (`CodecStrategy::Table`), which on a schema it fully covers is about half the compiled size and slower on messages of many small fields; see [Smaller generated code](#smaller-generated-code-codec_strategy) |
+| `.codec_strategy_in(strategy, &[...])` | — | Choose the strategy for matching messages and the messages nested in them (proto-path prefixes; the last matching rule wins), on top of the global setting |
 | `.use_bytes_type()` | — | Use `bytes::Bytes` for all bytes fields, including `map<K, bytes>` values |
 | `.use_bytes_type_in(&[...])` | — | Use `bytes::Bytes` for matching bytes fields (same `map<K, bytes>` rule) |
 | `.string_type_custom(path)` | `String` | Use a custom owned string representation that implements `ProtoString`, named by Rust path (e.g. `"::my_crate::SmolStr"`), for all string fields (see [String and bytes field representations](#string-and-bytes-field-representations)) |
@@ -624,6 +626,8 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `type_name_prefix=<prefix>` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`) |
 | `override_feature_in=<path>=<feature>:<value>` | Apply a path-scoped editions feature override (currently `enum_type:OPEN`) to the compiled descriptors. Repeatable |
 | `open_enums_in=<path>` | Shorthand for `override_feature_in=<path>=enum_type:OPEN`. Repeatable |
+| `codec_strategy=table` | Generate every message's binary `Message` code from a static table and shared interpreters instead of code specialised to its fields (default `unrolled`). The plugin cannot check the compiler version: on Rust before 1.77 the generated code fails to compile. See [Smaller generated code](#smaller-generated-code-codec_strategy) |
+| `codec_strategy_in=<path>=<strategy>` | Choose `table` or `unrolled` for matching messages and the messages nested in them. Repeatable; leading dot optional; the last matching rule wins |
 | `unbox_oneof=true` | Store every non-recursive message/group oneof variant inline instead of `Box<T>`. Recursive variants stay boxed. |
 | `unbox_oneof_in=<path>` | Store matching non-recursive message/group oneof variants inline instead of `Box<T>`. Repeatable; leading dot optional. Use `.` to match all variants. Recursive variants stay boxed for broad matches; exact recursive matches are rejected. |
 | `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
@@ -1071,6 +1075,44 @@ Buffa uses a two-pass model to avoid the exponential-time size computation that 
 2. **`write_to(&self, cache, buf)`** — walks the tree again, consuming cached sizes for length-delimited sub-message headers.
 
 `encode()`, `encode_to_vec()`, and `encode_to_bytes()` perform both passes with a fresh `SizeCache` automatically — most callers never name the cache. Use `encoded_len()` if you only need the size.
+
+### Smaller generated code: `codec_strategy`
+
+By default every generated message contains its own size, write, and merge code, specialised to its fields. `CodecStrategy::Table` replaces it with one static table per message and interpreters in `buffa` that every message shares. On a schema of 334 messages and 3,477 fields, the compiled size at `opt-level = "z"` went from 1,644 KB to 817 KB (measured with oneofs and maps flattened, which the table cannot handle; see [#463](https://github.com/anthropics/buffa/issues/463) for the method). The cost is speed on messages made of many small fields, where encoding takes up to about 3.5 times as long as with the default `CodecStrategy::Unrolled` and decoding up to 1.6 times. Messages dominated by bulk data, such as large strings, bytes, and packed arrays, show no difference.
+
+```rust,ignore
+// build.rs
+buffa_build::Config::new()
+    .files(&["proto/wa.proto"])
+    .includes(&["proto/"])
+    .codec_strategy(buffa_build::CodecStrategy::Table)
+    // Keep the hot messages specialised.
+    .codec_strategy_in(buffa_build::CodecStrategy::Unrolled, &[".wa.Message", ".wa.Receipt"])
+    .compile()?;
+```
+
+A table holds only table messages, so a message that holds an unrolled one is unrolled too, and a `codec_strategy_in` rule for a message does not select the messages it holds: with the global setting left at `Unrolled`, select a message and everything it holds. In the example, every message that contains `.wa.Message` stays unrolled, and that usually includes the root message an application encodes; codegen does not warn about a fallback that follows from your own `Unrolled` rule.
+
+The option changes only the binary `Message` implementation. The wire format and the JSON, text, view, and reflection code are the same under both strategies, and a table message encodes to the same bytes and decodes the same accepted input as its unrolled twin. It differs in three ways:
+
+- A field that declares a length past the end of its enclosing message fails at once with `DecodeError::UnexpectedEof`, where unrolled code reads on into the enclosing message and can report a different error for the same rejected input.
+- The table decodes from one contiguous slice, so a `Buf` that is not contiguous is gathered into one buffer first. `Message::merge_field` on a table message cannot gather, and returns `UnexpectedEof` for such a buffer; only code that calls it directly is affected, such as the default `merge_group`. A message that another crate or another codegen run uses as the type of a group or `DELIMITED` field must therefore stay `Unrolled`. Within one run, codegen keeps the type of a group field unrolled itself.
+- `clear()` resets a table message to `Default`, so it releases the capacity of its strings and vectors instead of keeping it.
+
+These stay unrolled, whatever the setting:
+
+- a message with a `oneof`, a `map`, or a group field;
+- the message type of a group field;
+- a message that uses the `MessageSet` wire format;
+- a message with extension ranges, when JSON code is generated and unknown fields are preserved;
+- a message with a field of a non-default string, bytes, or collection type, which `use_bytes_type`, `string_type`, `bytes_type`, and `repeated_type` select;
+- a message that holds any message that stays unrolled, is not selected for the table, or is generated by another crate, such as a well-known type.
+
+Codegen prints one warning per run that counts the messages that fell back, groups them by reason, and names a few of each. Setting the messages that cause a fallback to `Unrolled` with `codec_strategy_in` silences it. A `codec_strategy_in` rule that selects the table for a message by its exact path, when the message cannot use it, is an error, because the rule asked for something impossible.
+
+The table code needs Rust 1.77 or later; `buffa-build` returns an error on an older compiler, and the plugin's output does not compile on one. It contains `unsafe` code, in macros inside `buffa`, so the generated code compiles in a crate with `#![forbid(unsafe_code)]`. The `buffa::table` module the code calls may change in any release, so regenerate the code whenever you update `buffa`; a mismatch is a compile error.
+
+`compute_size`, decoding from a contiguous buffer, and encoding into a `BufMut` are compiled in `buffa`, at the `opt-level` `buffa` is built with. A build that sets `opt-level = "z"` for everything can spend a little size to recover speed with `[profile.release.package.buffa] opt-level = 3`. Encoding into a sink that is not a `BufMut`, such as `Rope`, and the generic wrappers around decoding are compiled in your crate.
 
 ### Error handling
 
