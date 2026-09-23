@@ -27,7 +27,7 @@ fn main() {
     // so the no_std binary — built `--no-default-features` — omits it.
 
     // TestAllTypesProto3 with serde + textproto enabled.
-    buffa_build::Config::new()
+    config()
         .files(&["protos/google/protobuf/test_messages_proto3.proto"])
         .includes(&["protos/"])
         .generate_json(true)
@@ -39,7 +39,7 @@ fn main() {
         .expect("buffa_build failed for test_messages_proto3.proto");
 
     // TestAllTypesProto2 with serde + textproto enabled for proto2 conformance.
-    buffa_build::Config::new()
+    config()
         .files(&["protos/google/protobuf/test_messages_proto2.proto"])
         .includes(&["protos/"])
         .generate_json(true)
@@ -54,7 +54,7 @@ fn main() {
     // Editions test messages: proto3 behavior via editions.
     let editions_proto3 = protos_dir.join("editions/golden/test_messages_proto3_editions.proto");
     if editions_proto3.exists() {
-        buffa_build::Config::new()
+        config()
             .files(&[&editions_proto3])
             .includes(&[&protos_dir])
             .generate_json(true)
@@ -66,7 +66,7 @@ fn main() {
             .expect("buffa_build failed for test_messages_proto3_editions.proto");
 
         // Editions test messages: proto2 behavior via editions.
-        buffa_build::Config::new()
+        config()
             .files(&["protos/editions/golden/test_messages_proto2_editions.proto"])
             .includes(&["protos/"])
             .generate_json(true)
@@ -82,7 +82,7 @@ fn main() {
         // JSON enabled for the extension registry (the text `[pkg.ext]` bracket
         // syntax resolves through the same registry structs); text enabled for
         // the RunDelimitedTests suite.
-        buffa_build::Config::new()
+        config()
             .files(&["protos/conformance/test_protos/test_messages_edition2023.proto"])
             .includes(&["protos/"])
             .generate_json(true)
@@ -101,6 +101,19 @@ fn main() {
     // runtime decodes this into a DescriptorPool and round-trips conformance
     // binary input through DynamicMessage.
     emit_reflect_fds(&manifest_dir);
+}
+
+/// The generator configuration shared by every schema. With the crate's
+/// `table` feature it selects [`buffa_build::CodecStrategy::Table`], so that
+/// the via-table run drives the table codec through the corpus; the feature
+/// needs Rust 1.77, which `compile()` checks.
+fn config() -> buffa_build::Config {
+    let config = buffa_build::Config::new();
+    if std::env::var_os("CARGO_FEATURE_TABLE").is_some() {
+        config.codec_strategy(buffa_build::CodecStrategy::Table)
+    } else {
+        config
+    }
 }
 
 /// Write `OUT_DIR/conformance_protos.fds` containing the conformance test
