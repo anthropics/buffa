@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Textproto extension and `Any` names accept whitespace and `#` comments anywhere inside the brackets** (#462). protobuf-go and C++ read `[ pkg . ext ]` as `pkg.ext`, and also accept a comment after any part of the name. buffa trimmed only the whitespace next to the brackets, so such a name missed the type registry and failed as an unknown field, and a `]` inside a comment ended the name early. Only textproto whitespace is stripped, so a Unicode space such as U+00A0 next to a bracket, which was trimmed before, is now part of the name and the lookup fails.
+time: 2026-09-21T16:14:00+02:00

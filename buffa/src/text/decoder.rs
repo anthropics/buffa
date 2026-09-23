@@ -12,7 +12,8 @@ use alloc::vec::Vec;
 use super::error::{ParseError, ParseErrorKind};
 use super::string::{unescape, unescape_str, UnescapeError};
 use super::token::{
-    consume_ws, lex_number, number_for_parse, NumKind, ScalarKind, Token, TokenKind, Tokenizer,
+    consume_ws, lex_number, normalize_bracket_name, number_for_parse, NumKind, ScalarKind, Token,
+    TokenKind, Tokenizer,
 };
 
 /// Stateful textproto reader.
@@ -628,12 +629,14 @@ impl<'a> TextDecoder<'a> {
     ///
     /// `name` is the bracketed name as returned by
     /// [`read_field_name`](Self::read_field_name), e.g.
-    /// `"[type.googleapis.com/pkg.Foo]"`. The brackets are stripped here and
-    /// the result is looked up in the global text-format `Any` map (installed
-    /// via [`set_type_registry`]); the registered `text_merge` then consumes
-    /// the `{ ... }` body and re-encodes to wire bytes suitable for `Any.value`.
+    /// `"[type.googleapis.com/pkg.Foo]"`. The brackets, and any whitespace or
+    /// `#` comments between them, are stripped here and the result is looked
+    /// up in the global text-format `Any` map (installed via
+    /// [`set_type_registry`]); the registered `text_merge` then consumes the
+    /// `{ ... }` body and re-encodes to wire bytes suitable for `Any.value`.
     ///
-    /// Returns `(stripped_url, value_bytes)`.
+    /// Returns `(type_url, value_bytes)`, where `type_url` is the registered
+    /// URL with no brackets, whitespace or comments.
     ///
     /// # Errors
     ///
@@ -645,24 +648,20 @@ impl<'a> TextDecoder<'a> {
     pub fn read_any_expansion(&mut self, name: &'a str) -> Result<(&'a str, Vec<u8>), ParseError> {
         // read_field_name only returns bracketed names for NameKind::TypeName;
         // a missing bracket here means the caller dispatched wrong.
-        // trim: the grammar permits whitespace inside brackets, and
-        // `Token.raw` is a slice of the input so it preserves that.
-        let url = name
-            .strip_prefix('[')
-            .and_then(|s| s.strip_suffix(']'))
-            .map(str::trim)
+        let url = normalize_bracket_name(name).ok_or_else(|| self.unknown_field())?;
+        let entry = crate::type_registry::global_text_any(url.as_ref())
             .ok_or_else(|| self.unknown_field())?;
-        let entry =
-            crate::type_registry::global_text_any(url).ok_or_else(|| self.unknown_field())?;
         let bytes = (entry.text_merge)(self)?;
-        Ok((url, bytes))
+        // The registry is keyed by `type_url`, so this is the normalized URL.
+        Ok((entry.type_url, bytes))
     }
 
     /// Parse an extension bracket body: the `[pkg.ext] { ... }` form.
     ///
     /// `name` is the bracketed name as returned by
-    /// [`read_field_name`](Self::read_field_name). The brackets are stripped
-    /// and the result is looked up by `full_name` in the global text-format
+    /// [`read_field_name`](Self::read_field_name). The brackets, and any
+    /// whitespace or `#` comments between them, are stripped and the result
+    /// is looked up by `full_name` in the global text-format
     /// extension map (installed via [`set_type_registry`]); the registered
     /// `text_merge` consumes the value and produces unknown-field records at
     /// the extension's field number.
@@ -680,12 +679,8 @@ impl<'a> TextDecoder<'a> {
         name: &str,
         extendee: &str,
     ) -> Result<Vec<crate::UnknownField>, ParseError> {
-        let full = name
-            .strip_prefix('[')
-            .and_then(|s| s.strip_suffix(']'))
-            .map(str::trim)
-            .ok_or_else(|| self.unknown_field())?;
-        let Some(entry) = crate::type_registry::global_text_ext_by_name(full) else {
+        let full = normalize_bracket_name(name).ok_or_else(|| self.unknown_field())?;
+        let Some(entry) = crate::type_registry::global_text_ext_by_name(full.as_ref()) else {
             return Err(self.unknown_field());
         };
         if entry.extendee != extendee {

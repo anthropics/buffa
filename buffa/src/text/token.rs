@@ -540,11 +540,19 @@ impl<'a> Tokenizer<'a> {
 
         // Bracketed type name: extension or Any URL.
         if rest[0] == b'[' {
-            // Scan to the matching `]`. Whitespace inside is permitted and
-            // preserved in `raw`; the decoder strips it when comparing.
+            // Scan to the matching `]`, skipping `# ...` comments so a `]`
+            // inside one does not close the name. `raw` keeps the trivia.
             let mut i = 1;
-            while i < rest.len() && rest[i] != b']' {
-                i += 1;
+            while i < rest.len() {
+                match rest[i] {
+                    b']' => break,
+                    b'#' => {
+                        while i < rest.len() && rest[i] != b'\n' {
+                            i += 1;
+                        }
+                    }
+                    _ => i += 1,
+                }
             }
             if i >= rest.len() {
                 return Err(self.err(start, ParseErrorKind::UnexpectedEof));
@@ -949,6 +957,33 @@ pub(super) fn consume_ws(mut s: &[u8]) -> &[u8] {
     }
 }
 
+/// Strip the brackets, whitespace and comments from a bracketed field name.
+/// Returns `None` if `name` is not bracketed.
+///
+/// Whitespace and comments may appear anywhere between `[` and `]`, even
+/// inside an identifier: `[pkg.e xt]` names `pkg.ext`. protobuf-go and C++
+/// both collect the name characters and discard everything else. A name with
+/// no trivia stays borrowed.
+pub(super) fn normalize_bracket_name(name: &str) -> Option<alloc::borrow::Cow<'_, str>> {
+    let is_trivia_start = |b: u8| is_textproto_ws(b) || b == b'#';
+    let inner = name.strip_prefix('[')?.strip_suffix(']')?;
+    if !inner.bytes().any(is_trivia_start) {
+        return Some(alloc::borrow::Cow::Borrowed(inner));
+    }
+
+    let mut out = alloc::string::String::with_capacity(inner.len());
+    let mut rest = inner;
+    while !rest.is_empty() {
+        // `consume_ws` cuts at 0, after an ASCII byte or at the end of input,
+        // and `position` finds an ASCII byte, so both cuts are char boundaries.
+        rest = &rest[rest.len() - consume_ws(rest.as_bytes()).len()..];
+        let end = rest.bytes().position(is_trivia_start).unwrap_or(rest.len());
+        out.push_str(&rest[..end]);
+        rest = &rest[end..];
+    }
+    Some(alloc::borrow::Cow::Owned(out))
+}
+
 /// Lex a run of one-or-more adjacent string literals. Returns the total byte
 /// length including all quotes and any inter-literal whitespace/comments.
 ///
@@ -1135,6 +1170,60 @@ mod tests {
             assert_eq!(tok.name_kind, want_kind, "input: {input}");
             assert_eq!(tok.raw, want_raw, "input: {input}");
             assert_eq!(tok.has_separator, want_sep, "input: {input}");
+        }
+    }
+
+    #[test]
+    fn bracket_name_comment_may_contain_close_bracket() {
+        let input = "[pkg # ] and é are comment text\n .ext]: 1";
+        let mut t = Tokenizer::new(input);
+        let tok = t.read().unwrap();
+        assert_eq!(tok.kind, TokenKind::Name);
+        assert_eq!(tok.name_kind, NameKind::TypeName);
+        assert_eq!(tok.raw, "[pkg # ] and é are comment text\n .ext]");
+    }
+
+    #[test]
+    fn normalize_bracket_name_trivia() {
+        assert!(matches!(
+            normalize_bracket_name("[pkg.ext]"),
+            Some(alloc::borrow::Cow::Borrowed("pkg.ext"))
+        ));
+
+        #[rustfmt::skip]
+        let cases = [
+            ("[ pkg . ext ]", "pkg.ext"),
+            ("[pkg# comment\n.ext]", "pkg.ext"),
+            ("[pkg # ] and é are comment text\n . ext]", "pkg.ext"),
+            ("[type.googleapis.com / pkg . Msg]", "type.googleapis.com/pkg.Msg"),
+            ("[type.googleapis.com/# comment\npkg.Msg]", "type.googleapis.com/pkg.Msg"),
+            // Trivia inside an identifier.
+            ("[pkg.e xt]", "pkg.ext"),
+            ("[pkg.e# comment\nxt]", "pkg.ext"),
+            // Non-ASCII characters pass through unchanged.
+            ("[ pkg.é ]", "pkg.é"),
+            // A comment with no newline runs to the end of the name.
+            ("[pkg.ext # comment]", "pkg.ext"),
+            ("[ # only a comment\n ]", ""),
+        ];
+        for (input, want) in cases {
+            assert_eq!(
+                normalize_bracket_name(input).as_deref(),
+                Some(want),
+                "input: {input:?}"
+            );
+        }
+
+        for unbracketed in ["pkg.ext", "[pkg.ext", "pkg.ext]", ""] {
+            assert_eq!(normalize_bracket_name(unbracketed), None);
+        }
+    }
+
+    #[test]
+    fn bracket_name_closed_only_inside_a_comment_is_unterminated() {
+        for input in ["[pkg # ]", "[pkg # ]\n .ext"] {
+            let err = Tokenizer::new(input).read().unwrap_err();
+            assert_eq!(err.kind, ParseErrorKind::UnexpectedEof, "input: {input:?}");
         }
     }
 
