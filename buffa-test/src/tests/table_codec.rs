@@ -1126,6 +1126,81 @@ fn well_known_types_held_by_a_table_message_agree() {
     assert_eq!(wire, [0x0a, 0x00, 0x3a, 0x00]);
 }
 
+/// The tests that compare a table message with an unrolled one that it holds
+/// mean nothing if the rule that leaves the child unrolled stops matching, so
+/// these check the generated code itself.
+#[test]
+fn the_children_set_to_unrolled_have_no_table_and_their_holders_reach_them_through_the_message_impl(
+) {
+    let out = |file: &str| match file {
+        "brt" => include_str!(concat!(env!("OUT_DIR"), "/brt.rs")),
+        "xat" => include_str!(concat!(env!("OUT_DIR"), "/xat.rs")),
+        "xbt" => include_str!(concat!(env!("OUT_DIR"), "/xbt.rs")),
+        "xati" => include_str!(concat!(env!("OUT_DIR"), "/cross_package_idiomatic/xati.rs")),
+        "xbti" => include_str!(concat!(env!("OUT_DIR"), "/cross_package_idiomatic/xbti.rs")),
+        "xft" => include_str!(concat!(env!("OUT_DIR"), "/xft.rs")),
+        _ => unreachable!(),
+    };
+    // `Hot` is unrolled, and `Cold`, which holds it, is a table.
+    let bridge = out("brt");
+    assert!(bridge.contains("pub struct Hot "));
+    assert!(!bridge.contains("__BUFFA_TABLE_Hot"));
+    assert!(bridge.contains("static __BUFFA_TABLE_Cold"));
+    assert!(bridge.contains("new_via_message"));
+    // `Cold` is unrolled in every layout of the cross-package schema, and
+    // `Holder` reaches it and the tables of `Leaf` and `Wrap` next to it.
+    for (dep, user) in [("xat", "xbt"), ("xati", "xbti")] {
+        assert!(out(dep).contains("pub struct Cold "), "{dep}");
+        assert!(!out(dep).contains("__BUFFA_TABLE_Cold"), "{dep}");
+        assert!(out(dep).contains("static __BUFFA_TABLE_Leaf"), "{dep}");
+        assert!(out(user).contains("new_via_message"), "{user}");
+        assert!(out(user).contains("static __BUFFA_TABLE_Holder"), "{user}");
+    }
+    // The messages of `xe` come from another crate, so `Holder` cannot name
+    // their tables.
+    assert!(out("xft").contains("new_via_message"));
+}
+
+/// `Any.value` is a `Bytes` in `buffa-types`, which codegen cannot inspect, so
+/// a table message that holds an `Any` copies the payload out of the slice it
+/// decodes from, where its unrolled twin shares it with a `Bytes` input. The
+/// documentation names this, so it is pinned here.
+#[test]
+fn a_table_message_copies_the_payload_of_an_any_it_holds() {
+    use buffa::bytes::Bytes;
+    use buffa::MessageField;
+    use buffa_types::google::protobuf::Any;
+    fn any(fill: u8) -> Any {
+        let mut any = Any::default();
+        any.type_url = "type.googleapis.com/x".into();
+        any.value = Bytes::from(vec![fill; 64]);
+        any
+    }
+    macro_rules! sample {
+        ($m:ident) => {
+            crate::$m::Wkt {
+                any: MessageField::some(any(1)),
+                anys: vec![any(2), any(3)],
+                ..Default::default()
+            }
+        };
+    }
+    let wire = assert_same_codec(&sample!(bru), &sample!(brt));
+    let src = Bytes::from(wire);
+    let range = src.as_ptr() as usize..src.as_ptr() as usize + src.len();
+    let aliases = |b: &Bytes| range.contains(&(b.as_ptr() as usize));
+
+    let unrolled = crate::bru::Wkt::decode(&mut src.clone()).unwrap();
+    let table = crate::brt::Wkt::decode(&mut src.clone()).unwrap();
+    assert_eq!(unrolled.any.as_option().unwrap().value, any(1).value);
+    assert_eq!(table.any.as_option().unwrap().value, any(1).value);
+    assert!(aliases(&unrolled.any.as_option().unwrap().value));
+    assert!(unrolled.anys.iter().all(|a| aliases(&a.value)));
+    assert!(!aliases(&table.any.as_option().unwrap().value));
+    assert!(table.anys.iter().all(|a| !aliases(&a.value)));
+    assert_eq!(table.anys, unrolled.anys);
+}
+
 #[test]
 fn messages_from_another_crate_agree() {
     macro_rules! sample {

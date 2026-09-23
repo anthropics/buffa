@@ -413,7 +413,8 @@ fn setting_a_message_to_unrolled_does_not_affect_the_messages_that_hold_it() {
     );
     assert_eq!(summary(&warnings).0, (1, 6));
 
-    // With the one that cannot set to unrolled as well, nothing is left to say.
+    // Once the message that cannot use the table is set to unrolled too, no
+    // fallback is left to report.
     let config = CodeGenConfig {
         codec_strategy_in: vec![
             (".t.Leaf".to_string(), CodecStrategy::Unrolled),
@@ -828,8 +829,8 @@ fn a_bytes_type_for_every_field_keeps_the_holders_of_every_bytes_message_unrolle
         ..table_config(CodecStrategy::Table)
     };
     let (code, _) = run_bytes(&config).unwrap();
-    // With this rule `PlainBytes` has a `Bytes` field, and so is everything
-    // that holds it unrolled.
+    // With this rule `PlainBytes` has a `Bytes` field, so it stays unrolled and
+    // so does every message that holds it.
     assert_eq!(tables(&code), ["Leaf", "HoldsLeaf"]);
 }
 
@@ -853,4 +854,168 @@ fn an_exact_path_rule_for_a_holder_of_a_bytes_typed_message_is_an_error() {
     let err = run_bytes(&config).unwrap_err().to_string();
     assert!(err.contains("cannot use it"), "{err}");
     assert!(err.contains("it holds `.b.Blob`"), "{err}");
+}
+
+// ---------------------------------------------------------------------------
+// How far the bytes rule reaches
+// ---------------------------------------------------------------------------
+
+fn repeated_bytes_field(name: &str, number: i32) -> FieldDescriptorProto {
+    FieldDescriptorProto {
+        label: Some(Label::LABEL_REPEATED),
+        ..bytes_field(name, number)
+    }
+}
+
+/// A message with the one map field `m` whose entries have a key and a value
+/// of the given types.
+fn message_with_map(name: &str, key: Type, value: Type) -> DescriptorProto {
+    let mut msg = message(
+        name,
+        vec![repeated_message_field("m", 1, &format!(".c.{name}.MEntry"))],
+    );
+    msg.nested_type = vec![DescriptorProto {
+        name: Some("MEntry".to_string()),
+        field: vec![scalar("key", 1, key), scalar("value", 2, value)],
+        options: (MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        })
+        .into(),
+        ..Default::default()
+    }];
+    msg
+}
+
+/// Package `c` with:
+///
+/// - `ChainA` holds `ChainB` holds `ChainC` holds `Blob`, declared holder
+///   first, so a holder is judged before the message it holds;
+/// - `CycleP` and `CycleQ` hold each other, and `CycleQ` has a bytes field, and
+///   `CycleX` and `CycleY` hold each other and have none;
+/// - `RepBytes` (a repeated bytes field), `MapBytes` (a `map<string, bytes>`)
+///   and `Outer.Inner` (a nested message), each with a holder;
+/// - `BytesKeyMap`, a `map<bytes, bytes>`, whose values keep `Vec<u8>` whatever
+///   the rule says, and its holder. Protoc rejects a bytes key, so only a
+///   hand-built descriptor can have one.
+fn taint_schema() -> FileDescriptorProto {
+    let mut outer = message("Outer", vec![]);
+    outer.nested_type = vec![message("Inner", vec![bytes_field("data", 1)])];
+    FileDescriptorProto {
+        package: Some("c".to_string()),
+        message_type: vec![
+            message("ChainA", vec![message_field("b", 1, ".c.ChainB")]),
+            message("ChainB", vec![message_field("c", 1, ".c.ChainC")]),
+            message("ChainC", vec![message_field("blob", 1, ".c.Blob")]),
+            message("Blob", vec![bytes_field("data", 1)]),
+            message("CycleP", vec![message_field("q", 1, ".c.CycleQ")]),
+            message(
+                "CycleQ",
+                vec![message_field("p", 1, ".c.CycleP"), bytes_field("data", 2)],
+            ),
+            message("CycleX", vec![message_field("y", 1, ".c.CycleY")]),
+            message("CycleY", vec![message_field("x", 1, ".c.CycleX")]),
+            message("RepBytes", vec![repeated_bytes_field("chunks", 1)]),
+            message("HoldsRepBytes", vec![message_field("r", 1, ".c.RepBytes")]),
+            message_with_map("MapBytes", Type::TYPE_STRING, Type::TYPE_BYTES),
+            message("HoldsMapBytes", vec![message_field("m", 1, ".c.MapBytes")]),
+            message_with_map("BytesKeyMap", Type::TYPE_BYTES, Type::TYPE_BYTES),
+            message(
+                "HoldsBytesKeyMap",
+                vec![message_field("m", 1, ".c.BytesKeyMap")],
+            ),
+            outer,
+            message("HoldsInner", vec![message_field("i", 1, ".c.Outer.Inner")]),
+        ],
+        ..proto3_file("c.proto")
+    }
+}
+
+/// What the plan made of `taint_schema`.
+struct Taint {
+    tables: Vec<String>,
+    /// The messages that fell back and the messages selected.
+    counts: (usize, usize),
+    /// The messages that fell back for holding a message with a bytes type.
+    holders: usize,
+}
+
+/// The table strategy with every bytes field of `taint_schema` stored as
+/// `Bytes`.
+fn run_taint() -> Taint {
+    let config = CodeGenConfig {
+        bytes_fields: [
+            ".c.Blob.data",
+            ".c.CycleQ.data",
+            ".c.RepBytes.chunks",
+            ".c.MapBytes.m",
+            ".c.BytesKeyMap.m",
+            ".c.Outer.Inner.data",
+        ]
+        .map(|path| (path.to_string(), BytesRepr::Bytes))
+        .to_vec(),
+        ..table_config(CodecStrategy::Table)
+    };
+    let (files, warnings) =
+        generate_with_diagnostics(&[taint_schema()], &["c.proto".to_string()], &config).unwrap();
+    let (counts, reasons) = summary(&warnings);
+    let holders = reasons
+        .iter()
+        .find_map(|&(reason, n)| (reason == HOLDS_BYTES).then_some(n))
+        .unwrap_or(0);
+    Taint {
+        tables: tables(&joined(&files)),
+        counts,
+        holders,
+    }
+}
+
+#[test]
+fn a_chain_of_holders_declared_holder_first_is_unrolled_all_the_way() {
+    let tables = run_taint().tables;
+    for name in ["ChainA", "ChainB", "ChainC", "Blob"] {
+        assert!(!tables.contains(&name.to_string()), "{name}: {tables:?}");
+    }
+}
+
+#[test]
+fn a_cycle_that_reaches_a_bytes_message_is_unrolled_and_one_that_does_not_is_not() {
+    let tables = run_taint().tables;
+    for name in ["CycleP", "CycleQ"] {
+        assert!(!tables.contains(&name.to_string()), "{name}: {tables:?}");
+    }
+    for name in ["CycleX", "CycleY"] {
+        assert!(tables.contains(&name.to_string()), "{name}: {tables:?}");
+    }
+}
+
+#[test]
+fn a_message_holding_repeated_map_or_nested_bytes_is_unrolled() {
+    let plan = run_taint();
+    for name in ["HoldsRepBytes", "HoldsMapBytes", "HoldsInner"] {
+        assert!(
+            !plan.tables.contains(&name.to_string()),
+            "{name}: {:?}",
+            plan.tables
+        );
+    }
+    // A message with a plain nested declaration is unaffected.
+    assert!(
+        plan.tables.contains(&"Outer".to_string()),
+        "{:?}",
+        plan.tables
+    );
+    // The holders counted under the one reason are the three above, the chain
+    // and the cycle.
+    assert_eq!(plan.holders, 7);
+    assert_eq!(plan.counts, (13, 17));
+}
+
+#[test]
+fn a_map_with_a_bytes_key_keeps_vec_values_so_its_holder_uses_the_table() {
+    let tables = run_taint().tables;
+    assert!(
+        tables.contains(&"HoldsBytesKeyMap".to_string()),
+        "{tables:?}"
+    );
 }
