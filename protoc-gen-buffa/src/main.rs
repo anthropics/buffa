@@ -325,8 +325,8 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     .push(normalize_unbox_oneof_path(value.trim())?);
             }
             // `codec_strategy=table` generates the binary `Message` impl of
-            // every message from a static table and shared interpreters
-            // (default `unrolled`). Path-scoped rules use the repeatable
+            // each message the table can handle from a static table and shared
+            // interpreters (default `unrolled`). Path-scoped rules use the repeatable
             // `codec_strategy_in=<path>=<strategy>`, whatever the option
             // order; the last matching rule wins.
             "codec_strategy" => codegen.codec_strategy = parse_codec_strategy(value)?,

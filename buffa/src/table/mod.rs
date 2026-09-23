@@ -32,7 +32,11 @@
 //!   gathered into a buffer first, and a field that declares a length past
 //!   the end of its enclosing message fails at once with
 //!   [`DecodeError::UnexpectedEof`], where unrolled code reads on into the
-//!   enclosing message and can report a different error.
+//!   enclosing message and can report a different error. A child reached
+//!   through its [`Message`](crate::Message) impl is read from the slice of
+//!   the nearest enclosing table message, so a read that overruns it fails
+//!   at that message's end, and not where a tree of unrolled messages would
+//!   notice.
 //! - [`Table::merge_field`] decodes one field and cannot gather, so it
 //!   returns [`DecodeError::UnexpectedEof`] for a buffer that is not one
 //!   chunk. Only a caller that drives `merge_field` itself is affected, such
@@ -40,6 +44,13 @@
 //!   group field must not use the table strategy.
 //! - [`clear`](crate::Message::clear) resets to `Default`, which releases
 //!   allocations that unrolled code keeps.
+//! - A child reached through its [`Message`](crate::Message) impl (see
+//!   [`MsgVt::new_via_message`]) has the same wire format and accepts the same
+//!   input, but it is staged in a scratch buffer and copied when it is written
+//!   to any sink other than the cursor that `Message::encode` and its siblings
+//!   write a [`BufMut`](crate::bytes::BufMut) through, and its `bytes::Bytes`
+//!   fields are copied out of the slice it is decoded from, where unrolled
+//!   code decoding from a `Bytes` shares them with the input.
 //!
 //! # Where the code is compiled
 //!
@@ -47,10 +58,10 @@
 //! [`BufMut`](crate::bytes::BufMut) through `Message::encode` and its
 //! siblings are non-generic functions compiled in this crate, at this crate's
 //! optimisation level, once for all messages. A build can therefore optimise
-//! this crate for speed and its own generated code for size. Encoding into a
-//! sink that is not a `BufMut`, such as [`Rope`](crate::Rope), and the
-//! generic wrappers around decoding are instantiated in the crate that calls
-//! them.
+//! this crate for speed and its own generated code for size. Encoding into
+//! any other sink, such as a [`Rope`](crate::Rope) or a `BufMut` passed
+//! straight to `Message::write_to`, and the generic wrappers around
+//! decoding are instantiated in the crate that calls them.
 
 use core::marker::PhantomData;
 
@@ -298,6 +309,7 @@ pub trait KindSlot {
 kind_table!(define_kind);
 
 // After the macros above, whose textual scope covers only what follows them.
+mod bridge;
 mod decode;
 mod encode;
 mod scalar;
@@ -479,8 +491,7 @@ impl<M> Table<M> {
     ///   `Bytes*`: `Vec<u8>`, `Option<Vec<u8>>` or `Vec<Vec<u8>>`;
     /// - `Enum*`: the storage the entry's [`EnumVt`] was built for;
     /// - `MsgSingular`: the storage the [`MsgVt`] was built for, and
-    ///   `MsgRepeated`: a `Vec` of the messages the [`RepVt`]'s table
-    ///   describes.
+    ///   `MsgRepeated`: the `Vec` the [`RepVt`] was built for.
     ///
     /// `unknown`, if present, must be the offset of a field of type
     /// `UnknownFields`. The `__table_entry!` macro checks the field types

@@ -4,9 +4,10 @@
 
 use core::marker::PhantomData;
 
+use super::bridge::Child;
 use super::{Table, IMPLICIT, OPTIONAL, REPEATED};
 use crate::alloc::vec::Vec;
-use crate::{EnumValue, Enumeration, MessageField, ProtoBox};
+use crate::{EnumValue, Enumeration, Message, MessageField, ProtoBox};
 
 // ---------------------------------------------------------------------------
 // Singular message fields
@@ -36,10 +37,10 @@ impl<T: Default, P: ProtoBox<T>> MsgSlot for MessageField<T, P> {
     }
 }
 
-/// Descriptor of a singular message field: the child's table and how to reach
-/// the child through the field's storage.
+/// Descriptor of a singular message field: how to encode, size and decode the
+/// child and how to reach it through the field's storage.
 pub struct MsgVt {
-    pub(super) table: &'static super::MessageTable,
+    pub(super) child: Child,
     /// The message in the field, created with its default if unset.
     ///
     /// # Safety
@@ -74,11 +75,30 @@ unsafe fn get_impl<F: MsgSlot>(slot: *const u8) -> *const u8 {
 }
 
 impl MsgVt {
-    /// Describe a field of type `F`, whose messages `table` describes.
+    /// Describe a field of type `F`, whose message is a table message and
+    /// `table` is its table.
     #[must_use]
     pub const fn new<F: MsgSlot>(table: &'static Table<F::Msg>) -> Self {
         Self {
-            table: &table.raw,
+            child: Child::Table(&table.raw),
+            place: place_impl::<F>,
+            get: get_impl::<F>,
+        }
+    }
+
+    /// Describe a field of type `F` whose message is reached through its
+    /// [`Message`] impl, for a message whose table is not visible here.
+    /// Prefer [`MsgVt::new`] when it is, because the interpreters then decode
+    /// the child without a function call. The child is decoded from a slice,
+    /// so its `bytes::Bytes` fields are copied, where unrolled code decoding
+    /// from a `Bytes` shares them.
+    #[must_use]
+    pub const fn new_via_message<F: MsgSlot>() -> Self
+    where
+        F::Msg: Message,
+    {
+        Self {
+            child: Child::of::<F::Msg>(),
             place: place_impl::<F>,
             get: get_impl::<F>,
         }
@@ -91,7 +111,7 @@ impl MsgVt {
 
 /// Descriptor of a repeated message field, a `Vec<T>`.
 pub struct RepVt {
-    pub(super) table: &'static super::MessageTable,
+    pub(super) child: Child,
     /// The size in bytes of one element.
     pub(super) size: usize,
     /// Append a default element and return a pointer to it.
@@ -144,11 +164,26 @@ unsafe fn parts_impl<T>(slot: *const u8) -> (*const u8, usize) {
 }
 
 impl RepVt {
-    /// Describe a `Vec<T>` field, whose messages `table` describes.
+    /// Describe a `Vec<T>` field whose messages are table messages, `table`
+    /// being their table.
     #[must_use]
     pub const fn new<T: Default>(table: &'static Table<T>) -> Self {
         Self {
-            table: &table.raw,
+            child: Child::Table(&table.raw),
+            size: core::mem::size_of::<T>(),
+            push: push_impl::<T>,
+            pop: pop_impl::<T>,
+            parts: parts_impl::<T>,
+        }
+    }
+
+    /// Describe a `Vec<T>` field whose messages are reached through their
+    /// [`Message`] impl. Like [`MsgVt::new_via_message`], it copies the
+    /// `bytes::Bytes` fields of the elements when it decodes.
+    #[must_use]
+    pub const fn new_via_message<T: Message>() -> Self {
+        Self {
+            child: Child::of::<T>(),
             size: core::mem::size_of::<T>(),
             push: push_impl::<T>,
             pop: pop_impl::<T>,

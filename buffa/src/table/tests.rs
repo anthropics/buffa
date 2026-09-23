@@ -3,9 +3,10 @@
 use super::*;
 use crate::alloc::{string::String, vec, vec::Vec};
 use crate::bytes::Buf;
+use crate::encoding::WireType;
 use crate::{
-    DecodeOptions, EnumValue, Enumeration, Inline, Message, MessageField, Rope, UnknownFieldData,
-    UnknownFields,
+    types, DecodeOptions, EnumValue, Enumeration, Inline, Message, MessageField, Rope,
+    UnknownFieldData, UnknownFields,
 };
 
 // ---------------------------------------------------------------------------
@@ -1000,4 +1001,514 @@ fn writing_through_a_nested_cursor_continues_after_the_bytes_already_written() {
     let mut rope = Rope::new();
     msg.encode(&mut rope);
     assert_eq!(&rope.to_contiguous_bytes()[..], &expected[..]);
+}
+
+// ---------------------------------------------------------------------------
+// Children without a table
+// ---------------------------------------------------------------------------
+
+/// `int32 n = 1; string s = 2; Hand next = 3; Inner inner = 4;`, written by
+/// hand as the unrolled codec writes a message, so that it has no table.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Hand {
+    n: i32,
+    s: String,
+    next: MessageField<Hand>,
+    inner: MessageField<Inner>,
+    unknown: UnknownFields,
+}
+
+crate::impl_default_instance!(Hand);
+
+impl Message for Hand {
+    fn compute_size(&self, cache: &mut SizeCache) -> u32 {
+        let mut size = 0u64;
+        if self.n != 0 {
+            size += 1 + types::int32_encoded_len(self.n) as u64;
+        }
+        if !self.s.is_empty() {
+            size += 1 + types::string_encoded_len(&self.s) as u64;
+        }
+        if let Some(next) = self.next.as_option() {
+            let slot = cache.reserve();
+            let inner = next.compute_size(cache);
+            cache.set(slot, inner);
+            size += 1 + crate::encoding::varint_len(u64::from(inner)) as u64 + u64::from(inner);
+        }
+        if let Some(inner) = self.inner.as_option() {
+            let slot = cache.reserve();
+            let len = inner.compute_size(cache);
+            cache.set(slot, len);
+            size += 1 + crate::encoding::varint_len(u64::from(len)) as u64 + u64::from(len);
+        }
+        size += self.unknown.encoded_len() as u64;
+        crate::saturate_size(size)
+    }
+
+    fn write_to(&self, cache: &mut SizeCache, buf: &mut impl EncodeSink) {
+        if self.n != 0 {
+            types::put_int32_field(1, self.n, buf);
+        }
+        if !self.s.is_empty() {
+            types::put_string_field(2, &self.s, buf);
+        }
+        if let Some(next) = self.next.as_option() {
+            buf.put_u8(0x1a);
+            crate::encoding::encode_varint(u64::from(cache.consume_next()), buf);
+            next.write_to(cache, buf);
+        }
+        if let Some(inner) = self.inner.as_option() {
+            buf.put_u8(0x22);
+            crate::encoding::encode_varint(u64::from(cache.consume_next()), buf);
+            inner.write_to(cache, buf);
+        }
+        self.unknown.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: Tag,
+        buf: &mut impl Buf,
+        ctx: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        match tag.field_number() {
+            1 => {
+                crate::encoding::check_wire_type(tag, WireType::Varint)?;
+                self.n = types::decode_int32(buf)?;
+            }
+            2 => {
+                crate::encoding::check_wire_type(tag, WireType::LengthDelimited)?;
+                self.s = types::decode_string(buf)?;
+            }
+            3 => {
+                crate::encoding::check_wire_type(tag, WireType::LengthDelimited)?;
+                self.next
+                    .get_or_insert_default()
+                    .merge_length_delimited(buf, ctx)?;
+            }
+            4 => {
+                crate::encoding::check_wire_type(tag, WireType::LengthDelimited)?;
+                self.inner
+                    .get_or_insert_default()
+                    .merge_length_delimited(buf, ctx)?;
+            }
+            _ => self
+                .unknown
+                .push(crate::encoding::decode_unknown_field(tag, buf, ctx)?),
+        }
+        Ok(())
+    }
+
+    fn clear(&mut self) {
+        *self = Self::default();
+    }
+}
+
+/// A table message whose children are reached through `Message`: a hand-written
+/// message and a table message, singular, repeated and inline, next to one
+/// child reached through its table.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Bridged {
+    hand: MessageField<Hand>,
+    hands: Vec<Hand>,
+    tabled: MessageField<Inner>,
+    tabled_list: Vec<Inner>,
+    direct: MessageField<Inner>,
+    hand_inline: MessageField<Hand, Inline<Hand>>,
+    tail: i32,
+    unknown: UnknownFields,
+}
+
+static BRIDGED: Table<Bridged> = crate::__table!(
+    Bridged,
+    abi = ABI,
+    entries = [
+        crate::__table_entry!(
+            Bridged,
+            hand,
+            MsgSingular,
+            1,
+            aux = 0,
+            slot = MessageField<Hand>
+        ),
+        crate::__table_entry!(Bridged, hands, MsgRepeated, 2, aux = 1, slot = Vec<Hand>),
+        crate::__table_entry!(
+            Bridged,
+            tabled,
+            MsgSingular,
+            3,
+            aux = 2,
+            slot = MessageField<Inner>
+        ),
+        crate::__table_entry!(
+            Bridged,
+            tabled_list,
+            MsgRepeated,
+            4,
+            aux = 3,
+            slot = Vec<Inner>
+        ),
+        crate::__table_entry!(
+            Bridged,
+            direct,
+            MsgSingular,
+            5,
+            aux = 4,
+            slot = MessageField<Inner>
+        ),
+        crate::__table_entry!(
+            Bridged,
+            hand_inline,
+            MsgSingular,
+            6,
+            aux = 5,
+            slot = MessageField<Hand, Inline<Hand>>
+        ),
+        crate::__table_entry!(Bridged, tail, Int32Implicit, 7),
+    ],
+    dense = &dense::<8>(&[1, 2, 3, 4, 5, 6, 7]),
+    aux = [
+        Aux::Msg(&MsgVt::new_via_message::<MessageField<Hand>>()),
+        Aux::Rep(&RepVt::new_via_message::<Hand>()),
+        Aux::Msg(&MsgVt::new_via_message::<MessageField<Inner>>()),
+        Aux::Rep(&RepVt::new_via_message::<Inner>()),
+        Aux::Msg(&MsgVt::new::<MessageField<Inner>>(&INNER)),
+        Aux::Msg(&MsgVt::new_via_message::<MessageField<Hand, Inline<Hand>>>()),
+    ],
+    unknown = unknown,
+);
+
+table_message!(Bridged, BRIDGED);
+
+fn hand(n: i32, s: &str) -> Hand {
+    Hand {
+        n,
+        s: s.into(),
+        ..Hand::default()
+    }
+}
+
+fn bridged() -> Bridged {
+    let mut deep = hand(1, "deep");
+    deep.next = MessageField::some(hand(2, ""));
+    deep.inner = MessageField::some(Inner {
+        id: 3,
+        label: "tabled inside".into(),
+        next: MessageField::some(Inner {
+            id: 4,
+            ..Inner::default()
+        }),
+        ..Inner::default()
+    });
+    let mut with_unknown = Inner {
+        id: 9,
+        ..Inner::default()
+    };
+    with_unknown
+        .unknown
+        .push(crate::UnknownField {
+            number: 900,
+            data: UnknownFieldData::Varint(5),
+        });
+    Bridged {
+        hand: MessageField::some(deep),
+        hands: vec![hand(7, "a"), Hand::default(), hand(0, "c")],
+        tabled: MessageField::some(with_unknown),
+        tabled_list: vec![
+            Inner {
+                id: 1,
+                ..Inner::default()
+            },
+            Inner::default(),
+        ],
+        direct: MessageField::some(Inner {
+            label: "direct".into(),
+            ..Inner::default()
+        }),
+        hand_inline: MessageField::some(hand(-1, "inline")),
+        tail: 70,
+        unknown: UnknownFields::new(),
+    }
+}
+
+#[test]
+fn a_child_without_a_table_encodes_the_bytes_a_table_child_does() {
+    let child = Inner {
+        id: 5,
+        label: "same".into(),
+        ..Inner::default()
+    };
+    let through_message = Bridged {
+        tabled: MessageField::some(child.clone()),
+        ..Bridged::default()
+    }
+    .encode_to_vec();
+    let through_table = Bridged {
+        direct: MessageField::some(child.clone()),
+        ..Bridged::default()
+    }
+    .encode_to_vec();
+    // Field 3 against field 5: only the tag differs.
+    assert_eq!(through_message[0], 0x1a);
+    assert_eq!(through_table[0], 0x2a);
+    assert_eq!(through_message[1..], through_table[1..]);
+
+    let wire = Bridged {
+        hand: MessageField::some(hand(1, "a")),
+        hands: vec![hand(2, "")],
+        tail: 3,
+        ..Bridged::default()
+    }
+    .encode_to_vec();
+    let expected: &[u8] = &[
+        0x0a, 0x05, 0x08, 0x01, 0x12, 0x01, b'a', // 1: {n: 1, s: "a"}
+        0x12, 0x02, 0x08, 0x02, // 2: {n: 2}
+        0x38, 0x03, // 7: 3
+    ];
+    assert_eq!(wire, expected);
+}
+
+#[test]
+fn children_without_a_table_round_trip() {
+    let msg = bridged();
+    let bytes = msg.encode_to_vec();
+    assert_eq!(bytes.len() as u32, msg.encoded_len());
+    assert_eq!(Bridged::decode_from_slice(&bytes).unwrap(), msg);
+    assert_eq!(
+        Bridged::decode_from_slice(&Bridged::default().encode_to_vec()).unwrap(),
+        Bridged::default()
+    );
+}
+
+#[test]
+fn a_child_without_a_table_reaches_every_sink() {
+    let msg = bridged();
+    let expected = msg.encode_to_vec();
+
+    let mut rope = Rope::new();
+    msg.encode(&mut rope);
+    assert_eq!(&rope.to_contiguous_bytes()[..], &expected[..]);
+
+    let mut bytes_mut = crate::bytes::BytesMut::new();
+    msg.encode(&mut bytes_mut);
+    assert_eq!(&bytes_mut[..], &expected[..]);
+
+    let mut roomy = Vec::with_capacity(expected.len());
+    msg.encode(&mut roomy);
+    assert_eq!(roomy, expected);
+
+    // A sink whose chunk is shorter than the message receives the whole
+    // message from a scratch buffer.
+    let mut small = crate::bytes::BytesMut::with_capacity(1);
+    msg.encode_length_delimited(&mut small);
+    let mut framed = Vec::new();
+    crate::encoding::encode_varint(expected.len() as u64, &mut framed);
+    framed.extend_from_slice(&expected);
+    assert_eq!(&small[..], &framed[..]);
+}
+
+#[test]
+fn children_without_a_table_decode_from_a_non_contiguous_buffer() {
+    let msg = bridged();
+    let bytes = msg.encode_to_vec();
+    for split in 1..bytes.len() {
+        let (head, tail) = bytes.split_at(split);
+        let mut chained = head.chain(tail);
+        let mut decoded = Bridged::default();
+        with_ctx(|ctx| decoded.merge(&mut chained, ctx)).unwrap();
+        assert_eq!(decoded, msg, "split at {split}");
+    }
+}
+
+#[test]
+fn a_singular_child_without_a_table_merges() {
+    let mut msg = Bridged::default();
+    for wire in [
+        // hand {n = 1, s = "x"}, then hand {s = "y", next = {n = 2}}.
+        &[0x0a, 0x05, 0x08, 0x01, 0x12, 0x01, b'x'][..],
+        &[0x0a, 0x07, 0x12, 0x01, b'y', 0x1a, 0x02, 0x08, 0x02][..],
+    ] {
+        with_ctx(|ctx| msg.merge(&mut &wire[..], ctx)).unwrap();
+    }
+    let hand = msg.hand.as_option().unwrap();
+    assert_eq!((hand.n, hand.s.as_str()), (1, "y"));
+    assert_eq!(hand.next.as_option().unwrap().n, 2);
+}
+
+#[test]
+fn unknown_fields_in_a_child_without_a_table_are_kept() {
+    let msg = bridged();
+    let decoded = Bridged::decode_from_slice(&msg.encode_to_vec()).unwrap();
+    let tabled = decoded.tabled.as_option().unwrap();
+    assert_eq!(tabled.unknown.iter().count(), 1);
+}
+
+#[test]
+fn the_recursion_limit_applies_through_a_child_without_a_table() {
+    let wrap = |field: u8, inner: Vec<u8>| {
+        let mut wire = vec![field];
+        crate::encoding::encode_varint(inner.len() as u64, &mut wire);
+        wire.extend(inner);
+        wire
+    };
+    // The child is a hand-written message, so its own decode counts the depth.
+    assert!(Bridged::decode_from_slice(&wrap(0x0a, nested(50))).is_ok());
+    assert!(matches!(
+        Bridged::decode_from_slice(&wrap(0x0a, nested(150))),
+        Err(DecodeError::RecursionLimitExceeded)
+    ));
+    // And a table child reached through `Message` counts it too.
+    assert!(Bridged::decode_from_slice(&wrap(0x1a, nested(50))).is_ok());
+    assert!(matches!(
+        Bridged::decode_from_slice(&wrap(0x1a, nested(150))),
+        Err(DecodeError::RecursionLimitExceeded)
+    ));
+    assert!(matches!(
+        DecodeOptions::new()
+            .with_recursion_limit(10)
+            .decode_from_slice::<Bridged>(&wrap(0x0a, nested(50))),
+        Err(DecodeError::RecursionLimitExceeded)
+    ));
+}
+
+#[test]
+fn the_element_memory_limit_applies_to_repeated_children_without_a_table() {
+    // 1000 empty elements of `hands` (2), then of `tabled_list` (4).
+    let hands: Vec<u8> = (0..1000).flat_map(|_| [0x12, 0x00]).collect();
+    let tabled: Vec<u8> = (0..1000).flat_map(|_| [0x22, 0x00]).collect();
+    for wire in [&hands, &tabled] {
+        assert!(Bridged::decode_from_slice(wire).is_ok());
+        assert!(matches!(
+            DecodeOptions::new()
+                .with_element_memory_limit(100)
+                .decode_from_slice::<Bridged>(wire),
+            Err(DecodeError::ElementMemoryLimitExceeded)
+        ));
+    }
+}
+
+#[test]
+fn a_repeated_child_without_a_table_that_fails_to_decode_is_not_kept() {
+    // `hands`: one valid element, then one whose string is not UTF-8.
+    let wire = [0x12, 0x02, 0x08, 0x01, 0x12, 0x03, 0x12, 0x01, 0xff];
+    let mut msg = Bridged::default();
+    let result = with_ctx(|ctx| msg.merge(&mut &wire[..], ctx));
+    assert_eq!(result, Err(DecodeError::InvalidUtf8));
+    assert_eq!(msg.hands.len(), 1);
+    assert_eq!(msg.hands[0].n, 1);
+}
+
+#[test]
+fn a_truncated_child_without_a_table_is_an_error_or_ends_on_a_field_boundary() {
+    let bytes = bridged().encode_to_vec();
+    let mut ok = 0;
+    for end in 0..bytes.len() {
+        match Bridged::decode_from_slice(&bytes[..end]) {
+            Ok(_) => ok += 1,
+            Err(e) => assert!(
+                matches!(e, DecodeError::UnexpectedEof | DecodeError::VarintTooLong),
+                "prefix {end}: {e}"
+            ),
+        }
+    }
+    assert!(ok > 1 && ok < bytes.len() / 2);
+    assert!(Bridged::decode_from_slice(&bytes).is_ok());
+}
+
+#[test]
+fn a_length_that_runs_past_a_child_without_a_table_is_an_error() {
+    // `hand` is 2 bytes and its string declares 5.
+    assert_eq!(
+        Bridged::decode_from_slice(&[0x0a, 0x02, 0x12, 0x05, b'a', b'b', b'c']),
+        Err(DecodeError::UnexpectedEof)
+    );
+    // A child longer than the size limit.
+    assert_eq!(
+        Bridged::decode_from_slice(&[0x0a, 0x80, 0x80, 0x80, 0x80, 0x08]),
+        Err(DecodeError::MessageTooLarge)
+    );
+}
+
+/// Declares `size` bytes and writes `writes` of them.
+#[derive(Clone, Default, PartialEq)]
+struct Liar {
+    size: u32,
+    writes: u8,
+}
+crate::impl_default_instance!(Liar);
+
+impl Message for Liar {
+    fn compute_size(&self, _: &mut SizeCache) -> u32 {
+        self.size
+    }
+    fn write_to(&self, _: &mut SizeCache, buf: &mut impl EncodeSink) {
+        for _ in 0..self.writes {
+            buf.put_u8(1);
+        }
+    }
+    fn merge_field(
+        &mut self,
+        _: Tag,
+        _: &mut impl Buf,
+        _: DecodeContext<'_>,
+    ) -> Result<(), DecodeError> {
+        unreachable!()
+    }
+    fn clear(&mut self) {}
+}
+
+#[derive(Clone, Default, PartialEq)]
+struct HoldsLiar {
+    liar: MessageField<Liar>,
+}
+
+static HOLDS_LIAR: Table<HoldsLiar> = crate::__table!(
+    HoldsLiar,
+    abi = ABI,
+    entries = [crate::__table_entry!(
+        HoldsLiar,
+        liar,
+        MsgSingular,
+        1,
+        aux = 0,
+        slot = MessageField<Liar>
+    )],
+    dense = &dense::<2>(&[1]),
+    aux = [Aux::Msg(&MsgVt::new_via_message::<MessageField<Liar>>())],
+    unknown = none,
+);
+table_message!(HoldsLiar, HOLDS_LIAR);
+
+fn holds_liar(size: u32, writes: u8) -> HoldsLiar {
+    HoldsLiar {
+        liar: MessageField::some(Liar { size, writes }),
+    }
+}
+
+#[test]
+#[should_panic(expected = "more bytes than compute_size declared")]
+fn a_child_that_writes_more_than_it_sized_panics_in_the_scratch_buffer() {
+    // A Rope is not written through the cursor, so the child is staged in a
+    // buffer of the size `compute_size` gave, which the write overruns.
+    holds_liar(0, 1).encode(&mut Rope::new());
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "different byte count than compute_size declared")]
+fn a_child_that_writes_less_than_it_sized_panics_in_debug_builds() {
+    holds_liar(3, 1).encode(&mut Rope::new());
+}
+
+#[test]
+fn a_child_can_be_written_by_calling_write_to_on_a_buffer() {
+    // `write_to` on a `Vec` is not the pre-sized path `encode` takes, so each
+    // child is staged and copied. The bytes are the same.
+    let msg = bridged();
+    let mut cache = SizeCache::new();
+    let size = msg.compute_size(&mut cache);
+    let mut out = Vec::new();
+    msg.write_to(&mut cache, &mut out);
+    assert_eq!(out.len(), size as usize);
+    assert_eq!(out, msg.encode_to_vec());
 }

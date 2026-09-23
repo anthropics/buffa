@@ -1,5 +1,6 @@
 //! The write pass: [`write_to`] and its per-kind arms.
 
+use super::bridge::write_field_value;
 use super::scalar::Sc;
 use super::{
     Bool, Double, Entry, Fixed32, Fixed64, Float, Int32, Int64, Kind, MessageTable, Sfixed32,
@@ -55,7 +56,7 @@ unsafe fn write_pre_sized(
 /// # Safety
 ///
 /// As for [`write_to`].
-unsafe fn write_message<K: EncodeSink>(
+pub(super) unsafe fn write_message<K: EncodeSink>(
     table: &MessageTable,
     base: *const u8,
     cache: &mut SizeCache,
@@ -314,16 +315,14 @@ unsafe fn write_msg<const C: u8, K: EncodeSink>(
             let (ptr, len) = (vt.parts)(slot);
             for i in 0..len {
                 put_tag(e, buf);
-                encode_varint(u64::from(cache.consume_next()), buf);
-                write_message(vt.table, ptr.add(i * vt.size), cache, buf);
+                write_field_value(vt.child, ptr.add(i * vt.size), cache, buf);
             }
         } else {
             let vt = table.msg_vt(e);
             let child = (vt.get)(slot);
             if !child.is_null() {
                 put_tag(e, buf);
-                encode_varint(u64::from(cache.consume_next()), buf);
-                write_message(vt.table, child, cache, buf);
+                write_field_value(vt.child, child, cache, buf);
             }
         }
     }
