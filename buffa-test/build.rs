@@ -4,6 +4,18 @@
 /// below the package, such as `Hot`), which stay unrolled. A test compares the
 /// two codecs on the same schema. `file` names the schema in messages.
 fn compile_both_codecs(file: &str, source: &str, base: &str, unrolled: &[&str]) {
+    compile_both_codecs_with(file, source, base, unrolled, |config| config);
+}
+
+/// [`compile_both_codecs`] with `configure` applied to both builds, for the
+/// options that change what the two codecs generate the same way.
+fn compile_both_codecs_with(
+    file: &str,
+    source: &str,
+    base: &str,
+    unrolled: &[&str],
+    configure: fn(buffa_build::Config) -> buffa_build::Config,
+) {
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let package = format!("package {base};");
     assert!(source.contains(&package), "{file} must declare `{package}`");
@@ -21,15 +33,17 @@ fn compile_both_codecs(file: &str, source: &str, base: &str, unrolled: &[&str]) 
             .iter()
             .map(|path| format!(".{base}{suffix}.{path}"))
             .collect();
-        buffa_build::Config::new()
-            .files(&[renamed])
-            .includes(&[&out])
-            .generate_json(true)
-            .generate_text(true)
-            .codec_strategy(strategy)
-            .codec_strategy_in(buffa_build::CodecStrategy::Unrolled, &rules)
-            .compile()
-            .unwrap_or_else(|e| panic!("buffa_build failed for {file} ({suffix}): {e}"));
+        configure(
+            buffa_build::Config::new()
+                .files(&[renamed])
+                .includes(&[&out])
+                .generate_json(true)
+                .generate_text(true)
+                .codec_strategy(strategy)
+                .codec_strategy_in(buffa_build::CodecStrategy::Unrolled, &rules),
+        )
+        .compile()
+        .unwrap_or_else(|e| panic!("buffa_build failed for {file} ({suffix}): {e}"));
     }
 }
 
@@ -79,9 +93,9 @@ fn compile_extern_children() {
 /// ways: unrolled (`xau`, `xbu`), table (`xat`, `xbt`), and table with
 /// `file_per_package` and `idiomatic_imports` (`xati`, `xbti`), which shortens
 /// the paths of types in other packages and so changes what a table path may
-/// be. `Cold`, which `Holder` holds singly and in a list, stays unrolled in
-/// all three, so the table holders reach it through its `Message` impl with
-/// the shortened path.
+/// be. `Cold`, which `Holder` holds singly, in a list and in a oneof member,
+/// stays unrolled in all three, so the table holders reach it through its
+/// `Message` impl with the shortened path.
 fn compile_cross_package() {
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let sources = |suffix: &str| {
@@ -101,6 +115,7 @@ fn compile_cross_package() {
                xa{suffix}.Cold cold = 5;\n\
                repeated xa{suffix}.Cold colds = 6;\n\
                message Sub {{ xa{suffix}.Leaf l = 1; }}\n\
+               oneof pick {{ int32 n = 7; xa{suffix}.Leaf pl = 8; xa{suffix}.Wrap pw = 9; Sub ps = 10; xa{suffix}.Cold pc = 11; }}\n\
              }}\n"
         );
         (dep, user)
@@ -257,6 +272,31 @@ fn main() {
             "tc4",
             &[],
         );
+        // A custom pointer for the message members of oneofs, and names that
+        // `idiomatic_field_names` changes. Without the text format, whose
+        // decoder of a oneof message member wraps it in a `Box` whatever the
+        // pointer is, for both codecs.
+        compile_both_codecs_with(
+            "table_codec5.proto",
+            &read_proto("table_codec5.proto"),
+            "tc5",
+            &[],
+            |config| {
+                config
+                    .box_type_custom("crate::box_type::CustomBox<*>")
+                    .idiomatic_field_names(true)
+                    .generate_text(false)
+            },
+        );
+        // A closed enum in a oneof, with nowhere to keep a number it lacks.
+        compile_both_codecs_with(
+            "table_codec6.proto",
+            &read_proto("table_codec6.proto"),
+            "tc6",
+            &[],
+            |config| config.preserve_unknown_fields(false),
+        );
+        
         compile_cross_package();
         compile_extern_children();
         // `bytes` fields as `bytes::Bytes`, which the messages that hold one
