@@ -70,6 +70,7 @@ use crate::bytes::Buf;
 use crate::encoding::{Tag, WireType};
 use crate::{DecodeContext, DecodeError, EncodeSink, SizeCache, UnknownFields};
 
+pub use oneof::{Member, OneofEnum, OneofVt};
 pub use shape::{
     EnumShape, EnumVt, ImplicitClosed, ImplicitOpen, MsgSlot, MsgVt, OptionalClosed, OptionalOpen,
     RepVt, RepeatedClosed, RepeatedOpen,
@@ -115,21 +116,26 @@ macro_rules! __buffa_offset_of_unavailable {
 #[rustversion::before(1.77)]
 pub use __buffa_offset_of_unavailable as offset_of;
 
-// Cardinalities. The `Msg` kinds use `IMPLICIT` for a singular field.
+// Cardinalities. The `Msg` kinds use `IMPLICIT` for a singular field. The one
+// `Oneof` kind is written with the cardinality name `ONEOF`, which is only a
+// token that the kind macros match.
 const IMPLICIT: u8 = 0;
 const REQUIRED: u8 = 1;
 const OPTIONAL: u8 = 2;
 const REPEATED: u8 = 3;
 const PACKED: u8 = 4;
 
-/// Calls `$callback!` with every [`Kind`] as `Name: Family Type Cardinality;`.
+/// Calls `$callback!` with every [`Kind`] as `Name: Family Type Cardinality;`,
+/// after `$fname;` if one is given, which names the function a dispatch macro
+/// defines.
 ///
-/// The families are `Scalar`, `Str`, `Bytes`, `Enum` and `Msg`. The one list
-/// generates the enum and the three dispatch functions, so a kind cannot be
-/// added to one and not the others.
+/// The families are `Scalar`, `Str`, `Bytes`, `Enum`, `Msg` and `Oneof`. The
+/// one list generates the enum and the three dispatch functions, so a kind
+/// cannot be added to one and not the others.
 macro_rules! kind_table {
-    ($callback:ident) => {
+    ($callback:ident $(, $fname:ident)?) => {
         $callback! {
+            $($fname;)?
             Int32Implicit: Scalar Int32 IMPLICIT;
             Int32Required: Scalar Int32 REQUIRED;
             Int32Optional: Scalar Int32 OPTIONAL;
@@ -210,6 +216,35 @@ macro_rules! kind_table {
             EnumPacked: Enum Enum PACKED;
             MsgSingular: Msg Msg IMPLICIT;
             MsgRepeated: Msg Msg REPEATED;
+            OneofMember: Oneof Oneof ONEOF;
+        }
+    };
+}
+
+/// [`kind_table!`] for the kinds that a oneof member's payload can have: a
+/// value that is written whenever the member is set, so always the `Required`
+/// cardinality.
+macro_rules! payload_kind_table {
+    ($callback:ident $(, $fname:ident)?) => {
+        $callback! {
+            $($fname;)?
+            Int32Required: Scalar Int32 REQUIRED;
+            Int64Required: Scalar Int64 REQUIRED;
+            Uint32Required: Scalar Uint32 REQUIRED;
+            Uint64Required: Scalar Uint64 REQUIRED;
+            Sint32Required: Scalar Sint32 REQUIRED;
+            Sint64Required: Scalar Sint64 REQUIRED;
+            BoolRequired: Scalar Bool REQUIRED;
+            Fixed32Required: Scalar Fixed32 REQUIRED;
+            Fixed64Required: Scalar Fixed64 REQUIRED;
+            Sfixed32Required: Scalar Sfixed32 REQUIRED;
+            Sfixed64Required: Scalar Sfixed64 REQUIRED;
+            FloatRequired: Scalar Float REQUIRED;
+            DoubleRequired: Scalar Double REQUIRED;
+            StrRequired: Str Str REQUIRED;
+            BytesRequired: Bytes Bytes REQUIRED;
+            EnumRequired: Enum Enum REQUIRED;
+            MsgSingular: Msg Msg IMPLICIT;
         }
     };
 }
@@ -278,6 +313,9 @@ macro_rules! define_kind {
     // descriptor, which the generated entry names.
     (@slot $name:ident Enum $ty:ident $card:ident) => {};
     (@slot $name:ident Msg $ty:ident $card:ident) => {};
+    // A oneof member's field is the `Option` of the oneof's enum, which its
+    // aux descriptors check.
+    (@slot $name:ident Oneof $ty:ident $card:ident) => {};
     (@wire Scalar $ty:ident PACKED) => { WireType::LengthDelimited as u32 };
     (@wire Scalar $ty:ident $card:ident) => { <$ty as Sc>::WIRE as u32 };
     (@wire Str $ty:ident $card:ident) => { WireType::LengthDelimited as u32 };
@@ -285,15 +323,20 @@ macro_rules! define_kind {
     (@wire Msg $ty:ident $card:ident) => { WireType::LengthDelimited as u32 };
     (@wire Enum $ty:ident PACKED) => { WireType::LengthDelimited as u32 };
     (@wire Enum $ty:ident $card:ident) => { WireType::Varint as u32 };
+    (@wire Oneof $ty:ident $card:ident) => {
+        panic!("a oneof member's wire type is its payload kind's, so build its entry with `Entry::oneof_member`")
+    };
     (@shape IMPLICIT) => { IMPLICIT };
     (@shape REQUIRED) => { IMPLICIT };
     (@shape OPTIONAL) => { OPTIONAL };
     (@shape REPEATED) => { REPEATED };
     (@shape PACKED) => { REPEATED };
+    (@shape ONEOF) => { IMPLICIT };
     (@aux Scalar $card:ident) => { None };
     (@aux Str $card:ident) => { None };
     (@aux Bytes $card:ident) => { None };
     (@aux Enum $card:ident) => { Some(AuxKind::Enum) };
+    (@aux Oneof $card:ident) => { Some(AuxKind::Member) };
     (@aux Msg REPEATED) => { Some(AuxKind::Rep) };
     (@aux Msg $card:ident) => { Some(AuxKind::Msg) };
 }
@@ -308,10 +351,24 @@ pub trait KindSlot {
 
 kind_table!(define_kind);
 
+macro_rules! define_payload_check {
+    ($($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
+        impl Kind {
+            /// Whether a oneof member's payload can be of this kind.
+            const fn is_oneof_payload(self) -> bool {
+                matches!(self, $(Kind::$name)|*)
+            }
+        }
+    };
+}
+
+payload_kind_table!(define_payload_check);
+
 // After the macros above, whose textual scope covers only what follows them.
 mod bridge;
 mod decode;
 mod encode;
+mod oneof;
 mod scalar;
 mod shape;
 mod size;
@@ -322,6 +379,8 @@ enum AuxKind {
     Msg,
     Rep,
     Enum,
+    Group,
+    Member,
 }
 
 /// Per-field data that a kind needs beyond the field's offset.
@@ -332,6 +391,11 @@ pub enum Aux {
     Rep(&'static RepVt),
     /// The descriptor of an enum field (the `Enum*` kinds).
     Enum(&'static EnumVt),
+    /// The descriptor of a oneof, which its members' [`Member`] aux items
+    /// refer to by index. No entry refers to it directly.
+    Group(&'static OneofVt),
+    /// One member of a oneof ([`Kind::OneofMember`]).
+    Member(Member),
 }
 
 impl Aux {
@@ -340,6 +404,8 @@ impl Aux {
             Aux::Msg(_) => AuxKind::Msg,
             Aux::Rep(_) => AuxKind::Rep,
             Aux::Enum(_) => AuxKind::Enum,
+            Aux::Group(_) => AuxKind::Group,
+            Aux::Member(_) => AuxKind::Member,
         }
     }
 }
@@ -393,6 +459,26 @@ impl Entry {
             tag_len,
             aux,
         }
+    }
+
+    /// An entry for member `number` of a oneof stored `offset` bytes into the
+    /// message struct, whose value is of kind `payload`. `aux` is the index of
+    /// its [`Aux::Member`] item.
+    ///
+    /// # Panics
+    ///
+    /// Panics, at compile time when used to initialise a `static`, if
+    /// `payload` is not a kind that a oneof member can have, or as for
+    /// [`Entry::new`].
+    #[must_use]
+    pub const fn oneof_member(payload: Kind, number: u32, offset: usize, aux: u16) -> Self {
+        assert!(
+            payload.is_oneof_payload(),
+            "a oneof member's payload must be a `Required` scalar, string, bytes or enum kind, or `MsgSingular`"
+        );
+        let mut e = Self::new(payload, number, offset, aux);
+        e.kind = Kind::OneofMember;
+        e
     }
 
     const fn number(&self) -> u32 {
@@ -450,6 +536,38 @@ impl MessageTable {
             _ => unreachable!("`Table::new` checked that enum entries index enum descriptors"),
         }
     }
+
+    #[inline]
+    fn member(&self, e: &Entry) -> Member {
+        match &self.aux[usize::from(e.aux)] {
+            Aux::Member(m) => *m,
+            _ => unreachable!("`Table::new` checked that oneof entries index `Member`s"),
+        }
+    }
+
+    #[inline]
+    fn group(&self, m: Member) -> &'static OneofVt {
+        match &self.aux[usize::from(m.group)] {
+            Aux::Group(g) => g,
+            _ => unreachable!("`Table::new` checked that members index oneof descriptors"),
+        }
+    }
+
+    /// The entry of the oneof member `number` with its kind and aux index
+    /// replaced by those of its payload, which the payload arms of the
+    /// interpreters take.
+    #[inline]
+    fn payload_entry(&self, number: u32) -> Entry {
+        let Some(e) = self.find(number) else {
+            oneof::no_such_member(number)
+        };
+        let m = self.member(e);
+        Entry {
+            kind: m.kind,
+            aux: m.aux,
+            ..*e
+        }
+    }
 }
 
 /// The static description of message type `M`, from which the interpreters
@@ -491,7 +609,12 @@ impl<M> Table<M> {
     ///   `Bytes*`: `Vec<u8>`, `Option<Vec<u8>>` or `Vec<Vec<u8>>`;
     /// - `Enum*`: the storage the entry's [`EnumVt`] was built for;
     /// - `MsgSingular`: the storage the [`MsgVt`] was built for, and
-    ///   `MsgRepeated`: the `Vec` the [`RepVt`] was built for.
+    ///   `MsgRepeated`: the `Vec` the [`RepVt`] was built for;
+    /// - `OneofMember`: an `Option<E>`, where the [`OneofVt`] of the member's
+    ///   group was built for `E`, and `E`'s [`OneofEnum`] implementation
+    ///   gives, for the member's number, a pointer to a value of the member's
+    ///   payload kind, under the same rules as the kinds above (for
+    ///   `MsgSingular`, a [`MsgVt::direct`] descriptor of the message).
     ///
     /// `unknown`, if present, must be the offset of a field of type
     /// `UnknownFields`. The `__table_entry!` macro checks the field types
@@ -511,6 +634,7 @@ impl<M> Table<M> {
              regenerate it with the buffa-codegen that matches this buffa"
         );
         let size = core::mem::size_of::<M>();
+        let mut leaders = 0;
         let mut i = 0;
         while i < entries.len() {
             let e = &entries[i];
@@ -538,9 +662,28 @@ impl<M> Table<M> {
                         "buffa table: an enum entry's descriptor has the wrong cardinality for its kind"
                     );
                 }
+                if let Aux::Member(m) = a {
+                    if oneof::check_member(e, *m, aux) {
+                        leaders += 1;
+                    }
+                }
             }
             i += 1;
         }
+        // Every oneof has a leader, and no two share one, so the messages
+        // written for its members are written once.
+        let mut groups = 0;
+        i = 0;
+        while i < aux.len() {
+            if let Aux::Group(_) = &aux[i] {
+                groups += 1;
+            }
+            i += 1;
+        }
+        assert!(
+            leaders == groups,
+            "buffa table: every oneof descriptor needs exactly one leading member"
+        );
         assert!(
             dense.is_empty() || entries.len() < 255,
             "buffa table: the dense lookup needs fewer than 255 entries"
@@ -818,10 +961,24 @@ macro_rules! __table {
 ///
 /// The scalar, string and bytes kinds have a fixed field type. The enum and
 /// message kinds take the type explicitly, as `aux = <index>, slot = <type>`,
-/// where the type is the one their aux descriptor was built for.
+/// where the type is the one their aux descriptor was built for. A oneof
+/// member is written `oneof(<payload kind>)`, with the `Option` of the oneof's
+/// enum as its slot type and the index of its [`Member`] as `aux`.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __table_entry {
+    (
+        $msg:ty, $field:ident, oneof($payload:ident), $number:expr,
+        aux = $aux:expr, slot = $slot:ty $(,)?
+    ) => {{
+        const _: fn(&$msg) -> *const $slot = |m| ::core::ptr::addr_of!(m.$field);
+        $crate::table::Entry::oneof_member(
+            $crate::table::Kind::$payload,
+            $number,
+            $crate::table::offset_of!($msg, $field),
+            $aux,
+        )
+    }};
     ($msg:ty, $field:ident, $kind:ident, $number:expr $(,)?) => {{
         // A raw pointer, unlike a reference, cannot be deref-coerced, so this
         // needs the field's type to be exactly the slot type.
