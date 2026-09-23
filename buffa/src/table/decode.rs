@@ -451,9 +451,9 @@ unsafe fn merge_oneof_msg(
     let vt = table.msg_vt(payload_entry);
     // SAFETY: the member is a message of the type `vt.child` reaches, through
     // a pointer to it, and `place_with` hands the closure a pointer to a live
-    // one. A member that is already set is merged into, as
-    // a singular message field is. Any other member is replaced only by a
-    // message that decoded, so a failure leaves the oneof as it was.
+    // one. A member that is already set is merged into, as a singular message
+    // field is. Any other member is replaced only by a message that decoded,
+    // so a failure leaves the oneof as it was.
     unsafe {
         oneof.place_with(payload_entry.number(), &mut |child| {
             vt.child.merge_sub(child, buf, ctx)
