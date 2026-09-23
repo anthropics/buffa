@@ -1,4 +1,4 @@
-// Strict JSON unknown-field rejection (#444), proto3 half.
+// Strict JSON unknown-field rejection, proto3 half.
 //
 // `strict_json.proto` is proto2 because extensions require it; this file
 // covers the field shapes only proto3 has, and the mix that matters most:

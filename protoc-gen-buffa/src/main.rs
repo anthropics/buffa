@@ -209,8 +209,8 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 ));
             }
             "json" => codegen.generate_json = parse_bool("json", value)?,
-            // Reject unknown JSON keys instead of ignoring them. Inert
-            // without `json=true`.
+            // Reject unknown JSON keys instead of ignoring them. Without
+            // `json=true` it changes nothing and codegen warns.
             "deny_unknown_json_fields" => {
                 codegen.deny_unknown_json_fields = parse_bool("deny_unknown_json_fields", value)?
             }

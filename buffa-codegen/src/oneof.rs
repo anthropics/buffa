@@ -856,8 +856,6 @@ pub(crate) fn oneof_variant_deser_arm(
         enum_ident,
         result_var,
         oneof_name,
-        // `json_name` / `proto_name` are read through `accepted_keys()` below,
-        // which is also what the caller reports in a strict terminal arm.
         ..
     } = input;
     let dup_err_msg = format!("multiple oneof fields set for '{oneof_name}'");
@@ -922,9 +920,7 @@ pub(crate) fn oneof_variant_deser_arm(
         (deser, set)
     };
 
-    // Accept both json_name and proto_name. The patterns are generated from
-    // `accepted_keys()` so the set this arm matches and the set a strict
-    // terminal arm reports are the same list, not two agreeing copies.
+    // Accept both json_name and proto_name.
     let patterns = input.accepted_keys();
     Ok(quote! {
         #(#patterns)|* => {

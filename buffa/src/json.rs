@@ -7,12 +7,11 @@
 //!
 //! The options here are runtime ones: unknown enum *values*
 //! ([`JsonParseOptions::ignore_unknown_enum_values`]) and unregistered
-//! extension keys ([`JsonParseOptions::strict_extension_keys`]). Rejecting
-//! unknown *field names* is a codegen-time decision instead — serde's derive
-//! has no runtime hook — so it lives on
-//! `buffa_build::Config::deny_unknown_json_fields` (and its path-scoped
-//! `deny_unknown_json_fields_in`). Generated deserializers ignore unknown
-//! field names unless that option is on.
+//! extension keys ([`JsonParseOptions::strict_extension_keys`]). Unknown
+//! *field names* are not governed here: generated deserializers ignore them
+//! unless the code was generated with
+//! `buffa_build::Config::deny_unknown_json_fields` (or its path-scoped
+//! `deny_unknown_json_fields_in`).
 //!
 //! # Two mutually exclusive APIs: scoped (std) vs global (no_std)
 //!
@@ -102,13 +101,11 @@ pub struct JsonParseOptions {
     /// always errors regardless of this flag — that's a contract violation,
     /// not a mere miss.
     ///
-    /// This flag covers `"[pkg.ext]"` keys only. Ordinary unknown field names
-    /// are governed by the codegen-time
-    /// `buffa_build::Config::deny_unknown_json_fields` instead. The two meet
-    /// in one place: a message with `extensions N to M;` but unknown-field
-    /// preservation *off* has nowhere to route extension keys, so under that
-    /// codegen option they are rejected as unknown keys and this flag never
-    /// sees them.
+    /// This flag covers `"[pkg.ext]"` keys only, and only for messages that
+    /// preserve unknown fields. Ordinary unknown field names are governed by
+    /// the codegen option `buffa_build::Config::deny_unknown_json_fields`,
+    /// which also rejects `"[pkg.ext]"` keys on a message generated with
+    /// preservation off.
     pub strict_extension_keys: bool,
 }
 

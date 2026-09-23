@@ -718,11 +718,10 @@ fn main() {
         .compile()
         .expect("buffa_build failed for custom_options.proto");
 
-    // Strict JSON unknown-field rejection (#444). Path-scoped rather than
-    // global so one generated module carries both behaviours: the three
-    // `Strict*` messages are named, `StrictPlain.Nested` is covered by its
-    // parent's rule, and the `Lenient*` messages are the control for the
-    // unchanged default.
+    // Strict JSON unknown-field rejection. Path-scoped rather than global so
+    // one generated module carries both behaviours: the three `Strict*`
+    // messages are named, `StrictPlain.Nested` is covered by its parent's
+    // rule, and the `Lenient*` messages are the control for the default.
     buffa_build::Config::new()
         .files(&["protos/strict_json.proto"])
         .includes(&["protos/"])
@@ -736,10 +735,10 @@ fn main() {
         .compile()
         .expect("buffa_build failed for strict_json.proto");
 
-    // Strict JSON unknown-field rejection, proto3 field shapes (#444):
-    // synthetic oneof, map, repeated, `google.protobuf.Value` and a plain
-    // scalar alongside a real oneof, all in one message on the
-    // hand-written-visitor path. Global flag here rather than path-scoped.
+    // Strict JSON unknown-field rejection, proto3 field shapes: synthetic
+    // oneof, map, repeated, `google.protobuf.Value` and a plain scalar
+    // alongside a real oneof, all in one message on the hand-written-visitor
+    // path. Global flag here rather than path-scoped.
     buffa_build::Config::new()
         .files(&["protos/strict_json3.proto"])
         .includes(&["protos/"])

@@ -532,23 +532,11 @@ fn generate_message_with_nesting(
         // impl reads the same config value instead (it has no derive to
         // attach to), so one option covers both paths.
         //
-        // `deny_unknown_fields` must not meet `#[serde(flatten)]`. serde
-        // documents that combination as unsupported but does not reject it:
-        // as of 1.0.229 it compiles, and unknown keys are still reported —
-        // through the leftovers branch of a flattened struct, whose error is
-        // a bare `unknown field \`x\`` with no expected-key list, and which
-        // reinstates the `Content::Map` buffering the wrapper gate above
-        // avoids. So a regression here degrades silently rather than failing
-        // to build.
-        //
-        // Two kinds of flattened field exist: the extension-JSON wrapper and
-        // each oneof field. Neither can reach this arm. The wrapper needs
-        // `generate_json && preserve_unknown_fields && has_extension_ranges`,
-        // whose last two also satisfy `needs_custom_deserialize`; a oneof
-        // field means `has_real_oneofs`, which satisfies it directly. This
-        // arm requires `!needs_custom_deserialize`. Since serde will not
-        // catch a regression, `codegen_integration.rs` asserts the invariant
-        // on emitted output instead.
+        // Invariant: `deny_unknown_fields` is never emitted on a struct with a
+        // `#[serde(flatten)]` field. serde documents the combination as
+        // unsupported but compiles it, so `codegen_integration.rs` asserts
+        // this on emitted output. Both flattened fields (the extension-JSON
+        // wrapper and each oneof) imply `needs_custom_deserialize`.
         let deny_unknown_attr = if !needs_custom_deserialize && deny_unknown_json_fields {
             crate::feature_gates::cfg_attr(quote! { serde(deny_unknown_fields) }, gates.json)
         } else {
@@ -1220,8 +1208,8 @@ fn generate_custom_deserialize(
     // same diagnostic for the same typo. `"[pkg.ext]"` keys are claimed by
     // `#ext_arm` above, so extension handling is untouched either way.
     //
-    // Lenient (the default) keeps the pre-existing `IgnoredAny` skip, which
-    // costs no allocation and discards the value.
+    // Lenient (the default) skips the value with `IgnoredAny`, which costs no
+    // allocation.
     let terminal_arm = if scope.deny_unknown_json_fields() {
         let accepted = &accepted_keys;
         quote! {
@@ -1309,8 +1297,6 @@ fn deser_seed_expr(rust_type: &TokenStream, inner: TokenStream) -> TokenStream {
     }}
 }
 
-/// Emit the variable declaration, match arm, and field initializer for one
-/// regular (non-oneof) field in a custom `Deserialize` impl.
 /// The variable declaration, match arm and field initializer for one regular
 /// (non-oneof) field in a custom `Deserialize` impl.
 ///
@@ -1387,8 +1373,7 @@ fn custom_deser_regular_field(
     };
 
     // Match arm accepting both json_name and proto_name. `accepted_keys`
-    // mirrors the arm's patterns so a strict terminal arm can name the same
-    // set in its diagnostic; both come from these two locals.
+    // lists the same two names.
     let (arm, accepted_keys) = if json_name != field_name {
         (
             quote! { #json_name | #field_name => { #var_ident = Some(#deser_expr); } },
@@ -1500,8 +1485,6 @@ fn custom_deser_oneof_group(
             result_var: &var_ident,
             oneof_name,
         };
-        // Keys come from the same input the arm is built from, so the strict
-        // terminal arm cannot name a different set than the arms accept.
         accepted_keys.extend(deser_input.accepted_keys());
         arms.push(crate::oneof::oneof_variant_deser_arm(&deser_input)?);
     }

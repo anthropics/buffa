@@ -2,30 +2,17 @@
 //! round-trip through `serde_json` via the generated `register_types` +
 //! the runtime's `#[serde(flatten)]` wrapper.
 
+use super::install_type_registry;
 use crate::extjson::__buffa::ext::{
     ANN, ANNS, BIGS, COLOR, COLORS, NULL_VALUE, NULL_VALUES, NUMS, VALUE, VALUES, WEIGHT,
 };
-use crate::extjson::__buffa::register_types;
 use crate::extjson::{Ann, Carrier, Color};
-use buffa::type_registry::{set_type_registry, TypeRegistry};
 use buffa::{Enumeration, ExtensionSet};
-
-/// Install the unified type registry once for the test process. Tests run in
-/// parallel threads; `set_type_registry` leaks the old halves (see its doc)
-/// so racing installs are safe, but `Once` makes intent explicit.
-fn setup() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let mut reg = TypeRegistry::new();
-        register_types(&mut reg);
-        set_type_registry(reg);
-    });
-}
 
 /// Serialize `carrier` to JSON, then deserialize back. Asserts the intermediate
 /// JSON matches `expected`, and returns the round-tripped carrier.
 fn json_roundtrip(carrier: &Carrier, expected: serde_json::Value) -> Carrier {
-    setup();
+    install_type_registry();
     let json = serde_json::to_value(carrier).expect("serialize");
     assert_eq!(json, expected);
     serde_json::from_value(json).expect("deserialize")
@@ -75,7 +62,7 @@ fn enum_extension_json_emits_variant_name() {
 
 #[test]
 fn enum_extension_json_accepts_numeric() {
-    setup();
+    install_type_registry();
     let c: Carrier =
         serde_json::from_str(r#"{"[buffa.test.extjson.color]": 2}"#).expect("deserialize");
     assert_eq!(c.extension(&COLOR), Some(2));
@@ -83,7 +70,7 @@ fn enum_extension_json_accepts_numeric() {
 
 #[test]
 fn null_unsets_ordinary_extension() {
-    setup();
+    install_type_registry();
     let c: Carrier = serde_json::from_value(serde_json::json!({
         "[buffa.test.extjson.weight]": null
     }))
@@ -93,7 +80,7 @@ fn null_unsets_ordinary_extension() {
 
 #[test]
 fn null_unsets_message_extension() {
-    setup();
+    install_type_registry();
     let c: Carrier = serde_json::from_value(serde_json::json!({
         "[buffa.test.extjson.ann]": null
     }))
@@ -103,7 +90,7 @@ fn null_unsets_message_extension() {
 
 #[test]
 fn null_unsets_enum_extension() {
-    setup();
+    install_type_registry();
     let c: Carrier = serde_json::from_value(serde_json::json!({
         "[buffa.test.extjson.color]": null
     }))
@@ -113,7 +100,7 @@ fn null_unsets_enum_extension() {
 
 #[test]
 fn null_unsets_repeated_extension() {
-    setup();
+    install_type_registry();
     let c: Carrier = serde_json::from_value(serde_json::json!({
         "[buffa.test.extjson.nums]": null
     }))
@@ -123,7 +110,7 @@ fn null_unsets_repeated_extension() {
 
 #[test]
 fn null_is_present_for_value_extension() {
-    setup();
+    install_type_registry();
     let c: Carrier = serde_json::from_value(serde_json::json!({
         "[buffa.test.extjson.value]": null
     }))
@@ -138,7 +125,7 @@ fn null_is_present_for_value_extension() {
 
 #[test]
 fn null_is_present_for_null_value_extension() {
-    setup();
+    install_type_registry();
     let c: Carrier = serde_json::from_value(serde_json::json!({
         "[buffa.test.extjson.null_value]": null
     }))
@@ -152,7 +139,7 @@ fn null_is_present_for_null_value_extension() {
 
 #[test]
 fn repeated_value_extension_preserves_null_elements() {
-    setup();
+    install_type_registry();
     let c: Carrier = serde_json::from_value(serde_json::json!({
         "[buffa.test.extjson.values]": [null]
     }))
@@ -168,7 +155,7 @@ fn repeated_value_extension_preserves_null_elements() {
 
 #[test]
 fn repeated_null_value_extension_preserves_null_elements() {
-    setup();
+    install_type_registry();
     let c: Carrier = serde_json::from_value(serde_json::json!({
         "[buffa.test.extjson.null_values]": [null]
     }))
@@ -184,7 +171,7 @@ fn repeated_null_value_extension_preserves_null_elements() {
 fn null_unsets_repeated_value_and_null_value_extensions() {
     // The present-value exception is singular-only: `null` on the whole
     // repeated field is absence, as for every other repeated extension.
-    setup();
+    install_type_registry();
     let c: Carrier = serde_json::from_value(serde_json::json!({
         "[buffa.test.extjson.values]": null,
         "[buffa.test.extjson.null_values]": null
@@ -263,7 +250,7 @@ fn multiple_extension_types_coexist_in_json() {
     c.set_extension(&COLOR, Color::BLUE.to_i32());
     c.set_extension(&NUMS, vec![10, 20]);
 
-    setup();
+    install_type_registry();
     let json = serde_json::to_value(&c).expect("serialize");
     // Key set, not order (serde_json object iteration order is deterministic
     // but tied to insertion; the flatten wrapper emits in unknown-field order).
@@ -288,8 +275,9 @@ fn multiple_extension_types_coexist_in_json() {
 // ── Codegen-emitted Any entries via register_types ────────────────────────
 //
 // `register_types` populates BOTH the extension registry and the Any registry;
-// these tests verify the Any half. `setup()` above installed the unified
-// registry once, so `with_any_registry` sees every message in ext_json.proto.
+// these tests verify the Any half. `install_type_registry()` installs the
+// unified registry once, so `with_any_registry` sees every message in
+// ext_json.proto.
 
 #[test]
 fn json_any_const_has_correct_shape() {
@@ -302,9 +290,9 @@ fn json_any_const_has_correct_shape() {
 
 #[test]
 fn register_types_populates_any_registry() {
-    setup();
+    install_type_registry();
     buffa::any_registry::with_any_registry(|r| {
-        let r = r.expect("registry installed by setup");
+        let r = r.expect("registry installed by install_type_registry");
         // Every message in ext_json.proto: Carrier and Ann.
         assert!(r.lookup(Carrier::TYPE_URL).is_some());
         assert!(r.lookup(Ann::TYPE_URL).is_some());

@@ -1132,24 +1132,17 @@ pub struct CodeGenConfig {
     ///
     /// Path-scoped overrides go in
     /// [`deny_unknown_json_fields_in`](Self::deny_unknown_json_fields_in);
-    /// the last matching rule wins over this global default. Has no effect
-    /// unless [`generate_json`](Self::generate_json) is on.
+    /// the last matching rule wins over this global default. With
+    /// [`generate_json`](Self::generate_json) off the setting changes nothing
+    /// and produces a [`CodeGenWarning::DenyUnknownJsonFieldsRequiresJson`].
     ///
-    /// proto3's JSON mapping specifies rejecting unknown fields by default,
-    /// and the reflective decoder already does
-    /// (`DynamicMessage::from_json`, strict unless `ignore_unknown` is set).
-    /// The generated decoders are lenient instead, so a misspelled key
-    /// parses into a default message rather than erroring. This flag brings
-    /// them in line; the default stays lenient so enabling it is opt-in.
-    ///
-    /// Both codegen paths are covered and report through the same serde
-    /// constructor, so the diagnostic does not depend on a message's shape:
-    /// `#[serde(deny_unknown_fields)]` on the derive path, and a strict
-    /// terminal match arm through `serde::de::Error::unknown_field` in the
-    /// hand-written visitor emitted for messages with oneofs or extension
-    /// ranges. `"[pkg.ext]"` keys are matched by the extension arm before
-    /// that terminal arm, so extension handling and
-    /// `JsonParseOptions::strict_extension_keys` are unaffected.
+    /// A strict message rejects every key that matches none of its fields,
+    /// under either the JSON name or the proto name, with serde's
+    /// `unknown_field` error. `"[pkg.ext]"` keys of a message that has
+    /// extension ranges and preserves unknown fields still go through the
+    /// extension registry, where `JsonParseOptions::strict_extension_keys`
+    /// governs unregistered ones. A message with extension ranges and
+    /// preservation off rejects them like any other unknown key.
     pub deny_unknown_json_fields: bool,
     /// Path-scoped overrides for
     /// [`deny_unknown_json_fields`](Self::deny_unknown_json_fields). Each
@@ -2989,11 +2982,13 @@ pub fn generate_with_diagnostics(
         }
     }
 
-    // JSON strictness needs JSON deserializers to attach to. Warn once per
-    // run: the whole point of the option is that the failure it prevents is
-    // silent, so an inert option must not be silent too.
+    // JSON strictness needs JSON deserializers to attach to. Warn once per run.
     if !config.generate_json
-        && (config.deny_unknown_json_fields || !config.deny_unknown_json_fields_in.is_empty())
+        && (config.deny_unknown_json_fields
+            || config
+                .deny_unknown_json_fields_in
+                .iter()
+                .any(|(_, enabled)| *enabled))
     {
         ctx.warn(CodeGenWarning::DenyUnknownJsonFieldsRequiresJson);
     }

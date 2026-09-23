@@ -734,60 +734,21 @@ impl Config {
         self
     }
 
-    /// Make generated JSON deserializers reject unknown fields instead of
-    /// silently ignoring them (default: lenient).
+    /// Make generated JSON deserializers reject unknown keys instead of
+    /// ignoring them (default: `false`, unknown keys are ignored).
     ///
-    /// proto3's JSON mapping specifies rejecting unknown fields by default,
-    /// and buffa's reflective decoder (`DynamicMessage::from_json`) already
-    /// does. The generated decoders are lenient, so a misspelled or
-    /// wrong-schema key parses into a default message and `.validate()` then
-    /// runs against a well-formed default — the failure is silent in both
-    /// directions. Enable this to catch it at parse time.
-    ///
-    /// Both codegen paths are covered and report through the same serde
-    /// constructor, `serde::de::Error::unknown_field`, so the diagnostic does
-    /// not depend on a message's shape: messages generated with
-    /// `#[derive(Deserialize)]` get serde's own
-    /// `#[serde(deny_unknown_fields)]`, and messages whose `Deserialize` is
-    /// hand-written — those with a oneof, or with extension ranges under
-    /// preservation — get a strict terminal match arm.
-    ///
-    /// It is a codegen-time switch rather than a
-    /// `buffa::json::JsonParseOptions` flag because serde's derive has no
-    /// runtime hook. A runtime flag would have to either leave derive-path
-    /// messages lenient — making strictness depend on whether a message
-    /// happens to declare a oneof — or emit the hand-written visitor for the
-    /// messages a rule names, so their terminal arm could consult the ambient
-    /// state. The second is viable and cheaper than it sounds, since only
-    /// opted-in messages pay for it; it is tracked on
-    /// [#444](https://github.com/anthropics/buffa/issues/444) rather than
-    /// decided here. As emitted today the switch costs nothing when off and
-    /// needs no ambient state on `no_std`.
-    ///
-    /// Being codegen-time has two consequences of its own. Strictness is
-    /// baked into the generated type, so a library crate that publishes those
-    /// types decides this for its consumers, who have no override short of
-    /// regenerating — the same class of concern
-    /// [`gate_impls_on_crate_features`](Self::gate_impls_on_crate_features)
-    /// exists for. And one process cannot hold both behaviours for the same
-    /// type, which is why a caller who must be lenient for some inputs and
-    /// strict for others needs the runtime flag above rather than this one.
-    ///
-    /// Two more consequences worth knowing before enabling it globally:
-    ///
-    /// - It rejects keys that no longer exist in your schema, so a client
-    ///   sending a field you deleted starts failing instead of being ignored.
-    ///   That is the point, but it is a wire-compatibility decision.
-    /// - For a message with `extensions N to M;` but preservation off there is
-    ///   no extension arm, so `"[pkg.ext]"` keys are unknown keys like any
-    ///   other and are rejected too. With preservation on they keep going
-    ///   through the extension registry, where
-    ///   `JsonParseOptions::strict_extension_keys` governs unregistered ones.
-    ///
-    /// To keep the global default and be strict for selected messages, use
+    /// Strictness is fixed in the generated type: code that uses the type
+    /// cannot switch it per call or per process. To be strict for selected
+    /// messages only, use
     /// [`deny_unknown_json_fields_in`](Self::deny_unknown_json_fields_in).
     ///
-    /// Has no effect unless [`generate_json`](Self::generate_json) is on.
+    /// With [`generate_json`](Self::generate_json) off there are no JSON
+    /// deserializers, so the option changes nothing and the build emits a
+    /// `cargo:warning` saying so.
+    ///
+    /// The guide's "Unknown fields in JSON" section covers the error a
+    /// rejected key produces, how `"[pkg.ext]"` extension keys are treated,
+    /// and what to weigh before enabling this for every message.
     #[must_use]
     pub fn deny_unknown_json_fields(mut self, enabled: bool) -> Self {
         self.codegen_config.deny_unknown_json_fields = enabled;
@@ -806,11 +767,18 @@ impl Config {
     ///
     /// A rule covers the message it names **and every message nested inside
     /// it**; a rule naming a nested message does not cover its enclosing
-    /// message. Rules are enable-only here
-    /// ([`CodeGenConfig::deny_unknown_json_fields_in`](buffa_codegen::CodeGenConfig::deny_unknown_json_fields_in)
-    /// also accepts disabling entries, and the last matching entry wins).
-    /// Strictness is a property of each message *type*: a strict message's
-    /// sub-messages reject unknown keys only if their types are covered too.
+    /// message. Strictness is a property of each message *type*: a strict
+    /// message's sub-messages reject unknown keys only if their types are
+    /// covered too.
+    ///
+    /// Rules only enable, so this builder cannot exempt a message. With the
+    /// global flag on, every message is already strict and these rules add
+    /// nothing; to be strict everywhere except a few messages, leave the
+    /// global flag off and list the strict packages here.
+    /// (`buffa_codegen::CodeGenConfig` accepts disabling entries; neither
+    /// this builder nor the plugin exposes them.) With
+    /// [`generate_json`](Self::generate_json) off the rules change nothing,
+    /// and the build warns as it does for the global flag.
     ///
     /// Repeated calls accumulate. A rule that matches no generated message
     /// produces a `cargo:warning` from this build (surfaced via

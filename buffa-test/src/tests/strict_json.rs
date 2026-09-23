@@ -1,4 +1,4 @@
-//! `deny_unknown_json_fields_in` (#444): generated JSON deserializers reject
+//! `deny_unknown_json_fields_in`: generated JSON deserializers reject
 //! unknown keys for the messages a rule names, and keep ignoring them for the
 //! messages it does not.
 //!
@@ -9,22 +9,10 @@
 //! `Deserialize`, while `StrictOneof` and `StrictExt` get the strict terminal
 //! arm in the hand-written visitor that oneofs and extension ranges force.
 
+use super::install_type_registry;
 use crate::strictjson::__buffa::ext::LABEL;
-use crate::strictjson::__buffa::register_types;
 use crate::strictjson::{LenientOneof, LenientPlain, StrictExt, StrictOneof, StrictPlain};
-use buffa::type_registry::{set_type_registry, TypeRegistry};
 use buffa::ExtensionSet;
-
-/// Install the type registry once so `"[buffa.test.strictjson.label]"` keys
-/// resolve. Mirrors `extensions_json::setup`.
-fn setup() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let mut reg = TypeRegistry::new();
-        register_types(&mut reg);
-        set_type_registry(reg);
-    });
-}
 
 /// The `expected one of ...` tail of a serde unknown-field message.
 ///
@@ -52,8 +40,8 @@ fn derive_path_rejects_an_unknown_key() {
 
 #[test]
 fn oneof_path_rejects_an_unknown_key() {
-    // The shape from the issue: a near-miss on a oneof variant name used to
-    // parse into a message with the oneof unset.
+    // A near-miss on a oneof variant name. On a lenient message the same
+    // input parses into a message with the oneof unset.
     let err = serde_json::from_str::<StrictOneof>(r#"{"sensorNodeTypo": {"value": 1}}"#)
         .expect_err("unknown key must be rejected");
     let msg = err.to_string();
@@ -91,7 +79,7 @@ fn a_nested_message_inherits_its_parents_rule() {
 
 #[test]
 fn messages_outside_the_rule_still_ignore_unknown_keys() {
-    // The default is unchanged: same file, same codegen run, no rule.
+    // The default: same file, same codegen run, no rule.
     let parsed: LenientPlain =
         serde_json::from_str(r#"{"valueTypo": 7, "value": 3}"#).expect("lenient parse");
     assert_eq!(parsed.value, Some(3));
@@ -102,7 +90,7 @@ fn messages_outside_the_rule_still_ignore_unknown_keys() {
 
 #[test]
 fn extension_keys_survive_strictness() {
-    setup();
+    install_type_registry();
     // `"[pkg.ext]"` keys are claimed by the extension arm before the terminal
     // arm, so strictness does not reach them.
     let parsed: StrictExt =
@@ -133,7 +121,7 @@ fn extension_keys_survive_strictness() {
 /// rather than slip through the extension arm.
 #[test]
 fn a_malformed_bracketed_key_is_not_mistaken_for_an_extension() {
-    setup();
+    install_type_registry();
     for json in [r#"{"[oops": 1}"#, r#"{"oops]": 1}"#] {
         let err = serde_json::from_str::<StrictExt>(json)
             .expect_err("malformed bracketed key must be rejected");

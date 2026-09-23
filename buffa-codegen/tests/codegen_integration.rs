@@ -2068,7 +2068,7 @@ fn json_codegen_qualifies_serde_paths() {
     );
 }
 
-// ── deny_unknown_json_fields (#444) ──────────────────────────────────────────
+// ── deny_unknown_json_fields ─────────────────────────────────────────────────
 //
 // The emitted-text assertions below are about *which* mechanism each codegen
 // path gets; `buffa-test/src/tests/strict_json.rs` covers what the generated
@@ -2152,9 +2152,6 @@ fn deny_unknown_json_fields_emits_nothing_without_json() {
 
 #[test]
 fn deny_unknown_json_fields_without_json_warns() {
-    // Forgetting `generate_json` is likelier than mistyping a path, and the
-    // option exists because the failure it prevents is silent — so its own
-    // inertness must not be.
     let mut config = no_views();
     config.deny_unknown_json_fields = true;
     let warnings = generate_warnings(STRICT_JSON_PROTO, &config);
@@ -2172,6 +2169,17 @@ fn deny_unknown_json_fields_without_json_warns() {
     let warnings = generate_warnings(STRICT_JSON_PROTO, &config);
     assert!(
         warnings
+            .iter()
+            .any(|w| w.contains("deny_unknown_json_fields requires generate_json")),
+        "{warnings:?}"
+    );
+
+    // A rule that only disables asks for nothing, so it stays quiet.
+    let mut config = no_views();
+    config.deny_unknown_json_fields_in = vec![(".t.Choice".to_string(), false)];
+    let warnings = generate_warnings(STRICT_JSON_PROTO, &config);
+    assert!(
+        !warnings
             .iter()
             .any(|w| w.contains("deny_unknown_json_fields requires generate_json")),
         "{warnings:?}"
@@ -2211,13 +2219,13 @@ fn deny_unknown_json_fields_in_rule_matching_nothing_warns() {
 
 /// `#[serde(deny_unknown_fields)]` must never land on a struct that also
 /// carries `#[serde(flatten)]`. serde documents that combination as
-/// unsupported but does not reject it: checked against 1.0.229, it compiles
-/// and unknown keys are still reported, but as a bare ``unknown field `x` ``
-/// with no expected-key list, and through the buffering path the wrapper gate
-/// in `message.rs` avoids. buffa emits two kinds of flattened field — the
-/// extension-JSON wrapper and each oneof field — and both force the
-/// hand-written-visitor path, so neither can meet the attribute. serde will
-/// not catch a regression, so assert it here.
+/// unsupported but does not reject it: it compiles and unknown keys are still
+/// reported, but as a bare ``unknown field `x` `` with no expected-key list,
+/// and through the buffering path the wrapper gate in `message.rs` avoids.
+/// buffa emits two kinds of flattened field — the extension-JSON wrapper and
+/// each oneof field — and both force the hand-written-visitor path, so neither
+/// can meet the attribute. serde will not catch a regression, so assert it
+/// here.
 #[test]
 fn deny_unknown_json_fields_never_meets_the_flattened_extension_wrapper() {
     let proto = r#"
