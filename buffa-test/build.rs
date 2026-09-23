@@ -33,15 +33,16 @@ fn compile_both_codecs_with(
             .iter()
             .map(|path| format!(".{base}{suffix}.{path}"))
             .collect();
+        // JSON and text first, so that `configure` can turn either off.
         configure(
             buffa_build::Config::new()
-                .files(&[renamed])
-                .includes(&[&out])
                 .generate_json(true)
-                .generate_text(true)
-                .codec_strategy(strategy)
-                .codec_strategy_in(buffa_build::CodecStrategy::Unrolled, &rules),
+                .generate_text(true),
         )
+        .files(&[renamed])
+        .includes(&[&out])
+        .codec_strategy(strategy)
+        .codec_strategy_in(buffa_build::CodecStrategy::Unrolled, &rules)
         .compile()
         .unwrap_or_else(|e| panic!("buffa_build failed for {file} ({suffix}): {e}"));
     }
@@ -76,7 +77,8 @@ fn compile_extern_children() {
             format!(
                 "syntax = \"proto3\";\npackage xf{suffix};\nimport \"xe.proto\";\n\
                  message Holder {{ xe.Leaf leaf = 1; repeated xe.Leaf leaves = 2; int32 tail = 3;\n\
-                   oneof pick {{ int32 n = 4; xe.Leaf pl = 5; }} }}\n"
+                   oneof pick {{ int32 n = 4; xe.Leaf pl = 5; }}\n\
+                   map<string, xe.Leaf> by_name = 6; }}\n"
             ),
         )
         .expect("write proto");
@@ -104,7 +106,8 @@ fn compile_cross_package() {
             "syntax = \"proto3\";\npackage xa{suffix};\n\
              message Leaf {{ int32 x = 1; string s = 2; }}\n\
              message Wrap {{ Leaf leaf = 1; repeated Leaf leaves = 2; }}\n\
-             message Cold {{ int64 c = 1; string s = 2; }}\n"
+             message Cold {{ int64 c = 1; string s = 2; }}\n\
+             enum Mode {{ M0 = 0; M1 = 1; }}\n"
         );
         let user = format!(
             "syntax = \"proto3\";\npackage xb{suffix};\nimport \"xa{suffix}.proto\";\n\
@@ -115,6 +118,10 @@ fn compile_cross_package() {
                Sub sub = 4;\n\
                xa{suffix}.Cold cold = 5;\n\
                repeated xa{suffix}.Cold colds = 6;\n\
+               map<string, xa{suffix}.Leaf> by_name = 12;\n\
+               map<int32, Sub> subs = 13;\n\
+               map<string, xa{suffix}.Mode> modes = 14;\n\
+               map<string, xa{suffix}.Cold> cold_map = 15;\n\
                message Sub {{ xa{suffix}.Leaf l = 1; }}\n\
                oneof pick {{ int32 n = 7; xa{suffix}.Leaf pl = 8; xa{suffix}.Wrap pw = 9; Sub ps = 10; xa{suffix}.Cold pc = 11; }}\n\
              }}\n"
@@ -258,24 +265,29 @@ fn main() {
             "tc",
             &[],
         );
-        compile_both_codecs(
+        // `BTreeMap` for the maps in the proto2 schemas, so that the `Debug` text
+        // of a decoded message does not depend on hash order.
+        compile_both_codecs_with(
             "table_codec2.proto",
             &read_proto("table_codec2.proto"),
             "tc2",
             &[],
+            |config| config.map_type(buffa_build::MapRepr::BTreeMap),
         );
-        compile_both_codecs(
+        compile_both_codecs_with(
             "table_codec3.proto",
             &read_proto("table_codec3.proto"),
             "tc3",
             &[],
+            |config| config.map_type(buffa_build::MapRepr::BTreeMap),
         );
         compile_both_codecs("the generated wide schema", &wide_proto(), "wide", &[]);
-        compile_both_codecs(
+        compile_both_codecs_with(
             "table_bridge.proto",
             &read_proto("table_bridge.proto"),
             "br",
             &["Hot"],
+            |config| config.map_type(buffa_build::MapRepr::BTreeMap),
         );
         compile_both_codecs(
             "table_codec4.proto",
@@ -331,6 +343,59 @@ fn main() {
                 ".tc4x.Outer",
                 ".tc4x.Twins",
             ],
+        );
+        // The proto2 schema again in a message that drops unknown fields, where
+        // an entry with an unknown closed-enum number is dropped.
+        let proto2 = read_proto("table_codec2.proto");
+        compile_both_codecs_with(
+            "table_codec2.proto",
+            &proto2.replace("package tc2;", "package tcl;"),
+            "tcl",
+            &[],
+            |config| {
+                config
+                    .preserve_unknown_fields(false)
+                    .map_type(buffa_build::MapRepr::BTreeMap)
+            },
+        );
+        // Maps, as `tcm*` and `tcb*`; see protos/table_codec_maps.proto.
+        let maps = read_proto("table_codec_maps.proto");
+        compile_both_codecs("table_codec_maps.proto", &maps, "tcm", &[]);
+        compile_both_codecs_with(
+            "table_codec_maps.proto",
+            &maps.replace("package tcm;", "package tcb;"),
+            "tcb",
+            &[],
+            |config| config.map_type(buffa_build::MapRepr::BTreeMap),
+        );
+        // One message with maps of two collection types. The rule names both
+        // packages, because the two builds rename the package.
+        compile_both_codecs_with(
+            "table_codec_map_reprs.proto",
+            &read_proto("table_codec_map_reprs.proto"),
+            "tcr",
+            &[],
+            |config| {
+                config.map_type_in(
+                    buffa_build::MapRepr::BTreeMap,
+                    &[".tcru.MixedMaps.ordered", ".tcrt.MixedMaps.ordered"],
+                )
+            },
+        );
+        // Maps of strings without UTF-8 validation, of `bytes`, and of another
+        // crate's messages.
+        compile_both_codecs_with(
+            "table_codec_utf8_maps.proto",
+            &read_proto("table_codec_utf8_maps.proto"),
+            "tcu8",
+            &[],
+            // Text output has no form for a `bytes` map key.
+            |config| {
+                config
+                    .generate_text(false)
+                    .strict_utf8_mapping(true)
+                    .use_bytes_type()
+            },
         );
     }
 

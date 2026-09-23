@@ -16,8 +16,9 @@ use crate::features::ResolvedFeatures;
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
 use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto, FileDescriptorProto};
 use crate::impl_message::{
-    effective_type, field_bytes_repr, is_explicit_presence_scalar, is_field_packed,
-    is_real_oneof_member, is_required_field, map_value_bytes_repr,
+    effective_type, effective_type_in_map_entry, field_bytes_repr, find_map_entry_fields,
+    is_explicit_presence_scalar, is_field_packed, is_real_oneof_member, is_required_field,
+    map_string_repr, map_value_bytes_repr,
 };
 use crate::message::{find_map_entry, is_closed_enum, map_entry_key_type, map_entry_value_type};
 use crate::{CodeGenError, CodeGenWarning, CodecStrategy, TableCodecFallbackReason};
@@ -48,6 +49,19 @@ impl Card {
 pub(crate) struct TableField<'a> {
     pub(crate) field: &'a FieldDescriptorProto,
     pub(crate) number: u32,
+    pub(crate) shape: Shape<'a>,
+}
+
+/// What kind of entry a [`TableField`] is.
+pub(crate) enum Shape<'a> {
+    /// A `map` field.
+    Map(MapField<'a>),
+    /// Any other field, including a member of a oneof.
+    Plain(PlainField<'a>),
+}
+
+/// A field that is not a map.
+pub(crate) struct PlainField<'a> {
     pub(crate) ty: Type,
     pub(crate) card: Card,
     /// The name of the `buffa::table::Kind` variant of this field's value. For
@@ -60,6 +74,17 @@ pub(crate) struct TableField<'a> {
     pub(crate) oneof: Option<OneofMembership<'a>>,
 }
 
+/// The key and value of a map field.
+pub(crate) struct MapField<'a> {
+    pub(crate) key_ty: Type,
+    pub(crate) val_ty: Type,
+    /// The value field of the map entry message, which names the value's
+    /// message or enum type.
+    pub(crate) val_field: &'a FieldDescriptorProto,
+    /// Whether the value is an enum and the enum is closed.
+    pub(crate) closed_enum: bool,
+}
+
 /// The oneof that a [`TableField`] is a member of.
 pub(crate) struct OneofMembership<'a> {
     /// The index of the oneof in the message's `oneof_decl`.
@@ -69,7 +94,7 @@ pub(crate) struct OneofMembership<'a> {
 
 /// The `Kind` variant name of a field type, or `None` for a group, which has
 /// no kind.
-fn type_stem(ty: Type, card: Card) -> Option<&'static str> {
+pub(crate) fn type_stem(ty: Type, card: Card) -> Option<&'static str> {
     Some(match ty {
         Type::TYPE_INT32 => "Int32",
         Type::TYPE_INT64 => "Int64",
@@ -107,6 +132,21 @@ pub(crate) struct Ineligible {
 /// An [`Ineligible`] whose reason needs no more detail.
 fn same(reason: &str) -> Ineligible {
     ineligible(reason, format!("it {reason}"))
+}
+
+/// The fallback reason for a field, or a map, whose string, bytes or collection
+/// type is not the default. One text for all of them, so that a schema with
+/// several kinds gets one line in the summary.
+pub(crate) const CUSTOM_TYPE_REASON: &str =
+    "has a field with a custom string, bytes or collection type";
+
+/// The key and value fields of `f` if it is a map field of `msg`: `None` for
+/// any other field, and an error for a map whose entry message is malformed.
+fn map_entry_fields<'a>(
+    msg: &'a DescriptorProto,
+    f: &FieldDescriptorProto,
+) -> Option<Result<(&'a FieldDescriptorProto, &'a FieldDescriptorProto), CodeGenError>> {
+    find_map_entry(msg, f).map(|_| find_map_entry_fields(msg, f))
 }
 
 fn ineligible(reason: impl Into<String>, detail: impl Into<String>) -> Ineligible {
@@ -159,11 +199,11 @@ pub(crate) fn table_fields<'a>(
         } else {
             None
         };
-        if find_map_entry(msg, f).is_some() {
-            return Err(ineligible(
-                "has a map field",
-                format!("field `{name}` is a map"),
-            ));
+        if let Some(entry) = map_entry_fields(msg, f) {
+            let entry =
+                entry.map_err(|e| ineligible("has a malformed map field", e.to_string()))?;
+            fields.push(map_field(ctx, f, entry, fqn, features)?);
+            continue;
         }
         let ty = effective_type(ctx, f, features);
         let field_fqn = format!("{fqn}.{name}");
@@ -175,7 +215,7 @@ pub(crate) fn table_fields<'a>(
         } || (repeated && !ctx.repeated_repr(&field_fqn).is_default());
         if custom {
             return Err(ineligible(
-                "has a field with a custom string, bytes or collection type",
+                CUSTOM_TYPE_REASON,
                 format!("field `{name}` has a custom string, bytes or collection type"),
             ));
         }
@@ -213,15 +253,64 @@ pub(crate) fn table_fields<'a>(
         fields.push(TableField {
             field: f,
             number,
-            ty,
-            card,
-            kind,
-            closed_enum,
-            oneof: oneof.map(|(index, name)| OneofMembership { index, name }),
+            shape: Shape::Plain(PlainField {
+                ty,
+                card,
+                kind,
+                closed_enum,
+                oneof: oneof.map(|(index, name)| OneofMembership { index, name }),
+            }),
         });
     }
     fields.sort_by_key(|f| f.number);
     Ok(fields)
+}
+
+/// The table view of the map field `f` of `msg`, or why it cannot use the
+/// table.
+fn map_field<'a>(
+    ctx: &CodeGenContext,
+    f: &'a FieldDescriptorProto,
+    (key_field, val_field): (&FieldDescriptorProto, &'a FieldDescriptorProto),
+    fqn: &str,
+    features: &ResolvedFeatures,
+) -> Result<TableField<'a>, Ineligible> {
+    let name = f.name.as_deref().unwrap_or("");
+    let field_fqn = format!("{fqn}.{name}");
+    if matches!(ctx.map_repr(&field_fqn), crate::MapRepr::Custom(_)) {
+        return Err(ineligible(
+            CUSTOM_TYPE_REASON,
+            format!("map field `{name}` has a custom collection type"),
+        ));
+    }
+    let key_ty = effective_type_in_map_entry(ctx, key_field, features);
+    let val_ty = effective_type_in_map_entry(ctx, val_field, features);
+    let proto_fqn = fqn.strip_prefix('.').unwrap_or(fqn);
+    let custom_string = [key_ty, val_ty]
+        .into_iter()
+        .any(|ty| !map_string_repr(ctx, ty, proto_fqn, name).is_default());
+    let custom_bytes =
+        !map_value_bytes_repr(ctx, Some(key_ty), Some(val_ty), proto_fqn, name).is_default();
+    if custom_string || custom_bytes {
+        return Err(ineligible(
+            CUSTOM_TYPE_REASON,
+            format!("map field `{name}` has a custom string, bytes or collection type"),
+        ));
+    }
+    let number = crate::impl_message::validated_field_number(f)
+        .map_err(|e| ineligible("has an invalid field number", e.to_string()))?;
+    let closed_enum = val_ty == Type::TYPE_ENUM
+        && is_closed_enum(&crate::features::resolve_field(ctx, val_field, features));
+    Ok(TableField {
+        field: f,
+        number,
+        shape: Shape::Map(MapField {
+            key_ty,
+            val_ty,
+            val_field,
+            closed_enum,
+        }),
+    })
 }
 
 /// One message of the run and what the plan needs to know about it.

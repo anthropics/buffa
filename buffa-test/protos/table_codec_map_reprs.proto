@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+// Compiled as `tcru`/`tcrt` (see table_codec.proto), with `map_type_in` giving
+// `ordered` a `BTreeMap` and leaving `hashed` and `more` the default `HashMap`.
+package tcr;
+
+message MixedMaps {
+  map<string, int32> hashed = 1;
+  map<string, int32> ordered = 2;
+  map<int32, string> more = 3;
+}

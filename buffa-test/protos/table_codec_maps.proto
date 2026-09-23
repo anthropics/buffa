@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+// build.rs compiles this schema four times: `tcmu`/`tcmt` (unrolled/table, the
+// default `HashMap` for map fields) and `tcbu`/`tcbt` (unrolled/table, with
+// `BTreeMap`, whose iteration order makes the encoded bytes and `Debug` text
+// comparable). See table_codec.proto.
+package tcm;
+
+enum Color {
+  COLOR_UNSPECIFIED = 0;
+  RED = 1;
+  GREEN = 2;
+}
+
+message Item {
+  int32 id = 1;
+  string label = 2;
+  repeated int32 tags = 3;
+  Item child = 4;
+}
+
+// Every legal key type, with an `int32` value.
+message Keys {
+  map<int32, int32> i32 = 1;
+  map<int64, int32> i64 = 2;
+  map<uint32, int32> u32 = 3;
+  map<uint64, int32> u64 = 4;
+  map<sint32, int32> s32 = 5;
+  map<sint64, int32> s64 = 6;
+  map<bool, int32> b = 7;
+  map<fixed32, int32> f32 = 8;
+  map<fixed64, int32> f64 = 9;
+  map<sfixed32, int32> sf32 = 10;
+  map<sfixed64, int32> sf64 = 11;
+  map<string, int32> s = 12;
+}
+
+// Every value type, with a `string` key.
+message Values {
+  map<string, int32> i32 = 1;
+  map<string, int64> i64 = 2;
+  map<string, uint32> u32 = 3;
+  map<string, uint64> u64 = 4;
+  map<string, sint32> s32 = 5;
+  map<string, sint64> s64 = 6;
+  map<string, bool> b = 7;
+  map<string, fixed32> f32 = 8;
+  map<string, fixed64> f64 = 9;
+  map<string, sfixed32> sf32 = 10;
+  map<string, sfixed64> sf64 = 11;
+  map<string, float> fl = 12;
+  map<string, double> db = 13;
+  map<string, string> s = 14;
+  map<string, bytes> by = 15;
+  map<string, Color> color = 16;
+  map<string, Item> item = 17;
+}
+
+// Maps whose values are the message itself or hold messages that hold maps,
+// next to singular and repeated message fields.
+message Nesting {
+  map<string, Nesting> children = 1;
+  map<int32, Item> items = 2;
+  Item item = 3;
+  repeated Item many = 4;
+  int32 tail = 5;
+}
+
+// Field numbers that miss the dense lookup array, and a message that holds
+// maps.
+message Sparse {
+  map<string, string> a = 1;
+  int32 x = 2;
+  map<int32, string> far = 5000;
+  map<string, string> last = 536870911;
+}
+
+message Holder {
+  Values values = 1;
+  Keys keys = 2;
+  Nesting nesting = 3;
+  repeated Sparse sparse = 4;
+  map<string, Holder> by_name = 5;
+}
