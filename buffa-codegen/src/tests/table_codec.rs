@@ -27,8 +27,8 @@ fn scalar(name: &str, number: i32, ty: Type) -> FieldDescriptorProto {
 ///
 /// - `Plain`, `Leaf`, and `HasLeaf` (holds a `Leaf`), which can use the table;
 /// - `CustomStr` (has a string with a custom type, which the table does not
-///   support), which cannot, and `HoldsCustomStr` (holds an `CustomStr`), which can,
-///   because a table message may hold a message that has no table;
+///   support), which cannot, and `HoldsCustomStr` (holds a `CustomStr`), which
+///   can, because a table message may hold a message that has no table;
 /// - `Outer` with a nested `Inner`, both plain.
 fn schema() -> FileDescriptorProto {
     let custom_str = message("CustomStr", vec![scalar("a", 1, Type::TYPE_STRING)]);
@@ -841,7 +841,7 @@ fn a_message_with_a_plain_bytes_field_is_unaffected() {
 }
 
 #[test]
-fn a_child_set_to_unrolled_without_bytes_still_lets_its_holder_use_the_table() {
+fn a_holder_of_a_child_set_to_unrolled_without_bytes_is_a_table() {
     let config = CodeGenConfig {
         codec_strategy_in: vec![(".b.Leaf".to_string(), CodecStrategy::Unrolled)],
         ..blob_config()
