@@ -609,8 +609,9 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `register_types=false` | Disable the per-package `register_types()` helper that populates a `MessageRegistry` (default: emitted) |
 | `allow_message_set=true` | Permit `option message_set_wire_format = true;` instead of rejecting it (default: false) |
 | `strict_utf8=true` | Map `string` fields to `Vec<u8>`/`&[u8]` (no UTF-8 validation) instead of `String`/`&str`. Alias: `strict_utf8_mapping`. |
-| `idiomatic_enum_aliases=false` | Disable the default-on `UpperCamelCase` associated-const aliases for enum values; canonical protobuf enum variants remain unchanged |
 | `type_name_prefix=<prefix>` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`) |
+| `idiomatic_field_names=true` | Convert camelCase proto field and oneof names to snake_case Rust identifiers (`webMessageInfo` → `web_message_info`) (default: false). JSON, text-format and reflection names are unchanged. A converted field that collides with another member (proto2 only) gets an `_f<number>` suffix, with a build warning |
+| `idiomatic_enum_aliases=false` | Omit the `UpperCamelCase` associated-const aliases for enum values (`Status::Active`); the `SHOUTY_SNAKE_CASE` variants are unaffected (default: emitted). See [Enums](#enumvaluet--type-safe-open-enums) |
 | `override_feature_in=<path>=<feature>:<value>` | Apply a path-scoped editions feature override (currently `enum_type:OPEN`) to the compiled descriptors. Repeatable |
 | `open_enums_in=<path>` | Shorthand for `override_feature_in=<path>=enum_type:OPEN`. Repeatable |
 | `unbox_oneof=true` | Store every non-recursive message/group oneof variant inline instead of `Box<T>`. Recursive variants stay boxed. |
@@ -874,7 +875,7 @@ assert_eq!(Status::values().len(), 3);
 
 Aliases (additional names sharing an existing value, allowed by `option allow_alias = true`) are not enum variants in Rust — they're emitted as `pub const` aliases — so they don't appear in `values()`.
 
-**Idiomatic `UpperCamelCase` aliases.** Generated enums also carry one associated `const` per value with the enum-name prefix (if present) stripped and the rest converted to `UpperCamelCase` — for the `Status` example above, `Status::ACTIVE` is also reachable as `Status::Active`, and a prefixed value like `STATUS_ACTIVE` would produce the same alias. The aliases work in expressions and in `match` patterns, and like the `allow_alias` consts they don't appear in `values()` or in `Debug` output. If two values of an enum would collide after conversion, the aliases are suppressed for that enum as a whole, with a build warning. Disable per compilation unit with `.idiomatic_enum_aliases(false)`.
+**Idiomatic `UpperCamelCase` aliases.** Generated enums also carry one associated `const` per value with the enum-name prefix (if present) stripped and the rest converted to `UpperCamelCase` — for the `Status` example above, `Status::ACTIVE` is also reachable as `Status::Active`, and a prefixed value like `STATUS_ACTIVE` would produce the same alias. The aliases work in expressions and in `match` patterns, and like the `allow_alias` consts they don't appear in `values()` or in `Debug` output. If two values of an enum would collide after conversion, the aliases are suppressed for that enum as a whole, with a build warning. Disable per compilation unit with `.idiomatic_enum_aliases(false)` on the `buffa_build::Config` builder, or `idiomatic_enum_aliases=false` as a `protoc-gen-buffa` plugin option. With the aliases disabled, the consts are not generated, so code that references `Status::Active` no longer compiles; `Status::ACTIVE` is unaffected.
 
 ### Oneofs
 

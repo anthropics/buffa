@@ -298,8 +298,9 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             "idiomatic_field_names" => {
                 codegen.idiomatic_field_names = parse_bool("idiomatic_field_names", value)?
             }
-            // Enum aliases are default-on; expose the same opt-out as
-            // buffa-build for protoc / buf plugin users.
+            // `idiomatic_enum_aliases=false` omits the `UpperCamelCase`
+            // associated-const aliases for enum values. The
+            // `SHOUTY_SNAKE_CASE` variants are unaffected. Default on.
             "idiomatic_enum_aliases" => {
                 codegen.idiomatic_enum_aliases = parse_bool("idiomatic_enum_aliases", value)?
             }
