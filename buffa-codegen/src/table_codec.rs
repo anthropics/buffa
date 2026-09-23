@@ -507,13 +507,12 @@ impl Oneofs {
                 #group,
                 ::buffa::table::Kind::#payload_kind,
                 #value_aux,
-                #leader,
             ))
         });
         let member_aux = u16::try_from(aux.len() - 1).map_err(|_| too_many())?;
         Ok(quote! {
             ::buffa::__table_entry!(
-                #message, #oneof_field, oneof(#payload_kind), #number,
+                #message, #oneof_field, oneof(#payload_kind, #leader), #number,
                 aux = #member_aux,
                 slot = ::core::option::Option<#enum_path>
             )

@@ -77,21 +77,25 @@ macro_rules! size_dispatch {
     (@arm Msg $ty:ident $card:ident $table:ident $e:ident $tl:ident $slot:ident $cache:ident) => {
         size_msg::<$card>($table, $e, $tl, $slot, $cache)
     };
-    (@arm Oneof $ty:ident $card:ident $table:ident $e:ident $tl:ident $slot:ident $cache:ident) => {
+    (@arm Oneof $ty:ident LEADER $table:ident $e:ident $tl:ident $slot:ident $cache:ident) => {
         size_oneof($table, $e, $slot, $cache)
+    };
+    // The members that follow the leader are sized with it.
+    (@arm Oneof $ty:ident ONEOF $table:ident $e:ident $tl:ident $slot:ident $cache:ident) => {
+        0
     };
 }
 
 kind_table!(size_dispatch, size_kind);
 payload_kind_table!(size_dispatch, size_payload);
 
-/// The size of the oneof that the member `e` describes, if `e` is its leader,
-/// and 0 for any other member.
+/// The size of the oneof that its leader `e` describes.
 ///
 /// # Safety
 ///
-/// `slot` points to the `Option` of the oneof enum that `e`'s group describes,
-/// in a live message of the type `table` describes.
+/// `e` is a [`Kind::OneofLeader`] entry, and `slot` points to the `Option` of
+/// the oneof enum that its group describes, in a live message of the type
+/// `table` describes.
 #[inline(never)]
 unsafe fn size_oneof(
     table: &MessageTable,
@@ -100,9 +104,6 @@ unsafe fn size_oneof(
     cache: &mut SizeCache,
 ) -> u64 {
     let m = table.member(e);
-    if !m.leader {
-        return 0;
-    }
     // SAFETY: `slot` is a live `Option<E>` for the `E` the group was built for.
     let (number, payload) = unsafe { (table.group(m).get)(slot) };
     if number == 0 {

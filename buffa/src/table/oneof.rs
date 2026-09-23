@@ -5,7 +5,7 @@
 //! address a member by offset as it does an ordinary field. Instead generated
 //! code implements [`OneofEnum`] for `E`, which gives the interpreters the
 //! number of the current member and a pointer to its value, and the table has
-//! one entry per member, of kind [`Kind::OneofMember`].
+//! one entry per member, of kind [`Kind::OneofLeader`] or [`Kind::OneofFollower`].
 //!
 //! A member is written when it is set, whatever its value, so its value is
 //! described by a `Required` kind, its *payload kind*, and the interpreters
@@ -130,23 +130,15 @@ pub struct Member {
     pub(super) aux: u16,
     /// The kind of the member's value.
     pub(super) kind: Kind,
-    /// Whether this is the member with the lowest number, which writes and
-    /// sizes the oneof.
-    pub(super) leader: bool,
 }
 
 impl Member {
     /// A member of the oneof whose group is at aux index `group`, holding a
     /// value of kind `kind`, whose descriptor, if it needs one, is at aux
-    /// index `aux`. `leader` is whether it has the lowest number in its oneof.
+    /// index `aux`.
     #[must_use]
-    pub const fn new(group: u16, kind: Kind, aux: u16, leader: bool) -> Self {
-        Self {
-            group,
-            aux,
-            kind,
-            leader,
-        }
+    pub const fn new(group: u16, kind: Kind, aux: u16) -> Self {
+        Self { group, aux, kind }
     }
 }
 
@@ -198,9 +190,10 @@ pub(super) const fn check_member(e: &Entry, m: Member, aux: &[super::Aux]) -> bo
         e.number() >= g.first,
         "buffa table: a oneof member is numbered below its oneof's lowest"
     );
+    let leader = e.kind as u8 == Kind::OneofLeader as u8;
     assert!(
-        m.leader == (e.number() == g.first),
+        leader == (e.number() == g.first),
         "buffa table: the leader of a oneof must be exactly the member with its lowest number"
     );
-    m.leader
+    leader
 }

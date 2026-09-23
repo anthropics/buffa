@@ -123,21 +123,25 @@ macro_rules! write_dispatch {
     (@arm Msg $ty:ident $card:ident $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
         write_msg::<$card, K>($table, $e, $slot, $cache, $buf)
     };
-    (@arm Oneof $ty:ident $card:ident $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
+    (@arm Oneof $ty:ident LEADER $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
         write_oneof::<K>($table, $e, $slot, $cache, $buf)
+    };
+    // The members that follow the leader are written with it.
+    (@arm Oneof $ty:ident ONEOF $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
+        ()
     };
 }
 
 kind_table!(write_dispatch, write_kind);
 payload_kind_table!(write_dispatch, write_payload);
 
-/// Write the oneof that the member `e` describes, if `e` is its leader, and
-/// nothing for any other member.
+/// Write the oneof that its leader `e` describes.
 ///
 /// # Safety
 ///
-/// `slot` points to the `Option` of the oneof enum that `e`'s group describes,
-/// in a live message of the type `table` describes.
+/// `e` is a [`Kind::OneofLeader`] entry, and `slot` points to the `Option` of
+/// the oneof enum that its group describes, in a live message of the type
+/// `table` describes.
 #[inline(never)]
 unsafe fn write_oneof<K: EncodeSink>(
     table: &MessageTable,
@@ -147,9 +151,6 @@ unsafe fn write_oneof<K: EncodeSink>(
     buf: &mut K,
 ) {
     let m = table.member(e);
-    if !m.leader {
-        return;
-    }
     // SAFETY: `slot` is a live `Option<E>` for the `E` the group was built for.
     let (number, payload) = unsafe { (table.group(m).get)(slot) };
     if number == 0 {

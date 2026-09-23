@@ -51,6 +51,26 @@
 //!   write a [`BufMut`](crate::bytes::BufMut) through, and its `bytes::Bytes`
 //!   fields are copied out of the slice it is decoded from, where unrolled
 //!   code decoding from a `Bytes` shares them with the input.
+//! - If decoding a message member of a oneof fails, the oneof may hold that
+//!   member with the part of it that was decoded, where unrolled code leaves
+//!   the oneof as it was when the member was not already set. A failed decode
+//!   returns the error and no message, so this shows only to a caller that
+//!   merges into a message it keeps and reads it after an error.
+//!
+//! # Oneofs
+//!
+//! A oneof is an `Option` of a generated enum, whose layout is not specified,
+//! so an entry cannot address a member through an offset. The table has one
+//! entry of kind [`Kind::OneofLeader`] or [`Kind::OneofFollower`] per member, all at the offset of the
+//! `Option`, and generated code implements [`OneofEnum`] for the enum, which
+//! gives the interpreters the number of the member that is set, a pointer to
+//! its value, and a way to set another member. The value is read and written
+//! by the arm of the member's *payload kind*, the same kind an ordinary field
+//! of that type has, in its `Required` cardinality because a member is
+//! written whenever it is set. Only the member with the lowest number, the
+//! *leader*, sizes and writes the oneof, at its own place among the fields,
+//! which is where unrolled code writes it, so the bytes are the same. The
+//! other members only decode.
 //!
 //! # Where the code is compiled
 //!
@@ -116,9 +136,9 @@ macro_rules! __buffa_offset_of_unavailable {
 #[rustversion::before(1.77)]
 pub use __buffa_offset_of_unavailable as offset_of;
 
-// Cardinalities. The `Msg` kinds use `IMPLICIT` for a singular field. The one
-// `Oneof` kind is written with the cardinality name `ONEOF`, which is only a
-// token that the kind macros match.
+// Cardinalities. The `Msg` kinds use `IMPLICIT` for a singular field. The two
+// `Oneof` kinds are written with the cardinality names `LEADER` and `ONEOF`,
+// which are only tokens that the kind macros match.
 const IMPLICIT: u8 = 0;
 const REQUIRED: u8 = 1;
 const OPTIONAL: u8 = 2;
@@ -216,7 +236,8 @@ macro_rules! kind_table {
             EnumPacked: Enum Enum PACKED;
             MsgSingular: Msg Msg IMPLICIT;
             MsgRepeated: Msg Msg REPEATED;
-            OneofMember: Oneof Oneof ONEOF;
+            OneofLeader: Oneof Oneof LEADER;
+            OneofFollower: Oneof Oneof ONEOF;
         }
     };
 }
@@ -332,6 +353,7 @@ macro_rules! define_kind {
     (@shape REPEATED) => { REPEATED };
     (@shape PACKED) => { REPEATED };
     (@shape ONEOF) => { IMPLICIT };
+    (@shape LEADER) => { IMPLICIT };
     (@aux Scalar $card:ident) => { None };
     (@aux Str $card:ident) => { None };
     (@aux Bytes $card:ident) => { None };
@@ -394,7 +416,7 @@ pub enum Aux {
     /// The descriptor of a oneof, which its members' [`Member`] aux items
     /// refer to by index. No entry refers to it directly.
     Group(&'static OneofVt),
-    /// One member of a oneof ([`Kind::OneofMember`]).
+    /// One member of a oneof ([`Kind::OneofLeader`] or [`Kind::OneofFollower`]).
     Member(Member),
 }
 
@@ -463,7 +485,8 @@ impl Entry {
 
     /// An entry for member `number` of a oneof stored `offset` bytes into the
     /// message struct, whose value is of kind `payload`. `aux` is the index of
-    /// its [`Aux::Member`] item.
+    /// its [`Aux::Member`] item, and `leader` is whether it is the member with
+    /// the lowest number, which sizes and writes the oneof.
     ///
     /// # Panics
     ///
@@ -471,13 +494,23 @@ impl Entry {
     /// `payload` is not a kind that a oneof member can have, or as for
     /// [`Entry::new`].
     #[must_use]
-    pub const fn oneof_member(payload: Kind, number: u32, offset: usize, aux: u16) -> Self {
+    pub const fn oneof_member(
+        payload: Kind,
+        leader: bool,
+        number: u32,
+        offset: usize,
+        aux: u16,
+    ) -> Self {
         assert!(
             payload.is_oneof_payload(),
             "a oneof member's payload must be a `Required` scalar, string, bytes or enum kind, or `MsgSingular`"
         );
         let mut e = Self::new(payload, number, offset, aux);
-        e.kind = Kind::OneofMember;
+        e.kind = if leader {
+            Kind::OneofLeader
+        } else {
+            Kind::OneofFollower
+        };
         e
     }
 
@@ -593,8 +626,11 @@ impl<M> Table<M> {
     /// is not [`ABI`], if an entry lies outside `M`, if the entries are not in
     /// strictly increasing field-number order, if an entry's aux index is out
     /// of range or names a descriptor of the wrong variant or, for an enum,
-    /// the wrong cardinality, if `dense` disagrees with `entries`, or if
-    /// `unknown` does not leave room for an `UnknownFields`.
+    /// the wrong cardinality, if `dense` disagrees with `entries`, if
+    /// `unknown` does not leave room for an `UnknownFields`, or if a oneof is
+    /// inconsistent: a member whose group, payload kind, tag, offset or
+    /// leader kind disagrees with its oneof's descriptor, or a oneof whose
+    /// lowest-numbered member is not its only leader.
     ///
     /// # Safety
     ///
@@ -610,7 +646,7 @@ impl<M> Table<M> {
     /// - `Enum*`: the storage the entry's [`EnumVt`] was built for;
     /// - `MsgSingular`: the storage the [`MsgVt`] was built for, and
     ///   `MsgRepeated`: the `Vec` the [`RepVt`] was built for;
-    /// - `OneofMember`: an `Option<E>`, where the [`OneofVt`] of the member's
+    /// - `OneofLeader` and `OneofFollower`: an `Option<E>`, where the [`OneofVt`] of the member's
     ///   group was built for `E`, and `E`'s [`OneofEnum`] implementation
     ///   gives, for the member's number, a pointer to a value of the member's
     ///   payload kind, under the same rules as the kinds above (for
@@ -968,12 +1004,13 @@ macro_rules! __table {
 #[macro_export]
 macro_rules! __table_entry {
     (
-        $msg:ty, $field:ident, oneof($payload:ident), $number:expr,
+        $msg:ty, $field:ident, oneof($payload:ident, $leader:expr), $number:expr,
         aux = $aux:expr, slot = $slot:ty $(,)?
     ) => {{
         const _: fn(&$msg) -> *const $slot = |m| ::core::ptr::addr_of!(m.$field);
         $crate::table::Entry::oneof_member(
             $crate::table::Kind::$payload,
+            $leader,
             $number,
             $crate::table::offset_of!($msg, $field),
             $aux,
