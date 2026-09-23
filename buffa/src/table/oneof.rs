@@ -104,7 +104,11 @@ pub(super) type PlaceFn<'a> = &'a mut dyn FnMut(*mut u8) -> Result<(), DecodeErr
 unsafe fn get_impl<E: OneofEnum>(slot: *const u8) -> (u32, *const u8) {
     // SAFETY: the caller passes a pointer to a live `Option<E>`.
     match unsafe { &*slot.cast::<Option<E>>() } {
-        Some(e) => (e.number(), e.payload()),
+        Some(e) => {
+            let payload = e.payload();
+            debug_assert!(!payload.is_null(), "`OneofEnum::payload` returned null");
+            (e.number(), payload)
+        }
         None => (0, core::ptr::null()),
     }
 }
@@ -119,7 +123,11 @@ unsafe fn place_impl<E: OneofEnum>(slot: *mut u8, number: u32) -> *mut u8 {
         *e = Some(new_member(number));
     }
     match e {
-        Some(e) => e.payload_mut(),
+        Some(e) => {
+            let payload = e.payload_mut();
+            debug_assert!(!payload.is_null(), "`OneofEnum::payload_mut` returned null");
+            payload
+        }
         None => no_such_member(number),
     }
 }
@@ -145,10 +153,13 @@ unsafe fn place_with_impl<E: OneofEnum>(
     let Some(member) = member else {
         no_such_member(number)
     };
-    let result = f(member.payload_mut());
+    let payload = member.payload_mut();
+    debug_assert!(!payload.is_null(), "`OneofEnum::payload_mut` returned null");
+    let result = f(payload);
     if result.is_ok() && !is_set {
-        // What is now in `fresh`, the member that was set or the new one that
-        // failed, is dropped once, here.
+        // The swap sets the new member and leaves the one it replaces in
+        // `fresh`, so whichever member is discarded, that one or a new one
+        // that failed to decode, is dropped where `fresh` goes out of scope.
         core::mem::swap(e, &mut fresh);
     }
     result
