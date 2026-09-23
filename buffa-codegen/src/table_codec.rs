@@ -196,11 +196,14 @@ fn field_entry(
             ))
         })
     };
-    let type_path = |what: &str| -> Result<String, CodeGenError> {
-        let type_name = field
+    let type_name = || {
+        field
             .type_name
             .as_deref()
-            .ok_or(CodeGenError::MissingField("field.type_name"))?;
+            .ok_or(CodeGenError::MissingField("field.type_name"))
+    };
+    let type_path = |what: &str| -> Result<String, CodeGenError> {
+        let type_name = type_name()?;
         ctx.rust_type_relative(type_name, current_package, nesting)
             .ok_or_else(|| CodeGenError::Other(format!("{what} type '{type_name}' not found")))
     };
@@ -208,10 +211,7 @@ fn field_entry(
     // The table is not among the imports that `idiomatic_imports` shortens
     // paths with, so its path is built from the unshortened one.
     let unshortened_path = || -> Result<String, CodeGenError> {
-        let type_name = field
-            .type_name
-            .as_deref()
-            .ok_or(CodeGenError::MissingField("field.type_name"))?;
+        let type_name = type_name()?;
         let split = ctx
             .rust_type_relative_split(type_name, current_package, nesting)
             .ok_or_else(|| CodeGenError::Other(format!("message type '{type_name}' not found")))?;
@@ -226,14 +226,9 @@ fn field_entry(
         Type::TYPE_MESSAGE => {
             let child = type_path("message")?;
             let child_ty = rust_path_to_tokens(&child);
-            let type_name = field
-                .type_name
-                .as_deref()
-                .ok_or(CodeGenError::MissingField("field.type_name"))?;
-            // A child with a table is reached through it, and any other, an
-            // unrolled message, a message of another crate or a well-known
-            // type, through its `Message` impl.
-            let child_table = if ctx.uses_table_codec(type_name) {
+            // A child without a table here is reached through its `Message`
+            // impl.
+            let child_table = if ctx.uses_table_codec(type_name()?) {
                 Some(table_path(&unshortened_path()?)?)
             } else {
                 None

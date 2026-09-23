@@ -2,23 +2,23 @@
 //! table field looks like.
 //!
 //! A message can use the table if the interpreters in `buffa::table` cover
-//! every field it has. A message it holds does not have to be a table message:
-//! a table reaches a child that has a table through it, and any other child
-//! through its `Message` impl, so unrolled messages, messages of other crates
-//! and well-known types all work as children. The set of table messages is
-//! therefore the requested messages that are locally eligible.
+//! every field it has, with one exception that depends on the messages it
+//! holds: a child stored with a non-default bytes type would lose its
+//! zero-copy decode inside a table message, so the messages that hold one stay
+//! unrolled. Any other child is reached through its table or its `Message`
+//! impl, so it need not be a table message itself.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::context::CodeGenContext;
 use crate::features::ResolvedFeatures;
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
 use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto, FileDescriptorProto};
 use crate::impl_message::{
-    effective_type, is_explicit_presence_scalar, is_field_packed, is_real_oneof_member,
-    is_required_field,
+    effective_type, field_bytes_repr, is_explicit_presence_scalar, is_field_packed,
+    is_real_oneof_member, is_required_field, map_value_bytes_repr,
 };
-use crate::message::{find_map_entry, is_closed_enum};
+use crate::message::{find_map_entry, is_closed_enum, map_entry_key_type, map_entry_value_type};
 use crate::{CodeGenError, CodeGenWarning, CodecStrategy, TableCodecFallbackReason};
 
 /// The cardinality half of a field's `buffa::table::Kind`.
@@ -205,6 +205,66 @@ pub(crate) fn table_fields<'a>(
 struct Candidate<'a> {
     fqn: String,
     fields: Result<Vec<TableField<'a>>, Ineligible>,
+    /// Whether a `bytes` field or map value of the message has a non-default
+    /// type.
+    own_bytes: bool,
+    /// The proto paths of the message types of its fields: singular,
+    /// repeated, in a oneof, as a map value, or a group.
+    holds: Vec<String>,
+}
+
+/// Whether `msg` has a `bytes` field, or a map with `bytes` values, stored
+/// as `bytes::Bytes` or a custom type.
+fn has_non_default_bytes(
+    ctx: &CodeGenContext,
+    msg: &DescriptorProto,
+    fqn: &str,
+    features: &ResolvedFeatures,
+) -> bool {
+    let proto_fqn = fqn.trim_start_matches('.');
+    msg.field.iter().any(|f| {
+        let name = f.name.as_deref().unwrap_or("");
+        let repr = match find_map_entry(msg, f) {
+            Some(entry) => map_value_bytes_repr(
+                ctx,
+                map_entry_key_type(ctx, entry, features),
+                map_entry_value_type(ctx, entry, features),
+                proto_fqn,
+                name,
+            ),
+            None if effective_type(ctx, f, features) == Type::TYPE_BYTES => {
+                field_bytes_repr(ctx, proto_fqn, name)
+            }
+            None => return false,
+        };
+        !repr.is_default()
+    })
+}
+
+/// The proto paths of the message types `msg` has fields of.
+fn held_messages(
+    ctx: &CodeGenContext,
+    msg: &DescriptorProto,
+    features: &ResolvedFeatures,
+) -> Vec<String> {
+    msg.field
+        .iter()
+        .filter_map(|f| {
+            if let Some(entry) = find_map_entry(msg, f) {
+                if map_entry_value_type(ctx, entry, features) != Some(Type::TYPE_MESSAGE) {
+                    return None;
+                }
+                let value = entry.field.iter().find(|v| v.number == Some(2))?;
+                return value.type_name.clone();
+            }
+            matches!(
+                effective_type(ctx, f, features),
+                Type::TYPE_MESSAGE | Type::TYPE_GROUP
+            )
+            .then(|| f.type_name.clone())
+            .flatten()
+        })
+        .collect()
 }
 
 /// Every message of `messages` and the messages nested in them that has a
@@ -246,6 +306,8 @@ fn collect<'a>(
             }
             out.push(Candidate {
                 fields: table_fields(ctx, msg, &fqn, &features),
+                own_bytes: has_non_default_bytes(ctx, msg, &fqn, &features),
+                holds: held_messages(ctx, msg, &features),
                 fqn: fqn.clone(),
             });
         }
@@ -258,6 +320,38 @@ fn collect<'a>(
             out,
             group_types,
         );
+    }
+}
+
+/// The messages that hold, directly or through other messages, one that this
+/// run generates with a `bytes` field of a non-default type, each with the
+/// message it holds that leads there.
+///
+/// The table decodes over one contiguous `&[u8]`, where `Buf::copy_to_bytes`
+/// copies, so a `Bytes` field of such a child would stop being decoded
+/// without a copy. A child of another crate is not a candidate and is not
+/// inspected.
+fn holders_of_non_default_bytes<'a>(candidates: &'a [Candidate<'_>]) -> HashMap<&'a str, &'a str> {
+    let mut tainted: HashSet<&str> = candidates
+        .iter()
+        .filter(|c| c.own_bytes)
+        .map(|c| c.fqn.as_str())
+        .collect();
+    let mut holders = HashMap::new();
+    loop {
+        let before = tainted.len();
+        for c in candidates {
+            if tainted.contains(c.fqn.as_str()) {
+                continue;
+            }
+            if let Some(child) = c.holds.iter().find(|h| tainted.contains(h.as_str())) {
+                tainted.insert(&c.fqn);
+                holders.insert(c.fqn.as_str(), child.as_str());
+            }
+        }
+        if tainted.len() == before {
+            return holders;
+        }
     }
 }
 
@@ -312,8 +406,11 @@ pub(crate) fn plan(
         );
     }
 
-    // The messages that asked for the table, each with the reason it cannot
-    // have it, if there is one.
+    let bytes_holders = holders_of_non_default_bytes(&candidates);
+
+    // For each message that asked for the table, the table if it can have
+    // one, and otherwise the reason it cannot, which an exact rule turns into
+    // an error and the summary counts.
     let mut tables = HashSet::new();
     let mut selected = 0;
     let mut errors = Vec::new();
@@ -327,6 +424,14 @@ pub(crate) fn plan(
         let why = match &c.fields {
             Err(why) => why.clone(),
             Ok(_) if group_types.contains(&c.fqn) => same("is the type of a group field"),
+            Ok(_) if bytes_holders.contains_key(c.fqn.as_str()) => ineligible(
+                "holds a message with bytes fields of a non-default type",
+                format!(
+                    "it holds `{}`, which has bytes fields of a non-default type or holds a \
+                     message that has",
+                    bytes_holders[c.fqn.as_str()]
+                ),
+            ),
             Ok(_) => {
                 tables.insert(c.fqn.clone());
                 continue;
