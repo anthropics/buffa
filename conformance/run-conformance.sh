@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # The conformance_test_runner always runs two suites per invocation:
 #   1. Binary + JSON (expect thousands of successes)
