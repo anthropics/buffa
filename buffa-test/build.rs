@@ -185,6 +185,16 @@ fn wide_proto() -> String {
         }
         proto.push_str("}\n");
     }
+    // A oneof in a message with more entries than a dense array can index, so
+    // the table searches for its members.
+    proto.push_str("enum WideColor {\n  WIDE_UNSPECIFIED = 0;\n  WIDE_RED = 1;\n}\n");
+    proto.push_str("message WideOneof {\n");
+    for n in 1..=254 {
+        proto.push_str(&format!("  int32 f{n} = {n};\n"));
+    }
+    proto.push_str(
+        "  oneof pick {\n    int32 a = 255;\n    string b = 256;\n    Leaf c = 257;\n    WideColor d = 258;\n  }\n}\n",
+    );
     proto
 }
 
@@ -319,6 +329,7 @@ fn main() {
                 ".tc4x.Interleaved",
                 ".tc4x.Sparse",
                 ".tc4x.Outer",
+                ".tc4x.Twins",
             ],
         );
     }

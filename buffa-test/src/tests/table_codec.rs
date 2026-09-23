@@ -949,15 +949,18 @@ fn the_messages_the_table_can_handle_use_it() {
         crate::widet::__BUFFA_TABLE_W254,
         crate::widet::__BUFFA_TABLE_W255,
         crate::widet::__BUFFA_TABLE_W256,
+        crate::widet::__BUFFA_TABLE_WideOneof,
         crate::tcx::__BUFFA_TABLE_RpcNested,
         crate::tc4t::__BUFFA_TABLE_Kinds,
         crate::tc4t::__BUFFA_TABLE_Interleaved,
         crate::tc4t::__BUFFA_TABLE_Tree,
         crate::tc4t::__BUFFA_TABLE_Pair,
+        crate::tc4t::__BUFFA_TABLE_Twins,
         crate::tc4t::__BUFFA_TABLE_Sparse,
         crate::tc4t::__BUFFA_TABLE_Outer,
         crate::tc4t::outer::__BUFFA_TABLE_Sub,
         crate::tc4x::__BUFFA_TABLE_RpcKinds,
+        crate::tc4x::__BUFFA_TABLE_RpcTwins,
         crate::tc5t::__BUFFA_TABLE_Leaf,
         crate::tc5t::__BUFFA_TABLE_Held,
         crate::tc5t::__BUFFA_TABLE_Names,
@@ -1932,9 +1935,10 @@ where
     );
     let context = format!("merging {wire:02x?} into {unrolled:?}");
     assert_eq!(ru, rt, "results differ {context}");
+    // A table with a type name prefix names its messages differently.
     assert_eq!(
         format!("{u:?}"),
-        format!("{t:?}"),
+        format!("{t:?}").replace("Rpc", ""),
         "messages differ afterwards {context} ({ru:?})"
     );
     assert_eq!(
@@ -2198,6 +2202,147 @@ fn a_table_with_a_prefix_and_inline_oneof_members_agrees() {
     same::<crate::tc4u::Kinds, crate::tc4x::RpcKinds>(&wire);
     let decoded = <crate::tc4x::RpcKinds as Message>::decode_from_slice(&wire).unwrap();
     assert_eq!(decoded.encode_to_vec(), kinds_from(&wire).encode_to_vec());
+}
+
+#[test]
+fn a_member_that_fails_to_decode_in_an_inline_layout_leaves_the_message_as_unrolled_code_does() {
+    // `tc4x` stores the message member of `Kinds` inline, where a failed
+    // merge into a new default member must leave the old member in place too.
+    let opts = buffa::DecodeOptions::new();
+    let valid_first = varint_field(3, 9);
+    for u in oneofs_u::kinds() {
+        let x = <crate::tc4x::RpcKinds as Message>::decode_from_slice(&u.encode_to_vec()).unwrap();
+        for wire in failing_kinds_wires() {
+            for prefix in [&[][..], &valid_first[..]] {
+                assert_same_merge(&opts, &u, &x, &[prefix, &wire[..]].concat());
+            }
+        }
+    }
+}
+
+/// A `Twins` for each member and one with none, in the module `$m`.
+macro_rules! twins_samples {
+    ($m:ident) => {{
+        use crate::$m::{twins::Pick, Color, Leaf, Twins};
+        use buffa::EnumValue;
+        let leaf = |id, label: &str| {
+            Box::new(Leaf {
+                id,
+                label: label.into(),
+                ..Default::default()
+            })
+        };
+        [
+            None,
+            Some(Pick::A(leaf(1, "a"))),
+            Some(Pick::B(leaf(2, "b"))),
+            Some(Pick::B(Box::default())),
+            Some(Pick::C(EnumValue::from(Color::RED))),
+            Some(Pick::D(EnumValue::from(Color::GREEN))),
+            Some(Pick::D(EnumValue::from(9))),
+            Some(Pick::N(4)),
+        ]
+        .into_iter()
+        .map(|pick| Twins {
+            pick,
+            ..Default::default()
+        })
+        .collect::<Vec<_>>()
+    }};
+}
+
+#[test]
+fn members_that_share_a_message_or_enum_type_agree() {
+    let opts = buffa::DecodeOptions::new();
+    let (unrolled, table) = (twins_samples!(tc4u), twins_samples!(tc4t));
+    let leaf = |id: u64| varint_field(1, id);
+    let wires = [
+        // `a`, then `b`, replaces it, and `b` again merges into itself.
+        [
+            length_delimited_field(1, &leaf(1)),
+            length_delimited_field(2, &leaf(2)),
+            length_delimited_field(2, &length_delimited_field(2, b"x")),
+        ]
+        .concat(),
+        [varint_field(3, 1), varint_field(4, 2), varint_field(3, 9)].concat(),
+        // Cut short members of each of the shared types.
+        [
+            length_delimited_field(1, &leaf(1)),
+            tag(2, 2),
+            vec![0x05, 0x08],
+        ]
+        .concat(),
+        [varint_field(3, 1), tag(4, 0), vec![0x80]].concat(),
+    ];
+    for (u, t) in unrolled.iter().zip(&table) {
+        let wire = assert_same_codec(u, t);
+        assert_same_chained::<crate::tc4u::Twins, crate::tc4t::Twins>(&wire);
+        assert_same_on_corrupt_input::<crate::tc4u::Twins, crate::tc4t::Twins>(&wire, true);
+        // `tc4x` stores the members inline, in a table with prefixed names.
+        let x = <crate::tc4x::RpcTwins as Message>::decode_from_slice(&wire).unwrap();
+        assert_eq!(x.encode_to_vec(), wire);
+        for wire in &wires {
+            assert_same_merge(&opts, u, t, wire);
+            assert_same_merge(&opts, u, &x, wire);
+        }
+    }
+    for wire in &wires {
+        assert_same_decode::<crate::tc4u::Twins, crate::tc4t::Twins>(wire, false);
+    }
+}
+
+/// A `WideOneof` for each member of its oneof and one with none, in the module
+/// `$m`.
+macro_rules! wide_oneof_samples {
+    ($m:ident) => {{
+        use crate::$m::{wide_oneof::Pick, Leaf, WideColor, WideOneof};
+        use buffa::EnumValue;
+        [
+            None,
+            Some(Pick::A(7)),
+            Some(Pick::B("wide".into())),
+            Some(Pick::C(Box::new(Leaf {
+                x: 3,
+                ..Default::default()
+            }))),
+            Some(Pick::D(EnumValue::from(WideColor::WIDE_RED))),
+        ]
+        .into_iter()
+        .map(|pick| WideOneof {
+            f1: 1,
+            f254: 9,
+            pick,
+            ..Default::default()
+        })
+        .collect::<Vec<_>>()
+    }};
+}
+
+#[test]
+fn a_oneof_in_a_message_too_wide_for_a_dense_lookup_agrees() {
+    let opts = buffa::DecodeOptions::new();
+    let (unrolled, table) = (wide_oneof_samples!(wideu), wide_oneof_samples!(widet));
+    for (u, t) in unrolled.iter().zip(&table) {
+        let wire = assert_same_codec(u, t);
+        assert_same_chained::<crate::wideu::WideOneof, crate::widet::WideOneof>(&wire);
+        assert_same_on_corrupt_input::<crate::wideu::WideOneof, crate::widet::WideOneof>(
+            &wire, true,
+        );
+        // Each member replaces the one that is set, and one that is cut short
+        // leaves it.
+        for wire in [
+            [varint_field(255, 1), length_delimited_field(256, b"s")].concat(),
+            [
+                length_delimited_field(257, &varint_field(1, 2)),
+                length_delimited_field(257, &varint_field(1, 3)),
+            ]
+            .concat(),
+            [varint_field(258, 1), tag(257, 2), vec![0x05, 0x08]].concat(),
+            [varint_field(1, 5), tag(256, 2), vec![0x02, b'a']].concat(),
+        ] {
+            assert_same_merge(&opts, u, t, &wire);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
