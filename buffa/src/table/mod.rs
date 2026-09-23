@@ -298,6 +298,7 @@ pub trait KindSlot {
 kind_table!(define_kind);
 
 // After the macros above, whose textual scope covers only what follows them.
+mod bridge;
 mod decode;
 mod encode;
 mod scalar;

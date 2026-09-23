@@ -4,9 +4,10 @@
 
 use core::marker::PhantomData;
 
+use super::bridge::Child;
 use super::{Table, IMPLICIT, OPTIONAL, REPEATED};
 use crate::alloc::vec::Vec;
-use crate::{EnumValue, Enumeration, MessageField, ProtoBox};
+use crate::{EnumValue, Enumeration, Message, MessageField, ProtoBox};
 
 // ---------------------------------------------------------------------------
 // Singular message fields
@@ -36,10 +37,10 @@ impl<T: Default, P: ProtoBox<T>> MsgSlot for MessageField<T, P> {
     }
 }
 
-/// Descriptor of a singular message field: the child's table and how to reach
-/// the child through the field's storage.
+/// Descriptor of a singular message field: how to encode, size and decode the
+/// child and how to reach it through the field's storage.
 pub struct MsgVt {
-    pub(super) table: &'static super::MessageTable,
+    pub(super) child: Child,
     /// The message in the field, created with its default if unset.
     ///
     /// # Safety
@@ -78,7 +79,23 @@ impl MsgVt {
     #[must_use]
     pub const fn new<F: MsgSlot>(table: &'static Table<F::Msg>) -> Self {
         Self {
-            table: &table.raw,
+            child: Child::Table(&table.raw),
+            place: place_impl::<F>,
+            get: get_impl::<F>,
+        }
+    }
+
+    /// Describe a field of type `F` whose message has no table here: a
+    /// message generated with the unrolled codec, by another crate, or one of
+    /// the well-known types. The child is reached through its [`Message`]
+    /// impl, so it may use any codec.
+    #[must_use]
+    pub const fn new_dyn<F: MsgSlot>() -> Self
+    where
+        F::Msg: Message,
+    {
+        Self {
+            child: Child::of::<F::Msg>(),
             place: place_impl::<F>,
             get: get_impl::<F>,
         }
@@ -91,7 +108,7 @@ impl MsgVt {
 
 /// Descriptor of a repeated message field, a `Vec<T>`.
 pub struct RepVt {
-    pub(super) table: &'static super::MessageTable,
+    pub(super) child: Child,
     /// The size in bytes of one element.
     pub(super) size: usize,
     /// Append a default element and return a pointer to it.
@@ -148,7 +165,20 @@ impl RepVt {
     #[must_use]
     pub const fn new<T: Default>(table: &'static Table<T>) -> Self {
         Self {
-            table: &table.raw,
+            child: Child::Table(&table.raw),
+            size: core::mem::size_of::<T>(),
+            push: push_impl::<T>,
+            pop: pop_impl::<T>,
+            parts: parts_impl::<T>,
+        }
+    }
+
+    /// Describe a `Vec<T>` field whose messages have no table here; see
+    /// [`MsgVt::new_dyn`].
+    #[must_use]
+    pub const fn new_dyn<T: Message>() -> Self {
+        Self {
+            child: Child::of::<T>(),
             size: core::mem::size_of::<T>(),
             push: push_impl::<T>,
             pop: pop_impl::<T>,

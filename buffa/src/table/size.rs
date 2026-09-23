@@ -233,7 +233,7 @@ unsafe fn size_msg<const C: u8>(
             let mut size = 0;
             for i in 0..len {
                 let idx = cache.reserve();
-                let inner = compute_size(vt.table, ptr.add(i * vt.size), cache);
+                let inner = vt.child.compute_size(ptr.add(i * vt.size), cache);
                 cache.set(idx, inner);
                 size += tl + varint_len(u64::from(inner)) as u64 + u64::from(inner);
             }
@@ -245,7 +245,7 @@ unsafe fn size_msg<const C: u8>(
                 return 0;
             }
             let idx = cache.reserve();
-            let inner = compute_size(vt.table, child, cache);
+            let inner = vt.child.compute_size(child, cache);
             cache.set(idx, inner);
             tl + varint_len(u64::from(inner)) as u64 + u64::from(inner)
         }
