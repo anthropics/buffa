@@ -1136,6 +1136,64 @@ fn a_message_with_a_oneof_gets_a_table_with_one_entry_per_member() {
 }
 
 #[test]
+fn oneof_members_of_one_type_share_a_descriptor() {
+    // `x` and `y` are `Leaf`, `p` and `q` are `Color`, and `z` is a `Leaf` in
+    // a second oneof, which shares the descriptor of the first's.
+    let mut file = oneof_schema();
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Color".to_string()),
+        value: vec![EnumValueDescriptorProto {
+            name: Some("RED".to_string()),
+            number: Some(0),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let with_oneof = &mut file.message_type[1];
+    let member = |field: FieldDescriptorProto, oneof| FieldDescriptorProto {
+        oneof_index: Some(oneof),
+        ..field
+    };
+    with_oneof.field.extend([
+        member(message_field("x", 6, ".o.Leaf"), 0),
+        member(message_field("y", 7, ".o.Leaf"), 0),
+        member(
+            FieldDescriptorProto {
+                type_name: Some(".o.Color".to_string()),
+                ..scalar("p", 8, Type::TYPE_ENUM)
+            },
+            0,
+        ),
+        member(
+            FieldDescriptorProto {
+                type_name: Some(".o.Color".to_string()),
+                ..scalar("q", 9, Type::TYPE_ENUM)
+            },
+            0,
+        ),
+        member(message_field("z", 10, ".o.Leaf"), 1),
+    ]);
+    with_oneof.oneof_decl.push(OneofDescriptorProto {
+        name: Some("other".to_string()),
+        ..Default::default()
+    });
+    let (files, _) = generate_with_diagnostics(
+        &[file],
+        &["o.proto".to_string()],
+        &table_config(CodecStrategy::Table),
+    )
+    .unwrap();
+    let code = squashed(&joined(&files));
+    let table = code.split("static__BUFFA_TABLE_WithOneof").nth(1).unwrap();
+    let table = table.split("impl::buffa::Message").next().unwrap();
+    // Four members are a `Leaf` and two a `Color`, with one descriptor each.
+    assert_eq!(table.matches("Aux::Msg(").count(), 1, "{table}");
+    assert_eq!(table.matches("Aux::Enum(").count(), 1, "{table}");
+    assert_eq!(table.matches("Aux::Member(").count(), 8, "{table}");
+    assert_eq!(table.matches("Aux::Group(").count(), 2, "{table}");
+}
+
+#[test]
 fn a_oneof_member_whose_child_has_no_table_is_reached_through_its_message_impl() {
     // `Leaf` is set to unrolled, so `WithOneof` reaches it through its
     // `Message` impl, and stays a table message.

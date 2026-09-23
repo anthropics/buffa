@@ -100,3 +100,15 @@ message Outer {
   }
   repeated Sub subs = 5;
 }
+
+// Members that share a message type, and members that share an enum type,
+// whose descriptors the table shares.
+message Twins {
+  oneof pick {
+    Leaf a = 1;
+    Leaf b = 2;
+    Color c = 3;
+    Color d = 4;
+    int32 n = 5;
+  }
+}
