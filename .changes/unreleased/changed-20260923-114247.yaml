@@ -1,4 +1,4 @@
 kind: Changed
 body: |-
-    **`decode_varint` decodes a one-byte varint inline in speed-optimised builds** (#NNN). Length prefixes and small scalars skip the out-of-line call, which puts decode time at 0.80–0.96× on the tag-dense benchmark shapes (bare metal, ±5% run-to-run floor). Decoded values, errors and bytes consumed are unchanged.
+    **`decode_varint` decodes a one-byte varint inline in speed-optimised builds** (#474). Length prefixes and small scalars skip the out-of-line call, which puts decode time at 0.80–0.96× on the tag-dense benchmark shapes (bare metal, ±5% run-to-run floor). Decoded values, errors and bytes consumed are unchanged.
 time: 2026-09-23T11:42:47.499499579-07:00
