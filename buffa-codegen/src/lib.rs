@@ -1144,7 +1144,7 @@ pub enum CodecStrategy {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct TableCodecFallbackReason {
-    /// The reason as a predicate, such as `has a map field`. The wording is for
+    /// The reason as a predicate, such as `has a group field`. The wording is for
     /// people and may change between releases.
     pub reason: String,
     /// The proto paths of all of them, with a leading dot, in declaration

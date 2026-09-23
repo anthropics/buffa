@@ -14,7 +14,9 @@ use crate::generated::descriptor::field_descriptor_proto::Type;
 use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto};
 use crate::idents::rust_path_to_tokens;
 use crate::message::classify_field;
-use crate::table_plan::{table_fields, Card, OneofMembership, TableField};
+use crate::table_plan::{
+    table_fields, type_stem, Card, MapField, OneofMembership, PlainField, Shape, TableField,
+};
 use crate::CodeGenError;
 
 /// The name of the static table of the message struct `rust_name`.
@@ -76,8 +78,14 @@ pub(crate) fn generate_table_impl(
     let mut aux: Vec<TokenStream> = Vec::new();
     let mut oneofs = Oneofs::new(scope, msg, &fields);
     for f in &fields {
-        if let Some(member) = &f.oneof {
-            entries.push(oneofs.member_entry(scope, &name, f, member, &mut aux)?);
+        if let Shape::Plain(
+            plain @ PlainField {
+                oneof: Some(member),
+                ..
+            },
+        ) = &f.shape
+        {
+            entries.push(oneofs.member_entry(scope, &name, f, plain, member, &mut aux)?);
             continue;
         }
         let (entry, aux_item) = field_entry(scope, msg, &name, f, aux.len(), resolver)?;
@@ -189,7 +197,6 @@ fn field_entry(
     let field = f.field;
     let field_name = field.name.as_deref().unwrap_or("");
     let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
-    let kind = format_ident!("{}", f.kind);
     let number = f.number;
 
     let aux_u16 = || u16::try_from(aux_index).map_err(|_| too_many_descriptors(scope));
@@ -197,7 +204,23 @@ fn field_entry(
     let unshortened_path = || unshortened_path(scope, field);
     let type_name = || field_type_name(field);
 
-    match f.ty {
+    let plain = match &f.shape {
+        Shape::Map(map) => {
+            let aux = aux_u16()?;
+            let map_ty = classify_field(scope, msg, field, resolver)?.rust_type;
+            let vt = map_descriptor(scope, &map_ty, map)?;
+            return Ok((
+                quote! {
+                    ::buffa::__table_entry!(#name, #ident, Map, #number, aux = #aux, slot = #map_ty)
+                },
+                Some(quote! { ::buffa::table::Aux::Map(&#vt) }),
+            ));
+        }
+        Shape::Plain(plain) => plain,
+    };
+    let kind = format_ident!("{}", plain.kind);
+
+    match plain.ty {
         Type::TYPE_MESSAGE => {
             let child = type_path("message")?;
             let child_ty = rust_path_to_tokens(&child);
@@ -208,7 +231,7 @@ fn field_entry(
             } else {
                 None
             };
-            let (slot, aux_item) = if f.card == Card::Repeated {
+            let (slot, aux_item) = if plain.card == Card::Repeated {
                 let vt = match &child_table {
                     Some(table) => quote! { ::buffa::table::RepVt::new::<#child_ty>(&#table) },
                     None => quote! { ::buffa::table::RepVt::new_via_message::<#child_ty>() },
@@ -235,8 +258,8 @@ fn field_entry(
         }
         Type::TYPE_ENUM => {
             let enum_ty = rust_path_to_tokens(&type_path("enum")?);
-            let repeated = matches!(f.card, Card::Repeated | Card::Packed);
-            let shape = match (repeated, f.card == Card::Optional, f.closed_enum) {
+            let repeated = matches!(plain.card, Card::Repeated | Card::Packed);
+            let shape = match (repeated, plain.card == Card::Optional, plain.closed_enum) {
                 (true, _, true) => quote! { RepeatedClosed },
                 (true, _, false) => quote! { RepeatedOpen },
                 (false, true, true) => quote! { OptionalClosed },
@@ -264,6 +287,57 @@ fn field_entry(
             None,
         )),
     }
+}
+
+/// The `MapVt` expression for the map field of Rust type `map_ty`.
+fn map_descriptor(
+    scope: MessageScope<'_>,
+    map_ty: &TokenStream,
+    map: &MapField<'_>,
+) -> Result<TokenStream, CodeGenError> {
+    let marker = |ty: Type, slot: &str| -> Result<TokenStream, CodeGenError> {
+        match type_stem(ty, Card::Required) {
+            Some(stem) if !matches!(ty, Type::TYPE_ENUM | Type::TYPE_MESSAGE) => {
+                let kind = format_ident!("{}Required", stem);
+                Ok(quote! { ::buffa::table::kinds::#kind })
+            }
+            _ => Err(CodeGenError::Other(format!(
+                "table codec: a map {slot} of type {ty:?} has no scalar kind"
+            ))),
+        }
+    };
+    let key = marker(map.key_ty, "key")?;
+    Ok(match map.val_ty {
+        Type::TYPE_ENUM => {
+            let enum_ty = rust_path_to_tokens(&type_path(scope, map.val_field, "enum")?);
+            let shape = if map.closed_enum {
+                quote! { ImplicitClosed }
+            } else {
+                quote! { ImplicitOpen }
+            };
+            quote! {
+                ::buffa::table::MapVt::with_enum::<#map_ty, #key, ::buffa::table::#shape<#enum_ty>>()
+            }
+        }
+        Type::TYPE_MESSAGE => {
+            let child = rust_path_to_tokens(&type_path(scope, map.val_field, "message")?);
+            // A value without a table here is reached through its `Message`
+            // impl.
+            let msg_vt = if scope.ctx.uses_table_codec(field_type_name(map.val_field)?) {
+                let child_table = table_path(&unshortened_path(scope, map.val_field)?)?;
+                quote! { ::buffa::table::DirectMsgVt::new(&#child_table) }
+            } else {
+                quote! { ::buffa::table::DirectMsgVt::<#child>::via_message() }
+            };
+            quote! {
+                ::buffa::table::MapVt::with_msg::<#map_ty, #key, #child>(&#msg_vt)
+            }
+        }
+        ty => {
+            let value = marker(ty, "value")?;
+            quote! { ::buffa::table::MapVt::new::<#map_ty, #key, #value>() }
+        }
+    })
 }
 
 /// The proto path of the message or enum type of `field`.
@@ -349,13 +423,13 @@ impl Oneofs {
     fn new(scope: MessageScope<'_>, msg: &DescriptorProto, fields: &[TableField<'_>]) -> Self {
         let mut first: HashMap<usize, u32> = HashMap::new();
         let mut with_messages = HashSet::new();
-        for (oneof, f) in fields
-            .iter()
-            .filter_map(|f| f.oneof.as_ref().map(|oneof| (oneof, f)))
-        {
+        for (oneof, f, plain) in fields.iter().filter_map(|f| match &f.shape {
+            Shape::Plain(plain) => plain.oneof.as_ref().map(|oneof| (oneof, f, plain)),
+            Shape::Map(_) => None,
+        }) {
             let lowest = first.entry(oneof.index).or_insert(f.number);
             *lowest = (*lowest).min(f.number);
-            if f.ty == Type::TYPE_MESSAGE {
+            if plain.ty == Type::TYPE_MESSAGE {
                 with_messages.insert(oneof.index);
             }
         }
@@ -393,6 +467,7 @@ impl Oneofs {
         scope: MessageScope<'_>,
         message: &proc_macro2::Ident,
         f: &TableField<'_>,
+        plain: &PlainField<'_>,
         member: &OneofMembership<'_>,
         aux: &mut Vec<TokenStream>,
     ) -> Result<TokenStream, CodeGenError> {
@@ -411,7 +486,7 @@ impl Oneofs {
         let oneof_field = ctx.oneof_ident(member.name);
         let variant = crate::oneof::oneof_variant_ident(field_name);
         let number = f.number;
-        let payload_kind = format_ident!("{}", f.kind);
+        let payload_kind = format_ident!("{}", plain.kind);
         let first = self.first[&member.index];
 
         // The oneof's descriptor, made when its first member is met.
@@ -439,7 +514,7 @@ impl Oneofs {
         // is first set.
         let variant_fqn = format!(".{}.{}.{field_name}", scope.proto_fqn, member.name);
         let default = quote! { ::core::default::Default::default() };
-        let (slot, value_aux, new) = match f.ty {
+        let (slot, value_aux, new) = match plain.ty {
             Type::TYPE_MESSAGE => {
                 let child = rust_path_to_tokens(&type_path(scope, field, "message")?);
                 // A child without a table here is reached through its
@@ -450,7 +525,7 @@ impl Oneofs {
                 } else {
                     quote! { ::buffa::table::MsgVt::direct_via_message::<#child>() }
                 };
-                let new = if crate::oneof::variant_boxed(ctx, f.ty, &variant_fqn) {
+                let new = if crate::oneof::variant_boxed(ctx, plain.ty, &variant_fqn) {
                     match ctx.pointer_repr(&variant_fqn) {
                         crate::PointerRepr::Box => quote! { ::buffa::alloc::boxed::Box::default() },
                         repr => repr.pointer_new(&child, &default)?,
@@ -466,7 +541,7 @@ impl Oneofs {
             }
             Type::TYPE_ENUM => {
                 let enum_ty = rust_path_to_tokens(&type_path(scope, field, "enum")?);
-                let shape = if f.closed_enum {
+                let shape = if plain.closed_enum {
                     quote! { ::buffa::table::ImplicitClosed<#enum_ty> }
                 } else {
                     quote! { ::buffa::table::ImplicitOpen<#enum_ty> }
