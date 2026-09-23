@@ -129,6 +129,30 @@ fn setup_type_registry() {
     set_type_registry(reg);
 }
 
+// ── Table codec ──────────────────────────────────────────────────────────
+//
+// Built with the `table` feature, the test messages are generated with
+// `CodecStrategy::Table` and this binary is the via-table run. A message that
+// the strategy leaves unrolled has no `__BUFFA_TABLE_*` static, so naming the
+// ones below fails the build if a fallback rule ever moves them back to the
+// unrolled codec and the run would silently stop testing the table.
+// `TestAllTypesProto2` is not among them: its extension ranges and group
+// fields keep it unrolled, so proto2 reaches the table through its nested and
+// sibling messages.
+
+#[cfg(all(not(no_protos), feature = "table"))]
+const _: () = {
+    fn is_table<M: buffa::Message>(_: &'static buffa::table::Table<M>) {}
+    fn pin() {
+        is_table(&proto3::__BUFFA_TABLE_TestAllTypesProto3);
+        is_table(&proto3::test_all_types_proto3::__BUFFA_TABLE_NestedMessage);
+        is_table(&proto2::__BUFFA_TABLE_TestLargeOneof);
+        is_table(&proto2::test_all_types_proto2::__BUFFA_TABLE_NestedMessage);
+        #[cfg(has_editions_protos)]
+        is_table(&editions_proto3::__BUFFA_TABLE_TestAllTypesProto3);
+    }
+};
+
 // ── Via-view mode ────────────────────────────────────────────────────────
 //
 // When `BUFFA_VIA_VIEW=1`, binary input is routed through

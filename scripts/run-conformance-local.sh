@@ -2,9 +2,9 @@
 # Run the full protobuf conformance suite without Docker.
 #
 # Native equivalent of conformance/run-conformance.sh + conformance/Dockerfile:
-# builds the std and no_std conformance binaries with the host cargo, then
-# drives them through conformance_test_runner (built by
-# scripts/build-conformance-tools.sh) for the same seven runs as the Docker
+# builds the std, table and no_std conformance binaries with the host cargo,
+# then drives them through conformance_test_runner (built by
+# scripts/build-conformance-tools.sh) for the same eight runs as the Docker
 # image. The runner talks to the testee over stdin/stdout pipes, so no
 # container plumbing is needed.
 #
@@ -21,6 +21,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RUNNER="${ROOT}/.local/bin/conformance_test_runner"
 CONF="${ROOT}/conformance"
 
+# rust-toolchain.toml selects the toolchain from the working directory, so the
+# builds below run from the repository root whatever the caller's directory is.
+cd "${ROOT}"
+
 if [ ! -x "${RUNNER}" ]; then
     echo "conformance_test_runner not found at ${RUNNER}."
     echo "Run: task conformance-tools-local"
@@ -31,12 +35,15 @@ if [ ! -f "${CONF}/protos/conformance.proto" ]; then
     exit 1
 fi
 
-echo "=== Building conformance binaries (std + no_std) ==="
+echo "=== Building conformance binaries (std + table + no_std) ==="
 cargo build --release --manifest-path "${CONF}/Cargo.toml"
+cargo build --release --manifest-path "${CONF}/Cargo.toml" \
+    --features table --target-dir "${CONF}/target-table"
 cargo build --release --manifest-path "${CONF}/Cargo.toml" \
     --no-default-features --target-dir "${CONF}/target-nostd"
 
 STD_BIN="${CONF}/target/release/conformance"
+TABLE_BIN="${CONF}/target-table/release/conformance"
 NOSTD_BIN="${CONF}/target-nostd/release/conformance"
 
 run_suite() {
@@ -96,4 +103,11 @@ BUFFA_VIA_VTABLE=1 run_suite vtable \
     --maximum_edition 2024 \
     "${STD_BIN}"
 
-echo "All seven conformance runs completed."
+run_suite table \
+    "${RUNNER}" \
+    --failure_list "${CONF}/known_failures_table.txt" \
+    --text_format_failure_list "${CONF}/known_failures_text.txt" \
+    --maximum_edition 2024 \
+    "${TABLE_BIN}"
+
+echo "All eight conformance runs completed."
