@@ -190,7 +190,10 @@ fn a_child_without_a_table_is_reached_through_its_message_impl() {
     let code = squashed(&code);
     // `HasOneofy` is a table message that holds `Oneofy`, which is unrolled.
     let holder = code.split("static__BUFFA_TABLE_HasOneofy").nth(1).unwrap();
-    let holder = holder.split("impl::buffa::MessageforHasOneofy").next().unwrap();
+    let holder = holder
+        .split("impl::buffa::MessageforHasOneofy")
+        .next()
+        .unwrap();
     assert!(
         holder.contains("Aux::Msg(&::buffa::table::MsgVt::new_dyn::<::buffa::MessageField<Oneofy,::buffa::Inline<Oneofy>>>())"),
         "{holder}"

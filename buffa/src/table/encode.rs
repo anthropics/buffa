@@ -1,5 +1,6 @@
 //! The write pass: [`write_to`] and its per-kind arms.
 
+use super::bridge::write_field_value;
 use super::scalar::Sc;
 use super::{
     Bool, Double, Entry, Fixed32, Fixed64, Float, Int32, Int64, Kind, MessageTable, Sfixed32,
@@ -7,7 +8,6 @@ use super::{
     REQUIRED,
 };
 use crate::alloc::{string::String, vec::Vec};
-use super::bridge::write_field_value;
 use crate::encode_sink::PreSized;
 use crate::encoding::encode_varint;
 use crate::{types, EncodeSink, SizeCache, UnknownFields};

@@ -1234,7 +1234,12 @@ fn unknown_fields_in_a_child_without_a_table_are_kept() {
     assert_same_decode::<crate::bru::Cold, crate::brt::Cold>(&wire, false);
     let decoded = <crate::brt::Cold as Message>::decode_from_slice(&wire).unwrap();
     assert_eq!(
-        decoded.hot.as_option().unwrap().__buffa_unknown_fields.len(),
+        decoded
+            .hot
+            .as_option()
+            .unwrap()
+            .__buffa_unknown_fields
+            .len(),
         1
     );
     assert_eq!(decoded.encode_to_vec(), wire);
