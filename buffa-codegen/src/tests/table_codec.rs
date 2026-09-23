@@ -1122,7 +1122,7 @@ fn a_message_with_a_oneof_gets_a_table_with_one_entry_per_member() {
     // One descriptor for the oneof, at the lowest member number, and a member
     // item for each of the three.
     assert_eq!(table.matches("Aux::Group(").count(), 1, "{table}");
-    assert!(table.contains("OneofVt::new::<"), "{table}");
+    assert!(table.contains("OneofVt::with_messages::<"), "{table}");
     assert!(
         table.contains("offset_of!(WithOneof,choice),1u32"),
         "{table}"
@@ -1191,6 +1191,51 @@ fn oneof_members_of_one_type_share_a_descriptor() {
     assert_eq!(table.matches("Aux::Enum(").count(), 1, "{table}");
     assert_eq!(table.matches("Aux::Member(").count(), 8, "{table}");
     assert_eq!(table.matches("Aux::Group(").count(), 2, "{table}");
+    assert_eq!(
+        table.matches("OneofVt::with_messages::<").count(),
+        2,
+        "{table}"
+    );
+}
+
+#[test]
+fn only_a_oneof_with_a_message_member_is_built_to_decode_messages_in_place() {
+    // `choice` has a message member; `plain` has only an int32 and a string.
+    let mut file = oneof_schema();
+    let with_oneof = &mut file.message_type[1];
+    with_oneof.field.extend([
+        FieldDescriptorProto {
+            oneof_index: Some(1),
+            ..scalar("p", 6, Type::TYPE_INT32)
+        },
+        FieldDescriptorProto {
+            oneof_index: Some(1),
+            ..scalar("q", 7, Type::TYPE_STRING)
+        },
+    ]);
+    with_oneof.oneof_decl.push(OneofDescriptorProto {
+        name: Some("plain".to_string()),
+        ..Default::default()
+    });
+    let (files, _) = generate_with_diagnostics(
+        &[file],
+        &["o.proto".to_string()],
+        &table_config(CodecStrategy::Table),
+    )
+    .unwrap();
+    let code = squashed(&joined(&files));
+    let table = code.split("static__BUFFA_TABLE_WithOneof").nth(1).unwrap();
+    let table = table.split("impl::buffa::Message").next().unwrap();
+    assert_eq!(
+        table.matches("OneofVt::with_messages::<").count(),
+        1,
+        "{table}"
+    );
+    assert_eq!(table.matches("OneofVt::new::<").count(), 1, "{table}");
+    assert!(
+        table.contains("OneofVt::new::<__buffa::oneof::with_oneof::Plain>"),
+        "{table}"
+    );
 }
 
 #[test]

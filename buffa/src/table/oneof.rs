@@ -98,6 +98,8 @@ pub struct OneofVt {
     /// The first argument points to a live `Option<E>`, and `number` is a
     /// member of `E`.
     pub(super) place_with: unsafe fn(*mut u8, u32, PlaceFn<'_>) -> Result<(), DecodeError>,
+    /// Whether `place_with` works, which a oneof with a message member needs.
+    pub(super) messages: bool,
 }
 
 /// The function that [`OneofVt`]'s `place_with` runs on a member's value.
@@ -189,9 +191,26 @@ pub(super) fn no_such_member(number: u32) -> ! {
     panic!("buffa table: oneof member {number} does not match the oneof enum")
 }
 
+/// The `place_with` of a oneof built without message members, which `Table::new`
+/// does not let a message member index.
+///
+/// # Safety
+///
+/// As for [`OneofVt`]'s `place_with`.
+unsafe fn place_with_unavailable(
+    _: *mut u8,
+    number: u32,
+    _: PlaceFn<'_>,
+) -> Result<(), DecodeError> {
+    no_such_member(number)
+}
+
 impl OneofVt {
     /// Describe the oneof stored as an `Option<E>` at `offset` in the message
-    /// struct, whose lowest member number is `first`.
+    /// struct, whose lowest member number is `first`, none of whose members
+    /// is a message. [`with_messages`](Self::with_messages) describes one that
+    /// has a message member, and `Table::new` rejects a message member of
+    /// this one.
     ///
     /// # Panics
     ///
@@ -206,8 +225,24 @@ impl OneofVt {
             first,
             get: get_impl::<E>,
             place: place_impl::<E>,
-            place_with: place_with_impl::<E>,
+            place_with: place_with_unavailable,
+            messages: false,
         }
+    }
+
+    /// As [`new`](Self::new), for a oneof that has a message member. The code
+    /// that decodes into a member in place is instantiated for `E` only for
+    /// such a oneof, which keeps the others smaller.
+    ///
+    /// # Panics
+    ///
+    /// As for [`new`](Self::new).
+    #[must_use]
+    pub const fn with_messages<E: OneofEnum>(offset: usize, first: u32) -> Self {
+        let mut vt = Self::new::<E>(offset, first);
+        vt.place_with = place_with_impl::<E>;
+        vt.messages = true;
+        vt
     }
 }
 
@@ -255,6 +290,10 @@ pub(super) const fn check_member(e: &Entry, m: Member, aux: &[super::Aux]) -> bo
     assert!(
         e.tag & 7 == m.kind.wire_type(),
         "buffa table: a oneof member's tag does not have its payload kind's wire type"
+    );
+    assert!(
+        g.messages || m.kind as u8 != super::Kind::MsgSingular as u8,
+        "buffa table: a oneof with a message member must be built with `OneofVt::with_messages`"
     );
     if let Some(want) = m.kind.aux_kind() {
         assert!(
