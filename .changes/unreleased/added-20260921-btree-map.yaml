@@ -1,4 +1,0 @@
-kind: Added
-body: |-
-    **`buffa-build::Config::btree_map`** adds a `prost-build`-compatible helper for selecting `BTreeMap` storage on matching map fields. It delegates to the existing `map_type_in(MapRepr::BTreeMap, paths)` behavior.
-time: 2026-09-21T15:34:00.000000000+02:00

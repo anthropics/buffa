@@ -1289,15 +1289,6 @@ impl Config {
         self
     }
 
-    /// Map the matching `map` fields to [`MapRepr::BTreeMap`].
-    ///
-    /// This is a `prost-build` compatibility helper equivalent to
-    /// `.map_type_in(MapRepr::BTreeMap, paths)`.
-    #[must_use]
-    pub fn btree_map(self, paths: &[impl AsRef<str>]) -> Self {
-        self.map_type_in(MapRepr::BTreeMap, paths)
-    }
-
     /// Map every `map` field in all messages to the given [`MapRepr`].
     /// Convenience for `.map_type_in(repr, &["."])`. Call this *before* any
     /// [`map_type_in`](Self::map_type_in) overrides, since the last matching
@@ -2490,18 +2481,6 @@ mod tests {
             !pkg.contains("FILE_DESCRIPTOR_SET_BYTES: &[u8] = b\""),
             "package must not embed its own descriptor copy: {pkg}"
         );
-    }
-
-    #[test]
-    fn btree_map_matches_map_type_in() {
-        let paths = ["my.pkg.Msg.items", ".my.pkg.Other.items"];
-
-        let compat = Config::new().btree_map(&paths).codegen_config;
-        let explicit = Config::new()
-            .map_type_in(MapRepr::BTreeMap, &paths)
-            .codegen_config;
-
-        assert_eq!(compat.map_fields, explicit.map_fields);
     }
 
     #[test]
