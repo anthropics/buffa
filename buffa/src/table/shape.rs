@@ -130,7 +130,45 @@ impl MsgVt {
     /// Describe a message that is reached through a pointer to the message
     /// itself, which is how a oneof member's payload of message type is
     /// reached, whether the oneof stores it boxed or inline. `table`
-    /// describes the message.
+    /// describes the message `M`, the type the oneof's accessors give a
+    /// pointer to. Generated code names `M`, so a table of another message is
+    /// a type error:
+    ///
+    /// ```
+    /// use buffa::table::{MsgVt, Table};
+    ///
+    /// struct Point {
+    ///     x: i32,
+    /// }
+    /// static POINT: Table<Point> = buffa::__table!(
+    ///     Point,
+    ///     abi = buffa::table::ABI,
+    ///     entries = [buffa::__table_entry!(Point, x, Int32Implicit, 1)],
+    ///     dense = &[0, 1],
+    ///     aux = [],
+    ///     unknown = none,
+    /// );
+    /// let _ = MsgVt::direct::<Point>(&POINT);
+    /// ```
+    ///
+    /// ```compile_fail,E0308
+    /// use buffa::table::{MsgVt, Table};
+    ///
+    /// struct Point {
+    ///     x: i32,
+    /// }
+    /// struct Other;
+    /// static POINT: Table<Point> = buffa::__table!(
+    ///     Point,
+    ///     abi = buffa::table::ABI,
+    ///     entries = [buffa::__table_entry!(Point, x, Int32Implicit, 1)],
+    ///     dense = &[0, 1],
+    ///     aux = [],
+    ///     unknown = none,
+    /// );
+    /// // The payload is an `Other`, but the table is a `Point`'s.
+    /// let _ = MsgVt::direct::<Other>(&POINT);
+    /// ```
     #[must_use]
     pub const fn direct<M>(table: &'static Table<M>) -> Self {
         Self {

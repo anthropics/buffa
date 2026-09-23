@@ -1716,7 +1716,7 @@ static HOLDER: Table<Holder> = crate::__table!(
         Aux::Enum(&EnumVt::new::<ImplicitOpen<Color>>()),
         Aux::Enum(&EnumVt::new::<ImplicitClosed<Color>>()),
         Aux::Member(Member::new(0, Kind::MsgSingular, 11)),
-        Aux::Msg(&MsgVt::direct(&INNER)),
+        Aux::Msg(&MsgVt::direct::<Inner>(&INNER)),
         Aux::Member(Member::new(1, Kind::MsgSingular, 11)),
     ],
     unknown = unknown,
@@ -2362,6 +2362,15 @@ fn placing_a_member_the_enum_does_not_have_panics() {
 
 /// Building a table that violates the checks on oneofs is a compile error in
 /// a `static`, so these run the checks at run time.
+#[test]
+#[should_panic(expected = "must not be a `MsgVt::direct` one")]
+fn an_ordinary_message_field_cannot_use_a_direct_descriptor() {
+    static AUX: [Aux; 1] = [Aux::Msg(&MsgVt::direct::<Inner>(&INNER))];
+    const E: Entry = Entry::new(Kind::MsgSingular, 1, 0, 0);
+    // SAFETY: the table is dropped without being used.
+    let _ = unsafe { Table::<Holder>::new(ABI, &[E], &[], &AUX, None) };
+}
+
 mod invalid_oneof_tables {
     use super::*;
 

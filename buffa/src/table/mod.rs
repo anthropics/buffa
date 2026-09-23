@@ -698,6 +698,12 @@ impl<M> Table<M> {
                         "buffa table: an enum entry's descriptor has the wrong cardinality for its kind"
                     );
                 }
+                if let Aux::Msg(vt) = a {
+                    assert!(
+                        !vt.direct,
+                        "buffa table: a message field's descriptor must not be a `MsgVt::direct` one"
+                    );
+                }
                 if let Aux::Member(m) = a {
                     if oneof::check_member(e, *m, aux) {
                         leaders += 1;
