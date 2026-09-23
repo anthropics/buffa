@@ -134,15 +134,24 @@ unsafe fn place_with_impl<E: OneofEnum>(
 ) -> Result<(), DecodeError> {
     // SAFETY: the caller passes a pointer to a live `Option<E>`.
     let e = unsafe { &mut *slot.cast::<Option<E>>() };
-    match e {
-        Some(current) if current.number() == number => f(current.payload_mut()),
-        _ => {
-            let mut fresh = new_member::<E>(number);
-            f(fresh.payload_mut())?;
-            *e = Some(fresh);
-            Ok(())
-        }
+    let is_set = matches!(e, Some(current) if current.number() == number);
+    let mut fresh: Option<E> = None;
+    let member = if is_set {
+        e.as_mut()
+    } else {
+        fresh = Some(new_member(number));
+        fresh.as_mut()
+    };
+    let Some(member) = member else {
+        no_such_member(number)
+    };
+    let result = f(member.payload_mut());
+    if result.is_ok() && !is_set {
+        // What is now in `fresh`, the member that was set or the new one that
+        // failed, is dropped once, here.
+        core::mem::swap(e, &mut fresh);
     }
+    result
 }
 
 /// A value of `E` holding the default of the member `number`. A
