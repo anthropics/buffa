@@ -210,8 +210,8 @@ pub enum PoolError {
     },
     /// A field had no `type_name` for a `TYPE_MESSAGE`/`TYPE_GROUP`/`TYPE_ENUM`.
     MissingTypeName { field: String },
-    /// A scalar field carries a `type_name`, which is only valid for
-    /// message, group, and enum fields.
+    /// A field whose `type` is set to a scalar carries a non-empty
+    /// `type_name`, which is only valid for message, group, and enum fields.
     UnexpectedTypeName { field: String, type_name: String },
     /// A field's `type_name` did not resolve to any registered message or
     /// enum. Carries the dangling name and the field's fully-qualified name.
@@ -2153,7 +2153,7 @@ impl DescriptorPool {
         let is_repeated = label == Label::LABEL_REPEATED;
 
         // Resolve the singular kind (element type).
-        let element = self.resolve_singular(proto_ty, f.type_name.as_deref(), &field_fqn, scope)?;
+        let element = self.resolve_singular(f.r#type, f.type_name.as_deref(), &field_fqn, scope)?;
 
         // Detect map fields: repeated + message type + the message is a
         // map_entry. `containing_msg` is `None` for extensions, which cannot
@@ -2328,17 +2328,25 @@ impl DescriptorPool {
 
     fn resolve_singular(
         &self,
-        ty: ProtoType,
+        ty: Option<ProtoType>,
         type_name: Option<&str>,
         field_fqn: &str,
         scope: LinkScope<'_>,
     ) -> Result<SingularKind, PoolError> {
+        let explicit_ty = ty.is_some();
+        let ty = ty.unwrap_or_default();
         if let Some(scalar) = ScalarType::from_proto(ty) {
-            if let Some(type_name) = type_name {
-                return Err(PoolError::UnexpectedTypeName {
-                    field: field_fqn.to_string(),
-                    type_name: type_name.to_string(),
-                });
+            // A `type_name` is an error only beside an explicit scalar `type`,
+            // and an empty one counts as absent. protoc and protobuf-go infer
+            // the kind of a field with no `type` from its `type_name`; this
+            // pool does not, and links such a field as the default scalar.
+            if explicit_ty {
+                if let Some(type_name) = type_name.filter(|tn| !tn.is_empty()) {
+                    return Err(PoolError::UnexpectedTypeName {
+                        field: field_fqn.to_string(),
+                        type_name: type_name.to_string(),
+                    });
+                }
             }
             return Ok(SingularKind::Scalar(scalar));
         }
@@ -2420,12 +2428,8 @@ impl DescriptorPool {
                 message: field_fqn.to_string(),
             });
         }
-        let value_kind = self.resolve_singular(
-            vf.r#type.unwrap_or_default(),
-            vf.type_name.as_deref(),
-            field_fqn,
-            scope,
-        )?;
+        let value_kind =
+            self.resolve_singular(vf.r#type, vf.type_name.as_deref(), field_fqn, scope)?;
         Ok((key_ty, value_kind))
     }
 }
