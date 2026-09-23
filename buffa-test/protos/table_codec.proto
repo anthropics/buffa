@@ -102,9 +102,9 @@ message Sparse {
 
 message Empty {}
 
-// A oneof and a map, which the table cannot handle, so `WithOneof` and
-// `WithMap` stay unrolled when the table is requested. `HoldsOneof` holds both
-// and is a table message, which reaches them through their `Message` impl.
+// A oneof, which the table handles, and a map, which it cannot, so `WithMap`
+// stays unrolled when the table is requested. `HoldsOneof` holds both and is a
+// table message, which reaches `WithMap` through its `Message` impl.
 message WithOneof {
   oneof choice {
     int32 a = 1;
@@ -125,8 +125,7 @@ message HoldsOneof {
   WithMap m = 3;
 }
 
-// A table message that holds table messages (`Inner`, `Nested`) and
-// `HoldsOneof`, whose own children are unrolled.
+// A table message that holds table messages (`Inner`, `Nested`, `HoldsOneof`).
 message Mixed {
   Inner inner = 1;
   HoldsOneof holds = 2;

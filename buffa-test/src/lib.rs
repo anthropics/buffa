@@ -1037,10 +1037,11 @@ pub mod string_copy;
 pub mod string_copy_counted;
 
 // The table codec is tested by compiling a schema twice under renamed packages
-// and comparing the results (see `tests::table_codec`). `tcu`, `tc2u`, `tc3u`
-// and `wideu` use the default unrolled codec; `tct`, `tc2t`, `tc3t` and `widet`
-// are the same schemas with `codec_strategy = Table`, and `tcx` is `tct` again
-// with options that change the names and fields a table refers to. They exist
+// and comparing the results (see `tests::table_codec`). `tcu`, `tc2u`, `tc3u`,
+// `tc4u` and `wideu` use the default unrolled codec; `tct`, `tc2t`, `tc3t`,
+// `tc4t` and `widet` are the same schemas with `codec_strategy = Table`, and
+// `tcx` and `tc4x` are `tct` and `tc4t` again with options that change the
+// names and fields a table refers to. They exist
 // only on Rust 1.77 or later (see build.rs). The table modules forbid unsafe
 // code, which checks that the `unsafe` a table needs stays inside `buffa`'s
 // macros.
@@ -1076,6 +1077,23 @@ pub mod tc3u {
 #[cfg(has_table_codec)]
 pub mod tc3t {
     buffa::include_proto!("tc3t");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc4u {
+    buffa::include_proto!("tc4u");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc4t {
+    buffa::include_proto!("tc4t");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc4x {
+    buffa::include_proto!("tc4x");
 }
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 #[cfg(has_table_codec)]

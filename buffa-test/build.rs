@@ -174,9 +174,10 @@ fn wide_proto() -> String {
 
 /// Compile `protos/<file>` as package `<base>x` with the table codec and the
 /// options that change the names and fields the table refers to: a type name
-/// prefix (`RpcScalars`), no unknown-field slot, boxed message fields, and the
-/// lazy view and reflection code that read the same fields.
-fn compile_table_with_options(file: &str, base: &str) {
+/// prefix (`RpcScalars`), no unknown-field slot, boxed message fields, message
+/// members of the oneofs under `unboxed` stored inline, and the lazy view and
+/// reflection code that read the same fields.
+fn compile_table_with_options(file: &str, base: &str, unboxed: &[&str]) {
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let source = read_proto(file);
     let renamed = out.join(format!("{base}x.proto"));
@@ -192,6 +193,7 @@ fn compile_table_with_options(file: &str, base: &str) {
         .type_name_prefix("Rpc")
         .preserve_unknown_fields(false)
         .box_type(buffa_build::PointerRepr::Box)
+        .unbox_oneof_in(unboxed)
         .lazy_views(true)
         .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
@@ -249,6 +251,12 @@ fn main() {
             "br",
             &["Hot"],
         );
+        compile_both_codecs(
+            "table_codec4.proto",
+            &read_proto("table_codec4.proto"),
+            "tc4",
+            &[],
+        );
         compile_cross_package();
         compile_extern_children();
         // `bytes` fields as `bytes::Bytes`, which the messages that hold one
@@ -260,7 +268,18 @@ fn main() {
             .use_bytes_type()
             .compile()
             .expect("buffa_build failed for table_bytes.proto");
-        compile_table_with_options("table_codec.proto", "tc");
+        compile_table_with_options("table_codec.proto", "tc", &[]);
+        // Not `Tree` and `Pair`, which recurse through their oneof.
+        compile_table_with_options(
+            "table_codec4.proto",
+            "tc4",
+            &[
+                ".tc4x.Kinds",
+                ".tc4x.Interleaved",
+                ".tc4x.Sparse",
+                ".tc4x.Outer",
+            ],
+        );
     }
 
     // Basic proto — the original test file. Also the codegen target for

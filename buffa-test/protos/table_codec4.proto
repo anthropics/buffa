@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+// See table_codec.proto: compiled as `tc4u` (unrolled), `tc4t` (table) and
+// `tc4x` (table, with options). Oneofs.
+package tc4;
+
+enum Color {
+  COLOR_UNSPECIFIED = 0;
+  RED = 1;
+  GREEN = 2;
+}
+
+message Leaf {
+  int32 id = 1;
+  string label = 2;
+}
+
+// A member of every type.
+message Kinds {
+  oneof v {
+    int32 i32 = 1;
+    int64 i64 = 2;
+    uint32 u32 = 3;
+    uint64 u64 = 4;
+    sint32 s32 = 5;
+    sint64 s64 = 6;
+    fixed32 f32 = 7;
+    fixed64 f64 = 8;
+    sfixed32 sf32 = 9;
+    sfixed64 sf64 = 10;
+    float fl = 11;
+    double db = 12;
+    bool b = 13;
+    string s = 14;
+    bytes by = 15;
+    Color e = 16;
+    Leaf m = 17;
+  }
+}
+
+// Two oneofs whose members interleave with each other and with ordinary
+// fields, a proto3 `optional` (which is a oneof to the descriptor and not to
+// the table), and a repeated field.
+message Interleaved {
+  int32 a = 1;
+  oneof first {
+    int32 f1 = 2;
+    string f2 = 5;
+  }
+  int32 b = 3;
+  oneof second {
+    Leaf s1 = 4;
+    bytes s2 = 7;
+  }
+  string tail = 6;
+  repeated int32 r = 8;
+  optional int32 opt = 9;
+}
+
+// Recursion through a oneof, directly and through another message.
+message Tree {
+  oneof node {
+    int32 leaf = 1;
+    Tree left = 2;
+    Pair pair = 3;
+    string name = 4;
+  }
+}
+
+message Pair {
+  Tree a = 1;
+  Tree b = 2;
+}
+
+// Field numbers that miss the dense lookup array, and one at the limit.
+message Sparse {
+  oneof o {
+    int32 lo = 1;
+    int32 far = 100000;
+    string end = 536870911;
+  }
+  int32 mid = 70;
+}
+
+// A oneof in a nested message and in the message that holds it, and members
+// named like Rust keywords.
+message Outer {
+  message Sub {
+    oneof pick {
+      int32 type = 1;
+      string match = 2;
+      int32 self = 3;
+    }
+  }
+  Sub sub = 1;
+  oneof o {
+    Sub x = 2;
+    Outer nested = 3;
+    Leaf leaf = 4;
+  }
+  repeated Sub subs = 5;
+}
