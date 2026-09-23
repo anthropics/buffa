@@ -3,3 +3,7 @@
 # Tests listed here are expected to fail in the via-table run and will not
 # cause it to report a failure.  Each line is a test name (matched by the
 # runner with --failure_list).  Remove entries as failures are fixed.
+#
+# The messages the table cannot handle run through the unrolled codec in this
+# run, including the top-level TestAllTypesProto2, so its tests do not exercise
+# the table.
