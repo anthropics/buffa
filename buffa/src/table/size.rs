@@ -55,7 +55,8 @@ macro_rules! size_dispatch {
             unsafe {
                 match e.kind {
                     $(Kind::$name => size_dispatch!(@arm $fam $ty $card table e tl slot cache),)*
-                    // The kinds a list leaves out are ruled out by `Table::new`.
+                    // A list of the payload kinds leaves the other kinds out, and
+                    // `Table::new` rules them out of a payload.
                     #[allow(unreachable_patterns)]
                     _ => unreachable!("`Table::new` checked the kinds of the entries"),
                 }

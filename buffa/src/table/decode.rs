@@ -326,7 +326,6 @@ macro_rules! merge_payload_dispatch {
                     $(Kind::$name => merge_payload_dispatch!(
                         @arm $fam $ty table payload_entry oneof number base tag buf ctx
                     ),)*
-                    // The kinds the list leaves out are ruled out by `Table::new`.
                     #[allow(unreachable_patterns)]
                     _ => unreachable!("`Table::new` checked the payload kinds"),
                 }

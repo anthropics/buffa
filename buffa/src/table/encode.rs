@@ -101,7 +101,6 @@ macro_rules! write_dispatch {
             unsafe {
                 match e.kind {
                     $(Kind::$name => write_dispatch!(@arm $fam $ty $card table e slot cache buf),)*
-                    // The kinds a list leaves out are ruled out by `Table::new`.
                     #[allow(unreachable_patterns)]
                     _ => unreachable!("`Table::new` checked the kinds of the entries"),
                 }

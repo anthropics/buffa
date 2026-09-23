@@ -15,6 +15,13 @@
 //! at that position among the message's fields, as unrolled code does. The
 //! other entries only decode, so a message with a oneof writes the same bytes
 //! under either strategy.
+//!
+//! Decoding does what unrolled code does. A value is decoded before it
+//! replaces the member that is set, so one that is rejected leaves the oneof
+//! as it was, and a closed enum's number with no variant goes to the unknown
+//! fields. A message member that is already the one that is set is merged
+//! into, and any other is decoded into a new default member that is set only
+//! if the decoding succeeds.
 
 use super::{Entry, Kind};
 use crate::DecodeError;
