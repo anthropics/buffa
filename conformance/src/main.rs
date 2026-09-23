@@ -141,16 +141,17 @@ fn setup_type_registry() {
 // sibling messages.
 
 #[cfg(all(not(no_protos), feature = "table"))]
-#[allow(dead_code)]
-fn table_messages_use_the_table() {
+const _: () = {
     fn is_table<M: buffa::Message>(_: &'static buffa::table::Table<M>) {}
-    is_table(&proto3::__BUFFA_TABLE_TestAllTypesProto3);
-    is_table(&proto3::test_all_types_proto3::__BUFFA_TABLE_NestedMessage);
-    is_table(&proto2::__BUFFA_TABLE_TestLargeOneof);
-    is_table(&proto2::test_all_types_proto2::__BUFFA_TABLE_NestedMessage);
-    #[cfg(has_editions_protos)]
-    is_table(&editions_proto3::__BUFFA_TABLE_TestAllTypesProto3);
-}
+    fn pin() {
+        is_table(&proto3::__BUFFA_TABLE_TestAllTypesProto3);
+        is_table(&proto3::test_all_types_proto3::__BUFFA_TABLE_NestedMessage);
+        is_table(&proto2::__BUFFA_TABLE_TestLargeOneof);
+        is_table(&proto2::test_all_types_proto2::__BUFFA_TABLE_NestedMessage);
+        #[cfg(has_editions_protos)]
+        is_table(&editions_proto3::__BUFFA_TABLE_TestAllTypesProto3);
+    }
+};
 
 // ── Via-view mode ────────────────────────────────────────────────────────
 //
