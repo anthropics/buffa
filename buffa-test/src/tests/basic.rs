@@ -80,12 +80,11 @@ fn test_all_scalars_round_trip() {
     assert_eq!(round_trip(&msg), msg);
 }
 
-/// The library's own `*_to_bytes` entry points and `Rope` no longer write
-/// through `BytesMut`'s `BufMut` impl, so this is the one place the blanket
-/// `EncodeSink for BufMut` instantiation for `BytesMut` — what a caller who
-/// frames into their own `BytesMut` uses — is exercised: varint, zigzag,
-/// fixed32, fixed64 and length-delimited writes must match the `Vec<u8>` sink
-/// byte for byte.
+/// A caller who frames into their own `BytesMut` gets the bytes `Vec<u8>`
+/// does: varint, zigzag, fixed32, fixed64 and length-delimited writes must
+/// match `encode_to_vec` byte for byte, whether the buffer has room for the
+/// message (written in place, `scalars`) or not (staged in a scratch buffer,
+/// `big`).
 #[test]
 fn encode_into_bytesmut_matches_encode_to_vec() {
     use buffa::bytes::BytesMut;
@@ -109,6 +108,19 @@ fn encode_into_bytesmut_matches_encode_to_vec() {
     let mut buf = BytesMut::new();
     scalars.encode(&mut buf);
     assert_eq!(&buf[..], &scalars.encode_to_vec()[..]);
+    // Larger than the 64 bytes an empty `BytesMut` or `Vec` offers, so the
+    // message is staged in a scratch buffer and appended.
+    let big = Person {
+        id: 7,
+        name: "x".repeat(100),
+        ..Default::default()
+    };
+    let mut staged = BytesMut::new();
+    big.encode(&mut staged);
+    assert_eq!(Person::decode_from_slice(&staged).unwrap(), big);
+    let mut staged_vec = Vec::new();
+    big.encode(&mut staged_vec);
+    assert_eq!(staged_vec, &staged[..]);
     buf.clear();
     person.encode_length_delimited(&mut buf);
     let mut expected: Vec<u8> = Vec::new();

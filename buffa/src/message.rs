@@ -300,13 +300,33 @@ pub fn checked_encode_size(size: u32) -> Result<u32, EncodeError> {
     }
 }
 
+/// Write `msg`, whose encoded size is `size` and whose nested sizes are
+/// recorded in `cache`, into `buf` through the shared pre-sized writer (see
+/// [`encode_sink`](crate::encode_sink)).
+#[inline]
+fn write_sized<M: Message>(
+    msg: &M,
+    size: u32,
+    cache: &mut crate::SizeCache,
+    buf: &mut impl EncodeSink,
+) {
+    crate::encode_sink::write_contiguous(
+        size as usize,
+        cache,
+        buf,
+        |cache, sink| msg.write_to(cache, sink),
+        |cache, sink| msg.write_to(cache, sink),
+    );
+}
+
 /// Debug-build two-pass coherence ledger: asserts `write_to` produced
 /// exactly the byte count `compute_size` declared.
 ///
-/// Called by the provided `encode_to_vec` / `try_encode_to_vec` entry
-/// points (and their generated lazy-view counterparts) after the write pass;
-/// the `*_to_bytes` entry points reach it through those. The
-/// write pass is ground truth — leaf writers emit `len as u64` prefixes and
+/// Called by the provided encode entry points (through
+/// `encode_sink::write_contiguous` for a `BufMut`, and directly by
+/// `encode_to_vec` / `try_encode_to_vec` and their generated lazy-view
+/// counterparts) after the write pass; the `*_to_bytes` entry points reach
+/// it through those. The write pass is ground truth — leaf writers emit `len as u64` prefixes and
 /// full payloads — so any divergence indicates a size-pass bug (wrong
 /// presence check, traversal drift) in a generated or manual
 /// implementation. Free in release builds.
@@ -447,6 +467,11 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// lives in the provided encode entry points, so callers driving
     /// `compute_size` / `write_to` directly must validate the size
     /// themselves (via [`checked_encode_size`]).
+    ///
+    /// An implementation must write exactly the number of bytes
+    /// `compute_size` returned. The provided encode methods write a
+    /// `BufMut` into space sized by `compute_size` and panic if `write_to`
+    /// writes more; in debug builds they also panic if it writes fewer.
     fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl EncodeSink);
 
     /// Compute size, then write. This is the primary encoding API.
@@ -461,6 +486,10 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// Panics if the encoded size exceeds the 2 GiB protobuf limit
     /// ([`MAX_MESSAGE_BYTES`]) — see [`try_encode`](Self::try_encode) for
     /// the error-returning variant.
+    /// Also panics, when `buf` is a [`BufMut`](bytes::BufMut), if a manual
+    /// implementation's `write_to` produces more bytes than its
+    /// `compute_size` declared, and in debug builds if it produces a
+    /// different number.
     #[inline]
     fn encode(&self, buf: &mut impl EncodeSink) {
         self.try_encode(buf)
@@ -478,8 +507,8 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// [`MAX_MESSAGE_BYTES`].
     fn try_encode(&self, buf: &mut impl EncodeSink) -> Result<(), EncodeError> {
         let mut cache = crate::SizeCache::new();
-        checked_encode_size(self.compute_size(&mut cache))?;
-        self.write_to(&mut cache, buf);
+        let size = checked_encode_size(self.compute_size(&mut cache))?;
+        write_sized(self, size, &mut cache, buf);
         Ok(())
     }
 
@@ -492,6 +521,10 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// ([`MAX_MESSAGE_BYTES`]) — see
     /// [`try_encode_with_cache`](Self::try_encode_with_cache) for the
     /// error-returning variant.
+    /// Also panics, when `buf` is a [`BufMut`](bytes::BufMut), if a manual
+    /// implementation's `write_to` produces more bytes than its
+    /// `compute_size` declared, and in debug builds if it produces a
+    /// different number.
     #[inline]
     fn encode_with_cache(&self, cache: &mut crate::SizeCache, buf: &mut impl EncodeSink) {
         self.try_encode_with_cache(cache, buf)
@@ -515,8 +548,8 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
         buf: &mut impl EncodeSink,
     ) -> Result<(), EncodeError> {
         cache.clear();
-        checked_encode_size(self.compute_size(cache))?;
-        self.write_to(cache, buf);
+        let size = checked_encode_size(self.compute_size(cache))?;
+        write_sized(self, size, cache, buf);
         Ok(())
     }
 
@@ -574,7 +607,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
         if len > max_bytes {
             return Err(EncodeError::ExceedsBudget { len, max_bytes });
         }
-        self.write_to(cache, buf);
+        write_sized(self, len, cache, buf);
         Ok(len)
     }
 
@@ -620,6 +653,10 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// written, so nothing reaches `buf` on failure. See
     /// [`try_encode_length_delimited`](Self::try_encode_length_delimited)
     /// for the error-returning variant.
+    /// Also panics, when `buf` is a [`BufMut`](bytes::BufMut), if a manual
+    /// implementation's `write_to` produces more bytes than its
+    /// `compute_size` declared, and in debug builds if it produces a
+    /// different number.
     #[inline]
     fn encode_length_delimited(&self, buf: &mut impl EncodeSink) {
         self.try_encode_length_delimited(buf)
@@ -639,8 +676,8 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     fn try_encode_length_delimited(&self, buf: &mut impl EncodeSink) -> Result<(), EncodeError> {
         let mut cache = crate::SizeCache::new();
         let len = checked_encode_size(self.compute_size(&mut cache))?;
-        crate::encoding::encode_varint(len as u64, buf);
-        self.write_to(&mut cache, buf);
+        crate::encoding::encode_varint(u64::from(len), buf);
+        write_sized(self, len, &mut cache, buf);
         Ok(())
     }
 
@@ -651,9 +688,10 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// Panics if the encoded size exceeds the 2 GiB protobuf limit
     /// ([`MAX_MESSAGE_BYTES`]) — see
     /// [`try_encode_to_vec`](Self::try_encode_to_vec) for the
-    /// error-returning variant. In debug builds, also panics if a manual
-    /// implementation's `write_to` produces a different byte count than
-    /// its `compute_size` declared.
+    /// error-returning variant. Also panics if a manual
+    /// implementation's `write_to` produces more bytes than its
+    /// `compute_size` declared, and in debug builds if it produces a
+    /// different number.
     // Direct body rather than delegating to try_encode_to_vec: LLVM does
     // not fold the Result<Vec<u8>> niche away even under full inlining, so
     // the delegating form re-checks the capacity sentinel and round-trips
@@ -670,8 +708,8 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
             Ok(size) => size as usize,
             Err(_) => encode_size_overflow(),
         };
-        let mut buf = alloc::vec::Vec::with_capacity(size);
-        self.write_to(&mut cache, &mut buf);
+        let buf =
+            crate::encode_sink::write_to_new_vec(size, |sink| self.write_to(&mut cache, sink));
         debug_assert_two_pass(buf.len(), size);
         buf
     }
@@ -687,13 +725,14 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     ///
     /// # Panics
     ///
-    /// In debug builds, panics if a manual implementation's `write_to`
-    /// produces a different byte count than its `compute_size` declared.
+    /// Panics if a manual implementation's `write_to` produces more
+    /// bytes than its `compute_size` declared, and in debug builds if it
+    /// produces a different number.
     fn try_encode_to_vec(&self) -> Result<alloc::vec::Vec<u8>, EncodeError> {
         let mut cache = crate::SizeCache::new();
         let size = checked_encode_size(self.compute_size(&mut cache))? as usize;
-        let mut buf = alloc::vec::Vec::with_capacity(size);
-        self.write_to(&mut cache, &mut buf);
+        let buf =
+            crate::encode_sink::write_to_new_vec(size, |sink| self.write_to(&mut cache, sink));
         debug_assert_two_pass(buf.len(), size);
         Ok(buf)
     }
@@ -715,14 +754,12 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// Panics if the encoded size exceeds the 2 GiB protobuf limit
     /// ([`MAX_MESSAGE_BYTES`]) — see
     /// [`try_encode_to_bytes`](Self::try_encode_to_bytes) for the
-    /// error-returning variant. In debug builds, also panics if a manual
-    /// implementation's `write_to` produces a different byte count than
-    /// its `compute_size` declared.
-    // Encodes into a `Vec<u8>` and converts: `From<Vec<u8>> for Bytes` is
-    // zero-copy and allocation-free for an exactly-sized vec, and writing
-    // through `Vec<u8>` inlines each `put_u8`/`put_slice` to a plain store,
-    // where `BytesMut`'s `BufMut::put_slice` is an out-of-line call per
-    // tag and varint byte.
+    /// error-returning variant. Also panics if a manual
+    /// implementation's `write_to` produces more bytes than its
+    /// `compute_size` declared, and in debug builds if it produces a
+    /// different number.
+    // Encodes into an exactly-sized `Vec<u8>` and converts:
+    // `From<Vec<u8>> for Bytes` is zero-copy and allocation-free for it.
     #[inline]
     #[must_use]
     fn encode_to_bytes(&self) -> bytes::Bytes {
@@ -740,8 +777,9 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     ///
     /// # Panics
     ///
-    /// In debug builds, panics if a manual implementation's `write_to`
-    /// produces a different byte count than its `compute_size` declared.
+    /// Panics if a manual implementation's `write_to` produces more
+    /// bytes than its `compute_size` declared, and in debug builds if it
+    /// produces a different number.
     fn try_encode_to_bytes(&self) -> Result<bytes::Bytes, EncodeError> {
         self.try_encode_to_vec().map(bytes::Bytes::from)
     }
@@ -2269,7 +2307,7 @@ mod tests {
 
     // ── Encode-side 2 GiB guard tests ──────────────────────────────────
 
-    use crate::test_doubles::SizedMsg;
+    use crate::test_doubles::{Mismatched, SizedMsg};
 
     const OVER_LIMIT: u32 = MAX_MESSAGE_BYTES + 1;
 
@@ -2287,14 +2325,15 @@ mod tests {
     #[test]
     fn encode_at_exactly_max_size_is_allowed() {
         // The guard is strictly-greater-than: a (fake) message of exactly
-        // MAX_MESSAGE_BYTES passes. `encode` has no write-count ledger, so
-        // the no-op write_to is fine here.
+        // MAX_MESSAGE_BYTES passes. The pre-sized path and its ledger apply
+        // only to `BufMut` sinks, and `NullSink` lets this no-op write_to
+        // declare 2 GiB without allocating it.
         let msg = SizedMsg {
             reported_size: MAX_MESSAGE_BYTES,
         };
-        let mut buf = alloc::vec::Vec::new();
-        msg.encode(&mut buf);
-        assert!(msg.try_encode(&mut buf).is_ok());
+        let mut sink = crate::test_doubles::NullSink;
+        msg.encode(&mut sink);
+        assert!(msg.try_encode(&mut sink).is_ok());
     }
 
     #[test]
@@ -2791,5 +2830,113 @@ mod tests {
                 .unwrap_err();
             assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
         }
+    }
+
+    // ── Contiguous sink routing ────────────────────────────────────────
+    //
+    // The `contiguous_sink_` prefix is the filter for the `Miri` CI step
+    // that covers the pre-sized cursor; a renamed test silently leaves that
+    // gate.
+
+    /// A `BufMut` with room receives a message through `advance_mut`, not
+    /// through `put_*`, and one with less room is staged and appended once.
+    /// The length prefix of `encode_length_delimited` goes through `put_*`.
+    #[test]
+    fn contiguous_sink_writes_in_place_when_there_is_room() {
+        let msg = FlatMsg { value: 300 };
+        let mut probe = crate::test_doubles::Probe::default();
+        probe.inner.reserve(64);
+        msg.encode(&mut probe);
+        assert_eq!((probe.advance_mut_calls, probe.put_slice_calls), (1, 0));
+        msg.encode_length_delimited(&mut probe);
+        assert_eq!((probe.advance_mut_calls, probe.put_slice_calls), (2, 1));
+
+        let mut short = crate::test_doubles::Probe {
+            chunk_limit: Some(2),
+            ..Default::default()
+        };
+        msg.encode(&mut short);
+        assert_eq!((short.advance_mut_calls, short.put_slice_calls), (0, 1));
+    }
+
+    #[test]
+    fn contiguous_sink_every_sink_receives_the_same_bytes() {
+        let msg = FlatMsg { value: 300 };
+        let expected = msg.encode_to_vec();
+        assert_eq!(expected, [0x08, 0xAC, 0x02]);
+
+        // Appends after existing content.
+        let mut prefixed = b"pre".to_vec();
+        msg.encode(&mut prefixed);
+        assert_eq!(&prefixed[..3], b"pre");
+        assert_eq!(&prefixed[3..], &expected[..]);
+
+        let mut roomy = alloc::vec::Vec::with_capacity(64);
+        msg.encode(&mut roomy);
+        assert_eq!(roomy, expected);
+
+        let mut bytes_mut = bytes::BytesMut::new();
+        msg.encode(&mut bytes_mut);
+        assert_eq!(&bytes_mut[..], &expected[..]);
+
+        let mut storage = [0u8; 3];
+        let mut slice: &mut [u8] = &mut storage;
+        msg.encode(&mut slice);
+        assert_eq!(storage, [0x08, 0xAC, 0x02]);
+
+        let mut rope = crate::Rope::new();
+        msg.encode(&mut rope);
+        assert_eq!(&rope.to_contiguous_bytes()[..], &expected[..]);
+    }
+
+    #[test]
+    fn contiguous_sink_framed_and_bounded_encodes_match() {
+        let msg = FlatMsg { value: 300 };
+
+        let mut framed = alloc::vec::Vec::new();
+        msg.encode_length_delimited(&mut framed);
+        assert_eq!(framed, [3, 0x08, 0xAC, 0x02]);
+
+        let mut bounded = bytes::BytesMut::new();
+        assert_eq!(msg.try_encode_bounded(3, &mut bounded), Ok(3));
+        assert_eq!(&bounded[..], [0x08, 0xAC, 0x02]);
+
+        let mut cache = SizeCache::new();
+        let mut cached = alloc::vec::Vec::new();
+        msg.encode_with_cache(&mut cache, &mut cached);
+        assert_eq!(cached, [0x08, 0xAC, 0x02]);
+    }
+
+    #[test]
+    #[should_panic(expected = "compute_size declared")]
+    fn contiguous_sink_over_writing_panics() {
+        let msg = Mismatched {
+            declared: 1,
+            written: 2,
+        };
+        msg.encode(&mut alloc::vec::Vec::new());
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "two-pass traversal mismatch")]
+    fn contiguous_sink_under_writing_is_caught_in_debug_builds() {
+        let msg = Mismatched {
+            declared: 4,
+            written: 2,
+        };
+        msg.encode(&mut alloc::vec::Vec::new());
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn contiguous_sink_under_writing_appends_written_bytes() {
+        let msg = Mismatched {
+            declared: 4,
+            written: 2,
+        };
+        let mut buf = alloc::vec::Vec::new();
+        msg.encode(&mut buf);
+        assert_eq!(buf, [0x55, 0x55]);
     }
 }
