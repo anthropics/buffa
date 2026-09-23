@@ -478,6 +478,16 @@ jobs:
       - name: Save std binary
         run: cp conformance/target/${{ steps.host.outputs.triple }}/release/conformance /tmp/buffa-conformance-std
 
+      # The table strategy needs Rust 1.77 (offset_of!); buffa-build fails the
+      # build on an older compiler rather than skipping the run.
+      - name: Build conformance binary (table)
+        run: >-
+          cargo build --release --manifest-path conformance/Cargo.toml
+          --features table --target ${{ steps.host.outputs.triple }}
+
+      - name: Save table binary
+        run: cp conformance/target/${{ steps.host.outputs.triple }}/release/conformance /tmp/buffa-conformance-table
+
       - name: Build conformance binary (no_std)
         run: >-
           cargo build --release --manifest-path conformance/Cargo.toml
@@ -541,3 +551,10 @@ jobs:
           --failure_list conformance/known_failures_view_vtable.txt
           --maximum_edition 2024
           /tmp/buffa-conformance-std
+
+      - name: Run conformance tests (via-table)
+        run: >-
+          conformance_test_runner
+          --failure_list conformance/known_failures_table.txt
+          --maximum_edition 2024
+          /tmp/buffa-conformance-table
