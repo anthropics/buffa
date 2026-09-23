@@ -734,6 +734,80 @@ impl Config {
         self
     }
 
+    /// Make generated JSON deserializers reject unknown keys instead of
+    /// ignoring them (default: `false`, unknown keys are ignored).
+    ///
+    /// Strictness is fixed in the generated type: code that uses the type
+    /// cannot switch it per call or per process. To be strict for selected
+    /// messages only, use
+    /// [`deny_unknown_json_fields_in`](Self::deny_unknown_json_fields_in).
+    ///
+    /// With [`generate_json`](Self::generate_json) off there are no JSON
+    /// deserializers, so the option changes nothing and the build emits a
+    /// `cargo:warning` saying so.
+    ///
+    /// The guide's "Unknown fields in JSON" section covers the error a
+    /// rejected key produces, how `"[pkg.ext]"` extension keys are treated,
+    /// and what to weigh before enabling this for every message.
+    #[must_use]
+    pub fn deny_unknown_json_fields(mut self, enabled: bool) -> Self {
+        self.codegen_config.deny_unknown_json_fields = enabled;
+        self
+    }
+
+    /// Reject unknown JSON fields for matching messages, on top of the global
+    /// [`deny_unknown_json_fields`](Self::deny_unknown_json_fields) setting.
+    ///
+    /// Each path is a fully-qualified proto path prefix, e.g. `".demo.Config"`
+    /// for one message or `".demo"` for a package (same matching as
+    /// [`preserve_unknown_fields_in`](Self::preserve_unknown_fields_in));
+    /// `"."` matches every message. A leading dot is added if missing and
+    /// trailing dots are trimmed. An empty path is warned about and ignored so
+    /// `"."` remains the only catch-all spelling.
+    ///
+    /// A rule covers the message it names **and every message nested inside
+    /// it**; a rule naming a nested message does not cover its enclosing
+    /// message. Strictness is a property of each message *type*: a strict
+    /// message's sub-messages reject unknown keys only if their types are
+    /// covered too.
+    ///
+    /// Rules only enable, so this builder cannot exempt a message. With the
+    /// global flag on, every message is already strict and these rules add
+    /// nothing; to be strict everywhere except a few messages, leave the
+    /// global flag off and list the strict packages here.
+    /// (`buffa_codegen::CodeGenConfig` accepts disabling entries; neither
+    /// this builder nor the plugin exposes them.) With
+    /// [`generate_json`](Self::generate_json) off the rules change nothing,
+    /// and the build warns as it does for the global flag.
+    ///
+    /// Repeated calls accumulate. A rule that matches no generated message
+    /// produces a `cargo:warning` from this build (surfaced via
+    /// [`CodeGenWarning`](buffa_codegen::CodeGenWarning)), since an inert rule
+    /// leaves the message silently ignoring the keys it was meant to reject.
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .generate_json(true)
+    ///     .deny_unknown_json_fields_in(&[".demo.DeviceConfig"])
+    /// ```
+    #[must_use]
+    pub fn deny_unknown_json_fields_in(mut self, paths: &[impl AsRef<str>]) -> Self {
+        for raw in paths.iter().map(AsRef::as_ref) {
+            let normalized = normalize_override_path(raw);
+            if normalized.is_empty() {
+                println!(
+                    "cargo:warning=buffa: deny_unknown_json_fields_in path '{raw}' \
+                     normalizes to empty and will be ignored"
+                );
+                continue;
+            }
+            self.codegen_config
+                .deny_unknown_json_fields_in
+                .push((normalized, true));
+        }
+        self
+    }
+
     /// Apply a path-scoped editions [`FeatureOverride`] to the compiled
     /// descriptors before generation.
     ///
@@ -2084,7 +2158,8 @@ fn normalize_attr_path(mut path: String) -> String {
     path
 }
 
-/// Normalize an `override_feature_in` / `preserve_unknown_fields_in` path:
+/// Normalize an `override_feature_in` / `preserve_unknown_fields_in` /
+/// `deny_unknown_json_fields_in` path:
 /// trim whitespace, prepend the leading dot if absent, and strip trailing
 /// dots. Unlike
 /// [`normalize_attr_path`], an entry that normalizes to empty (e.g. `"..."`)
@@ -2512,6 +2587,34 @@ mod tests {
                 ".my.pkg.Msg.body.small".to_string(),
                 ".my.pkg.Other".to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn deny_unknown_json_fields_in_normalizes_paths() {
+        let config = Config::new()
+            .deny_unknown_json_fields_in(&["demo.Config", ".demo.Other.", " .demo.Third ", "."])
+            .codegen_config;
+        // The global default is untouched by the path-scoped builder.
+        assert!(!config.deny_unknown_json_fields);
+        assert_eq!(
+            config.deny_unknown_json_fields_in,
+            vec![
+                (".demo.Config".to_string(), true),
+                (".demo.Other".to_string(), true),
+                (".demo.Third".to_string(), true),
+                (".".to_string(), true),
+            ]
+        );
+    }
+
+    #[test]
+    fn deny_unknown_json_fields_sets_the_global_flag() {
+        assert!(
+            Config::new()
+                .deny_unknown_json_fields(true)
+                .codegen_config
+                .deny_unknown_json_fields
         );
     }
 

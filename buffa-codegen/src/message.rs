@@ -412,6 +412,11 @@ fn generate_message_with_nesting(
     let needs_custom_deserialize = ctx.config.generate_json
         && (has_real_oneofs || (has_extension_ranges && ctx.preserve_unknown_fields(proto_fqn)));
 
+    // Per-message JSON strictness: the derive path turns it into a serde
+    // attribute, the custom visitor into a strict terminal arm. Both ask
+    // `MessageScope`, which also applies the `generate_json` gate.
+    let deny_unknown_json_fields = scope.deny_unknown_json_fields();
+
     // Oneof enum definitions — emitted inside the message's module.
     // Pass the file-level package as current_package, since
     // nesting=1 in the oneof codegen handles the module depth.
@@ -523,9 +528,24 @@ fn generate_message_with_nesting(
         };
         let derive_attr = crate::feature_gates::cfg_attr(derives, gates.json);
         let default_attr = crate::feature_gates::cfg_attr(quote! { serde(default) }, gates.json);
+        // Strictness on the derive path is serde's own attribute. The custom
+        // impl reads the same config value instead (it has no derive to
+        // attach to), so one option covers both paths.
+        //
+        // Invariant: `deny_unknown_fields` is never emitted on a struct with a
+        // `#[serde(flatten)]` field. serde documents the combination as
+        // unsupported but compiles it, so `codegen_integration.rs` asserts
+        // this on emitted output. Both flattened fields (the extension-JSON
+        // wrapper and each oneof) imply `needs_custom_deserialize`.
+        let deny_unknown_attr = if !needs_custom_deserialize && deny_unknown_json_fields {
+            crate::feature_gates::cfg_attr(quote! { serde(deny_unknown_fields) }, gates.json)
+        } else {
+            quote! {}
+        };
         quote! {
             #derive_attr
             #default_attr
+            #deny_unknown_attr
         }
     } else {
         quote! {}
@@ -1091,16 +1111,19 @@ fn generate_custom_deserialize(
     let mut field_vars = Vec::new();
     let mut match_arms = Vec::new();
     let mut field_inits = Vec::new();
+    // Every JSON key the arms below accept, in arm order.
+    let mut accepted_keys: Vec<String> = Vec::new();
 
     // Regular (non-oneof) fields.
     for field in &msg.field {
         if is_real_oneof_member(field) {
             continue;
         }
-        let (var, arm, init) = custom_deser_regular_field(scope, msg, field, resolver)?;
-        field_vars.push(var);
-        match_arms.push(arm);
-        field_inits.push(init);
+        let field_tokens = custom_deser_regular_field(scope, msg, field, resolver)?;
+        field_vars.push(field_tokens.var_decl);
+        match_arms.push(field_tokens.arm);
+        field_inits.push(field_tokens.field_init);
+        accepted_keys.extend(field_tokens.accepted_keys);
     }
 
     // Oneof groups.
@@ -1118,12 +1141,13 @@ fn generate_custom_deserialize(
             oneof_idents,
             nesting,
         )?;
-        let Some((var, arms, init)) = result else {
+        let Some(oneof_tokens) = result else {
             continue;
         };
-        field_vars.push(var);
-        match_arms.extend(arms);
-        field_inits.push(init);
+        field_vars.push(oneof_tokens.var_decl);
+        match_arms.extend(oneof_tokens.arms);
+        field_inits.push(oneof_tokens.field_init);
+        accepted_keys.extend(oneof_tokens.accepted_keys);
     }
 
     // `"[pkg.ext]"` keys — collect the decoded UnknownField records in a
@@ -1138,8 +1162,16 @@ fn generate_custom_deserialize(
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField>
                     = ::buffa::alloc::vec::Vec::new();
             };
+            // Both brackets, matching `deserialize_extension_key`'s own
+            // `strip_prefix('[')?.strip_suffix(']')?`. A key like `"[oops"`
+            // is not an extension key, so it must fall through to the
+            // terminal arm rather than be swallowed here: under
+            // `deny_unknown_json_fields` that is the difference between
+            // rejecting it and silently accepting it, and in the lenient case
+            // the fall-through is also cheaper — an `IgnoredAny` skip instead
+            // of buffering a `serde_json::Value`.
             let arm = quote! {
-                __k if __k.starts_with('[') => {
+                __k if __k.starts_with('[') && __k.ends_with(']') => {
                     let __v: ::buffa::serde_json::Value = map.next_value()?;
                     match ::buffa::extension_registry::deserialize_extension_key(
                         #proto_fqn_lit, __k, __v,
@@ -1167,6 +1199,32 @@ fn generate_custom_deserialize(
         } else {
             (quote! {}, quote! {}, quote! {})
         };
+
+    // Terminal arm for keys no field, oneof variant or extension arm claimed.
+    //
+    // Under `deny_unknown_json_fields` this reports through serde's own
+    // `unknown_field`, which is what `#[serde(deny_unknown_fields)]` calls on
+    // the derive path — so a message with a oneof and one without produce the
+    // same diagnostic for the same typo. `"[pkg.ext]"` keys are claimed by
+    // `#ext_arm` above, so extension handling is untouched either way.
+    //
+    // Lenient (the default) skips the value with `IgnoredAny`, which costs no
+    // allocation.
+    let terminal_arm = if scope.deny_unknown_json_fields() {
+        let accepted = &accepted_keys;
+        quote! {
+            __unknown => {
+                return ::core::result::Result::Err(
+                    <A::Error as ::serde::de::Error>::unknown_field(
+                        __unknown,
+                        &[#(#accepted),*],
+                    ),
+                );
+            }
+        }
+    } else {
+        quote! { _ => { map.next_value::<::serde::de::IgnoredAny>()?; } }
+    };
 
     // Assemble the impl block. The non-snake allow covers the `__f_<name>` /
     // `__oneof_<name>` locals bound inside the visitor.
@@ -1197,7 +1255,7 @@ fn generate_custom_deserialize(
                             match key.as_str() {
                                 #(#match_arms)*
                                 #ext_arm
-                                _ => { map.next_value::<::serde::de::IgnoredAny>()?; }
+                                #terminal_arm
                             }
                         }
 
@@ -1239,14 +1297,38 @@ fn deser_seed_expr(rust_type: &TokenStream, inner: TokenStream) -> TokenStream {
     }}
 }
 
-/// Emit the variable declaration, match arm, and field initializer for one
-/// regular (non-oneof) field in a custom `Deserialize` impl.
+/// The variable declaration, match arm and field initializer for one regular
+/// (non-oneof) field in a custom `Deserialize` impl.
+///
+/// `accepted_keys` lists the JSON keys the arm matches (the field's JSON name
+/// and, when it differs, its proto name), so the terminal arm emitted under
+/// [`CodeGenConfig::deny_unknown_json_fields`](crate::CodeGenConfig::deny_unknown_json_fields)
+/// can report the same set serde's derive would.
+struct CustomDeserField {
+    var_decl: TokenStream,
+    arm: TokenStream,
+    field_init: TokenStream,
+    accepted_keys: Vec<String>,
+}
+
+/// One oneof group's contribution to a custom `Deserialize` visitor: one
+/// arm per variant, and the keys those arms accept (see [`CustomDeserField`]).
+struct CustomDeserOneof {
+    var_decl: TokenStream,
+    arms: Vec<TokenStream>,
+    field_init: TokenStream,
+    accepted_keys: Vec<String>,
+}
+
+/// Emit the variable declaration, match arm and field initializer for one
+/// regular (non-oneof) field of a custom `Deserialize` impl, together with
+/// the JSON keys that arm accepts.
 fn custom_deser_regular_field(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &crate::generated::descriptor::FieldDescriptorProto,
     resolver: &crate::imports::ImportResolver,
-) -> Result<(TokenStream, TokenStream, TokenStream), CodeGenError> {
+) -> Result<CustomDeserField, CodeGenError> {
     let MessageScope { ctx, features, .. } = scope;
     let field_name = field
         .name
@@ -1290,11 +1372,18 @@ fn custom_deser_regular_field(
         quote! { map.next_value::<#rust_type>()? }
     };
 
-    // Match arm accepting both json_name and proto_name.
-    let arm = if json_name != field_name {
-        quote! { #json_name | #field_name => { #var_ident = Some(#deser_expr); } }
+    // Match arm accepting both json_name and proto_name. `accepted_keys`
+    // lists the same two names.
+    let (arm, accepted_keys) = if json_name != field_name {
+        (
+            quote! { #json_name | #field_name => { #var_ident = Some(#deser_expr); } },
+            vec![json_name.to_string(), field_name.to_string()],
+        )
     } else {
-        quote! { #json_name => { #var_ident = Some(#deser_expr); } }
+        (
+            quote! { #json_name => { #var_ident = Some(#deser_expr); } },
+            vec![json_name.to_string()],
+        )
     };
 
     let var_decl = quote! { let mut #var_ident: ::core::option::Option<#rust_type> = None; };
@@ -1303,7 +1392,12 @@ fn custom_deser_regular_field(
     let field_init = quote! {
         if let ::core::option::Option::Some(v) = #var_ident { __r.#field_ident = v; }
     };
-    Ok((var_decl, arm, field_init))
+    Ok(CustomDeserField {
+        var_decl,
+        arm,
+        field_init,
+        accepted_keys,
+    })
 }
 
 /// Emit the variable declaration, match arms, and field initializer for one
@@ -1323,7 +1417,7 @@ fn custom_deser_oneof_group(
     resolver: &crate::imports::ImportResolver,
     oneof_idents: &std::collections::HashMap<usize, Ident>,
     nesting: usize,
-) -> Result<Option<(TokenStream, Vec<TokenStream>, TokenStream)>, CodeGenError> {
+) -> Result<Option<CustomDeserOneof>, CodeGenError> {
     let oneof_name = oneof
         .name
         .as_deref()
@@ -1340,6 +1434,7 @@ fn custom_deser_oneof_group(
     let var_decl =
         quote! { let mut #var_ident: ::core::option::Option<#oneof_prefix #enum_ident> = None; };
     let mut arms = Vec::new();
+    let mut accepted_keys = Vec::new();
 
     for field in &msg.field {
         if !is_real_oneof_member(field) || field.oneof_index != Some(idx as i32) {
@@ -1377,7 +1472,7 @@ fn custom_deser_oneof_group(
         let qualified_enum: TokenStream = quote! { #oneof_prefix #enum_ident };
         let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{proto_name}");
         let variant_pointer_repr = ctx.pointer_repr(&variant_fqn);
-        let arm = crate::oneof::oneof_variant_deser_arm(&crate::oneof::OneofVariantDeserInput {
+        let deser_input = crate::oneof::OneofVariantDeserInput {
             variant_ident: &variant_ident,
             variant_type: &variant_type,
             json_name,
@@ -1389,12 +1484,18 @@ fn custom_deser_oneof_group(
             enum_ident: &qualified_enum,
             result_var: &var_ident,
             oneof_name,
-        })?;
-        arms.push(arm);
+        };
+        accepted_keys.extend(deser_input.accepted_keys());
+        arms.push(crate::oneof::oneof_variant_deser_arm(&deser_input)?);
     }
 
     let field_init = quote! { __r.#field_ident = #var_ident; };
-    Ok(Some((var_decl, arms, field_init)))
+    Ok(Some(CustomDeserOneof {
+        var_decl,
+        arms,
+        field_init,
+        accepted_keys,
+    }))
 }
 
 /// Returns `true` for singular `google.protobuf.Value` fields.

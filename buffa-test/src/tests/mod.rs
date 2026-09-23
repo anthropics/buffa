@@ -52,6 +52,26 @@ pub(super) fn packed_field(num: u32, values: &[u64]) -> Vec<u8> {
     length_delimited_field(num, &payload)
 }
 
+/// Install the process-wide type registry the JSON tests resolve
+/// `"[pkg.ext]"` keys against.
+///
+/// `set_type_registry` replaces the installed registry rather than merging
+/// into it, and every test module runs as threads of one process. A module
+/// that installed only its own entries would remove another module's while
+/// that module's tests run, so every module that needs the registry calls
+/// this helper, which registers all of them and installs once.
+pub(super) fn install_type_registry() {
+    use buffa::type_registry::{set_type_registry, TypeRegistry};
+
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let mut reg = TypeRegistry::new();
+        crate::extjson::__buffa::register_types(&mut reg);
+        crate::strictjson::__buffa::register_types(&mut reg);
+        set_type_registry(reg);
+    });
+}
+
 mod any_type_url;
 mod arbitrary_bytes;
 mod basic;
@@ -88,6 +108,7 @@ mod repeated_type;
 mod rope_encode;
 mod scoped_unknown_fields;
 mod shared_pool;
+mod strict_json;
 mod string_map;
 mod string_type;
 mod textproto;

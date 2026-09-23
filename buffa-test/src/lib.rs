@@ -820,6 +820,21 @@ pub mod custopts {
     buffa::include_proto!("buffa.test.options");
 }
 
+/// Strict JSON unknown-field rejection — `deny_unknown_json_fields_in` over
+/// the derive path, the hand-written-visitor path and the extension path, with
+/// lenient siblings in the same module as the control.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod strictjson {
+    buffa::include_proto!("buffa.test.strictjson");
+}
+
+/// Strict JSON unknown-field rejection, proto3 field shapes — the mixed-shape
+/// message that checks nothing drops out of the accepted-key list.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod strictjson3 {
+    buffa::include_proto!("buffa.test.strictjson3");
+}
+
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,

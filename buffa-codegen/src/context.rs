@@ -1099,6 +1099,35 @@ impl<'a> CodeGenContext<'a> {
             .map_or(self.config.preserve_unknown_fields, |(_, enabled)| *enabled)
     }
 
+    /// Whether this message's generated JSON deserializer rejects unknown
+    /// fields.
+    ///
+    /// Starts from [`CodeGenConfig::deny_unknown_json_fields`] and applies
+    /// [`CodeGenConfig::deny_unknown_json_fields_in`]; the **last** matching
+    /// rule wins. Matching follows the same proto-segment-aware prefix rules
+    /// as [`preserve_unknown_fields`](Self::preserve_unknown_fields), so a
+    /// rule naming a message also covers the messages nested inside it, while
+    /// a rule naming a nested message does not cover its enclosing message.
+    /// `msg_fqn` is the message's proto path, with or without a leading dot.
+    pub fn deny_unknown_json_fields(&self, msg_fqn: &str) -> bool {
+        let rules = &self.config.deny_unknown_json_fields_in;
+        if rules.is_empty() {
+            return self.config.deny_unknown_json_fields;
+        }
+        let dotted = if msg_fqn.starts_with('.') {
+            Cow::Borrowed(msg_fqn)
+        } else {
+            Cow::Owned(format!(".{msg_fqn}"))
+        };
+        rules
+            .iter()
+            .rev()
+            .find(|(prefix, _)| matches_proto_prefix(prefix, &dotted))
+            .map_or(self.config.deny_unknown_json_fields, |(_, enabled)| {
+                *enabled
+            })
+    }
+
     /// Check whether a message-typed oneof variant at the given proto path is
     /// stored inline (opted out of `Box` wrapping).
     ///
@@ -1231,6 +1260,16 @@ impl<'a> MessageScope<'a> {
     /// [`CodeGenContext::preserve_unknown_fields`].
     pub fn preserve_unknown_fields(&self) -> bool {
         self.ctx.preserve_unknown_fields(self.proto_fqn)
+    }
+
+    /// Whether this message's generated JSON deserializer rejects unknown
+    /// fields. See [`CodeGenContext::deny_unknown_json_fields`].
+    ///
+    /// Gated on [`CodeGenConfig::generate_json`](crate::CodeGenConfig::generate_json):
+    /// with JSON off there is no deserializer to make strict, so every
+    /// emission site asking through here agrees without repeating the check.
+    pub fn deny_unknown_json_fields(&self) -> bool {
+        self.ctx.config.generate_json && self.ctx.deny_unknown_json_fields(self.proto_fqn)
     }
 }
 
@@ -2913,6 +2952,85 @@ mod tests {
         assert!(!matches_proto_prefix(".my.pk", ".my.pkg.Msg"));
         // But full-segment prefix match does.
         assert!(matches_proto_prefix(".my.pkg", ".my.pkg.Msg"));
+    }
+
+    /// Resolve `fqns` under `global` + `rules` for JSON strictness, in order.
+    fn resolve_deny_unknown_json(global: bool, rules: &[(&str, bool)], fqns: &[&str]) -> Vec<bool> {
+        let files = [make_file("t.proto", "test", vec![msg("Outer")], vec![])];
+        let config = CodeGenConfig {
+            deny_unknown_json_fields: global,
+            deny_unknown_json_fields_in: rules
+                .iter()
+                .map(|(path, enabled)| ((*path).to_string(), *enabled))
+                .collect(),
+            ..CodeGenConfig::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        fqns.iter()
+            .map(|f| ctx.deny_unknown_json_fields(f))
+            .collect()
+    }
+
+    #[test]
+    fn deny_unknown_json_fields_defaults_to_lenient() {
+        assert_eq!(
+            resolve_deny_unknown_json(false, &[], &["test.Outer"]),
+            [false]
+        );
+    }
+
+    #[test]
+    fn deny_unknown_json_fields_last_matching_rule_wins() {
+        // A later, more specific rule carves a message back out of a broader
+        // one, and the dotted and undotted spellings resolve alike.
+        let config = CodeGenConfig {
+            deny_unknown_json_fields: false,
+            deny_unknown_json_fields_in: vec![
+                (".test".to_string(), true),
+                (".test.Lenient".to_string(), false),
+            ],
+            ..CodeGenConfig::default()
+        };
+        let files = [make_file(
+            "t.proto",
+            "test",
+            vec![msg("Strict"), msg("Lenient")],
+            vec![],
+        )];
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        assert!(ctx.deny_unknown_json_fields("test.Strict"));
+        assert!(ctx.deny_unknown_json_fields(".test.Strict"));
+        assert!(!ctx.deny_unknown_json_fields("test.Lenient"));
+        assert!(!ctx.deny_unknown_json_fields("test.Lenient.Child"));
+        assert!(!ctx.deny_unknown_json_fields("other.Msg"));
+    }
+
+    #[test]
+    fn deny_unknown_json_fields_parent_rule_covers_nested_messages() {
+        // Segment-aware prefix: nested messages are covered, a sibling whose
+        // name merely starts with the same characters is not.
+        let got = resolve_deny_unknown_json(
+            false,
+            &[(".test.Outer", true)],
+            &[
+                "test.Outer",
+                "test.Outer.Inner",
+                "test.Outer.Inner.Deep",
+                "test.OuterX",
+                "test.Other",
+            ],
+        );
+        assert_eq!(got, [true, true, true, false, false]);
+    }
+
+    #[test]
+    fn deny_unknown_json_fields_child_rule_does_not_enable_parent() {
+        let got = resolve_deny_unknown_json(
+            false,
+            &[(".test.Outer.Inner", true)],
+            &["test.Outer", "test.Outer.Inner", "test.Outer.Inner.Deep"],
+        );
+        assert_eq!(got, [false, true, true]);
     }
 
     #[test]

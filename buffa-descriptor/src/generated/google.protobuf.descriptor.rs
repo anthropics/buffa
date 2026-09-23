@@ -628,7 +628,7 @@ impl<'de> ::serde::Deserialize<'de> for FileDescriptorSet {
                                 map.next_value_seed(_S)?
                             });
                         }
-                        __k if __k.starts_with('[') => {
+                        __k if __k.starts_with('[') && __k.ends_with(']') => {
                             let __v: ::buffa::serde_json::Value = map.next_value()?;
                             match ::buffa::extension_registry::deserialize_extension_key(
                                 "google.protobuf.FileDescriptorSet",
@@ -3306,7 +3306,7 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
                                 map.next_value_seed(_S)?
                             });
                         }
-                        __k if __k.starts_with('[') => {
+                        __k if __k.starts_with('[') && __k.ends_with(']') => {
                             let __v: ::buffa::serde_json::Value = map.next_value()?;
                             match ::buffa::extension_registry::deserialize_extension_key(
                                 "google.protobuf.ExtensionRangeOptions",
@@ -8469,7 +8469,7 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                                 map.next_value_seed(_S)?
                             });
                         }
-                        __k if __k.starts_with('[') => {
+                        __k if __k.starts_with('[') && __k.ends_with(']') => {
                             let __v: ::buffa::serde_json::Value = map.next_value()?;
                             match ::buffa::extension_registry::deserialize_extension_key(
                                 "google.protobuf.FileOptions",
@@ -9419,7 +9419,7 @@ impl<'de> ::serde::Deserialize<'de> for MessageOptions {
                                 map.next_value_seed(_S)?
                             });
                         }
-                        __k if __k.starts_with('[') => {
+                        __k if __k.starts_with('[') && __k.ends_with(']') => {
                             let __v: ::buffa::serde_json::Value = map.next_value()?;
                             match ::buffa::extension_registry::deserialize_extension_key(
                                 "google.protobuf.MessageOptions",
@@ -10657,7 +10657,7 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                                 map.next_value_seed(_S)?
                             });
                         }
-                        __k if __k.starts_with('[') => {
+                        __k if __k.starts_with('[') && __k.ends_with(']') => {
                             let __v: ::buffa::serde_json::Value = map.next_value()?;
                             match ::buffa::extension_registry::deserialize_extension_key(
                                 "google.protobuf.FieldOptions",
@@ -12425,7 +12425,7 @@ impl<'de> ::serde::Deserialize<'de> for OneofOptions {
                                 map.next_value_seed(_S)?
                             });
                         }
-                        __k if __k.starts_with('[') => {
+                        __k if __k.starts_with('[') && __k.ends_with(']') => {
                             let __v: ::buffa::serde_json::Value = map.next_value()?;
                             match ::buffa::extension_registry::deserialize_extension_key(
                                 "google.protobuf.OneofOptions",
@@ -12998,7 +12998,7 @@ impl<'de> ::serde::Deserialize<'de> for EnumOptions {
                                 map.next_value_seed(_S)?
                             });
                         }
-                        __k if __k.starts_with('[') => {
+                        __k if __k.starts_with('[') && __k.ends_with(']') => {
                             let __v: ::buffa::serde_json::Value = map.next_value()?;
                             match ::buffa::extension_registry::deserialize_extension_key(
                                 "google.protobuf.EnumOptions",
@@ -13586,7 +13586,7 @@ impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
                                 map.next_value_seed(_S)?
                             });
                         }
-                        __k if __k.starts_with('[') => {
+                        __k if __k.starts_with('[') && __k.ends_with(']') => {
                             let __v: ::buffa::serde_json::Value = map.next_value()?;
                             match ::buffa::extension_registry::deserialize_extension_key(
                                 "google.protobuf.EnumValueOptions",
@@ -14058,7 +14058,7 @@ impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
                                 map.next_value_seed(_S)?
                             });
                         }
-                        __k if __k.starts_with('[') => {
+                        __k if __k.starts_with('[') && __k.ends_with(']') => {
                             let __v: ::buffa::serde_json::Value = map.next_value()?;
                             match ::buffa::extension_registry::deserialize_extension_key(
                                 "google.protobuf.ServiceOptions",
@@ -14607,7 +14607,7 @@ impl<'de> ::serde::Deserialize<'de> for MethodOptions {
                                 map.next_value_seed(_S)?
                             });
                         }
-                        __k if __k.starts_with('[') => {
+                        __k if __k.starts_with('[') && __k.ends_with(']') => {
                             let __v: ::buffa::serde_json::Value = map.next_value()?;
                             match ::buffa::extension_registry::deserialize_extension_key(
                                 "google.protobuf.MethodOptions",
@@ -16379,7 +16379,7 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                                 map.next_value_seed(_S)?
                             });
                         }
-                        __k if __k.starts_with('[') => {
+                        __k if __k.starts_with('[') && __k.ends_with(']') => {
                             let __v: ::buffa::serde_json::Value = map.next_value()?;
                             match ::buffa::extension_registry::deserialize_extension_key(
                                 "google.protobuf.FeatureSet",
@@ -18841,7 +18841,7 @@ impl<'de> ::serde::Deserialize<'de> for SourceCodeInfo {
                                 map.next_value_seed(_S)?
                             });
                         }
-                        __k if __k.starts_with('[') => {
+                        __k if __k.starts_with('[') && __k.ends_with(']') => {
                             let __v: ::buffa::serde_json::Value = map.next_value()?;
                             match ::buffa::extension_registry::deserialize_extension_key(
                                 "google.protobuf.SourceCodeInfo",

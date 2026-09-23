@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **Opt-in rejection of unknown JSON keys** (#464, refs #444). `buffa_build::Config::deny_unknown_json_fields` makes generated JSON deserializers return an error for a key that matches no field, and `deny_unknown_json_fields_in` does the same for selected messages or packages; the `protoc-gen-buffa` options are `deny_unknown_json_fields=true` and the repeatable `deny_unknown_json_fields_in=<path>`. The default is unchanged: unknown keys are still ignored. Strictness is fixed at code-generation time, so code that uses a generated type cannot change it at run time. On a strict message, a key that starts with `[` but has no closing `]` is rejected as an ordinary unknown key rather than skipped as a malformed extension key.
+time: 2026-09-22T12:40:00+03:00

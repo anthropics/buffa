@@ -816,6 +816,23 @@ pub(crate) struct OneofVariantDeserInput<'a> {
     pub oneof_name: &'a str,
 }
 
+impl OneofVariantDeserInput<'_> {
+    /// The JSON keys the arm built from this input matches.
+    ///
+    /// Read by the caller assembling a strict terminal arm under
+    /// [`CodeGenConfig::deny_unknown_json_fields`](crate::CodeGenConfig::deny_unknown_json_fields),
+    /// so the diagnostic names exactly the set the arms accept. Kept next to
+    /// [`oneof_variant_deser_arm`], which decides one pattern or two from the
+    /// same comparison, so the two cannot disagree.
+    pub(crate) fn accepted_keys(&self) -> Vec<String> {
+        if self.json_name == self.proto_name {
+            vec![self.json_name.to_string()]
+        } else {
+            vec![self.json_name.to_string(), self.proto_name.to_string()]
+        }
+    }
+}
+
 /// Generate the deserialization match-arm body for one oneof variant.
 ///
 /// Returns a `quote!` block that deserializes the value from a map entry and
@@ -832,8 +849,6 @@ pub(crate) fn oneof_variant_deser_arm(
     let OneofVariantDeserInput {
         variant_ident,
         variant_type,
-        json_name,
-        proto_name,
         field_type,
         null_forward,
         is_boxed,
@@ -841,6 +856,7 @@ pub(crate) fn oneof_variant_deser_arm(
         enum_ident,
         result_var,
         oneof_name,
+        ..
     } = input;
     let dup_err_msg = format!("multiple oneof fields set for '{oneof_name}'");
     // For boxed variants, the deserialized inner value must be wrapped in the
@@ -905,21 +921,13 @@ pub(crate) fn oneof_variant_deser_arm(
     };
 
     // Accept both json_name and proto_name.
-    if json_name == proto_name {
-        Ok(quote! {
-            #json_name => {
-                #deser
-                #set_result
-            }
-        })
-    } else {
-        Ok(quote! {
-            #json_name | #proto_name => {
-                #deser
-                #set_result
-            }
-        })
-    }
+    let patterns = input.accepted_keys();
+    Ok(quote! {
+        #(#patterns)|* => {
+            #deser
+            #set_result
+        }
+    })
 }
 
 /// Build the Rust identifier for a oneof enum: `{PascalCase(oneof_name)}`.
