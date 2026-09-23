@@ -156,7 +156,7 @@ unsafe fn write_oneof<K: EncodeSink>(
     if number == 0 {
         return;
     }
-    let payload_entry = table.payload_entry(number);
+    let payload_entry = table.payload_entry(m.group, number);
     // SAFETY: `payload` points to a value of the payload kind of member
     // `number`, per the oneof enum's `OneofEnum` implementation.
     unsafe { write_payload(table, &payload_entry, payload, cache, buf) };

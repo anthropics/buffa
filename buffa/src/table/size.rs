@@ -109,7 +109,7 @@ unsafe fn size_oneof(
     if number == 0 {
         return 0;
     }
-    let payload_entry = table.payload_entry(number);
+    let payload_entry = table.payload_entry(m.group, number);
     // SAFETY: `payload` points to a value of the payload kind of member
     // `number`, per the oneof enum's `OneofEnum` implementation.
     unsafe { size_payload(table, &payload_entry, payload, cache) }
