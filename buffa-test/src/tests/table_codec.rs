@@ -974,6 +974,7 @@ fn the_messages_the_table_can_handle_use_it() {
         crate::brt::__BUFFA_TABLE_Leaf,
         crate::brt::__BUFFA_TABLE_Cold,
         crate::brt::__BUFFA_TABLE_Wkt,
+        crate::brt::__BUFFA_TABLE_Pick,
         crate::xe::__BUFFA_TABLE_Leaf,
         crate::xft::__BUFFA_TABLE_Holder,
     );
@@ -1054,7 +1055,8 @@ fn messages_held_across_packages_agree_in_every_layout() {
 macro_rules! bridge_samples {
     ($name:ident, $m:ident) => {
         mod $name {
-            use crate::$m::{Cold, Hot, Leaf, Wkt};
+            use crate::$m::pick::Choice;
+            use crate::$m::{Cold, Hot, Leaf, Pick, Wkt};
             use buffa::MessageField;
             use buffa_types::google::protobuf::{
                 Any, Duration, Empty, FieldMask, Int32Value, StringValue, Struct, Timestamp, Value,
@@ -1098,6 +1100,33 @@ macro_rules! bridge_samples {
                     tail: 7,
                     ..Default::default()
                 }
+            }
+
+            /// One `Pick` for each member of its oneof, and one with none.
+            pub fn picks() -> Vec<Pick> {
+                let mut st = Struct::new();
+                st.insert("k", 1.5);
+                [
+                    None,
+                    Some(Choice::N(7)),
+                    Some(Choice::Leaf(Box::new(leaf(1, "l", &[2])))),
+                    Some(Choice::Hot(Box::new(hot(2, true)))),
+                    Some(Choice::Cold(Box::new(cold()))),
+                    Some(Choice::Ts(Box::new(Timestamp::from_unix(1_700_000_000, 5)))),
+                    Some(Choice::Any(Box::new(Any::pack(
+                        &Timestamp::from_unix(1, 2),
+                        "type.googleapis.com/google.protobuf.Timestamp",
+                    )))),
+                    Some(Choice::Val(Box::new(Value::from("v")))),
+                    Some(Choice::S("s".into())),
+                ]
+                .into_iter()
+                .map(|choice| Pick {
+                    choice,
+                    tail: MessageField::some(leaf(9, "tail", &[])),
+                    ..Default::default()
+                })
+                .collect()
             }
 
             pub fn wkt() -> Wkt {
@@ -1240,6 +1269,62 @@ fn a_table_message_copies_the_payload_of_an_any_it_holds() {
 }
 
 #[test]
+fn oneof_members_without_a_table_agree() {
+    // `Hot` is unrolled in `brt`, and the well-known types have no table, so
+    // those members are reached through their `Message` impl; `Leaf` and
+    // `Cold` have tables.
+    let (unrolled, table) = (bru_s::picks(), brt_s::picks());
+    assert_eq!(unrolled.len(), 9);
+    for (u, t) in unrolled.iter().zip(&table) {
+        let wire = assert_same_codec(u, t);
+        assert_same_chained::<crate::bru::Pick, crate::brt::Pick>(&wire);
+        assert_same_on_corrupt_input::<crate::bru::Pick, crate::brt::Pick>(&wire, true);
+    }
+}
+
+#[test]
+fn oneof_members_without_a_table_merge_and_fail_alike() {
+    let opts = buffa::DecodeOptions::new();
+    let wires: [&[u8]; 8] = [
+        // `hot` twice, which merges: {a = 1}, then {leaf = {x = 5}}.
+        &[0x1a, 0x02, 0x08, 0x01, 0x1a, 0x04, 0x12, 0x02, 0x08, 0x05],
+        // `ts` twice: {seconds = 1}, then {nanos = 2}.
+        &[0x2a, 0x02, 0x08, 0x01, 0x2a, 0x02, 0x10, 0x02],
+        // Another member replaces the one that is set, in both orders.
+        &[0x12, 0x02, 0x08, 0x03, 0x1a, 0x02, 0x08, 0x01],
+        &[0x1a, 0x02, 0x08, 0x01, 0x12, 0x02, 0x08, 0x03],
+        // A member that fails to decode after a complete one.
+        &[0x1a, 0x02, 0x08, 0x01, 0x1a, 0x05, 0x08],
+        &[0x2a, 0x02, 0x08, 0x01, 0x2a, 0x03, 0x08],
+        // Bad UTF-8 in a message member.
+        &[0x1a, 0x03, 0x12, 0x01, 0xff],
+        &[0x3a, 0x02, 0xc3, 0x28],
+    ];
+    macro_rules! starts {
+        ($m:ident, $s:ident) => {
+            [
+                crate::$m::Pick::default(),
+                $s::picks()[3].clone(),
+                $s::picks()[5].clone(),
+                $s::picks()[6].clone(),
+            ]
+        };
+    }
+    let (start_u, start_t) = (starts!(bru, bru_s), starts!(brt, brt_s));
+    for wire in wires {
+        assert_same_decode::<crate::bru::Pick, crate::brt::Pick>(wire, false);
+        for (u, t) in start_u.iter().zip(&start_t) {
+            assert_same_merge(&opts, u, t, wire);
+        }
+    }
+    let merged = <crate::brt::Pick as Message>::decode_from_slice(wires[0]).unwrap();
+    let Some(crate::brt::pick::Choice::Hot(hot)) = merged.choice else {
+        panic!("expected a Hot, got {:?}", merged.choice);
+    };
+    assert_eq!((hot.a, hot.leaf.as_option().unwrap().x), (1, 5));
+}
+
+#[test]
 fn messages_from_another_crate_agree() {
     macro_rules! sample {
         ($m:ident) => {{
@@ -1249,17 +1334,29 @@ fn messages_from_another_crate_agree() {
                 kids: vec![crate::xe::Leaf::default()],
                 ..Default::default()
             };
-            crate::$m::Holder {
+            // One holder for each member of its oneof, whose message member
+            // is from another crate, and one with none.
+            [
+                None,
+                Some(crate::$m::holder::Pick::N(5)),
+                Some(crate::$m::holder::Pick::Pl(Box::new(leaf(6, "pl")))),
+            ]
+            .into_iter()
+            .map(|pick| crate::$m::Holder {
                 leaf: buffa::MessageField::some(leaf(1, "a")),
                 leaves: vec![leaf(2, "b"), leaf(3, "")],
                 tail: 4,
+                pick,
                 ..Default::default()
-            }
+            })
+            .collect::<Vec<_>>()
         }};
     }
-    let wire = assert_same_codec(&sample!(xfu), &sample!(xft));
-    assert_same_chained::<crate::xfu::Holder, crate::xft::Holder>(&wire);
-    assert_same_on_corrupt_input::<crate::xfu::Holder, crate::xft::Holder>(&wire, true);
+    for (u, t) in sample!(xfu).iter().zip(&sample!(xft)) {
+        let wire = assert_same_codec(u, t);
+        assert_same_chained::<crate::xfu::Holder, crate::xft::Holder>(&wire);
+        assert_same_on_corrupt_input::<crate::xfu::Holder, crate::xft::Holder>(&wire, true);
+    }
 }
 
 /// The wire form of `Cold` with `hot` set to a `Hot` with `back` set to a
@@ -1396,7 +1493,9 @@ fn a_child_without_a_table_is_encoded_into_every_kind_of_sink() {
 
 #[test]
 fn a_holder_of_a_bytes_typed_message_is_unrolled_and_decodes_without_copying() {
-    use crate::tbz::{Blob, HoldsBlob, HoldsBlobs};
+    use crate::tbz::{
+        holds_blob_in_oneof, Blob, HoldsBlob, HoldsBlobInOneof, HoldsBlobs, HoldsPick,
+    };
     use buffa::bytes::Bytes;
     use buffa::MessageField;
     // The plan ran on this schema, so `Plain` has a table, and `HoldsBlob`
@@ -1406,6 +1505,9 @@ fn a_holder_of_a_bytes_typed_message_is_unrolled_and_decodes_without_copying() {
     assert!(generated.contains("static __BUFFA_TABLE_HoldsPlain"));
     assert!(!generated.contains("__BUFFA_TABLE_Blob"));
     assert!(!generated.contains("__BUFFA_TABLE_HoldsBlob"));
+    // Also the one that holds it in a oneof member, and its own holder.
+    assert!(!generated.contains("__BUFFA_TABLE_HoldsBlobInOneof"));
+    assert!(!generated.contains("__BUFFA_TABLE_HoldsPick"));
 
     let blob = |fill: u8| Blob {
         data: Bytes::from(vec![fill; 64]),
@@ -1434,6 +1536,25 @@ fn a_holder_of_a_bytes_typed_message_is_unrolled_and_decodes_without_copying() {
         .blobs
         .iter()
         .all(|b| aliases(&b.data) && aliases(&b.chunks[0])));
+
+    // The oneof member decodes without copying too.
+    let msg = HoldsPick {
+        inner: MessageField::some(HoldsBlobInOneof {
+            pick: Some(holds_blob_in_oneof::Pick::Blob(Box::new(blob(7)))),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let src = Bytes::from(msg.encode_to_vec());
+    let range = src.as_ptr() as usize..src.as_ptr() as usize + src.len();
+    let aliases = |b: &Bytes| range.contains(&(b.as_ptr() as usize));
+    let decoded = HoldsPick::decode(&mut src.clone()).unwrap();
+    assert_eq!(decoded, msg);
+    let Some(holds_blob_in_oneof::Pick::Blob(held)) = &decoded.inner.as_option().unwrap().pick
+    else {
+        panic!("expected a Blob");
+    };
+    assert!(aliases(&held.data) && aliases(&held.chunks[0]));
 }
 
 // ---------------------------------------------------------------------------
