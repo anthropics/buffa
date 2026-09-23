@@ -77,7 +77,8 @@ fn compile_extern_children() {
             format!(
                 "syntax = \"proto3\";\npackage xf{suffix};\nimport \"xe.proto\";\n\
                  message Holder {{ xe.Leaf leaf = 1; repeated xe.Leaf leaves = 2; int32 tail = 3;\n\
-                   oneof pick {{ int32 n = 4; xe.Leaf pl = 5; }} }}\n"
+                   oneof pick {{ int32 n = 4; xe.Leaf pl = 5; }}\n\
+                   map<string, xe.Leaf> by_name = 6; }}\n"
             ),
         )
         .expect("write proto");
@@ -281,11 +282,12 @@ fn main() {
             |config| config.map_type(buffa_build::MapRepr::BTreeMap),
         );
         compile_both_codecs("the generated wide schema", &wide_proto(), "wide", &[]);
-        compile_both_codecs(
+        compile_both_codecs_with(
             "table_bridge.proto",
             &read_proto("table_bridge.proto"),
             "br",
             &["Hot"],
+            |config| config.map_type(buffa_build::MapRepr::BTreeMap),
         );
         compile_both_codecs(
             "table_codec4.proto",
