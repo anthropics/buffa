@@ -303,7 +303,10 @@ jobs:
       # provenance, alignment and initialisation on the kinds and field
       # shapes the module's tests build, including message fields stored
       # inline, boxed and in a `Vec`, whose child pointers point into the
-      # parent or the heap.
+      # parent or the heap, and oneofs, through hand-written enums with
+      # inline and boxed message members. The `OneofEnum` code that codegen
+      # emits runs natively only, in the differential tests of `buffa-test`,
+      # not under Miri.
       - name: Miri (table interpreter soundness)
         run: cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa --lib -- 'table::'
 
