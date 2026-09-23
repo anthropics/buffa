@@ -9,7 +9,7 @@
 //! `enc.write_field_name("x")?; enc.write_*(...)?;`. Presence is the same
 //! as binary encode — implicit-presence scalars skip when zero/empty,
 //! explicit-presence (`Option<T>`) skip when `None`, `MessageField<T>` skip
-//! when `!is_set()`.
+//! when unset.
 //!
 //! `merge_text` is a `while let Some(name) = dec.read_field_name()?` loop
 //! with a `match name { ... }` dispatch. The match key is the proto field
@@ -559,12 +559,13 @@ fn scalar_encode_stmt(
         });
     }
 
-    // Singular message: MessageField<T>, skip when !is_set().
+    // Singular message: MessageField<T>, skipped when unset. Bound with
+    // `as_option()` for the reason given in `impl_message.rs`.
     if matches!(ty, Type::TYPE_MESSAGE | Type::TYPE_GROUP) {
         return Ok(quote! {
-            if self.#ident.is_set() {
+            if let ::core::option::Option::Some(__v) = self.#ident.as_option() {
                 enc.write_field_name(#name_lit)?;
-                enc.write_message(&*self.#ident)?;
+                enc.write_message(__v)?;
             }
         });
     }

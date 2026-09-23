@@ -560,9 +560,9 @@ impl<'a> ::buffa::ViewEncode<'a> for CodeGeneratorRequestView<'a> {
         if let Some(ref v) = self.parameter {
             size += 1u64 + ::buffa::types::string_encoded_len(v) as u64;
         }
-        if self.compiler_version.is_set() {
+        if let ::core::option::Option::Some(__v) = self.compiler_version.as_option() {
             let __slot = __cache.reserve();
-            let inner_size = self.compiler_version.compute_size(__cache);
+            let inner_size = __v.compute_size(__cache);
             __cache.set(__slot, inner_size);
             size
                 += 1u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
@@ -601,13 +601,13 @@ impl<'a> ::buffa::ViewEncode<'a> for CodeGeneratorRequestView<'a> {
         if let Some(ref v) = self.parameter {
             ::buffa::types::put_string_field(2u32, v, buf);
         }
-        if self.compiler_version.is_set() {
+        if let ::core::option::Option::Some(__v) = self.compiler_version.as_option() {
             ::buffa::types::put_len_delimited_header(
                 3u32,
                 u64::from(__cache.consume_next()),
                 buf,
             );
-            self.compiler_version.write_to(__cache, buf);
+            __v.write_to(__cache, buf);
         }
         for v in &self.proto_file {
             ::buffa::types::put_len_delimited_header(
@@ -1526,9 +1526,12 @@ pub mod code_generator_response {
             if let Some(ref v) = self.content {
                 size += 1u64 + ::buffa::types::string_encoded_len(v) as u64;
             }
-            if self.generated_code_info.is_set() {
+            if let ::core::option::Option::Some(__v) = self
+                .generated_code_info
+                .as_option()
+            {
                 let __slot = __cache.reserve();
-                let inner_size = self.generated_code_info.compute_size(__cache);
+                let inner_size = __v.compute_size(__cache);
                 __cache.set(__slot, inner_size);
                 size
                     += 2u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
@@ -1554,13 +1557,16 @@ pub mod code_generator_response {
             if let Some(ref v) = self.content {
                 ::buffa::types::put_string_field(15u32, v, buf);
             }
-            if self.generated_code_info.is_set() {
+            if let ::core::option::Option::Some(__v) = self
+                .generated_code_info
+                .as_option()
+            {
                 ::buffa::types::put_len_delimited_header(
                     16u32,
                     u64::from(__cache.consume_next()),
                     buf,
                 );
-                self.generated_code_info.write_to(__cache, buf);
+                __v.write_to(__cache, buf);
             }
             self.__buffa_unknown_fields.write_to(buf);
         }

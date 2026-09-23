@@ -165,9 +165,9 @@ impl ::buffa::Message for LogEntry {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u64;
-        if self.timestamp.is_set() {
+        if let ::core::option::Option::Some(__v) = self.timestamp.as_option() {
             let __slot = __cache.reserve();
-            let inner_size = self.timestamp.compute_size(__cache);
+            let inner_size = __v.compute_size(__cache);
             __cache.set(__slot, inner_size);
             size
                 += 1u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
@@ -185,9 +185,9 @@ impl ::buffa::Message for LogEntry {
         if !self.logger.is_empty() {
             size += 1u64 + ::buffa::types::string_encoded_len(&self.logger) as u64;
         }
-        if self.context.is_set() {
+        if let ::core::option::Option::Some(__v) = self.context.as_option() {
             let __slot = __cache.reserve();
-            let inner_size = self.context.compute_size(__cache);
+            let inner_size = __v.compute_size(__cache);
             __cache.set(__slot, inner_size);
             size
                 += 1u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
@@ -209,13 +209,13 @@ impl ::buffa::Message for LogEntry {
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        if self.timestamp.is_set() {
+        if let ::core::option::Option::Some(__v) = self.timestamp.as_option() {
             ::buffa::types::put_len_delimited_header(
                 1u32,
                 u64::from(__cache.consume_next()),
                 buf,
             );
-            self.timestamp.write_to(__cache, buf);
+            __v.write_to(__cache, buf);
         }
         {
             let val = self.severity.to_i32();
@@ -229,13 +229,13 @@ impl ::buffa::Message for LogEntry {
         if !self.logger.is_empty() {
             ::buffa::types::put_string_field(4u32, &self.logger, buf);
         }
-        if self.context.is_set() {
+        if let ::core::option::Option::Some(__v) = self.context.as_option() {
             ::buffa::types::put_len_delimited_header(
                 5u32,
                 u64::from(__cache.consume_next()),
                 buf,
             );
-            self.context.write_to(__cache, buf);
+            __v.write_to(__cache, buf);
         }
         ::buffa::map_codec::write_field::<
             ::buffa::map_codec::Str,
@@ -422,6 +422,9 @@ impl ::buffa::Message for LogBatch {
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 let mut elem = ::core::default::Default::default();
+                ctx.register_element_memory(
+                    ::buffa::__private::element_footprint(&elem),
+                )?;
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.entries.push(elem);
             }

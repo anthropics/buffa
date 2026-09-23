@@ -86,6 +86,7 @@ mod edge_cases;
 mod editions_2024;
 mod editions_enum_json;
 mod element_memory_limit;
+mod encode_as_option;
 mod extensions;
 mod extensions_json;
 mod idiomatic_fields;
