@@ -87,3 +87,14 @@ BUFFA_VIA_VTABLE=1 run_suite vtable \
     --failure_list /known_failures_view_vtable.txt \
     --maximum_edition 2024 \
     /usr/local/bin/buffa-conformance
+
+# Via-table mode: a binary whose test messages are generated with
+# CodecStrategy::Table, run through the full binary, JSON and text suites like
+# the std run. Messages the table cannot handle (proto2 groups, MessageSet)
+# stay unrolled inside it.
+run_suite table \
+    conformance_test_runner \
+    --failure_list /known_failures_table.txt \
+    --text_format_failure_list /known_failures_text.txt \
+    --maximum_edition 2024 \
+    /usr/local/bin/buffa-conformance-table

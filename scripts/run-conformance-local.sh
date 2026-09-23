@@ -2,9 +2,9 @@
 # Run the full protobuf conformance suite without Docker.
 #
 # Native equivalent of conformance/run-conformance.sh + conformance/Dockerfile:
-# builds the std and no_std conformance binaries with the host cargo, then
-# drives them through conformance_test_runner (built by
-# scripts/build-conformance-tools.sh) for the same seven runs as the Docker
+# builds the std, table and no_std conformance binaries with the host cargo,
+# then drives them through conformance_test_runner (built by
+# scripts/build-conformance-tools.sh) for the same eight runs as the Docker
 # image. The runner talks to the testee over stdin/stdout pipes, so no
 # container plumbing is needed.
 #
@@ -31,12 +31,16 @@ if [ ! -f "${CONF}/protos/conformance.proto" ]; then
     exit 1
 fi
 
-echo "=== Building conformance binaries (std + no_std) ==="
+echo "=== Building conformance binaries (std + table + no_std) ==="
 cargo build --release --manifest-path "${CONF}/Cargo.toml"
+# Needs Rust 1.77 (offset_of!); buffa-build refuses an older compiler.
+cargo build --release --manifest-path "${CONF}/Cargo.toml" \
+    --features table --target-dir "${CONF}/target-table"
 cargo build --release --manifest-path "${CONF}/Cargo.toml" \
     --no-default-features --target-dir "${CONF}/target-nostd"
 
 STD_BIN="${CONF}/target/release/conformance"
+TABLE_BIN="${CONF}/target-table/release/conformance"
 NOSTD_BIN="${CONF}/target-nostd/release/conformance"
 
 run_suite() {
@@ -96,4 +100,13 @@ BUFFA_VIA_VTABLE=1 run_suite vtable \
     --maximum_edition 2024 \
     "${STD_BIN}"
 
-echo "All seven conformance runs completed."
+# Via-table mode: a build whose test messages use CodecStrategy::Table, run
+# through the full binary, JSON and text suites like the std run.
+run_suite table \
+    "${RUNNER}" \
+    --failure_list "${CONF}/known_failures_table.txt" \
+    --text_format_failure_list "${CONF}/known_failures_text.txt" \
+    --maximum_edition 2024 \
+    "${TABLE_BIN}"
+
+echo "All eight conformance runs completed."

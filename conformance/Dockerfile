@@ -36,6 +36,9 @@ COPY protoc-gen-buffa/  protoc-gen-buffa/
 COPY conformance/       conformance/
 
 RUN cargo build --release --manifest-path conformance/Cargo.toml
+# The table strategy needs Rust 1.77; this stage's toolchain is newer.
+RUN cargo build --release --manifest-path conformance/Cargo.toml \
+    --features table --target-dir conformance/target-table
 RUN cargo build --release --manifest-path conformance/Cargo.toml \
     --no-default-features --target-dir conformance/target-nostd
 
@@ -50,8 +53,11 @@ COPY --from=rust-builder \
     /workspace/conformance/target/release/conformance  /usr/local/bin/buffa-conformance
 COPY --from=rust-builder \
     /workspace/conformance/target-nostd/release/conformance  /usr/local/bin/buffa-conformance-nostd
+COPY --from=rust-builder \
+    /workspace/conformance/target-table/release/conformance  /usr/local/bin/buffa-conformance-table
 COPY conformance/known_failures.txt             /known_failures.txt
 COPY conformance/known_failures_nostd.txt       /known_failures_nostd.txt
+COPY conformance/known_failures_table.txt       /known_failures_table.txt
 COPY conformance/known_failures_view.txt        /known_failures_view.txt
 COPY conformance/known_failures_lazy.txt        /known_failures_lazy.txt
 COPY conformance/known_failures_view_json.txt   /known_failures_view_json.txt
