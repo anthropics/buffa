@@ -590,27 +590,19 @@ impl DynamicMessage {
             if buf.remaining() < len {
                 return Err(DecodeError::UnexpectedEof);
             }
-            // Fixed-width packed payloads tell us their exact element count.
-            // Bound the hint by the remaining element-memory budget: reserving
-            // directly from an attacker-controlled length prefix could allocate
-            // past the limit before the per-element charge rejects the input.
-            let width = match elem {
-                SingularKind::Scalar(
-                    ScalarType::Double | ScalarType::Fixed64 | ScalarType::Sfixed64,
-                ) => Some(8),
-                SingularKind::Scalar(
-                    ScalarType::Float | ScalarType::Fixed32 | ScalarType::Sfixed32,
-                ) => Some(4),
-                _ => None,
-            };
-            if let Some(width) = width {
+            // A fixed-width payload holds exactly `len / width` elements, so
+            // reserve for them once. Each decoded `Value` is larger than its 4
+            // or 8 wire bytes, so the reservation is capped by the remaining
+            // element-memory budget, the same bound the loop below enforces.
+            if let Some(width) = fixed_width(elem) {
                 let elements = len / width;
-                let additional = ctx.remaining_element_memory().map_or(elements, |remaining| {
-                    elements.min(remaining / core::mem::size_of::<Value>())
-                });
+                let additional = ctx
+                    .remaining_element_memory()
+                    .map_or(elements, |remaining| {
+                        elements.min(remaining / core::mem::size_of::<Value>())
+                    });
                 list.reserve(additional);
             }
-
             // Take a sub-buffer of `len` bytes and decode elements from it.
             let mut packed = buf.copy_to_bytes(len);
             while packed.has_remaining() {
@@ -2214,6 +2206,32 @@ fn is_packable(kind: SingularKind) -> bool {
         SingularKind::Scalar(s) => !matches!(s, ScalarType::String | ScalarType::Bytes),
         SingularKind::Enum(_) => true,
         SingularKind::Message(_) => false,
+    }
+}
+
+/// Wire size in bytes of one element of a fixed-width scalar kind, or `None`
+/// for kinds whose elements vary in size.
+fn fixed_width(kind: SingularKind) -> Option<usize> {
+    match kind {
+        SingularKind::Scalar(ScalarType::Double | ScalarType::Fixed64 | ScalarType::Sfixed64) => {
+            Some(8)
+        }
+        SingularKind::Scalar(ScalarType::Float | ScalarType::Fixed32 | ScalarType::Sfixed32) => {
+            Some(4)
+        }
+        SingularKind::Scalar(
+            ScalarType::Int64
+            | ScalarType::Uint64
+            | ScalarType::Int32
+            | ScalarType::Bool
+            | ScalarType::String
+            | ScalarType::Bytes
+            | ScalarType::Uint32
+            | ScalarType::Sint32
+            | ScalarType::Sint64,
+        )
+        | SingularKind::Enum(_)
+        | SingularKind::Message(_) => None,
     }
 }
 
