@@ -128,12 +128,10 @@ impl Tag {
 
     /// Decode a tag from a buffer.
     ///
-    /// Single-byte tags (field numbers 1–15, any wire type) are handled
-    /// inline without a call into [`decode_varint`]. With plain `#[inline]`,
-    /// LLVM often declines to inline `decode_varint` (three code paths:
-    /// single-byte, unrolled-slice, slow-fallback) into per-field decode
-    /// loops, so handling the one-byte case here avoids the out-of-line
-    /// call for the overwhelmingly common case.
+    /// Single-byte tags (field numbers 1–15, any wire type) are validated
+    /// straight from the first byte, without the `Result<u64, _>` that
+    /// [`decode_varint`] returns. A longer tag continues in
+    /// `decode_varint_multibyte`, so the one-byte check is not repeated.
     #[inline]
     pub fn decode(buf: &mut impl Buf) -> Result<Self, DecodeError> {
         // Fast path: one-byte tag. Covers field numbers 1–15 with any
@@ -141,15 +139,15 @@ impl Tag {
         // clear). For protos that keep frequently-used fields in the 1–15
         // range — which the style guides recommend — this is the only
         // branch the decode loop ever takes.
-        let chunk = buf.chunk();
-        if !chunk.is_empty() && chunk[0] < 0x80 {
-            let b = chunk[0];
-            buf.advance(1);
-            return Self::from_raw_u32(b as u32);
+        if let Some(&first) = buf.chunk().first() {
+            if first < 0x80 {
+                buf.advance(1);
+                return Self::from_raw_u32(u32::from(first));
+            }
         }
 
         // Multi-byte tag (field number ≥ 16).
-        let value = decode_varint(buf)?;
+        let value = decode_varint_multibyte(buf)?;
         // A tag value above u32::MAX implies a field number above 2^29 – 1
         // (the protobuf maximum), since the lower three bits carry the wire
         // type and the remaining bits carry the field number.
@@ -265,20 +263,42 @@ pub(crate) fn for_each_packed_varint(
 /// 2. Unrolled slice decode when the contiguous chunk is large enough.
 /// 3. Byte-at-a-time fallback for non-contiguous or fragmented buffers.
 ///
+/// Only the single-byte check is inlinable into callers; paths 2 and 3 run in
+/// an out-of-line function that calls `buf.chunk()` again. That second call
+/// is free for `&[u8]` and `Bytes` and a real call for `Chain`, `Take` and
+/// `dyn Buf`.
+///
+/// # Errors
+///
+/// Returns [`DecodeError::UnexpectedEof`] if the buffer ends before the
+/// varint's last byte, and [`DecodeError::VarintTooLong`] if the varint is
+/// longer than ten bytes or its tenth byte sets bits above bit 63. After an
+/// error the position of `buf` is unspecified.
+// Plain `#[inline]`, not `#[inline(always)]`: the check is a load, a compare
+// and a pointer bump, so a one-byte varint (a length prefix, a small scalar)
+// skips the out-of-line call and the `Result<u64, _>` returned through
+// memory. The rest of the decoder stays out of line; see
+// `decode_varint_packed` for why force-inlining all of it is not done.
 #[inline]
 pub fn decode_varint(buf: &mut impl Buf) -> Result<u64, DecodeError> {
+    if let Some(&first) = buf.chunk().first() {
+        if first < 0x80 {
+            buf.advance(1);
+            return Ok(u64::from(first));
+        }
+    }
+    decode_varint_multibyte(buf)
+}
+
+/// The out-of-line remainder of `decode_varint`: an empty chunk, or a varint
+/// of two or more bytes. Correct for any buffer, including one whose first
+/// byte is below `0x80`, but its callers have already handled that case.
+#[inline(never)]
+pub(crate) fn decode_varint_multibyte(buf: &mut impl Buf) -> Result<u64, DecodeError> {
     let chunk = buf.chunk();
     let len = chunk.len();
     if len == 0 {
         return Err(DecodeError::UnexpectedEof);
-    }
-
-    // Fast path: single-byte varint (values 0–127). This covers field tags
-    // for field numbers 1–15 and many small integer values.
-    let first = chunk[0];
-    if first < 0x80 {
-        buf.advance(1);
-        return Ok(first as u64);
     }
 
     // Keep this branch condition in sync with `decode_varint_packed`; packed
@@ -305,15 +325,16 @@ pub fn decode_varint(buf: &mut impl Buf) -> Result<u64, DecodeError> {
 /// reference this doc rather than restating it). Force-inlining is
 /// intentionally restricted to this entry point: applying it to
 /// [`decode_varint`] globally regresses large view-decode functions
-/// (code-size/front-end pressure), so singular-field decoding keeps the
-/// compiler-judged `#[inline]` hint. The fragmented-buffer fallback stays
-/// out of line and cold.
+/// (code-size/front-end pressure), so singular-field decoding inlines only
+/// the one-byte check and calls `decode_varint_multibyte` for the rest. The
+/// fragmented-buffer fallback stays out of line and cold.
 ///
-/// The dispatch body deliberately duplicates [`decode_varint`]'s — sharing
-/// it would re-couple the two functions in the inliner and reintroduce the
-/// placement instability this split exists to avoid. Keep the two in sync;
-/// the `len > 10 || chunk[len - 1] < 0x80` condition is the precondition
-/// the slice decoders' assertions rely on for bounds-check elimination.
+/// This function deliberately duplicates the one-byte check in
+/// [`decode_varint`] and the dispatch in `decode_varint_multibyte`: sharing
+/// them would re-couple the functions in the inliner and reintroduce the
+/// placement instability this split exists to avoid. Keep them in sync. The
+/// `len > 10 || chunk[len - 1] < 0x80` condition is the precondition the
+/// slice decoders' assertions rely on for bounds-check elimination.
 #[inline(always)]
 pub(crate) fn decode_varint_packed(buf: &mut impl Buf) -> Result<u64, DecodeError> {
     let chunk = buf.chunk();
@@ -325,7 +346,7 @@ pub(crate) fn decode_varint_packed(buf: &mut impl Buf) -> Result<u64, DecodeErro
     let first = chunk[0];
     if first < 0x80 {
         buf.advance(1);
-        return Ok(first as u64);
+        return Ok(u64::from(first));
     }
 
     if len > 10 || chunk[len - 1] < 0x80 {
@@ -338,20 +359,19 @@ pub(crate) fn decode_varint_packed(buf: &mut impl Buf) -> Result<u64, DecodeErro
 }
 
 // One body, two emission forms: `decode_varint_slice` (compiler-judged
-// `#[inline]`, the status-quo path for singular fields) and
-// `decode_varint_slice_always` (force-inlined, used only by
+// `#[inline]`, inlinable into `decode_varint_multibyte`, the path for singular
+// fields) and `decode_varint_slice_always` (force-inlined, used only by
 // `decode_varint_packed` in packed-repeated element loops). A macro rather
 // than a delegating wrapper: a thin wrapper gets merged by the inliner,
-// which bloats `decode_varint` and flips *its* inlining decision at every
-// call site — the macro keeps the two functions physically independent so
-// the status-quo path stays byte-identical. The caller contract / `# Panics`
+// which changes both callers' inlining decisions — the macro keeps the two
+// functions physically independent. The caller contract / `# Panics`
 // docs are passed through each invocation below so both emitted functions
 // carry them.
 macro_rules! decode_varint_slice_fn {
     ($(#[$attr:meta])* fn $name:ident) => {
         $(#[$attr])*
         fn $name(bytes: &[u8]) -> Result<(u64, usize), DecodeError> {
-    // These assertions are always satisfied by `decode_varint`'s dispatch
+    // These assertions are always satisfied by the callers' dispatch
     // logic and exist so the optimizer can prove all subsequent indexing is
     // in-bounds, eliminating per-byte bounds checks after inlining.
     assert!(!bytes.is_empty());
@@ -457,7 +477,7 @@ decode_varint_slice_fn!(
     ///
     /// Panics if `bytes` is empty or if the last byte has its continuation
     /// bit set while `bytes.len() <= 10`. These conditions are guaranteed by
-    /// the callers (`decode_varint` / `decode_varint_packed`), so the
+    /// the callers (`decode_varint_multibyte` / `decode_varint_packed`), so the
     /// assertions serve as optimizer hints.
     #[inline]
     fn decode_varint_slice
@@ -994,7 +1014,7 @@ mod tests {
     #[test]
     fn test_tag_field_16_takes_slow_path() {
         // Field number 16 with wire type 0 encodes as [0x80, 0x01] — two
-        // bytes, so it should take the multi-byte path via decode_varint.
+        // bytes, so it should take the multi-byte path via decode_varint_multibyte.
         let tag = Tag::new(16, WireType::Varint);
         let mut buf = Vec::new();
         tag.encode(&mut buf);
@@ -1563,14 +1583,203 @@ mod tests {
 
     #[test]
     fn test_decode_varint_single_byte_fast_path() {
-        // Values 0–127 should hit the single-byte fast path.
+        // Values 0–127 should hit the single-byte fast path, and leave
+        // whatever follows for the next read.
         for v in 0..=127u64 {
             let mut buf = Vec::new();
             encode_varint(v, &mut buf);
             assert_eq!(buf.len(), 1);
-            let decoded = decode_varint(&mut buf.as_slice()).unwrap();
-            assert_eq!(v, decoded);
+            buf.push(0xff);
+            let mut rest = buf.as_slice();
+            assert_eq!(decode_varint(&mut rest), Ok(v));
+            assert_eq!(rest, [0xff]);
         }
+    }
+
+    // ---- decode_varint, decode_varint_multibyte, decode_varint_packed ------
+    //
+    // The three decoders must agree on every buffer type: a contiguous slice,
+    // a `Bytes`, and a `Chain` cut at every offset, which puts a chunk
+    // boundary inside every varint.
+
+    type Decoder<B> = fn(&mut B) -> Result<u64, DecodeError>;
+
+    fn decoders<B: Buf>() -> [(&'static str, Decoder<B>); 3] {
+        [
+            ("decode_varint", |b| decode_varint(b)),
+            ("decode_varint_multibyte", |b| decode_varint_multibyte(b)),
+            ("decode_varint_packed", |b| decode_varint_packed(b)),
+        ]
+    }
+
+    /// One decoder on one buffer: a label, the result, and the bytes consumed.
+    type Outcome = (String, Result<u64, DecodeError>, usize);
+
+    /// Decode `bytes` with every decoder on every buffer type. The consumed
+    /// count is only meaningful after `Ok`: the position after an error is
+    /// unspecified.
+    fn decode_everywhere(bytes: &[u8]) -> Vec<Outcome> {
+        fn run<B: Buf>(out: &mut Vec<Outcome>, kind: &str, total: usize, make: impl Fn() -> B) {
+            for (name, decode) in decoders::<B>() {
+                let mut buf = make();
+                let result = decode(&mut buf);
+                out.push((format!("{name} on {kind}"), result, total - buf.remaining()));
+            }
+        }
+        let total = bytes.len();
+        let mut out = Vec::new();
+        run(&mut out, "&[u8]", total, || bytes);
+        run(&mut out, "Bytes", total, || {
+            bytes::Bytes::copy_from_slice(bytes)
+        });
+        for split in 0..=total {
+            let kind = format!("Chain split at {split}");
+            run(&mut out, &kind, total, || {
+                bytes::Bytes::copy_from_slice(&bytes[..split])
+                    .chain(bytes::Bytes::copy_from_slice(&bytes[split..]))
+            });
+        }
+        out
+    }
+
+    #[test]
+    fn test_decode_varint_boundary_values_on_every_buffer() {
+        // The first value of each encoded length, and the last of the one
+        // before it.
+        let mut values = vec![0u64, u64::MAX];
+        for bits in (7..=63).step_by(7) {
+            values.extend([(1u64 << bits) - 1, 1 << bits, (1 << bits) + 1]);
+        }
+        for v in values {
+            let mut bytes = Vec::new();
+            encode_varint(v, &mut bytes);
+            for (label, result, consumed) in decode_everywhere(&bytes) {
+                assert_eq!(result, Ok(v), "{label}, value {v}");
+                assert_eq!(consumed, bytes.len(), "{label}, value {v}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_decode_varint_errors_on_every_buffer() {
+        let mut max = Vec::new();
+        encode_varint(u64::MAX, &mut max);
+        // Every proper prefix of a ten-byte varint ends on a continuation byte.
+        let mut cases: Vec<(Vec<u8>, DecodeError)> = (0..max.len())
+            .map(|len| (max[..len].to_vec(), DecodeError::UnexpectedEof))
+            .collect();
+        // An eleventh byte, and overflow bits in the tenth.
+        let mut eleven = vec![0x80u8; 10];
+        eleven.push(0x01);
+        let mut overflow = vec![0xffu8; 9];
+        overflow.push(0x02);
+        cases.push((eleven, DecodeError::VarintTooLong));
+        cases.push((overflow, DecodeError::VarintTooLong));
+        for (bytes, expected) in cases {
+            for (label, result, _) in decode_everywhere(&bytes) {
+                assert_eq!(result, Err(expected.clone()), "{label}, {bytes:02x?}");
+            }
+        }
+    }
+
+    /// A byte-at-a-time decoder with no fast paths: the value and the number
+    /// of bytes consumed, or the error.
+    fn reference_varint(bytes: &[u8]) -> Result<(u64, usize), DecodeError> {
+        let mut value = 0u64;
+        for i in 0..10 {
+            let Some(&b) = bytes.get(i) else {
+                return Err(DecodeError::UnexpectedEof);
+            };
+            if i == 9 {
+                // Only bit 0 of the tenth byte maps to bit 63.
+                if b > 1 {
+                    return Err(DecodeError::VarintTooLong);
+                }
+                return Ok((value | (u64::from(b) << 63), 10));
+            }
+            value |= u64::from(b & 0x7f) << (7 * i);
+            if b < 0x80 {
+                return Ok((value, i + 1));
+            }
+        }
+        unreachable!("the tenth byte returns")
+    }
+
+    #[test]
+    fn test_decode_varint_matches_a_reference_on_random_input() {
+        // xorshift64*: deterministic, so a failure reproduces.
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            state.wrapping_mul(0x2545_f491_4f6c_dd1d)
+        };
+        for _ in 0..4000 {
+            let len = (next() % 13) as usize;
+            // Bias towards continuation bits so that long varints occur.
+            let bytes: Vec<u8> = (0..len)
+                .map(|_| {
+                    let r = next();
+                    if r & 3 == 0 {
+                        (r >> 8) as u8 & 0x7f
+                    } else {
+                        (r >> 8) as u8 | 0x80
+                    }
+                })
+                .collect();
+            let expected = reference_varint(&bytes);
+            for (label, result, consumed) in decode_everywhere(&bytes) {
+                match &expected {
+                    Ok((value, used)) => {
+                        assert_eq!(result, Ok(*value), "{label}, {bytes:02x?}");
+                        assert_eq!(consumed, *used, "{label}, {bytes:02x?}");
+                    }
+                    Err(e) => assert_eq!(result, Err(e.clone()), "{label}, {bytes:02x?}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_tag_decode_consumes_exactly_the_tag() {
+        // Field 15 is the last one-byte tag and field 16 the first that
+        // takes two. A trailing byte shows where the tag ends, at every chunk
+        // boundary.
+        for (field, len) in [
+            (1, 1),
+            (15, 1),
+            (16, 2),
+            (2047, 2),
+            (2048, 3),
+            (MAX_FIELD_NUMBER, 5),
+        ] {
+            let tag = Tag::new(field, WireType::LengthDelimited);
+            let mut bytes = Vec::new();
+            tag.encode(&mut bytes);
+            assert_eq!(bytes.len(), len, "field {field}");
+            bytes.push(0xff);
+            for split in 0..=bytes.len() {
+                let first = bytes::Bytes::copy_from_slice(&bytes[..split]);
+                let second = bytes::Bytes::copy_from_slice(&bytes[split..]);
+                let mut chain = first.chain(second);
+                assert_eq!(
+                    Tag::decode(&mut chain),
+                    Ok(tag),
+                    "field {field}, split {split}"
+                );
+                assert_eq!(chain.remaining(), 1, "field {field}, split {split}");
+            }
+        }
+        // A two-byte encoding of field number zero, and a truncated tag.
+        assert_eq!(
+            Tag::decode(&mut [0x80u8, 0x00].as_slice()),
+            Err(DecodeError::InvalidFieldNumber)
+        );
+        assert_eq!(
+            Tag::decode(&mut [0x80u8].as_slice()),
+            Err(DecodeError::UnexpectedEof)
+        );
     }
 
     #[test]

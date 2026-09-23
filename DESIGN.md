@@ -594,13 +594,20 @@ bound, so it keeps loop-counter machinery alive. Since `value >>= 7`
 monotonically decreases, termination is already guaranteed; the unbounded
 `loop` lets LLVM see that. **Impact:** ~40% encode throughput recovery.
 
-**`Tag::decode` one-byte fast path** (encoding.rs). Field numbers 1–15 with
-any wire type encode as a single byte. `decode_varint` already has a one-byte
-fast path, but with plain `#[inline]` LLVM often declines to inline it into
-the per-field decode loop (three code paths: single-byte, unrolled-slice,
-slow fallback). Hoisting the `chunk[0] < 0x80` check into `Tag::decode` means
-the common case is a few instructions inline; only field numbers ≥ 16 call
-`decode_varint` out-of-line. **Impact:** +12–29% view decode, +9–16% owned.
+**One-byte fast paths in `Tag::decode` and `decode_varint`** (encoding.rs).
+Field numbers 1–15 with any wire type encode as a single byte, and so do most
+length prefixes and small scalars. `Tag::decode` checks for a first byte below `0x80`
+itself and validates the tag straight from that byte, so the common case is a
+few instructions inline. `decode_varint` inlines the same check and sends an
+empty chunk or a varint of two or more bytes to the out-of-line
+`decode_varint_multibyte`; `Tag::decode` calls that function directly for
+field numbers ≥ 16. `decode_varint` is plain `#[inline]`, not
+`#[inline(always)]`: inlining all of its paths regresses large view decoders.
+**Impact:** the `Tag::decode` check was measured at +12–29% view decode and
++9–16% owned, against a `decode_varint` that was one out-of-line function.
+The `decode_varint` check then took decode time to 0.80–0.96× on `log_record`,
+`mesh` and `google_message1_proto3` decode, decode_view and merge (bare metal,
+fat LTO, ±5% run-to-run floor).
 
 **`strict_utf8_mapping` opt-in** (codegen). `core::str::from_utf8` was 11% of
 decode CPU. Rust's `&str` has a type-level UTF-8 invariant, so skipping
