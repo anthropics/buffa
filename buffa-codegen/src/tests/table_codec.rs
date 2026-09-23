@@ -156,7 +156,14 @@ fn the_global_setting_gives_a_table_to_every_message_that_can_use_one() {
     let (code, warnings) = run(&table_config(CodecStrategy::Table)).unwrap();
     assert_eq!(
         tables(&code),
-        ["Plain", "Leaf", "HasLeaf", "HoldsCustomStr", "Outer", "Inner"]
+        [
+            "Plain",
+            "Leaf",
+            "HasLeaf",
+            "HoldsCustomStr",
+            "Outer",
+            "Inner"
+        ]
     );
     // The one with a custom string falls back, and one warning covers the run.
     let (counts, reasons) = summary(&warnings);
@@ -164,7 +171,10 @@ fn the_global_setting_gives_a_table_to_every_message_that_can_use_one() {
     assert_eq!(reasons, [(CUSTOM, 1)]);
     let text = table_warnings(&warnings)[0].to_string();
     assert!(text.starts_with("1 of 7 messages selected for the table codec"));
-    assert!(text.contains(&format!("{CUSTOM} (1: .t.CustomStr)")), "{text}");
+    assert!(
+        text.contains(&format!("{CUSTOM} (1: .t.CustomStr)")),
+        "{text}"
+    );
     assert!(text.contains("codec_strategy_in=<path>=unrolled"), "{text}");
 }
 
@@ -200,7 +210,10 @@ fn a_child_without_a_table_is_reached_through_its_message_impl() {
     let (code, _) = run(&table_config(CodecStrategy::Table)).unwrap();
     let code = squashed(&code);
     // `HoldsCustomStr` is a table message that holds `CustomStr`, which is unrolled.
-    let holder = code.split("static__BUFFA_TABLE_HoldsCustomStr").nth(1).unwrap();
+    let holder = code
+        .split("static__BUFFA_TABLE_HoldsCustomStr")
+        .nth(1)
+        .unwrap();
     let holder = holder
         .split("impl::buffa::MessageforHoldsCustomStr")
         .next()
@@ -223,7 +236,10 @@ fn a_repeated_child_without_a_table_is_reached_through_its_message_impl() {
     )
     .unwrap();
     let code = squashed(&joined(&files));
-    let holder = code.split("static__BUFFA_TABLE_HoldsCustomStr").nth(1).unwrap();
+    let holder = code
+        .split("static__BUFFA_TABLE_HoldsCustomStr")
+        .nth(1)
+        .unwrap();
     let holder = holder
         .split("impl::buffa::MessageforHoldsCustomStr")
         .next()
@@ -307,7 +323,10 @@ fn the_last_matching_rule_wins() {
     };
     let (code, _) = run(&config).unwrap();
     // `Outer` is unrolled, though its nested message is a table.
-    assert_eq!(tables(&code), ["Leaf", "HasLeaf", "HoldsCustomStr", "Inner"]);
+    assert_eq!(
+        tables(&code),
+        ["Leaf", "HasLeaf", "HoldsCustomStr", "Inner"]
+    );
 }
 
 #[test]
@@ -411,7 +430,14 @@ fn a_broad_rule_that_covers_such_a_message_only_warns() {
     let (code, warnings) = run(&config).unwrap();
     assert_eq!(
         tables(&code),
-        ["Plain", "Leaf", "HasLeaf", "HoldsCustomStr", "Outer", "Inner"]
+        [
+            "Plain",
+            "Leaf",
+            "HasLeaf",
+            "HoldsCustomStr",
+            "Outer",
+            "Inner"
+        ]
     );
     // Messages a rule selects are counted like the ones the global setting does.
     assert_eq!(summary(&warnings).0, (1, 7));
@@ -1106,6 +1132,51 @@ fn a_message_with_a_oneof_gets_a_table_with_one_entry_per_member() {
     assert!(
         table.contains("MsgVt::direct(&__BUFFA_TABLE_Leaf)"),
         "{table}"
+    );
+}
+
+#[test]
+fn a_oneof_member_whose_child_has_no_table_is_reached_through_its_message_impl() {
+    // `Leaf` is set to unrolled, so `WithOneof` reaches it through its
+    // `Message` impl, and stays a table message.
+    let config = CodeGenConfig {
+        codec_strategy_in: vec![(".o.Leaf".to_string(), CodecStrategy::Unrolled)],
+        ..table_config(CodecStrategy::Table)
+    };
+    let (code, warnings) = run_oneof(&config);
+    assert_eq!(tables(&code), ["WithOneof"]);
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    let code = squashed(&code);
+    let table = code.split("static__BUFFA_TABLE_WithOneof").nth(1).unwrap();
+    let table = table.split("impl::buffa::Message").next().unwrap();
+    assert!(
+        table.contains("MsgVt::direct_via_message::<Leaf>()"),
+        "{table}"
+    );
+    assert!(!table.contains("MsgVt::direct(&"), "{table}");
+}
+
+#[test]
+fn a_oneof_member_from_another_crate_is_reached_through_its_message_impl() {
+    let mut file = oneof_schema();
+    file.message_type[1].field[2].type_name = Some(".other.Foreign".to_string());
+    let other = FileDescriptorProto {
+        package: Some("other".to_string()),
+        message_type: vec![message("Foreign", vec![scalar("x", 1, Type::TYPE_INT32)])],
+        ..proto3_file("other.proto")
+    };
+    let config = CodeGenConfig {
+        extern_paths: vec![(".other".to_string(), "::other_crate".to_string())],
+        ..table_config(CodecStrategy::Table)
+    };
+    let (files, warnings) =
+        generate_with_diagnostics(&[file, other], &["o.proto".to_string()], &config).unwrap();
+    let code = joined(&files);
+    assert!(tables(&code).contains(&"WithOneof".to_string()), "{code}");
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    assert!(
+        squashed(&code).contains("MsgVt::direct_via_message::<::other_crate::Foreign>()"),
+        "{code}"
     );
 }
 
