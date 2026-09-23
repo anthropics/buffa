@@ -4,15 +4,17 @@
 //! Which messages get one is decided by [`crate::table_plan`]; this module
 //! emits the code for a message the plan selected.
 
+use std::collections::{BTreeMap, HashMap, HashSet};
+
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::context::MessageScope;
+use crate::context::{ancillary_prefix, AncillaryKind, MessageScope};
 use crate::generated::descriptor::field_descriptor_proto::Type;
-use crate::generated::descriptor::DescriptorProto;
+use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto};
 use crate::idents::rust_path_to_tokens;
 use crate::message::classify_field;
-use crate::table_plan::{table_fields, Card, TableField};
+use crate::table_plan::{table_fields, Card, OneofMembership, TableField};
 use crate::CodeGenError;
 
 /// The name of the static table of the message struct `rust_name`.
@@ -72,11 +74,17 @@ pub(crate) fn generate_table_impl(
 
     let mut entries: Vec<TokenStream> = Vec::with_capacity(fields.len());
     let mut aux: Vec<TokenStream> = Vec::new();
+    let mut oneofs = Oneofs::new(scope, msg, &fields);
     for f in &fields {
+        if let Some(member) = &f.oneof {
+            entries.push(oneofs.member_entry(scope, &name, f, member, &mut aux)?);
+            continue;
+        }
         let (entry, aux_item) = field_entry(scope, msg, &name, f, aux.len(), resolver)?;
         entries.push(entry);
         aux.extend(aux_item);
     }
+    let oneof_impls = oneofs.into_impls();
 
     let dense = dense_lookup(&fields);
     let abi = proc_macro2::Literal::u32_unsuffixed(TABLE_ABI);
@@ -138,6 +146,8 @@ pub(crate) fn generate_table_impl(
                 *self = ::core::default::Default::default();
             }
         }
+
+        #(#oneof_impls)*
     })
 }
 
@@ -175,52 +185,17 @@ fn field_entry(
     aux_index: usize,
     resolver: &crate::imports::ImportResolver,
 ) -> Result<(TokenStream, Option<TokenStream>), CodeGenError> {
-    let MessageScope {
-        ctx,
-        current_package,
-        nesting,
-        ..
-    } = scope;
+    let MessageScope { ctx, .. } = scope;
     let field = f.field;
     let field_name = field.name.as_deref().unwrap_or("");
     let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let kind = format_ident!("{}", f.kind);
     let number = f.number;
 
-    let aux_u16 = || {
-        u16::try_from(aux_index).map_err(|_| {
-            CodeGenError::Other(format!(
-                "table codec: {}.{field_name}: a message has more than 65535 fields \
-                 that need a descriptor",
-                scope.proto_fqn
-            ))
-        })
-    };
-    let type_name = || {
-        field
-            .type_name
-            .as_deref()
-            .ok_or(CodeGenError::MissingField("field.type_name"))
-    };
-    let type_path = |what: &str| -> Result<String, CodeGenError> {
-        let type_name = type_name()?;
-        ctx.rust_type_relative(type_name, current_package, nesting)
-            .ok_or_else(|| CodeGenError::Other(format!("{what} type '{type_name}' not found")))
-    };
-
-    // The table is not among the imports that `idiomatic_imports` shortens
-    // paths with, so its path is built from the unshortened one.
-    let unshortened_path = || -> Result<String, CodeGenError> {
-        let type_name = type_name()?;
-        let split = ctx
-            .rust_type_relative_split(type_name, current_package, nesting)
-            .ok_or_else(|| CodeGenError::Other(format!("message type '{type_name}' not found")))?;
-        Ok(if split.to_package.is_empty() {
-            split.within_package
-        } else {
-            format!("{}::{}", split.to_package, split.within_package)
-        })
-    };
+    let aux_u16 = || u16::try_from(aux_index).map_err(|_| too_many_descriptors(scope));
+    let type_path = |what: &str| type_path(scope, field, what);
+    let unshortened_path = || unshortened_path(scope, field);
+    let type_name = || field_type_name(field);
 
     match f.ty {
         Type::TYPE_MESSAGE => {
@@ -288,5 +263,317 @@ fn field_entry(
             quote! { ::buffa::__table_entry!(#name, #ident, #kind, #number) },
             None,
         )),
+    }
+}
+
+/// The proto path of the message or enum type of `field`.
+fn field_type_name(field: &FieldDescriptorProto) -> Result<&str, CodeGenError> {
+    field
+        .type_name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.type_name"))
+}
+
+/// The error for a message whose table needs more descriptors than an aux
+/// index can name.
+fn too_many_descriptors(scope: MessageScope<'_>) -> CodeGenError {
+    CodeGenError::Other(format!(
+        "table codec: {}: a message has more than 65535 fields that need a descriptor",
+        scope.proto_fqn
+    ))
+}
+
+/// The Rust path of the message or enum type of `field`, as seen from the
+/// message's scope. `what` names the kind of type in the error.
+fn type_path(
+    scope: MessageScope<'_>,
+    field: &FieldDescriptorProto,
+    what: &str,
+) -> Result<String, CodeGenError> {
+    let type_name = field_type_name(field)?;
+    scope
+        .ctx
+        .rust_type_relative(type_name, scope.current_package, scope.nesting)
+        .ok_or_else(|| CodeGenError::Other(format!("{what} type '{type_name}' not found")))
+}
+
+/// The path of the message type of `field` before `idiomatic_imports` shortens
+/// it. The table is not among the names that `idiomatic_imports` shortens, so
+/// its path is built from this one.
+fn unshortened_path(
+    scope: MessageScope<'_>,
+    field: &FieldDescriptorProto,
+) -> Result<String, CodeGenError> {
+    let type_name = field_type_name(field)?;
+    let split = scope
+        .ctx
+        .rust_type_relative_split(type_name, scope.current_package, scope.nesting)
+        .ok_or_else(|| CodeGenError::Other(format!("message type '{type_name}' not found")))?;
+    Ok(if split.to_package.is_empty() {
+        split.within_package
+    } else {
+        format!("{}::{}", split.to_package, split.within_package)
+    })
+}
+
+/// The match arms of the `OneofEnum` implementation of one oneof enum.
+#[derive(Default)]
+struct OneofArms {
+    number: Vec<TokenStream>,
+    payload: Vec<TokenStream>,
+    payload_mut: Vec<TokenStream>,
+    with_default: Vec<TokenStream>,
+}
+
+/// The oneofs of the message being generated: the table entries and aux items
+/// of their members, and the `OneofEnum` implementations that the interpreters
+/// reach the members through.
+struct Oneofs {
+    /// The path of the oneof enums' module, from the message's scope.
+    prefix: TokenStream,
+    /// The Rust names of the oneof enums, by the oneof's index in the message.
+    enum_idents: HashMap<usize, proc_macro2::Ident>,
+    /// The lowest member number of each oneof.
+    first: HashMap<usize, u32>,
+    /// The oneofs that have a member of message type.
+    with_messages: HashSet<usize>,
+    /// The aux index of each oneof's descriptor, once it has one.
+    group_aux: HashMap<usize, usize>,
+    /// The aux index of each payload descriptor, by its tokens, so that
+    /// members with the same kind of value share one.
+    payload_aux: HashMap<String, usize>,
+    arms: BTreeMap<usize, OneofArms>,
+}
+
+impl Oneofs {
+    fn new(scope: MessageScope<'_>, msg: &DescriptorProto, fields: &[TableField<'_>]) -> Self {
+        let mut first: HashMap<usize, u32> = HashMap::new();
+        let mut with_messages = HashSet::new();
+        for (oneof, f) in fields
+            .iter()
+            .filter_map(|f| f.oneof.as_ref().map(|oneof| (oneof, f)))
+        {
+            let lowest = first.entry(oneof.index).or_insert(f.number);
+            *lowest = (*lowest).min(f.number);
+            if f.ty == Type::TYPE_MESSAGE {
+                with_messages.insert(oneof.index);
+            }
+        }
+        Self {
+            prefix: ancillary_prefix(
+                AncillaryKind::Oneof,
+                scope.current_package,
+                scope.proto_fqn,
+                scope.nesting,
+            ),
+            enum_idents: crate::oneof::resolve_oneof_idents(msg),
+            first,
+            with_messages,
+            group_aux: HashMap::new(),
+            payload_aux: HashMap::new(),
+            arms: BTreeMap::new(),
+        }
+    }
+
+    /// Add `item` to `aux`, or find where the same item already is.
+    fn shared_aux(&mut self, aux: &mut Vec<TokenStream>, item: TokenStream) -> usize {
+        *self.payload_aux.entry(item.to_string()).or_insert_with(|| {
+            aux.push(item);
+            aux.len() - 1
+        })
+    }
+
+    /// The `__table_entry!` of one oneof member, and the aux items it needs
+    /// (its oneof's descriptor if this is the first member met, the
+    /// descriptor of its value if the kind of value has one, and the member
+    /// item itself), which are pushed to `aux`. Records the member's arms of
+    /// the enum's implementation.
+    fn member_entry(
+        &mut self,
+        scope: MessageScope<'_>,
+        message: &proc_macro2::Ident,
+        f: &TableField<'_>,
+        member: &OneofMembership<'_>,
+        aux: &mut Vec<TokenStream>,
+    ) -> Result<TokenStream, CodeGenError> {
+        let ctx = scope.ctx;
+        let field = f.field;
+        let field_name = field.name.as_deref().unwrap_or("");
+        let too_many = || too_many_descriptors(scope);
+        let enum_ident = self.enum_idents.get(&member.index).ok_or_else(|| {
+            CodeGenError::Other(format!(
+                "table codec: {}.{field_name}: the oneof `{}` has no enum",
+                scope.proto_fqn, member.name
+            ))
+        })?;
+        let prefix = &self.prefix;
+        let enum_path = quote! { #prefix #enum_ident };
+        let oneof_field = ctx.oneof_ident(member.name);
+        let variant = crate::oneof::oneof_variant_ident(field_name);
+        let number = f.number;
+        let payload_kind = format_ident!("{}", f.kind);
+        let first = self.first[&member.index];
+
+        // The oneof's descriptor, made when its first member is met.
+        let group = match self.group_aux.get(&member.index) {
+            Some(&group) => group,
+            None => {
+                let ctor = if self.with_messages.contains(&member.index) {
+                    format_ident!("with_messages")
+                } else {
+                    format_ident!("new")
+                };
+                aux.push(quote! {
+                    ::buffa::table::Aux::Group(&::buffa::table::OneofVt::#ctor::<#enum_path>(
+                        ::buffa::table::offset_of!(#message, #oneof_field),
+                        #first,
+                    ))
+                });
+                self.group_aux.insert(member.index, aux.len() - 1);
+                aux.len() - 1
+            }
+        };
+
+        // What the member's value is: the type the accessors give a pointer
+        // to, the descriptor of the value, and the value a member has when it
+        // is first set.
+        let variant_fqn = format!(".{}.{}.{field_name}", scope.proto_fqn, member.name);
+        let default = quote! { ::core::default::Default::default() };
+        let (slot, value_aux, new) = match f.ty {
+            Type::TYPE_MESSAGE => {
+                let child = rust_path_to_tokens(&type_path(scope, field, "message")?);
+                // A child without a table here is reached through its
+                // `Message` impl.
+                let msg_vt = if ctx.uses_table_codec(field_type_name(field)?) {
+                    let child_table = table_path(&unshortened_path(scope, field)?)?;
+                    quote! { ::buffa::table::MsgVt::direct::<#child>(&#child_table) }
+                } else {
+                    quote! { ::buffa::table::MsgVt::direct_via_message::<#child>() }
+                };
+                let new = if crate::oneof::variant_boxed(ctx, f.ty, &variant_fqn) {
+                    match ctx.pointer_repr(&variant_fqn) {
+                        crate::PointerRepr::Box => quote! { ::buffa::alloc::boxed::Box::default() },
+                        repr => repr.pointer_new(&child, &default)?,
+                    }
+                } else {
+                    default
+                };
+                (
+                    child,
+                    Some(quote! { ::buffa::table::Aux::Msg(&#msg_vt) }),
+                    new,
+                )
+            }
+            Type::TYPE_ENUM => {
+                let enum_ty = rust_path_to_tokens(&type_path(scope, field, "enum")?);
+                let shape = if f.closed_enum {
+                    quote! { ::buffa::table::ImplicitClosed<#enum_ty> }
+                } else {
+                    quote! { ::buffa::table::ImplicitOpen<#enum_ty> }
+                };
+                (
+                    quote! { <#shape as ::buffa::table::EnumShape>::Slot },
+                    Some(
+                        quote! { ::buffa::table::Aux::Enum(&::buffa::table::EnumVt::new::<#shape>()) },
+                    ),
+                    default,
+                )
+            }
+            _ => (
+                quote! { <::buffa::table::kinds::#payload_kind as ::buffa::table::KindSlot>::Slot },
+                None,
+                default,
+            ),
+        };
+        let value_aux = value_aux.map_or(Ok(0), |item| {
+            u16::try_from(self.shared_aux(aux, item)).map_err(|_| too_many())
+        })?;
+
+        let arms = self.arms.entry(member.index).or_default();
+        arms.number.push(quote! { Self::#variant(_) => #number, });
+        // The pointers come from references of the type `slot`, so a variant of
+        // another type does not compile (a boxed message coerces to its
+        // message). They are coerced and not cast, which `trivial_casts`
+        // would flag, and `ptr::from_ref` needs a Rust newer than the MSRV of
+        // some crates that build this code.
+        arms.payload.push(quote! {
+            Self::#variant(v) => {
+                let value: &#slot = v;
+                let ptr: *const #slot = value;
+                ptr.cast::<u8>()
+            }
+        });
+        arms.payload_mut.push(quote! {
+            Self::#variant(v) => {
+                let value: &mut #slot = v;
+                let ptr: *mut #slot = value;
+                ptr.cast::<u8>()
+            }
+        });
+        arms.with_default
+            .push(quote! { #number => ::core::option::Option::Some(Self::#variant(#new)), });
+
+        let leader = number == first;
+        let group = u16::try_from(group).map_err(|_| too_many())?;
+        aux.push(quote! {
+            ::buffa::table::Aux::Member(::buffa::table::Member::new(
+                #group,
+                ::buffa::table::Kind::#payload_kind,
+                #value_aux,
+            ))
+        });
+        let member_aux = u16::try_from(aux.len() - 1).map_err(|_| too_many())?;
+        Ok(quote! {
+            ::buffa::__table_entry!(
+                #message, #oneof_field, oneof(#payload_kind, #leader), #number,
+                aux = #member_aux,
+                slot = ::core::option::Option<#enum_path>
+            )
+        })
+    }
+
+    /// The `OneofEnum` implementation of every oneof enum that had a member.
+    fn into_impls(self) -> Vec<TokenStream> {
+        let prefix = self.prefix;
+        self.arms
+            .into_iter()
+            .map(|(index, arms)| {
+                let enum_ident = &self.enum_idents[&index];
+                let OneofArms {
+                    number,
+                    payload,
+                    payload_mut,
+                    with_default,
+                } = arms;
+                quote! {
+                    impl ::buffa::table::OneofEnum for #prefix #enum_ident {
+                        fn number(&self) -> u32 {
+                            match self {
+                                #(#number)*
+                            }
+                        }
+
+                        fn payload(&self) -> *const u8 {
+                            match self {
+                                #(#payload)*
+                            }
+                        }
+
+                        fn payload_mut(&mut self) -> *mut u8 {
+                            match self {
+                                #(#payload_mut)*
+                            }
+                        }
+
+                        fn with_default(number: u32) -> ::core::option::Option<Self> {
+                            match number {
+                                #(#with_default)*
+                                _ => ::core::option::Option::None,
+                            }
+                        }
+                    }
+                }
+            })
+            .collect()
     }
 }
