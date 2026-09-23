@@ -393,23 +393,11 @@ impl MapValue {
     /// ```
     #[must_use]
     pub fn get_str(&self, key: &str) -> Option<&Value> {
-        // The protobuf spec restricts a `map<K, V>` field to a single key
-        // type, so a well-formed map's entries are homogeneous. The
-        // comparator below would be non-total over a mixed-key map; this
-        // assert catches a corrupt insert in tests before it can confuse
-        // a binary search.
-        debug_assert!(
-            self.entries
-                .first()
-                // MSRV: `Option::is_none_or` requires 1.82.
-                .map_or(true, |(k, _)| matches!(k, MapKey::String(_))),
-            "get_str called on a non-string-keyed MapValue"
-        );
         self.entries
             .binary_search_by(|(k, _)| match k {
                 MapKey::String(s) => s.as_str().cmp(key),
-                // Unreachable for a well-formed map; the debug_assert above
-                // catches the corrupt case in tests. Total-order fallback.
+                // All non-string variants precede String in MapKey's
+                // derived ordering and cannot match a string lookup.
                 _ => core::cmp::Ordering::Less,
             })
             .ok()
@@ -555,6 +543,24 @@ mod tests {
         // Lookup by borrowed &str — no MapKey constructed.
         assert_eq!(m.get_str("banana"), Some(&Value::I32(2)));
         assert_eq!(m.get_str("durian"), None);
+    }
+
+    #[test]
+    fn map_value_get_str_non_string_keys_return_none() {
+        for key in [
+            MapKey::Bool(false),
+            MapKey::Bool(true),
+            MapKey::I32(1),
+            MapKey::I64(1),
+            MapKey::U32(1),
+            MapKey::U64(1),
+        ] {
+            let m = MapValue::from_entries(vec![(key.clone(), Value::I32(42))]);
+            assert_eq!(m.get_str("1"), None, "key: {key:?}");
+            let reflected: &dyn ReflectMap = &m;
+            assert!(reflected.get_str("1").is_none(), "key: {key:?}");
+            assert_eq!(m.get(&key), Some(&Value::I32(42)));
+        }
     }
 
     #[test]
