@@ -355,6 +355,12 @@ pub unsafe trait EnumShape {
     }
 
     /// Whether [`set`](Self::set) would store `raw`.
+    ///
+    /// It must agree with `set`. A oneof member is placed, replacing the
+    /// member that was set, before `set` runs, so `merge_oneof_enum` asks
+    /// `accepts` first and leaves the oneof as it was for a value that fails.
+    /// A `set` that then refused a value `accepts` allowed would leave a
+    /// default member where another was set.
     fn accepts(raw: i32) -> bool;
 }
 
