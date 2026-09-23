@@ -1,5 +1,6 @@
 //! The size pass: [`compute_size`] and its per-kind arms.
 
+use super::map::size_map;
 use super::scalar::Sc;
 use super::{
     Bool, Double, Entry, Fixed32, Fixed64, Float, Int32, Int64, Kind, MessageTable, Sfixed32,
@@ -24,7 +25,15 @@ pub(super) unsafe fn compute_size(
     let mut size = 0u64;
     for e in table.entries {
         // SAFETY: the offset is within the message, per the table's contract.
-        size += unsafe { size_kind(table, e, base.add(e.offset as usize), cache) };
+        let slot = unsafe { base.add(e.offset as usize) };
+        // SAFETY: `slot` is the field `e` describes.
+        size += unsafe {
+            if e.kind == Kind::Map {
+                size_map(table, e, slot, cache)
+            } else {
+                size_kind(table, e, slot, cache)
+            }
+        };
     }
     if table.unknown != NO_UNKNOWN {
         // SAFETY: `unknown` is the offset of the message's `UnknownFields`.
@@ -37,6 +46,8 @@ pub(super) unsafe fn compute_size(
 /// Defines `$fname`, the size of one field by kind, for the kinds listed. Two
 /// lists are used, all kinds for `size_kind` and the payload kinds of a oneof
 /// member for `size_payload`.
+// The arm for a map is unreachable: `compute_size` tests for a map before it
+// calls this. The reason is in the module documentation of `map.rs`.
 macro_rules! size_dispatch {
     ($fname:ident; $($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
         /// # Safety
@@ -44,7 +55,7 @@ macro_rules! size_dispatch {
         /// `slot` points to the field `e` describes, in a live message of the
         /// type `table` describes.
         #[inline]
-        unsafe fn $fname(
+        pub(super) unsafe fn $fname(
             table: &MessageTable,
             e: &Entry,
             slot: *const u8,
@@ -84,6 +95,9 @@ macro_rules! size_dispatch {
     // The members that follow the leader are sized with it.
     (@arm Oneof $ty:ident ONEOF $table:ident $e:ident $tl:ident $slot:ident $cache:ident) => {
         0
+    };
+    (@arm Map $ty:ident $card:ident $table:ident $e:ident $tl:ident $slot:ident $cache:ident) => {
+        unreachable!("a map field is sized by `compute_size`")
     };
 }
 

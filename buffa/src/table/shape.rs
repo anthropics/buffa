@@ -193,6 +193,38 @@ impl MsgVt {
     }
 }
 
+/// A [`MsgVt`] for a slot that holds an `M` itself, as a map's value does,
+/// whose type records that its message is an `M`, so that a map of `M` can be
+/// built only from a descriptor of an `M`.
+pub struct DirectMsgVt<M> {
+    pub(super) vt: MsgVt,
+    _marker: PhantomData<fn(&M)>,
+}
+
+impl<M> DirectMsgVt<M> {
+    /// Describe a message whose table `table` is; see [`MsgVt::direct`].
+    #[must_use]
+    pub const fn new(table: &'static Table<M>) -> Self {
+        Self {
+            vt: MsgVt::direct(table),
+            _marker: PhantomData,
+        }
+    }
+
+    /// Describe a message whose table is not visible here, which is reached
+    /// through its [`Message`] impl; see [`MsgVt::direct_via_message`].
+    #[must_use]
+    pub const fn via_message() -> Self
+    where
+        M: Message,
+    {
+        Self {
+            vt: MsgVt::direct_via_message::<M>(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Repeated message fields
 // ---------------------------------------------------------------------------
@@ -376,6 +408,14 @@ impl EnumVt {
             accepts: S::accepts,
         }
     }
+}
+
+/// `EnumVt::new::<S>()` as an associated constant, so that a reference to it
+/// has the `'static` lifetime a descriptor needs.
+pub(super) struct EnumVtOf<S>(PhantomData<S>);
+
+impl<S: EnumShape> EnumVtOf<S> {
+    pub(super) const VT: EnumVt = EnumVt::new::<S>();
 }
 
 macro_rules! enum_shape {

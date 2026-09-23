@@ -3,6 +3,7 @@
 //! Decoding runs over one contiguous `&[u8]`, so every arm reads through a
 //! non-generic function compiled in this crate.
 
+use super::map::merge_map;
 use super::scalar::Sc;
 use super::{
     Bool, Double, Entry, EnumVt, Fixed32, Fixed64, Float, Int32, Int64, Kind, MessageTable,
@@ -158,7 +159,15 @@ unsafe fn merge_one(
         return unsafe { merge_unknown(table, base, tag, buf, ctx) };
     };
     // SAFETY: the offset is within the message, per the table's contract.
-    unsafe { merge_kind(table, e, base, base.add(e.offset as usize), tag, buf, ctx) }
+    let slot = unsafe { base.add(e.offset as usize) };
+    // SAFETY: `slot` is the field `e` describes.
+    unsafe {
+        if e.kind == Kind::Map {
+            merge_map(table, e, base, slot, tag, buf, ctx)
+        } else {
+            merge_kind(table, e, base, slot, tag, buf, ctx)
+        }
+    }
 }
 
 /// # Safety
@@ -181,14 +190,20 @@ unsafe fn merge_unknown(
     Ok(())
 }
 
+// The arm for a map is unreachable: `merge_one`, which `merge_slice` calls for
+// each field, tests for a map before it calls this. `map::merge_entry` also
+// calls this function, for a key and a value, which are never maps. The
+// reason is in the module documentation of `map.rs`.
 macro_rules! merge_dispatch {
     ($($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
         /// # Safety
         ///
         /// `slot` points to the field `e` describes, inside the live message
-        /// at `base` of the type `table` describes.
+        /// at `base` of the type `table` describes. `base` may be null if
+        /// `table` has no unknown fields, which is how a map entry, whose
+        /// fields are not in a message, calls this.
         #[inline]
-        unsafe fn merge_kind(
+        pub(super) unsafe fn merge_kind(
             table: &MessageTable,
             e: &Entry,
             base: *mut u8,
@@ -222,6 +237,9 @@ macro_rules! merge_dispatch {
     };
     (@arm Oneof $ty:ident $card:ident $table:ident $e:ident $base:ident $slot:ident $tag:ident $buf:ident $ctx:ident) => {
         merge_oneof($table, $e, $base, $slot, $tag, $buf, $ctx)
+    };
+    (@arm Map $ty:ident $card:ident $table:ident $e:ident $base:ident $slot:ident $tag:ident $buf:ident $ctx:ident) => {
+        unreachable!("a map field is merged by `merge_one`")
     };
 }
 
@@ -500,7 +518,7 @@ unsafe fn merge_scalar<S: Sc, const C: u8>(
 
 /// Split a length-prefixed payload off the front of `buf`.
 #[inline]
-fn take_len_delimited<'a>(buf: &mut &'a [u8]) -> Result<&'a [u8], DecodeError> {
+pub(super) fn take_len_delimited<'a>(buf: &mut &'a [u8]) -> Result<&'a [u8], DecodeError> {
     let len = decode_varint(buf)?;
     let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
     if buf.len() < len {
