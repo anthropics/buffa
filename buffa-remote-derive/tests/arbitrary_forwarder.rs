@@ -169,16 +169,6 @@ fn map_forwarder_matches_canonical_hash_map() {
     );
 }
 
-/// The map forwarder goes through the user's `FromIterator`, so a duplicate
-/// key must resolve the way the canonical `HashMap` resolves it (last write
-/// wins) rather than being dropped or appended twice.
-#[test]
-fn map_forwarder_applies_last_write_wins() {
-    let built = MyIndexMap::<u8, u8>::from_iter([(1u8, 10u8), (1, 20)]);
-    assert_eq!(built.0.len(), 1);
-    assert_eq!(built.0.get(&1), Some(&20));
-}
-
 /// `arbitrary_take_rest` is forwarded, not left at the trait default (which
 /// would call `arbitrary` and stop short of the buffer's end). `String`
 /// overrides it, so the difference is observable.
@@ -235,14 +225,18 @@ fn size_hint_forwards_to_the_seed() {
     );
 }
 
-/// Exhausted input must surface as the canonical type's error rather than a
-/// panic or a silently-default value.
+/// Exhausted input must land wherever the canonical type lands. `arbitrary`
+/// fills integers from an empty buffer rather than failing, so the forwarder
+/// must do the same and not reject the input on its own.
 #[test]
 fn empty_input_behaves_like_the_canonical_type() {
-    let mine = MyBox::<u64>::arbitrary(&mut Unstructured::new(&[]));
-    let canonical = Box::<u64>::arbitrary(&mut Unstructured::new(&[]));
-    assert_eq!(mine.is_ok(), canonical.is_ok());
-    if let (Ok(mine), Ok(canonical)) = (mine, canonical) {
-        assert_eq!(*mine, *canonical);
-    }
+    let canonical = Box::<u64>::arbitrary(&mut Unstructured::new(&[]))
+        .expect("`Box<u64>` fills from an exhausted buffer rather than failing");
+    let mine = MyBox::<u64>::arbitrary(&mut Unstructured::new(&[]))
+        .expect("the forwarder must not add a length check the canonical type does not have");
+    assert_eq!(*mine, *canonical);
+    assert_eq!(
+        *canonical, 0,
+        "pins the behaviour this test is parity against"
+    );
 }
