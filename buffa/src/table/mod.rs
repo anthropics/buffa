@@ -55,7 +55,8 @@
 //! # Oneofs
 //!
 //! A oneof has one entry per member, and its members are reached through
-//! [`OneofEnum`]; the `oneof` module's documentation has the mechanism.
+//! [`OneofEnum`], which generated code implements for the oneof's enum and
+//! whose documentation describes the mechanism.
 //!
 //! # Where the code is compiled
 //!
@@ -1004,8 +1005,9 @@ macro_rules! __table {
 /// The scalar, string and bytes kinds have a fixed field type. The enum and
 /// message kinds take the type explicitly, as `aux = <index>, slot = <type>`,
 /// where the type is the one their aux descriptor was built for. A oneof
-/// member is written `oneof(<payload kind>)`, with the `Option` of the oneof's
-/// enum as its slot type and the index of its [`Member`] as `aux`.
+/// member is written `oneof(<payload kind>, <leader>)`, where `<leader>` says
+/// whether it is the oneof's lowest-numbered member, with the `Option` of the
+/// oneof's enum as its slot type and the index of its [`Member`] as `aux`.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __table_entry {

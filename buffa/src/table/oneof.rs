@@ -1,33 +1,38 @@
-//! Oneof fields: how the interpreters reach the members of a oneof enum.
-//!
-//! A oneof is stored as an `Option<E>`, where `E` is an enum with one variant
-//! per member. The layout of that enum is unspecified, so a table cannot
-//! address a member by offset as it does an ordinary field. Instead generated
-//! code implements [`OneofEnum`] for `E`, which gives the interpreters the
-//! number of the current member and a pointer to its value, and the table has
-//! one entry per member, of kind [`Kind::OneofLeader`] or [`Kind::OneofFollower`].
-//!
-//! A member is written when it is set, whatever its value, so its value is
-//! described by a `Required` kind, its *payload kind*, and the interpreters
-//! run the same arms on it as for an ordinary field of that kind. Every member
-//! entry has the offset of the `Option<E>`. The entry of the member with the
-//! lowest field number, the *leader*, writes and sizes whichever member is set,
-//! at that position among the message's fields, as unrolled code does. The
-//! other entries only decode, so a message with a oneof writes the same bytes
-//! under either strategy.
-//!
-//! Decoding does what unrolled code does. A value is decoded before it
-//! replaces the member that is set, so one that is rejected leaves the oneof
-//! as it was, and a closed enum's number with no variant goes to the unknown
-//! fields. A message member that is already the one that is set is merged
-//! into, and any other is decoded into a new default member that is set only
-//! if the decoding succeeds.
+//! Oneof fields: the trait generated code implements for a oneof enum and the
+//! descriptor the interpreters reach its members through. [`OneofEnum`]
+//! documents the mechanism.
 
 use super::{Entry, Kind};
 use crate::DecodeError;
 
 /// How the interpreters reach the members of the oneof enum `Self`, which
 /// generated code implements for the enum of every oneof of a table message.
+///
+/// A oneof is stored as an `Option<E>`, where `E` is an enum with one variant
+/// per member. The layout of that enum is unspecified, so a table cannot
+/// address a member by offset as it does an ordinary field. The table has one
+/// entry per member instead, of kind [`Kind::OneofLeader`] or
+/// [`Kind::OneofFollower`], and every one has the offset of the `Option<E>`.
+/// This trait gives the interpreters the number of the current member, a
+/// pointer to its value, and a way to set another member.
+///
+/// A member is written when it is set, whatever its value, so its value is
+/// described by a `Required` kind, its *payload kind*, and is sized and
+/// written by the arm of that kind, as an ordinary field of that kind is. The
+/// entry of the member with the lowest field number, the *leader*, sizes and
+/// writes whichever member is set, at that position among the message's
+/// fields, as unrolled code does. The other entries only decode, so a message
+/// with a oneof writes the same bytes under either strategy.
+///
+/// Decoding does what unrolled code does, through arms of its own for the
+/// members of a oneof. A value is decoded before it replaces the member that
+/// is set, so one that is rejected leaves the oneof as it was, and a closed
+/// enum's number with no variant goes to the unknown fields. A message member
+/// that is already the one that is set is merged into, and any other is
+/// decoded into a new default member that is set only if the decoding
+/// succeeds.
+///
+/// # Contract
 ///
 /// The interpreters trust an implementation, so an incorrect one makes the
 /// table's unsafe accesses wrong, although the trait is safe to implement: a
