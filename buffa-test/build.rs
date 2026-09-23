@@ -79,14 +79,17 @@ fn compile_extern_children() {
 /// ways: unrolled (`xau`, `xbu`), table (`xat`, `xbt`), and table with
 /// `file_per_package` and `idiomatic_imports` (`xati`, `xbti`), which shortens
 /// the paths of types in other packages and so changes what a table path may
-/// be.
+/// be. `Cold`, which `Holder` holds singly and in a list, stays unrolled in
+/// all three, so the table holders reach it through its `Message` impl with
+/// the shortened path.
 fn compile_cross_package() {
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let sources = |suffix: &str| {
         let dep = format!(
             "syntax = \"proto3\";\npackage xa{suffix};\n\
              message Leaf {{ int32 x = 1; string s = 2; }}\n\
-             message Wrap {{ Leaf leaf = 1; repeated Leaf leaves = 2; }}\n"
+             message Wrap {{ Leaf leaf = 1; repeated Leaf leaves = 2; }}\n\
+             message Cold {{ int64 c = 1; string s = 2; }}\n"
         );
         let user = format!(
             "syntax = \"proto3\";\npackage xb{suffix};\nimport \"xa{suffix}.proto\";\n\
@@ -95,6 +98,8 @@ fn compile_cross_package() {
                repeated xa{suffix}.Leaf leaves = 2;\n\
                xa{suffix}.Wrap wrap = 3;\n\
                Sub sub = 4;\n\
+               xa{suffix}.Cold cold = 5;\n\
+               repeated xa{suffix}.Cold colds = 6;\n\
                message Sub {{ xa{suffix}.Leaf l = 1; }}\n\
              }}\n"
         );
@@ -115,7 +120,11 @@ fn compile_cross_package() {
         let mut config = buffa_build::Config::new()
             .files(&[dep_path, user_path])
             .includes(&[&out])
-            .codec_strategy(strategy);
+            .codec_strategy(strategy)
+            .codec_strategy_in(
+                buffa_build::CodecStrategy::Unrolled,
+                &[format!(".xa{suffix}.Cold")],
+            );
         if idiomatic {
             let dir = out.join("cross_package_idiomatic");
             std::fs::create_dir_all(&dir).expect("create dir");
@@ -242,6 +251,15 @@ fn main() {
         );
         compile_cross_package();
         compile_extern_children();
+        // `bytes` fields as `bytes::Bytes`, which the messages that hold one
+        // must keep unrolled.
+        buffa_build::Config::new()
+            .files(&["protos/table_bytes.proto"])
+            .includes(&["protos/"])
+            .codec_strategy(buffa_build::CodecStrategy::Table)
+            .use_bytes_type()
+            .compile()
+            .expect("buffa_build failed for table_bytes.proto");
         compile_table_with_options("table_codec.proto", "tc");
     }
 

@@ -974,6 +974,19 @@ fn messages_held_across_packages_agree_in_every_layout() {
                     l: MessageField::some(leaf(6)),
                     ..Default::default()
                 }),
+                // Unrolled in the table layouts.
+                cold: MessageField::some($xa::Cold {
+                    c: 7,
+                    s: "cold".into(),
+                    ..Default::default()
+                }),
+                colds: vec![
+                    $xa::Cold::default(),
+                    $xa::Cold {
+                        c: 8,
+                        ..Default::default()
+                    },
+                ],
                 ..Default::default()
             }
         }};
@@ -991,6 +1004,8 @@ fn messages_held_across_packages_agree_in_every_layout() {
             .encode_to_vec(),
         wire
     );
+    assert_same_chained::<xbu::Holder, xbt::Holder>(&wire);
+    assert_same_on_corrupt_input::<xbu::Holder, xbt::Holder>(&wire, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -1164,20 +1179,15 @@ fn nesting_through_both_codecs_is_limited_alike() {
     assert!(<crate::brt::Cold as Message>::decode_from_slice(&cold_hot_chain(40)).is_ok());
     for limit in [1, 2, 3, 10] {
         let wire = cold_hot_chain(6);
-        let decode = |r: Result<Vec<u8>, DecodeError>| r;
         assert_eq!(
-            decode(
-                buffa::DecodeOptions::new()
-                    .with_recursion_limit(limit)
-                    .decode_from_slice::<crate::bru::Cold>(&wire)
-                    .map(|m| m.encode_to_vec())
-            ),
-            decode(
-                buffa::DecodeOptions::new()
-                    .with_recursion_limit(limit)
-                    .decode_from_slice::<crate::brt::Cold>(&wire)
-                    .map(|m| m.encode_to_vec())
-            ),
+            buffa::DecodeOptions::new()
+                .with_recursion_limit(limit)
+                .decode_from_slice::<crate::bru::Cold>(&wire)
+                .map(|m| m.encode_to_vec()),
+            buffa::DecodeOptions::new()
+                .with_recursion_limit(limit)
+                .decode_from_slice::<crate::brt::Cold>(&wire)
+                .map(|m| m.encode_to_vec()),
             "limit {limit}"
         );
     }
@@ -1269,4 +1279,46 @@ fn a_child_without_a_table_is_encoded_into_every_kind_of_sink() {
     buffa::encoding::encode_varint(expected.len() as u64, &mut framed);
     framed.extend_from_slice(&expected);
     assert_eq!(&chunked[..], &framed[..]);
+}
+
+#[test]
+fn a_holder_of_a_bytes_typed_message_is_unrolled_and_decodes_without_copying() {
+    use crate::tbz::{Blob, HoldsBlob, HoldsBlobs};
+    use buffa::bytes::Bytes;
+    use buffa::MessageField;
+    // The plan ran on this schema, so `Plain` has a table, and `HoldsBlob`
+    // and `HoldsBlobs` do not, or their `Bytes` fields would be copied.
+    let generated = include_str!(concat!(env!("OUT_DIR"), "/table_bytes.rs"));
+    assert!(generated.contains("static __BUFFA_TABLE_Plain"));
+    assert!(generated.contains("static __BUFFA_TABLE_HoldsPlain"));
+    assert!(!generated.contains("__BUFFA_TABLE_Blob"));
+    assert!(!generated.contains("__BUFFA_TABLE_HoldsBlob"));
+
+    let blob = |fill: u8| Blob {
+        data: Bytes::from(vec![fill; 64]),
+        chunks: vec![Bytes::from(vec![fill + 1; 64])],
+        ..Default::default()
+    };
+    let msg = HoldsBlobs {
+        inner: MessageField::some(HoldsBlob {
+            blob: MessageField::some(blob(1)),
+            blobs: vec![blob(3), blob(5)],
+            tail: 9,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let src = Bytes::from(msg.encode_to_vec());
+    let range = src.as_ptr() as usize..src.as_ptr() as usize + src.len();
+    let aliases = |b: &Bytes| range.contains(&(b.as_ptr() as usize));
+
+    let decoded = HoldsBlobs::decode(&mut src.clone()).unwrap();
+    assert_eq!(decoded, msg);
+    let inner = decoded.inner.as_option().unwrap();
+    let held = inner.blob.as_option().unwrap();
+    assert!(aliases(&held.data) && aliases(&held.chunks[0]));
+    assert!(inner
+        .blobs
+        .iter()
+        .all(|b| aliases(&b.data) && aliases(&b.chunks[0])));
 }

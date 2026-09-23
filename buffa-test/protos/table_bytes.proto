@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+// build.rs compiles this once, as package `tbz`, with `codec_strategy = Table`
+// and `bytes` fields stored as `bytes::Bytes`. `Blob` has such a field, so it
+// is unrolled, and so are `HoldsBlob` and `HoldsBlobs`, which hold it: a table
+// decodes from a contiguous slice, where `Bytes` fields could not alias the
+// input. `Plain` and `HoldsPlain` have no `bytes` field and are tables.
+package tbz;
+
+message Blob {
+  bytes data = 1;
+  repeated bytes chunks = 2;
+}
+
+message HoldsBlob {
+  Blob blob = 1;
+  repeated Blob blobs = 2;
+  int32 tail = 3;
+}
+
+message HoldsBlobs {
+  HoldsBlob inner = 1;
+}
+
+message Plain {
+  int32 x = 1;
+}
+
+message HoldsPlain {
+  Plain plain = 1;
+}

@@ -1125,6 +1125,13 @@ pub mod xft {
     buffa::include_proto!("xft");
 }
 
+// `tbz` has `bytes` fields stored as `bytes::Bytes`, and the table codec, which
+// the messages that hold those fields must not use.
+#[cfg(has_table_codec)]
+pub mod tbz {
+    buffa::include_proto!("tbz");
+}
+
 // Two packages, the second holding messages of the first: `xau`/`xbu` unrolled,
 // `xat`/`xbt` with the table codec, and `xti` with the table codec and
 // `file_per_package` with `idiomatic_imports`, which holds `xati` and `xbti`.
