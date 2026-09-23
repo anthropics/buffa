@@ -1079,7 +1079,7 @@ macro_rules! bridge_samples {
     ($name:ident, $m:ident) => {
         mod $name {
             use crate::$m::pick::Choice;
-            use crate::$m::{Cold, Hot, Leaf, Pick, Wkt};
+            use crate::$m::{Cold, Hot, Leaf, MapBridge, Pick, Wkt};
             use buffa::MessageField;
             use buffa_types::google::protobuf::{
                 Any, Duration, Empty, FieldMask, Int32Value, StringValue, Struct, Timestamp, Value,
@@ -1152,6 +1152,62 @@ macro_rules! bridge_samples {
                 .collect()
             }
 
+            /// Every kind of map value, with entries that are defaults.
+            pub fn map_bridge() -> MapBridge {
+                let mut st = Struct::new();
+                st.insert("k", 1.5);
+                MapBridge {
+                    leaves: [
+                        ("a".into(), leaf(1, "l", &[2])),
+                        ("b".into(), Leaf::default()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                    hots: [(-1, hot(2, true)), (7, Hot::default())]
+                        .into_iter()
+                        .collect(),
+                    colds: [("c".into(), cold()), ("d".into(), Cold::default())]
+                        .into_iter()
+                        .collect(),
+                    stamps: [
+                        ("t".into(), Timestamp::from_unix(1_700_000_000, 5)),
+                        ("z".into(), Timestamp::default()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                    anys: [
+                        (
+                            1,
+                            Any::pack(
+                                &Timestamp::from_unix(1, 2),
+                                "type.googleapis.com/google.protobuf.Timestamp",
+                            ),
+                        ),
+                        (2, Any::default()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                    values: [
+                        ("s".into(), Value::from("v")),
+                        ("n".into(), Value::null()),
+                        ("f".into(), Value::from(2.5)),
+                    ]
+                    .into_iter()
+                    .collect(),
+                    durations: [("d".into(), Duration::from_secs_nanos(-3, -4))]
+                        .into_iter()
+                        .collect(),
+                    wrapped: [
+                        ("zero".into(), Int32Value::from(0)),
+                        ("one".into(), Int32Value::from(1)),
+                    ]
+                    .into_iter()
+                    .collect(),
+                    tail: 5,
+                    ..Default::default()
+                }
+            }
+
             pub fn wkt() -> Wkt {
                 let mut st = Struct::new();
                 st.insert("k", 1.5);
@@ -1193,6 +1249,110 @@ fn messages_that_hold_each_other_across_both_codecs_agree() {
     let wire = assert_same_codec(&bru_s::hot(9, true), &brt_s::hot(9, true));
     assert_same_chained::<crate::bru::Hot, crate::brt::Hot>(&wire);
     assert_same_on_corrupt_input::<crate::bru::Hot, crate::brt::Hot>(&wire, true);
+}
+
+#[test]
+fn map_values_that_have_no_table_agree() {
+    // `Leaf` and `Cold` are tables in `brt`, `Hot` is not, and the well-known
+    // types never are, so this map holder reaches each through its `Message`
+    // impl or its table.
+    let wire = assert_same_codec(&bru_s::map_bridge(), &brt_s::map_bridge());
+    assert_same_chained::<crate::bru::MapBridge, crate::brt::MapBridge>(&wire);
+    assert_same_on_corrupt_input::<crate::bru::MapBridge, crate::brt::MapBridge>(&wire, true);
+    // A value set to its default is still written, as an empty record.
+    for (field, key) in [
+        (1, length_delimited_field(1, b"k")),
+        (2, varint_field(1, 5)),
+        (4, length_delimited_field(1, b"k")),
+        (8, length_delimited_field(1, b"k")),
+    ] {
+        let wire = length_delimited_field(field, &[key, length_delimited_field(2, b"")].concat());
+        assert_same_decode::<crate::bru::MapBridge, crate::brt::MapBridge>(&wire, false);
+        let decoded = crate::brt::MapBridge::decode_from_slice(&wire).unwrap();
+        assert_eq!(decoded.encode_to_vec(), wire, "field {field}");
+    }
+}
+
+#[test]
+fn a_map_entry_that_fails_leaves_the_message_as_unrolled_code_does() {
+    let opts = buffa::DecodeOptions::new();
+    // Fields 2 and 5 have `int32` keys, the others `string` keys.
+    let key = |field: u32| match field {
+        2 | 5 => varint_field(1, 5),
+        _ => length_delimited_field(1, b"k"),
+    };
+    let mut wires = Vec::new();
+    for field in 1..=8u32 {
+        // Cut short at the tag, inside the entry's length, and inside its key.
+        wires.push(tag(field, 2));
+        wires.push([tag(field, 2), vec![0x05, 0x0a]].concat());
+        wires.push(length_delimited_field(field, &[0x0a, 0x05, b'k']));
+        // A value that does not decode, after a key that does: a field that
+        // is complete, and then a tag with nothing after it.
+        let value = length_delimited_field(2, &[0x08, 0x05, 0x10]);
+        let entry = [key(field), value].concat();
+        wires.push(length_delimited_field(field, &entry));
+        // A value whose length is past the end of the entry.
+        let entry = [key(field), vec![0x12, 0x7f, 0x08]].concat();
+        wires.push(length_delimited_field(field, &entry));
+    }
+    // A string key that is not UTF-8.
+    wires.push(length_delimited_field(
+        1,
+        &[length_delimited_field(1, &[0xff, 0xfe])].concat(),
+    ));
+    let valid_first = length_delimited_field(
+        1,
+        &[
+            length_delimited_field(1, b"new"),
+            length_delimited_field(2, &[0x08, 0x09]),
+        ]
+        .concat(),
+    );
+    let mut failed = 0;
+    for wire in wires {
+        for prefix in [&[][..], &valid_first[..]] {
+            let wire = [prefix, &wire[..]].concat();
+            failed += usize::from(crate::brt::MapBridge::decode_from_slice(&wire).is_err());
+            assert_same_merge(&opts, &bru_s::map_bridge(), &brt_s::map_bridge(), &wire);
+            assert_same_merge(
+                &opts,
+                &crate::bru::MapBridge::default(),
+                &crate::brt::MapBridge::default(),
+                &wire,
+            );
+        }
+    }
+    // Most of the inputs fail, and so exercise the failure paths.
+    assert!(failed >= 60, "only {failed} of the inputs fail");
+}
+
+#[test]
+fn a_map_value_that_nests_deeply_hits_the_same_recursion_limit_in_both_codecs() {
+    // `Cold.hot` (1) holds `Hot.back` (3), which holds a `Cold` again, so each
+    // level is two messages, and the map's value is the first.
+    fn cold(levels: usize) -> Vec<u8> {
+        if levels == 0 {
+            return Vec::new();
+        }
+        length_delimited_field(1, &length_delimited_field(3, &cold(levels - 1)))
+    }
+    let mut accepted = Vec::new();
+    for levels in [1, 10, 40, 47, 48, 49, 50, 51, 60] {
+        let entry = [
+            length_delimited_field(1, b"k"),
+            length_delimited_field(2, &cold(levels)),
+        ]
+        .concat();
+        let wire = length_delimited_field(3, &entry);
+        assert_same_decode::<crate::bru::MapBridge, crate::brt::MapBridge>(&wire, true);
+        accepted.push(crate::brt::MapBridge::decode_from_slice(&wire).is_ok());
+    }
+    // The depths straddle the limit.
+    assert!(
+        accepted.contains(&true) && accepted.contains(&false),
+        "{accepted:?}"
+    );
 }
 
 #[test]
@@ -1370,6 +1530,8 @@ fn messages_from_another_crate_agree() {
                 leaves: vec![leaf(2, "b"), leaf(3, "")],
                 tail: 4,
                 pick,
+                // A map value from another crate.
+                by_name: [("k".to_string(), leaf(7, "m"))].into_iter().collect(),
                 ..Default::default()
             })
             .collect::<Vec<_>>()
@@ -1531,6 +1693,11 @@ fn a_holder_of_a_bytes_typed_message_is_unrolled_and_decodes_without_copying() {
     // Also the one that holds it in a oneof member, and its own holder.
     assert!(!generated.contains("__BUFFA_TABLE_HoldsBlobInOneof"));
     assert!(!generated.contains("__BUFFA_TABLE_HoldsPick"));
+    // And through a map value, with its own holder. A map of plain messages is
+    // a table.
+    assert!(!generated.contains("__BUFFA_TABLE_HoldsBlobInMap"));
+    assert!(!generated.contains("__BUFFA_TABLE_HoldsMapHolder"));
+    assert!(generated.contains("static __BUFFA_TABLE_HoldsPlainInMap"));
 
     let blob = |fill: u8| Blob {
         data: Bytes::from(vec![fill; 64]),
@@ -1578,6 +1745,28 @@ fn a_holder_of_a_bytes_typed_message_is_unrolled_and_decodes_without_copying() {
         panic!("expected a Blob");
     };
     assert!(aliases(&held.data) && aliases(&held.chunks[0]));
+
+    // And the map value does.
+    let msg = crate::tbz::HoldsMapHolder {
+        inner: MessageField::some(crate::tbz::HoldsBlobInMap {
+            blobs: [("a".to_string(), blob(9)), ("b".to_string(), blob(11))]
+                .into_iter()
+                .collect(),
+            tail: 2,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let src = Bytes::from(msg.encode_to_vec());
+    let range = src.as_ptr() as usize..src.as_ptr() as usize + src.len();
+    let aliases = |b: &Bytes| range.contains(&(b.as_ptr() as usize));
+    let decoded = crate::tbz::HoldsMapHolder::decode(&mut src.clone()).unwrap();
+    assert_eq!(decoded, msg);
+    let held = &decoded.inner.as_option().unwrap().blobs;
+    assert_eq!(held.len(), 2);
+    assert!(held
+        .values()
+        .all(|b| aliases(&b.data) && aliases(&b.chunks[0])));
 }
 
 // ---------------------------------------------------------------------------
