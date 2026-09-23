@@ -386,8 +386,8 @@ fn invalid_utf8_is_rejected() {
 
 #[test]
 fn messages_the_table_cannot_handle_still_work() {
-    // A oneof, a map, and the messages that hold them are unrolled, and a
-    // table message may sit next to them.
+    // A oneof and a map are unrolled, and the messages that hold them are
+    // tables that reach them through their `Message` impl.
     let with_oneof = crate::tct::WithOneof {
         choice: Some(crate::tct::with_oneof::Choice::B("x".into())),
         c: 4,
@@ -761,8 +761,10 @@ fn messages_named_like_what_generated_code_uses_agree() {
 }
 
 #[test]
-fn a_table_message_inside_an_unrolled_tree_agrees() {
-    // `Mixed.inner` is a table in `tct`, and `Mixed` and `HoldsOneof` are not.
+fn unrolled_messages_inside_a_table_tree_agree() {
+    // `Mixed.inner` is a table in `tct`, and so are `Mixed` and `HoldsOneof`,
+    // which hold `WithOneof` and `WithMap`, which are not, and `WithOneof`
+    // holds a table message in a oneof variant.
     let wire = assert_same_codec(&shapes_u::mixed(), &shapes_t::mixed());
     assert_same_chained::<crate::tcu::Mixed, crate::tct::Mixed>(&wire);
     let wire = assert_same_codec(
@@ -922,6 +924,8 @@ fn the_messages_the_table_can_handle_use_it() {
         crate::tct::__BUFFA_TABLE_Entry,
         crate::tct::__BUFFA_TABLE_Aux,
         crate::tct::__BUFFA_TABLE_Keywords,
+        crate::tct::__BUFFA_TABLE_HoldsOneof,
+        crate::tct::__BUFFA_TABLE_Mixed,
         crate::tc2t::__BUFFA_TABLE_Req,
         crate::tc2t::__BUFFA_TABLE_AllRequired,
         crate::tc2t::__BUFFA_TABLE_AllRepeated,
@@ -940,6 +944,11 @@ fn the_messages_the_table_can_handle_use_it() {
         crate::xti::xati::__BUFFA_TABLE_Wrap,
         crate::xti::xbti::__BUFFA_TABLE_Holder,
         crate::xti::xbti::holder::__BUFFA_TABLE_Sub,
+        crate::brt::__BUFFA_TABLE_Leaf,
+        crate::brt::__BUFFA_TABLE_Cold,
+        crate::brt::__BUFFA_TABLE_Wkt,
+        crate::xe::__BUFFA_TABLE_Leaf,
+        crate::xft::__BUFFA_TABLE_Holder,
     );
 }
 
@@ -982,4 +991,277 @@ fn messages_held_across_packages_agree_in_every_layout() {
             .encode_to_vec(),
         wire
     );
+}
+
+// ---------------------------------------------------------------------------
+// Messages that hold messages without a table
+// ---------------------------------------------------------------------------
+
+/// Builds the same values of `table_bridge.proto` in `$m`: `bru` or `brt`.
+macro_rules! bridge_samples {
+    ($name:ident, $m:ident) => {
+        mod $name {
+            use crate::$m::{Cold, Hot, Leaf, Wkt};
+            use buffa::MessageField;
+            use buffa_types::google::protobuf::{
+                Any, Duration, Empty, FieldMask, Int32Value, StringValue, Struct, Timestamp, Value,
+            };
+
+            pub fn leaf(x: i32, s: &str, tags: &[i32]) -> Leaf {
+                Leaf {
+                    x,
+                    s: s.into(),
+                    tags: tags.to_vec(),
+                    ..Default::default()
+                }
+            }
+
+            /// A `Hot`, which holds a `Cold` if `with_back`.
+            pub fn hot(a: i32, with_back: bool) -> Hot {
+                Hot {
+                    a,
+                    leaf: MessageField::some(leaf(a, "hot leaf", &[1, 2])),
+                    back: if with_back {
+                        MessageField::some(Cold {
+                            tail: a + 100,
+                            leaf: MessageField::some(leaf(a, "back", &[])),
+                            ..Default::default()
+                        })
+                    } else {
+                        MessageField::none()
+                    },
+                    leaves: vec![leaf(a + 1, "l", &[3]), Leaf::default()],
+                    blob: vec![1, 2, 3],
+                    ..Default::default()
+                }
+            }
+
+            pub fn cold() -> Cold {
+                Cold {
+                    hot: MessageField::some(hot(1, true)),
+                    hots: vec![hot(2, false), Hot::default(), hot(3, true)],
+                    leaf: MessageField::some(leaf(4, "c", &[5, 6])),
+                    leaves: vec![leaf(6, "", &[]), Leaf::default()],
+                    tail: 7,
+                    ..Default::default()
+                }
+            }
+
+            pub fn wkt() -> Wkt {
+                let mut st = Struct::new();
+                st.insert("k", 1.5);
+                Wkt {
+                    ts: MessageField::some(Timestamp::from_unix(1_700_000_000, 5)),
+                    dur: MessageField::some(Duration::from_secs_nanos(-3, -4)),
+                    any: MessageField::some(Any::pack(
+                        &Timestamp::from_unix(1, 2),
+                        "type.googleapis.com/google.protobuf.Timestamp",
+                    )),
+                    st: MessageField::some(st),
+                    val: MessageField::some(Value::from("v")),
+                    mask: MessageField::some(FieldMask::from_paths(["a.b", "c"])),
+                    wrapped: MessageField::some(Int32Value::from(0)),
+                    wrapped_s: MessageField::some(StringValue::from("w")),
+                    empty: MessageField::some(Empty::default()),
+                    times: vec![Timestamp::from_unix(1, 0), Timestamp::default()],
+                    anys: vec![Any::default()],
+                    values: vec![Value::from(true), Value::null(), Value::from(2.5)],
+                    cold: MessageField::some(cold()),
+                    ..Default::default()
+                }
+            }
+        }
+    };
+}
+
+bridge_samples!(bru_s, bru);
+bridge_samples!(brt_s, brt);
+
+#[test]
+fn messages_that_hold_each_other_across_both_codecs_agree() {
+    // `Cold` is a table and holds `Hot`, which is not and holds a `Cold`.
+    let wire = assert_same_codec(&bru_s::cold(), &brt_s::cold());
+    assert_same_chained::<crate::bru::Cold, crate::brt::Cold>(&wire);
+    assert_same_on_corrupt_input::<crate::bru::Cold, crate::brt::Cold>(&wire, true);
+
+    // The unrolled message as a root, holding table messages.
+    let wire = assert_same_codec(&bru_s::hot(9, true), &brt_s::hot(9, true));
+    assert_same_chained::<crate::bru::Hot, crate::brt::Hot>(&wire);
+    assert_same_on_corrupt_input::<crate::bru::Hot, crate::brt::Hot>(&wire, true);
+}
+
+#[test]
+fn well_known_types_held_by_a_table_message_agree() {
+    let wire = assert_same_codec(&bru_s::wkt(), &brt_s::wkt());
+    assert_same_chained::<crate::bru::Wkt, crate::brt::Wkt>(&wire);
+    assert_same_on_corrupt_input::<crate::bru::Wkt, crate::brt::Wkt>(&wire, true);
+    // Set to their defaults, they are still written, as empty records.
+    let wire = assert_same_codec(
+        &crate::bru::Wkt {
+            ts: buffa::MessageField::some(Default::default()),
+            wrapped: buffa::MessageField::some(Default::default()),
+            ..Default::default()
+        },
+        &crate::brt::Wkt {
+            ts: buffa::MessageField::some(Default::default()),
+            wrapped: buffa::MessageField::some(Default::default()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(wire, [0x0a, 0x00, 0x3a, 0x00]);
+}
+
+#[test]
+fn messages_from_another_crate_agree() {
+    macro_rules! sample {
+        ($m:ident) => {{
+            let leaf = |x: i32, s: &str| crate::xe::Leaf {
+                x,
+                s: s.into(),
+                kids: vec![crate::xe::Leaf::default()],
+                ..Default::default()
+            };
+            crate::$m::Holder {
+                leaf: buffa::MessageField::some(leaf(1, "a")),
+                leaves: vec![leaf(2, "b"), leaf(3, "")],
+                tail: 4,
+                ..Default::default()
+            }
+        }};
+    }
+    let wire = assert_same_codec(&sample!(xfu), &sample!(xft));
+    assert_same_chained::<crate::xfu::Holder, crate::xft::Holder>(&wire);
+    assert_same_on_corrupt_input::<crate::xfu::Holder, crate::xft::Holder>(&wire, true);
+}
+
+/// The wire form of `Cold` with `hot` set to a `Hot` with `back` set to a
+/// `Cold`, and so on, `pairs` times, innermost empty.
+fn cold_hot_chain(pairs: usize) -> Vec<u8> {
+    let wrap = |tag: u8, inner: Vec<u8>| {
+        let mut wire = vec![tag];
+        buffa::encoding::encode_varint(inner.len() as u64, &mut wire);
+        wire.extend(inner);
+        wire
+    };
+    let mut wire = Vec::new();
+    for _ in 0..pairs {
+        // `Hot.back` (3), then `Cold.hot` (1).
+        wire = wrap(0x0a, wrap(0x1a, wire));
+    }
+    wire
+}
+
+#[test]
+fn nesting_through_both_codecs_is_limited_alike() {
+    for pairs in [1, 40, 49, 50, 51, 60] {
+        let wire = cold_hot_chain(pairs);
+        assert_same_decode::<crate::bru::Cold, crate::brt::Cold>(&wire, false);
+    }
+    assert_eq!(
+        <crate::brt::Cold as Message>::decode_from_slice(&cold_hot_chain(60)),
+        Err(DecodeError::RecursionLimitExceeded)
+    );
+    assert!(<crate::brt::Cold as Message>::decode_from_slice(&cold_hot_chain(40)).is_ok());
+    for limit in [1, 2, 3, 10] {
+        let wire = cold_hot_chain(6);
+        let decode = |r: Result<Vec<u8>, DecodeError>| r;
+        assert_eq!(
+            decode(
+                buffa::DecodeOptions::new()
+                    .with_recursion_limit(limit)
+                    .decode_from_slice::<crate::bru::Cold>(&wire)
+                    .map(|m| m.encode_to_vec())
+            ),
+            decode(
+                buffa::DecodeOptions::new()
+                    .with_recursion_limit(limit)
+                    .decode_from_slice::<crate::brt::Cold>(&wire)
+                    .map(|m| m.encode_to_vec())
+            ),
+            "limit {limit}"
+        );
+    }
+}
+
+#[test]
+fn the_element_memory_limit_covers_repeated_children_without_a_table() {
+    // 1000 empty elements of `Cold.hots` (2), which is unrolled in `brt`, then of
+    // `Cold.leaves` (4), which is a table.
+    for tag in [0x12, 0x22] {
+        let wire: Vec<u8> = (0..1000).flat_map(|_| [tag, 0x00]).collect();
+        for limit in [100, 10_000, 100_000_000] {
+            let decode_u = buffa::DecodeOptions::new()
+                .with_element_memory_limit(limit)
+                .decode_from_slice::<crate::bru::Cold>(&wire)
+                .map(|m| m.encode_to_vec());
+            let decode_t = buffa::DecodeOptions::new()
+                .with_element_memory_limit(limit)
+                .decode_from_slice::<crate::brt::Cold>(&wire)
+                .map(|m| m.encode_to_vec());
+            assert_eq!(decode_u, decode_t, "tag {tag:#x}, limit {limit}");
+        }
+    }
+    let wire: Vec<u8> = (0..1000).flat_map(|_| [0x12, 0x00]).collect();
+    assert_eq!(
+        buffa::DecodeOptions::new()
+            .with_element_memory_limit(100)
+            .decode_from_slice::<crate::brt::Cold>(&wire)
+            .map(|_| ()),
+        Err(DecodeError::ElementMemoryLimitExceeded)
+    );
+}
+
+#[test]
+fn a_child_split_across_occurrences_merges_alike() {
+    // `Cold.hot` (1) twice: {a = 1}, then {leaf = {x = 5}}; and `Cold.leaf` (3).
+    let wire = [
+        0x0a, 0x02, 0x08, 0x01, // hot { a = 1 }
+        0x0a, 0x04, 0x12, 0x02, 0x08, 0x05, // hot { leaf { x = 5 } }
+        0x1a, 0x02, 0x08, 0x02, // leaf { x = 2 }
+        0x1a, 0x02, 0x12, 0x00, // leaf { s = "" }
+    ];
+    assert_same_decode::<crate::bru::Cold, crate::brt::Cold>(&wire, false);
+    let merged = <crate::brt::Cold as Message>::decode_from_slice(&wire).unwrap();
+    let hot = merged.hot.as_option().unwrap();
+    assert_eq!((hot.a, hot.leaf.as_option().unwrap().x), (1, 5));
+    assert_eq!(merged.leaf.as_option().unwrap().x, 2);
+}
+
+#[test]
+fn unknown_fields_in_a_child_without_a_table_are_kept() {
+    // `Cold.hot` holds `{a = 1, <unknown field 100: varint 3>}`.
+    let wire = [0x0a, 0x05, 0x08, 0x01, 0xa0, 0x06, 0x03];
+    assert_same_decode::<crate::bru::Cold, crate::brt::Cold>(&wire, false);
+    let decoded = <crate::brt::Cold as Message>::decode_from_slice(&wire).unwrap();
+    assert_eq!(
+        decoded.hot.as_option().unwrap().__buffa_unknown_fields.len(),
+        1
+    );
+    assert_eq!(decoded.encode_to_vec(), wire);
+}
+
+#[test]
+fn a_child_without_a_table_is_encoded_into_every_kind_of_sink() {
+    let mut cold = brt_s::cold();
+    // Enough bytes in a child that has no table to fill several segments.
+    cold.hots[1].blob = vec![0xab; 64 * 1024];
+    let expected = cold.encode_to_vec();
+    assert_eq!(expected.len() as u32, cold.encoded_len());
+    let mut unrolled = bru_s::cold();
+    unrolled.hots[1].blob = vec![0xab; 64 * 1024];
+    assert_eq!(unrolled.encode_to_vec(), expected);
+
+    let mut rope = buffa::Rope::new();
+    cold.encode(&mut rope);
+    assert_eq!(&rope.to_contiguous_bytes()[..], &expected[..]);
+    let mut bytes_mut = buffa::bytes::BytesMut::new();
+    cold.encode(&mut bytes_mut);
+    assert_eq!(&bytes_mut[..], &expected[..]);
+    // Room for only a few bytes at a time, so the message is staged.
+    let mut chunked = buffa::bytes::BytesMut::with_capacity(1);
+    cold.encode_length_delimited(&mut chunked);
+    let mut framed = Vec::new();
+    buffa::encoding::encode_varint(expected.len() as u64, &mut framed);
+    framed.extend_from_slice(&expected);
+    assert_eq!(&chunked[..], &framed[..]);
 }

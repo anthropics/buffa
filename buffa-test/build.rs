@@ -1,8 +1,9 @@
 /// Compile a schema twice, with its `package <base>` renamed to `<base>u` and
 /// generated with the default unrolled codec, and to `<base>t` and generated
-/// with `codec_strategy = Table`. A test compares the two codecs on the same
-/// schema. `file` names the schema in messages.
-fn compile_both_codecs(file: &str, source: &str, base: &str) {
+/// with `codec_strategy = Table`, except for the messages in `unrolled` (paths
+/// below the package, such as `Hot`), which stay unrolled. A test compares the
+/// two codecs on the same schema. `file` names the schema in messages.
+fn compile_both_codecs(file: &str, source: &str, base: &str, unrolled: &[&str]) {
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let package = format!("package {base};");
     assert!(source.contains(&package), "{file} must declare `{package}`");
@@ -16,14 +17,61 @@ fn compile_both_codecs(file: &str, source: &str, base: &str) {
             source.replace(&package, &format!("package {base}{suffix};")),
         )
         .expect("write renamed proto");
+        let rules: Vec<String> = unrolled
+            .iter()
+            .map(|path| format!(".{base}{suffix}.{path}"))
+            .collect();
         buffa_build::Config::new()
             .files(&[renamed])
             .includes(&[&out])
             .generate_json(true)
             .generate_text(true)
             .codec_strategy(strategy)
+            .codec_strategy_in(buffa_build::CodecStrategy::Unrolled, &rules)
             .compile()
             .unwrap_or_else(|e| panic!("buffa_build failed for {file} ({suffix}): {e}"));
+    }
+}
+
+/// A package `xe` of table messages, and packages `xfu` (unrolled) and `xft`
+/// (table) with messages that hold them, generated in their own runs with `xe`
+/// mapped to the crate's `xe` module. A table message then holds messages from
+/// another crate, whose table it cannot name.
+fn compile_extern_children() {
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    let leaf = out.join("xe.proto");
+    std::fs::write(
+        &leaf,
+        "syntax = \"proto3\";\npackage xe;\n\
+         message Leaf { int32 x = 1; string s = 2; repeated Leaf kids = 3; }\n",
+    )
+    .expect("write proto");
+    buffa_build::Config::new()
+        .files(&[&leaf])
+        .includes(&[&out])
+        .codec_strategy(buffa_build::CodecStrategy::Table)
+        .compile()
+        .expect("buffa_build failed for xe.proto");
+    for (suffix, strategy) in [
+        ("u", buffa_build::CodecStrategy::Unrolled),
+        ("t", buffa_build::CodecStrategy::Table),
+    ] {
+        let holder = out.join(format!("xf{suffix}.proto"));
+        std::fs::write(
+            &holder,
+            format!(
+                "syntax = \"proto3\";\npackage xf{suffix};\nimport \"xe.proto\";\n\
+                 message Holder {{ xe.Leaf leaf = 1; repeated xe.Leaf leaves = 2; int32 tail = 3; }}\n"
+            ),
+        )
+        .expect("write proto");
+        buffa_build::Config::new()
+            .files(&[&holder])
+            .includes(&[&out])
+            .extern_path(".xe", "crate::xe")
+            .codec_strategy(strategy)
+            .compile()
+            .unwrap_or_else(|e| panic!("buffa_build failed for xf{suffix}.proto: {e}"));
     }
 }
 
@@ -167,19 +215,33 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(has_table_codec)");
     if rustc_minor() >= 77 {
         println!("cargo:rustc-cfg=has_table_codec");
-        compile_both_codecs("table_codec.proto", &read_proto("table_codec.proto"), "tc");
+        compile_both_codecs(
+            "table_codec.proto",
+            &read_proto("table_codec.proto"),
+            "tc",
+            &[],
+        );
         compile_both_codecs(
             "table_codec2.proto",
             &read_proto("table_codec2.proto"),
             "tc2",
+            &[],
         );
         compile_both_codecs(
             "table_codec3.proto",
             &read_proto("table_codec3.proto"),
             "tc3",
+            &[],
         );
-        compile_both_codecs("the generated wide schema", &wide_proto(), "wide");
+        compile_both_codecs("the generated wide schema", &wide_proto(), "wide", &[]);
+        compile_both_codecs(
+            "table_bridge.proto",
+            &read_proto("table_bridge.proto"),
+            "br",
+            &["Hot"],
+        );
         compile_cross_package();
+        compile_extern_children();
         compile_table_with_options("table_codec.proto", "tc");
     }
 
