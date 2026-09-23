@@ -50,10 +50,23 @@ pub(crate) struct TableField<'a> {
     pub(crate) number: u32,
     pub(crate) ty: Type,
     pub(crate) card: Card,
-    /// The name of the `buffa::table::Kind` variant of this field.
+    /// The name of the `buffa::table::Kind` variant of this field. For a oneof
+    /// member this is `OneofMember`, and `payload_kind` is the kind of its
+    /// value.
     pub(crate) kind: String,
     /// For an enum field: whether the enum is closed.
     pub(crate) closed_enum: bool,
+    /// For a oneof member, the oneof it belongs to.
+    pub(crate) oneof: Option<OneofMembership<'a>>,
+}
+
+/// The oneof that a [`TableField`] is a member of.
+pub(crate) struct OneofMembership<'a> {
+    /// The index of the oneof in the message's `oneof_decl`.
+    pub(crate) index: usize,
+    pub(crate) name: &'a str,
+    /// The name of the `buffa::table::Kind` variant of the member's value.
+    pub(crate) payload_kind: String,
 }
 
 /// The `Kind` variant name of a field type, or `None` for a group, which has
@@ -135,12 +148,19 @@ pub(crate) fn table_fields<'a>(
     let mut fields = Vec::with_capacity(msg.field.len());
     for f in &msg.field {
         let name = f.name.as_deref().unwrap_or("");
-        if is_real_oneof_member(f) {
-            return Err(ineligible(
-                "has a oneof",
-                format!("field `{name}` is in a oneof"),
-            ));
-        }
+        let oneof = if is_real_oneof_member(f) {
+            let index = f.oneof_index.and_then(|i| usize::try_from(i).ok());
+            let decl = index.and_then(|i| msg.oneof_decl.get(i));
+            let Some((index, decl)) = index.zip(decl) else {
+                return Err(ineligible(
+                    "has a field in a oneof that does not exist",
+                    format!("field `{name}` names a oneof that the message does not declare"),
+                ));
+            };
+            Some((index, decl.name.as_deref().unwrap_or("")))
+        } else {
+            None
+        };
         if find_map_entry(msg, f).is_some() {
             return Err(ineligible(
                 "has a map field",
@@ -163,7 +183,10 @@ pub(crate) fn table_fields<'a>(
         }
         let number = crate::impl_message::validated_field_number(f)
             .map_err(|e| ineligible("has an invalid field number", e.to_string()))?;
-        let card = if repeated {
+        // A oneof member's value is written whenever the member is set.
+        let card = if oneof.is_some() {
+            Card::Required
+        } else if repeated {
             if is_field_packed(f, features) {
                 Card::Packed
             } else {
@@ -189,6 +212,17 @@ pub(crate) fn table_fields<'a>(
         } else {
             format!("{stem}{}", card.name())
         };
+        let (kind, oneof) = match oneof {
+            Some((index, name)) => (
+                "OneofMember".to_string(),
+                Some(OneofMembership {
+                    index,
+                    name,
+                    payload_kind: kind,
+                }),
+            ),
+            None => (kind, None),
+        };
         fields.push(TableField {
             field: f,
             number,
@@ -196,6 +230,7 @@ pub(crate) fn table_fields<'a>(
             card,
             kind,
             closed_enum,
+            oneof,
         });
     }
     fields.sort_by_key(|f| f.number);
