@@ -1,0 +1,5 @@
+# Known conformance test failures for the table codec (CodecStrategy::Table).
+#
+# Tests listed here are expected to fail in the via-table run and will not
+# cause it to report a failure.  Each line is a test name (matched by the
+# runner with --failure_list).  Remove entries as failures are fixed.
