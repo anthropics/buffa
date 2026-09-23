@@ -2260,13 +2260,17 @@ fn the_accessors_keep_a_member_that_is_set_and_replace_any_other() {
 #[test]
 fn place_with_merges_into_the_member_that_is_set_and_replaces_another_only_on_success() {
     let vt = OneofVt::new::<Pick>(0, 2);
+    // The pointer is derived from `slot` again for each call, because reading
+    // `slot` in between ends the use of an earlier one.
+    fn raw(slot: &mut Option<Pick>) -> *mut u8 {
+        (slot as *mut Option<Pick>).cast()
+    }
     let mut slot = Some(Pick::Text("kept".into()));
-    let slot_ptr = (&mut slot as *mut Option<Pick>).cast::<u8>();
     // SAFETY: `slot` is a live `Option<Pick>` and 4, 2 and 5 are members.
     unsafe {
         // The member that is set is decoded into where it is, and stays set
         // when the decoding fails part of the way.
-        let r = (vt.place_with)(slot_ptr, 4, &mut |p| {
+        let r = (vt.place_with)(raw(&mut slot), 4, &mut |p| {
             p.cast::<String>().as_mut().unwrap().push_str("+more");
             Err(DecodeError::UnexpectedEof)
         });
