@@ -155,6 +155,30 @@ pub trait EncodeSink {
     #[doc(hidden)]
     const __PRE_SIZED: bool = false;
 
+    /// Run `f` on this sink if it is a [`PreSized`] cursor, and return
+    /// whether it did.
+    ///
+    /// Lets the table interpreters switch, once per message, from an instance
+    /// generic over the sink to one compiled in this crate. `f` gets the
+    /// cursor itself, and a `PreSized` cannot be built or altered outside this
+    /// crate, so `f` cannot claim more bytes than were written:
+    ///
+    /// ```compile_fail,E0616
+    /// use buffa::EncodeSink;
+    ///
+    /// let mut vec: Vec<u8> = Vec::new();
+    /// vec.__with_pre_sized(&mut |cursor| cursor.pos = 4);
+    /// ```
+    ///
+    /// Implementations outside this crate keep the default, which does not
+    /// call `f`.
+    #[doc(hidden)]
+    #[inline]
+    fn __with_pre_sized(&mut self, f: &mut dyn FnMut(&mut PreSized<'_>)) -> bool {
+        let _ = f;
+        false
+    }
+
     /// Run `fill` over `len` bytes of contiguous space at the end of the
     /// sink and append the bytes it wrote, or give `fill` back unrun if the
     /// sink's current chunk is shorter than `len`.
@@ -271,6 +295,12 @@ impl<'a> PreSized<'a> {
 }
 
 impl EncodeSink for PreSized<'_> {
+    #[inline]
+    fn __with_pre_sized(&mut self, f: &mut dyn FnMut(&mut PreSized<'_>)) -> bool {
+        f(self);
+        true
+    }
+
     #[inline]
     fn put_u8(&mut self, value: u8) {
         let Some(slot) = self.dst.get_mut(self.pos) else {

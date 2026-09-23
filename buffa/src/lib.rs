@@ -237,6 +237,10 @@ pub mod message_field;
 pub mod message_set;
 pub mod oneof;
 mod size_cache;
+// Runtime for table-driven message codecs, called by generated code; see the
+// module docs.
+#[doc(hidden)]
+pub mod table;
 #[cfg(test)]
 pub(crate) mod test_doubles;
 #[cfg(feature = "text")]
