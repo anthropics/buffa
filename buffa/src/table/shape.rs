@@ -53,6 +53,10 @@ pub struct MsgVt {
     ///
     /// The argument points to a live `F`.
     pub(super) get: unsafe fn(*const u8) -> *const u8,
+    /// Whether the descriptor is for a message reached through a pointer to
+    /// the message itself ([`direct`](Self::direct)), which is what a oneof
+    /// member needs, and not through a field's storage.
+    pub(super) direct: bool,
 }
 
 /// # Safety
@@ -79,14 +83,14 @@ unsafe fn get_impl<F: MsgSlot>(slot: *const u8) -> *const u8 {
 ///
 /// # Safety
 ///
-/// `slot` is returned as it is.
+/// `slot` points to a live message, which is the one that is returned.
 unsafe fn direct_place(slot: *mut u8) -> *mut u8 {
     slot
 }
 
 /// # Safety
 ///
-/// `slot` is returned as it is.
+/// `slot` points to a live message, which is the one that is returned.
 unsafe fn direct_get(slot: *const u8) -> *const u8 {
     slot
 }
@@ -100,6 +104,7 @@ impl MsgVt {
             child: Child::Table(&table.raw),
             place: place_impl::<F>,
             get: get_impl::<F>,
+            direct: false,
         }
     }
 
@@ -118,6 +123,7 @@ impl MsgVt {
             child: Child::of::<F::Msg>(),
             place: place_impl::<F>,
             get: get_impl::<F>,
+            direct: false,
         }
     }
 
@@ -131,6 +137,7 @@ impl MsgVt {
             child: Child::Table(&table.raw),
             place: direct_place,
             get: direct_get,
+            direct: true,
         }
     }
 
@@ -143,6 +150,7 @@ impl MsgVt {
             child: Child::of::<M>(),
             place: direct_place,
             get: direct_get,
+            direct: true,
         }
     }
 }
@@ -309,9 +317,7 @@ pub unsafe trait EnumShape {
     }
 
     /// Whether [`set`](Self::set) would store `raw`.
-    fn accepts(_raw: i32) -> bool {
-        true
-    }
+    fn accepts(raw: i32) -> bool;
 }
 
 impl EnumVt {

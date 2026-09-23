@@ -1905,16 +1905,43 @@ fn a_closed_enum_value_the_member_does_not_know_leaves_the_oneof_alone() {
 
 #[test]
 fn a_rejected_member_value_leaves_the_oneof_as_it_was() {
-    let mut msg = holder(Pick::Num(5));
-    // A string that is not UTF-8, a value the wire type does not fit, and a
-    // truncated varint each fail without touching the member that is set.
-    for wire in [
-        &[0x22, 0x01, 0xff][..],
-        &[0x12, 0x00][..],
-        &[0x38, 0x80][..],
-    ] {
+    // For every member: a value that is cut short, a string that is not UTF-8,
+    // and a wire type the member does not have. Each fails without touching
+    // the member that is set, whichever it is, or setting one.
+    let failing: [&[u8]; 9] = [
+        &[0x10, 0x80],
+        &[0x12, 0x00],
+        &[0x22, 0x01, 0xff],
+        &[0x22, 0x05, b'a'],
+        &[0x2a, 0x05, 0x01],
+        &[0x38, 0x80],
+        &[0x40, 0x80],
+        &[0x4a, 0x05, 0x08],
+        &[0x4a],
+    ];
+    let initial: [fn() -> Option<Pick>; 3] = [
+        || Some(Pick::Num(5)),
+        || Some(Pick::Text("abc".into())),
+        || None,
+    ];
+    for initial in initial {
+        for wire in failing {
+            let mut msg = Holder {
+                pick: initial(),
+                ..Holder::default()
+            };
+            assert!(msg.merge_from_slice(wire).is_err(), "{wire:02x?}");
+            assert_eq!(msg.pick, initial(), "{wire:02x?}");
+        }
+    }
+    // The float member of the other oneof, in the same way.
+    for wire in [&[0x35, 0x00][..], &[0x32, 0x00][..]] {
+        let mut msg = Holder {
+            other: Some(Alt::Y(Inner::default())),
+            ..Holder::default()
+        };
         assert!(msg.merge_from_slice(wire).is_err(), "{wire:02x?}");
-        assert_eq!(msg.pick, Some(Pick::Num(5)), "{wire:02x?}");
+        assert_eq!(msg.other, Some(Alt::Y(Inner::default())), "{wire:02x?}");
     }
     assert!(matches!(
         Holder::decode_from_slice(&[0x22, 0x01, 0xff]),
@@ -1944,6 +1971,60 @@ fn a_message_member_that_is_cut_short_is_an_error() {
             assert_eq!(msg, Holder::default(), "prefix of {end}");
         }
     }
+}
+
+#[test]
+fn a_message_member_that_fails_leaves_a_different_member_as_it_was() {
+    // The child (9) has no length, is longer than the input, or holds a field
+    // that does not decode; the oneof keeps the text.
+    for wire in [
+        &[0x4a][..],
+        &[0x4a, 0x05, 0x08][..],
+        &[0x4a, 0x02, 0x08, 0x80][..],
+        &[0x4a, 0x03, 0x08, 0x05, 0x10][..],
+    ] {
+        let mut msg = holder(Pick::Text("abc".into()));
+        assert!(msg.merge_from_slice(wire).is_err(), "{wire:02x?}");
+        assert_eq!(msg.pick, Some(Pick::Text("abc".into())), "{wire:02x?}");
+        let mut none = Holder::default();
+        assert!(none.merge_from_slice(wire).is_err(), "{wire:02x?}");
+        assert_eq!(none.pick, None, "{wire:02x?}");
+    }
+}
+
+#[test]
+fn a_message_member_that_fails_keeps_what_it_merged_into_the_member_that_is_set() {
+    // id = 5 merges into the child, and then the label has the wrong wire
+    // type, as it would for a singular message field.
+    let mut msg = holder(child(1));
+    assert!(msg
+        .merge_from_slice(&[0x4a, 0x03, 0x08, 0x05, 0x10])
+        .is_err());
+    assert_eq!(msg.pick, Some(child(5)));
+}
+
+#[test]
+fn a_message_member_past_the_recursion_limit_is_an_error_that_changes_nothing() {
+    let mut msg = holder(Pick::Text("abc".into()));
+    let wire = [0x4a, 0x02, 0x08, 0x05];
+    let err = crate::DecodeOptions::new()
+        .with_recursion_limit(0)
+        .merge_from_slice(&mut msg, &wire)
+        .unwrap_err();
+    assert_eq!(err, DecodeError::RecursionLimitExceeded);
+    assert_eq!(msg.pick, Some(Pick::Text("abc".into())));
+}
+
+#[test]
+fn a_message_member_larger_than_the_limit_is_an_error_that_changes_nothing() {
+    let mut msg = holder(Pick::Text("abc".into()));
+    // A length of 2 GiB.
+    let wire = [0x4a, 0x80, 0x80, 0x80, 0x80, 0x08];
+    assert_eq!(
+        msg.merge_from_slice(&wire),
+        Err(DecodeError::MessageTooLarge)
+    );
+    assert_eq!(msg.pick, Some(Pick::Text("abc".into())));
 }
 
 #[test]
@@ -1994,12 +2075,25 @@ fn find_reaches_every_oneof_member() {
     for (number, kind) in [(2, Kind::OneofLeader), (9, Kind::OneofFollower)] {
         assert_eq!(HOLDER.raw.find(number).unwrap().kind, kind);
     }
-    let pe = HOLDER.raw.payload_entry(4);
+    let pe = HOLDER.raw.payload_entry(0, 4);
     assert_eq!(pe.kind, Kind::StrRequired);
     assert_eq!(pe.number(), 4);
-    let pe = HOLDER.raw.payload_entry(9);
+    let pe = HOLDER.raw.payload_entry(0, 9);
     assert_eq!(pe.kind, Kind::MsgSingular);
     assert_eq!(pe.aux, 11);
+}
+
+#[test]
+#[should_panic(expected = "does not match the oneof enum")]
+fn a_member_of_another_oneof_is_not_a_member_of_this_one() {
+    // 6 is a member of `other`, which is group 1.
+    let _ = HOLDER.raw.payload_entry(0, 6);
+}
+
+#[test]
+#[should_panic(expected = "does not match the oneof enum")]
+fn a_field_that_is_not_in_a_oneof_is_not_a_member() {
+    let _ = HOLDER.raw.payload_entry(0, 1);
 }
 
 #[test]
@@ -2023,6 +2117,99 @@ fn the_accessors_keep_a_member_that_is_set_and_replace_any_other() {
     // SAFETY: as above.
     let (number, payload) = unsafe { (vt.get)((&mut none as *mut Option<Pick>).cast()) };
     assert_eq!((number, payload.is_null()), (0, true));
+}
+
+#[test]
+fn place_with_merges_into_the_member_that_is_set_and_replaces_another_only_on_success() {
+    let vt = OneofVt::new::<Pick>(0, 2);
+    let mut slot = Some(Pick::Text("kept".into()));
+    let slot_ptr = (&mut slot as *mut Option<Pick>).cast::<u8>();
+    // SAFETY: `slot` is a live `Option<Pick>` and 4, 2 and 5 are members.
+    unsafe {
+        // The member that is set is decoded into where it is, and stays set
+        // when the decoding fails part of the way.
+        let r = (vt.place_with)(slot_ptr, 4, &mut |p| {
+            p.cast::<String>().as_mut().unwrap().push_str("+more");
+            Err(DecodeError::UnexpectedEof)
+        });
+        assert_eq!(r, Err(DecodeError::UnexpectedEof));
+        assert_eq!(slot, Some(Pick::Text("kept+more".into())));
+        // Another member is decoded into a new default one, which a failure
+        // discards.
+        let r = (vt.place_with)(slot_ptr, 2, &mut |p| {
+            assert_eq!(*p.cast::<i32>(), 0);
+            *p.cast::<i32>() = 9;
+            Err(DecodeError::UnexpectedEof)
+        });
+        assert_eq!(r, Err(DecodeError::UnexpectedEof));
+        assert_eq!(slot, Some(Pick::Text("kept+more".into())));
+        // Success replaces it.
+        let r = (vt.place_with)(slot_ptr, 2, &mut |p| {
+            *p.cast::<i32>() = 9;
+            Ok(())
+        });
+        assert_eq!(r, Ok(()));
+        assert_eq!(slot, Some(Pick::Num(9)));
+    }
+    // An oneof that is unset stays unset on failure.
+    let mut none: Option<Pick> = None;
+    // SAFETY: as above.
+    let r = unsafe {
+        (vt.place_with)((&mut none as *mut Option<Pick>).cast(), 5, &mut |_| {
+            Err(DecodeError::UnexpectedEof)
+        })
+    };
+    assert_eq!(r, Err(DecodeError::UnexpectedEof));
+    assert_eq!(none, None);
+}
+
+#[test]
+#[should_panic(expected = "does not match the oneof enum")]
+fn place_with_a_member_the_enum_does_not_have_panics() {
+    let vt = OneofVt::new::<Pick>(0, 2);
+    let mut slot: Option<Pick> = None;
+    // SAFETY: `slot` is a live `Option<Pick>`; 99 is not a member, which the
+    // accessor reports by panicking.
+    let _ = unsafe { (vt.place_with)((&mut slot as *mut Option<Pick>).cast(), 99, &mut |_| Ok(())) };
+}
+
+/// An enum whose `with_default` returns a member other than the one asked
+/// for, which breaks the contract of [`OneofEnum`].
+#[derive(Debug, PartialEq)]
+struct LyingEnum;
+
+impl OneofEnum for LyingEnum {
+    fn number(&self) -> u32 {
+        1
+    }
+    fn payload(&self) -> *const u8 {
+        core::ptr::null()
+    }
+    fn payload_mut(&mut self) -> *mut u8 {
+        core::ptr::null_mut()
+    }
+    fn with_default(_number: u32) -> Option<Self> {
+        Some(LyingEnum)
+    }
+}
+
+#[test]
+#[should_panic(expected = "does not match the oneof enum")]
+fn placing_a_member_whose_default_has_another_number_panics() {
+    let vt = OneofVt::new::<LyingEnum>(0, 1);
+    let mut slot: Option<LyingEnum> = None;
+    // SAFETY: `slot` is a live `Option<LyingEnum>`; the accessor checks the
+    // number of what `with_default` returns.
+    unsafe { (vt.place)((&mut slot as *mut Option<LyingEnum>).cast(), 2) };
+}
+
+#[test]
+#[should_panic(expected = "does not match the oneof enum")]
+fn place_with_a_member_whose_default_has_another_number_panics() {
+    let vt = OneofVt::new::<LyingEnum>(0, 1);
+    let mut slot: Option<LyingEnum> = None;
+    // SAFETY: as above.
+    let _ = unsafe { (vt.place_with)((&mut slot as *mut Option<LyingEnum>).cast(), 2, &mut |_| Ok(())) };
 }
 
 #[test]
@@ -2145,6 +2332,18 @@ mod invalid_oneof_tables {
     }
 
     #[test]
+    #[should_panic(expected = "`MsgVt::direct` one")]
+    fn a_message_member_needs_a_descriptor_that_reaches_the_message_directly() {
+        static AUX: [Aux; 3] = [
+            Aux::Group(&PICK),
+            Aux::Member(Member::new(0, Kind::MsgSingular, 2)),
+            Aux::Msg(&MsgVt::new::<MessageField<Inner>>(&INNER)),
+        ];
+        const E: Entry = member(Kind::MsgSingular, 2, 1);
+        let _ = holder_table(&[E], &AUX);
+    }
+
+    #[test]
     #[should_panic(expected = "singular field")]
     fn a_members_enum_descriptor_must_be_singular() {
         static AUX: [Aux; 3] = [
@@ -2189,12 +2388,8 @@ mod invalid_oneof_tables {
     fn every_oneof_needs_a_leader() {
         // The only member is numbered above the oneof's lowest, so nothing
         // leads.
-        static AUX: [Aux; 2] = [
-            Aux::Group(&PICK),
-            Aux::Member(Member::new(0, Kind::Int32Required, 0)),
-        ];
         const E: Entry = member(Kind::Int32Required, 3, 1);
-        let _ = holder_table(&[E], &AUX);
+        let _ = holder_table(&[E], &INT_MEMBERS);
     }
 
     #[test]

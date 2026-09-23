@@ -17,15 +17,27 @@
 //! under either strategy.
 
 use super::{Entry, Kind};
+use crate::DecodeError;
 
 /// How the interpreters reach the members of the oneof enum `Self`, which
 /// generated code implements for the enum of every oneof of a table message.
 ///
-/// The pointers a member's payload is reached through must be of the type its
-/// payload kind names: `i32` for `Int32Required`, `String` for `StrRequired`,
-/// the storage of the enum for `EnumRequired`, and the message itself,
-/// reached through its pointer if it is boxed, for `MsgSingular`. A table's
-/// constructor takes on that requirement.
+/// The interpreters trust an implementation, so an incorrect one makes the
+/// table's unsafe accesses wrong, although the trait is safe to implement: a
+/// [`Table`](super::Table) is built with `unsafe` code that takes on the
+/// contract below. Generated code meets it by construction, and a check that
+/// it would break is a panic where the interpreters can make one.
+///
+/// - [`number`](Self::number) is the number of a member of this oneof, one
+///   that has an entry in the message's table.
+/// - [`payload`](Self::payload) and [`payload_mut`](Self::payload_mut) return
+///   non-null, aligned pointers, valid for as long as the borrow of `self`, to
+///   the same value, and its type is the one the member's payload kind names:
+///   `i32` for `Int32Required`, `String` for `StrRequired`, the storage of the
+///   enum for `EnumRequired`, and the message itself, reached through its
+///   pointer if it is boxed, for `MsgSingular`.
+/// - `with_default(n)` is `None` only if `n` is not a member of this oneof,
+///   and otherwise a value whose `number()` is `n`.
 pub trait OneofEnum: Sized {
     /// The field number of the member `self` holds.
     fn number(&self) -> u32;
@@ -63,7 +75,21 @@ pub struct OneofVt {
     /// The argument points to a live `Option<E>`, and `number` is a member of
     /// `E`.
     pub(super) place: unsafe fn(*mut u8, u32) -> *mut u8,
+    /// Decode a message member the way unrolled code does: if the member
+    /// `number` is the one that is set, run the function on its value, which
+    /// merges into it. Otherwise run it on the value of a new default member,
+    /// and make that the member that is set only if the function succeeds, so
+    /// a failure leaves the oneof as it was.
+    ///
+    /// # Safety
+    ///
+    /// The first argument points to a live `Option<E>`, and `number` is a
+    /// member of `E`.
+    pub(super) place_with: unsafe fn(*mut u8, u32, PlaceFn<'_>) -> Result<(), DecodeError>,
 }
+
+/// The function that [`OneofVt`]'s `place_with` runs on a member's value.
+pub(super) type PlaceFn<'a> = &'a mut dyn FnMut(*mut u8) -> Result<(), DecodeError>;
 
 /// # Safety
 ///
@@ -83,11 +109,43 @@ unsafe fn place_impl<E: OneofEnum>(slot: *mut u8, number: u32) -> *mut u8 {
     // SAFETY: the caller passes a pointer to a live `Option<E>`.
     let e = unsafe { &mut *slot.cast::<Option<E>>() };
     if e.as_ref().map(E::number) != Some(number) {
-        *e = E::with_default(number);
+        *e = Some(new_member(number));
     }
     match e {
         Some(e) => e.payload_mut(),
         None => no_such_member(number),
+    }
+}
+
+/// # Safety
+///
+/// `slot` points to a live `Option<E>`.
+unsafe fn place_with_impl<E: OneofEnum>(
+    slot: *mut u8,
+    number: u32,
+    f: PlaceFn<'_>,
+) -> Result<(), DecodeError> {
+    // SAFETY: the caller passes a pointer to a live `Option<E>`.
+    let e = unsafe { &mut *slot.cast::<Option<E>>() };
+    match e {
+        Some(current) if current.number() == number => f(current.payload_mut()),
+        _ => {
+            let mut fresh = new_member::<E>(number);
+            f(fresh.payload_mut())?;
+            *e = Some(fresh);
+            Ok(())
+        }
+    }
+}
+
+/// A value of `E` holding the default of the member `number`. A
+/// [`OneofEnum`] that has no such member, or whose value for it is numbered
+/// otherwise, is a bug in the implementation, which cannot be allowed to
+/// address a different member's value.
+fn new_member<E: OneofEnum>(number: u32) -> E {
+    match E::with_default(number) {
+        Some(e) if e.number() == number => e,
+        _ => no_such_member(number),
     }
 }
 
@@ -116,6 +174,7 @@ impl OneofVt {
             first,
             get: get_impl::<E>,
             place: place_impl::<E>,
+            place_with: place_with_impl::<E>,
         }
     }
 }
@@ -179,6 +238,12 @@ pub(super) const fn check_member(e: &Entry, m: Member, aux: &[super::Aux]) -> bo
             assert!(
                 vt.card == super::IMPLICIT,
                 "buffa table: a oneof member's enum descriptor must be for a singular field"
+            );
+        }
+        if let super::Aux::Msg(vt) = a {
+            assert!(
+                vt.direct,
+                "buffa table: a oneof member's message descriptor must be a `MsgVt::direct` one"
             );
         }
     }

@@ -277,12 +277,31 @@ impl OneofSlot<'_> {
         // SAFETY: forwarded from the caller.
         unsafe { (self.group.place)(self.slot, number) }
     }
+
+    /// Decode into the member `number`: in place if it is the one that is set,
+    /// and otherwise into a new default member, which becomes the one that is
+    /// set only if `f` succeeds.
+    ///
+    /// # Safety
+    ///
+    /// As for [`place`](Self::place).
+    #[inline]
+    unsafe fn place_with(
+        &self,
+        number: u32,
+        f: &mut dyn FnMut(*mut u8) -> Result<(), DecodeError>,
+    ) -> Result<(), DecodeError> {
+        // SAFETY: forwarded from the caller.
+        unsafe { (self.group.place_with)(self.slot, number, f) }
+    }
 }
 
 /// Defines `merge_payload`, which decodes a oneof member's value by its
 /// payload kind. Every arm decodes the value before it replaces the member
 /// that is set, so a value that is rejected, or that a closed enum does not
-/// know, leaves the oneof as it was.
+/// know, leaves the oneof as it was. The exception is a message member that
+/// is the one that is set, which is merged into as it is decoded, so a failure
+/// part of the way through keeps the fields that had been merged.
 macro_rules! merge_payload_dispatch {
     ($fname:ident; $($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
         /// # Safety
@@ -410,9 +429,8 @@ unsafe fn merge_oneof_enum(
         return unsafe { enum_reject(table, payload_entry, base, raw, ctx) };
     }
     // SAFETY: the member is stored in the shape `vt` was built for.
-    unsafe {
-        (vt.set)(oneof.place(payload_entry.number()), raw);
-    }
+    let stored = unsafe { (vt.set)(oneof.place(payload_entry.number()), raw) };
+    debug_assert!(stored, "`accepts` said the enum stores {raw}");
     Ok(())
 }
 
@@ -432,12 +450,15 @@ unsafe fn merge_oneof_msg(
 ) -> Result<(), DecodeError> {
     check_wire_type(tag, WireType::LengthDelimited)?;
     let vt = table.msg_vt(payload_entry);
-    // SAFETY: as above. A member that is already set is merged into, as a
-    // singular message field is; a different member is replaced by the default
-    // message first.
+    // SAFETY: the member is a message of the type `vt.table` describes,
+    // reached through a pointer to it, and `place_with` hands the closure a
+    // pointer to a live one. A member that is already set is merged into, as
+    // a singular message field is. Any other member is replaced only by a
+    // message that decoded, so a failure leaves the oneof as it was.
     unsafe {
-        let child = oneof.place(payload_entry.number());
-        vt.child.merge_sub(child, buf, ctx)
+        oneof.place_with(payload_entry.number(), &mut |child| {
+            vt.child.merge_sub(child, buf, ctx)
+        })
     }
 }
 

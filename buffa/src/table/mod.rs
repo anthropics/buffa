@@ -586,15 +586,26 @@ impl MessageTable {
         }
     }
 
-    /// The entry of the oneof member `number` with its kind and aux index
-    /// replaced by those of its payload, which the payload arms of the
-    /// interpreters take.
+    /// The entry of the member `number` of the oneof whose descriptor is at
+    /// aux index `group`, with its kind and aux index replaced by those of its
+    /// payload, which the payload arms of the interpreters take.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the message has no such oneof member, which only an incorrect
+    /// [`OneofEnum`] can cause.
     #[inline]
-    fn payload_entry(&self, number: u32) -> Entry {
+    fn payload_entry(&self, group: u16, number: u32) -> Entry {
         let Some(e) = self.find(number) else {
             oneof::no_such_member(number)
         };
+        if !matches!(e.kind, Kind::OneofLeader | Kind::OneofFollower) {
+            oneof::no_such_member(number)
+        }
         let m = self.member(e);
+        if m.group != group {
+            oneof::no_such_member(number)
+        }
         Entry {
             kind: m.kind,
             aux: m.aux,
