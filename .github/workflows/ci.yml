@@ -198,7 +198,8 @@ jobs:
   # ── MSRV check ───────────────────────────────────────────────────────────
   msrv-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Two toolchains, and a test build on the second.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -219,6 +220,13 @@ jobs:
         with:
           toolchain: '1.75'
 
+      # The table codec needs `offset_of!`, stable in 1.77; the workspace
+      # check above compiles it out at 1.75. This is the oldest compiler that
+      # builds the table interpreters and the generated table code.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.77'
+
       - name: Install protoc
         run: |
           curl -fsSL "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip" -o /tmp/protoc.zip
@@ -234,6 +242,13 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: '1.75'
         run: cargo check --workspace --all-targets --locked
+
+      - name: Test the table codec (Rust 1.77)
+        env:
+          RUSTUP_TOOLCHAIN: '1.77'
+        run: |
+          cargo test -p buffa --lib table:: --locked
+          cargo test -p buffa-test --lib table_codec --locked
 
   # ── Miri: proves the `set_len`-publishing `unsafe` reads no uninit memory ──
   # SizeCache stores its inline slots as `MaybeUninit<u32>` to avoid zeroing the

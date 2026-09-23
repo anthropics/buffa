@@ -1,0 +1,187 @@
+syntax = "proto3";
+
+// build.rs renames this package to `tcu` (unrolled) and `tct`
+// (`codec_strategy = Table`) and compiles both, so a test can compare the two
+// codecs on the same schema. Type references stay unqualified so the rename is
+// the only difference.
+package tc;
+
+enum Color {
+  COLOR_UNSPECIFIED = 0;
+  RED = 1;
+  GREEN = 2;
+}
+
+message Inner {
+  int32 id = 1;
+  string label = 2;
+  repeated int32 tags = 3;
+}
+
+// Every scalar type with implicit presence.
+message Scalars {
+  int32 i32 = 1;
+  int64 i64 = 2;
+  uint32 u32 = 3;
+  uint64 u64 = 4;
+  sint32 s32 = 5;
+  sint64 s64 = 6;
+  bool b = 7;
+  fixed32 f32 = 8;
+  fixed64 f64 = 9;
+  sfixed32 sf32 = 10;
+  sfixed64 sf64 = 11;
+  float fl = 12;
+  double db = 13;
+  string s = 14;
+  bytes by = 15;
+  Color color = 16;
+}
+
+// The same with explicit presence.
+message Optionals {
+  optional int32 i32 = 1;
+  optional int64 i64 = 2;
+  optional uint32 u32 = 3;
+  optional uint64 u64 = 4;
+  optional sint32 s32 = 5;
+  optional sint64 s64 = 6;
+  optional bool b = 7;
+  optional fixed32 f32 = 8;
+  optional fixed64 f64 = 9;
+  optional sfixed32 sf32 = 10;
+  optional sfixed64 sf64 = 11;
+  optional float fl = 12;
+  optional double db = 13;
+  optional string s = 14;
+  optional bytes by = 15;
+  optional Color color = 16;
+}
+
+// The same, repeated (packed by default in proto3), and unpacked.
+message Repeateds {
+  repeated int32 i32 = 1;
+  repeated int64 i64 = 2;
+  repeated uint32 u32 = 3;
+  repeated uint64 u64 = 4;
+  repeated sint32 s32 = 5;
+  repeated sint64 s64 = 6;
+  repeated bool b = 7;
+  repeated fixed32 f32 = 8;
+  repeated fixed64 f64 = 9;
+  repeated sfixed32 sf32 = 10;
+  repeated sfixed64 sf64 = 11;
+  repeated float fl = 12;
+  repeated double db = 13;
+  repeated string s = 14;
+  repeated bytes by = 15;
+  repeated Color color = 16;
+  repeated int32 unpacked_i32 = 17 [packed = false];
+  repeated Color unpacked_color = 18 [packed = false];
+}
+
+// Message-typed fields: singular, repeated, and recursive.
+message Nested {
+  Inner inner = 1;
+  repeated Inner inners = 2;
+  Scalars scalars = 3;
+  Optionals optionals = 4;
+  Repeateds repeateds = 5;
+  Nested next = 6;
+  repeated Nested kids = 7;
+  int32 tail = 8;
+}
+
+// Field numbers that miss the dense lookup array.
+message Sparse {
+  int32 a = 1;
+  int32 mid = 100;
+  string far = 5000;
+  int32 max = 536870911;
+}
+
+message Empty {}
+
+// A oneof, a map, and a message that holds one: none can use the table, so
+// they stay unrolled when the table is requested.
+message WithOneof {
+  oneof choice {
+    int32 a = 1;
+    string b = 2;
+    Inner i = 5;
+  }
+  int32 c = 3;
+}
+
+message WithMap {
+  map<string, int32> m = 1;
+  map<string, Inner> inners = 2;
+}
+
+message HoldsOneof {
+  WithOneof o = 1;
+  int32 x = 2;
+  WithMap m = 3;
+}
+
+// An unrolled message that holds table messages, next to unrolled ones that
+// hold a oneof and a map of them.
+message Mixed {
+  Inner inner = 1;
+  HoldsOneof holds = 2;
+  Nested nested = 3;
+  repeated Nested many = 4;
+}
+
+// Field names that are Rust keywords.
+message Keywords {
+  int32 type = 1;
+  string match = 2;
+  repeated int32 fn = 3;
+  Inner ref = 4;
+}
+
+// Nested declarations, references to them from siblings and from inside them,
+// mutual recursion, and field numbers around the dense array's limit of 64.
+message Outer {
+  message Inner {
+    int32 x = 1;
+    string s = 2;
+    repeated Deep deeps = 3;
+  }
+  message Deep {
+    int64 y = 1;
+    Inner back = 2;
+  }
+  int32 a = 1;
+  Inner inner = 2;
+  Deep deep = 3;
+  repeated Inner inners = 4;
+  Outer.Deep qualified = 5;
+  Color color = 6;
+  int32 f63 = 63;
+  int32 f64 = 64;
+}
+
+// Messages named for what generated code refers to.
+message Option {
+  int32 v = 1;
+}
+message Vec {
+  Option o = 1;
+  repeated Option os = 2;
+}
+message Table {
+  Vec v = 1;
+}
+message Kind {
+  Table t = 1;
+}
+message Entry {
+  Kind k = 1;
+  string s = 2;
+}
+message Aux {
+  Entry e = 1;
+  repeated Entry es = 2;
+}

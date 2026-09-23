@@ -171,8 +171,7 @@ fn generate_message_with_nesting(
             let nested_proto_name = nested.name.as_deref().unwrap_or("");
             let nested_fqn = format!("{}.{}", proto_fqn, nested_proto_name);
             let nested_rust_name = ctx.config.prefixed_type_name(nested_proto_name);
-            let msg_features =
-                crate::features::resolve_child(features, crate::features::message_features(nested));
+            let msg_features = crate::features::message_scope_features(features, nested, false);
             generate_message_with_nesting(
                 scope.nested(&nested_fqn, &msg_features),
                 nested,
@@ -440,6 +439,13 @@ fn generate_message_with_nesting(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    let table_impl = if ctx.uses_table_codec(proto_fqn) {
+        Some(crate::table_codec::generate_table_impl(
+            scope, msg, rust_name, resolver,
+        )?)
+    } else {
+        None
+    };
     let message_impl = crate::impl_message::generate_message_impl(
         ctx,
         msg,
@@ -451,6 +457,7 @@ fn generate_message_with_nesting(
         &oneof_idents,
         &oneof_prefix,
         nesting,
+        table_impl,
     )?;
 
     let text_impl = crate::impl_text::generate_text_impl(
@@ -1534,8 +1541,8 @@ fn is_wkt_wrapper_type(type_name: Option<&str>) -> bool {
 
 /// Resolved Rust type and map-entry metadata for a single field.
 #[derive(Debug)]
-struct FieldInfo {
-    rust_type: TokenStream,
+pub(crate) struct FieldInfo {
+    pub(crate) rust_type: TokenStream,
     /// Type to use in the struct field declaration. Differs from `rust_type`
     /// only for self-referential message fields, where it uses `Self` instead
     /// of the concrete name. `rust_type` stays concrete for serde-deserialize
@@ -1605,7 +1612,7 @@ struct FieldInfo {
 /// Shared by `generate_field` (struct declaration) and the custom
 /// deserialize codegen to avoid duplicating the type-resolution
 /// if/else chain.
-fn classify_field(
+pub(crate) fn classify_field(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &crate::generated::descriptor::FieldDescriptorProto,
