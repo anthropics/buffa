@@ -463,9 +463,11 @@ jobs:
           docker rm "$CID"
           chmod +x /usr/local/bin/conformance_test_runner /usr/local/bin/protoc
 
-      # Both builds use the same target dir so build-script artifacts
-      # (buffa-codegen, buffa-build, syn, etc.) are compiled only once.
-      # The std binary is copied out before the no_std build overwrites it.
+      # All three builds use the same target dir so build-script artifacts
+      # (buffa-codegen, buffa-build, syn, etc.) are compiled only once. The std
+      # and table binaries are copied out before the next build overwrites
+      # them; the no_std build stays last because its run uses the artifact in
+      # place.
       - name: Determine host target
         id: host
         run: echo "triple=$(rustc -vV | grep '^host:' | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
@@ -478,8 +480,6 @@ jobs:
       - name: Save std binary
         run: cp conformance/target/${{ steps.host.outputs.triple }}/release/conformance /tmp/buffa-conformance-std
 
-      # The table strategy needs Rust 1.77 (offset_of!); buffa-build fails the
-      # build on an older compiler rather than skipping the run.
       - name: Build conformance binary (table)
         run: >-
           cargo build --release --manifest-path conformance/Cargo.toml
