@@ -2313,6 +2313,8 @@ still shapes how the compiler moves the view, though, which costs view-decode
 throughput on message-dense shapes. Disabling is what removes the field
 outright, and it is the lever for a hot view-decode path.
 
+A view struct whose fields do not borrow the decode buffer itself carries a `#[doc(hidden)] __buffa_phantom: PhantomData<&'a ()>` marker so that its lifetime parameter is used non-recursively. That is an all-scalar message and, in eager views, a message whose fields reach `'a` solely through another view (a self-reference, a `oneof` of messages, or two messages that reference each other); a lazy view's message field borrows the buffer itself and needs no marker. The marker is zero-sized and absent from serialized output, but it is a public field, so construct or destructure such a view with `..Default::default()` rather than exhaustively.
+
 Leave preservation enabled unless you are memory-constrained (embedded / `no_std`
 targets) or maintain large in-memory collections of small messages where struct
 size dominates cache footprint. "I don't need round-trip fidelity" alone is not a
