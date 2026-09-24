@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**DescriptorPool rejects malformed proto3 optional message fields.** These fields must use optional cardinality and be the sole member of a synthetic oneof, after all real oneofs. Missing or shared oneofs, invalid cardinalities, and flags outside proto3 are now rejected. (#480)'
+time: 2026-09-24T23:26:49.945981+02:00
