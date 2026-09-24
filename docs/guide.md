@@ -1569,6 +1569,34 @@ Because JSON parsing goes straight from `serde_json` into the generated
 binary codec do not bound JSON. Cap the input yourself before parsing untrusted
 JSON. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
 
+buffa does not support `serde_json`'s `arbitrary_precision` feature. When any
+crate in the build enables it, buffa rejects every number that has a fraction
+or an exponent, and every whole number outside the `i64` and `u64` ranges. It
+reads such a number in a `google.protobuf.Value` as a struct. To check your
+build, run `cargo tree -e features -i serde_json` in your workspace, and look
+for `arbitrary_precision` in the output. Tracked in
+[#482](https://github.com/anthropics/buffa/issues/482).
+
+If one of your own types keeps untrusted JSON as a `serde_json::Value` before
+decoding it, do not deserialize that value with `Value`'s own `Deserialize`
+impl. When any crate in the build enables `serde_json`'s `raw_value` feature,
+that impl parses the string under a first key `$serde_json::private::RawValue`
+as JSON. The value you decode then differs from the text that a filter or a
+signature check saw, and nested strings pass the recursion limit. Generated
+code reads that key as data, and your types can do the same with
+`buffa::json_helpers::buffered`:
+
+```rust,ignore
+#[derive(serde::Deserialize)]
+struct Event {
+    #[serde(default, deserialize_with = "buffa::json_helpers::buffered::opt_value")]
+    payload: Option<serde_json::Value>,
+}
+
+// In a hand-written visitor:
+let buffa::json_helpers::buffered::BufferedValue(payload) = map.next_value()?;
+```
+
 ### Unknown fields in JSON
 
 Generated JSON deserializers **ignore** unknown keys by default, so a

@@ -1,34 +1,76 @@
-//! Buffering a JSON value before its proto type is known.
+//! JSON values buffered with every object key read as data.
 //!
-//! Some proto3 JSON shapes cannot be decoded in one pass: an `Any` names its
-//! type in `@type`, which may follow the fields it describes, and an element
-//! of an enum list is dropped instead of rejected when
-//! `ignore_unknown_enum_values` is set. Those paths hold the value as a
-//! [`serde_json::Value`] first.
+//! Use this module wherever a `Deserialize` impl keeps untrusted input as a
+//! [`serde_json::Value`] before it decodes it:
 //!
-//! `serde_json`'s own `Deserialize` impl for `Value` must not be used for
-//! that on untrusted input. When the `raw_value` feature of `serde_json` is
-//! enabled by any crate in the build, that impl reads an object whose first
-//! key is `$serde_json::private::RawValue` as "parse the string under this
-//! key as JSON". The decoded value then differs from the one that a filter,
-//! a log or a signature check sees in the request text. Each such string is
-//! also parsed with a new recursion limit, so nesting them removes the bound
-//! on depth.
+//! - In a hand-written visitor, read a [`BufferedValue`], as in
+//!   `let BufferedValue(value) = map.next_value()?;`. Read a
+//!   [`BufferedObject`] when the input must be an object.
+//! - On a field of a derived impl, name [`value`], [`opt_value`] or
+//!   [`object`] in `#[serde(deserialize_with = "...")]`.
 //!
-//! [`BufferedValue`] and [`BufferedObject`] build the same `Value` and read
-//! every object key as data, at every depth. The depth of what they build is
-//! bounded by the deserializer that feeds them.
+//! The `Deserialize` impl of `Value` itself must not read untrusted input.
+//! The same is true of the impls of types that hold a `Value`, such as
+//! `Map<String, Value>` and `Vec<Value>`. When any crate in the build enables
+//! the `raw_value` feature of `serde_json`, that impl reads an object whose
+//! first key is `$serde_json::private::RawValue` as the JSON text in the
+//! string under that key. The decoded value then differs from the one that a
+//! filter, a log or a signature check sees in the request text. Each such
+//! string is parsed with a new recursion limit, so nested strings build a
+//! value deeper than `serde_json` allows in one parse.
 //!
-//! With the `arbitrary_precision` feature of `serde_json`, a number that is
-//! not an integer in the `i64` or `u64` range reaches a visitor as an object
-//! with a private key, and is buffered here as that object. `buffa`'s JSON
-//! decoding does not support that feature: its `float` and `double` helpers
-//! reject such numbers. `serde_json::Value` reads that object as a number,
-//! so with the feature on, such a number did decode in an `Any` payload and
-//! in an extension value when they were buffered as `serde_json::Value`. It
-//! is now rejected there too, and a `google.protobuf.Value` payload reads it
-//! as an object. Reading that key as a number here would let an object in
-//! the JSON text decode as a number in a build without the feature.
+//! The types in this module build the same `Value` and read every object key
+//! as data, at every depth. They set no depth limit of their own. The depth of
+//! what they build is the depth that the deserializer allows, which is 128
+//! for `serde_json` by default.
+//!
+//! `buffa` buffers through them where a proto3 JSON shape cannot be decoded in
+//! one pass. A `google.protobuf.Any` names its type in `@type`, which can
+//! follow the fields that it describes. An element of an enum list is
+//! dropped, not rejected, when
+//! [`ignore_unknown_enum_values`](crate::json::JsonParseOptions::ignore_unknown_enum_values)
+//! is set.
+//!
+//! # Fields of other types
+//!
+//! For a field that holds a `Value` in another container, write the function
+//! for `deserialize_with` from the types:
+//!
+//! ```
+//! use buffa::json_helpers::buffered::BufferedValue;
+//! use serde::{Deserialize, Deserializer};
+//! use serde_json::Value;
+//!
+//! fn values<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Value>, D::Error> {
+//!     let buffered = Vec::<BufferedValue>::deserialize(deserializer)?;
+//!     Ok(buffered.into_iter().map(Value::from).collect())
+//! }
+//!
+//! #[derive(Deserialize)]
+//! struct Batch {
+//!     #[serde(deserialize_with = "values")]
+//!     items: Vec<Value>,
+//! }
+//!
+//! let text = r#"{"items": [{"$serde_json::private::RawValue": "[1, 2]"}]}"#;
+//! let batch: Batch = serde_json::from_str(text)?;
+//! assert_eq!(batch.items[0]["$serde_json::private::RawValue"], "[1, 2]");
+//! # Ok::<(), serde_json::Error>(())
+//! ```
+//!
+//! # The `arbitrary_precision` feature of `serde_json`
+//!
+//! `buffa`'s JSON decoding does not support that feature. With it, a number
+//! that has a fraction or an exponent, or a whole number outside the `i64`
+//! and `u64` ranges, reaches a visitor as an object with the key
+//! `$serde_json::private::Number`. The numeric helpers, such as
+//! [`double`](super::double) and [`int64`](super::int64), reject that object,
+//! so an integer field also rejects `1.0` and `1e3`.
+//!
+//! The types in this module read that key as data, so the JSON text
+//! `{"$serde_json::private::Number": "1"}` stays an object in every build.
+//! With the feature on, the number `1.5` therefore buffers as an object with
+//! that key, where `Value` holds a number.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -37,13 +79,123 @@ use core::fmt;
 use serde::de::{Deserialize, Deserializer, Error, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Number, Value};
 
-/// One JSON value of any kind, with every object key read as data.
+/// A [`serde_json::Value`], deserialized with every object key read as data.
+///
+/// The wrapper selects the `Deserialize` impl and carries no invariant: any
+/// `Value` can be wrapped. It accepts the input that `Value` accepts, and
+/// builds the same `Value` except in two cases:
+///
+/// - An object with the key `$serde_json::private::RawValue` stays an object.
+/// - In a build with `serde_json`'s `arbitrary_precision` feature, a number
+///   that has a fraction or an exponent, or that is outside the `i64` and
+///   `u64` ranges, buffers as an object and not as a number.
+///
+/// The [module documentation](self) explains both.
+///
+/// # Examples
+///
+/// ```
+/// use buffa::json_helpers::buffered::BufferedValue;
+///
+/// let text = r#"{"$serde_json::private::RawValue": "[1, 2]"}"#;
+/// let BufferedValue(value) = serde_json::from_str(text)?;
+/// assert_eq!(value["$serde_json::private::RawValue"], "[1, 2]");
+/// # Ok::<(), serde_json::Error>(())
+/// ```
+#[derive(Clone, Debug, PartialEq)]
 pub struct BufferedValue(pub Value);
 
-/// One JSON object, with every key read as data at every depth.
+/// A JSON object, deserialized with every key read as data at every depth.
 ///
-/// Accepts what `serde_json::Map<String, Value>` accepts.
+/// Use it instead of [`BufferedValue`] when the input must be a JSON object,
+/// such as a payload whose fields are looked up by name. It accepts the input
+/// that `serde_json::Map<String, Value>` accepts. From `serde_json`, that is
+/// only a JSON object, so `null` is an error.
+#[derive(Clone, Debug, PartialEq)]
 pub struct BufferedObject(pub Map<String, Value>);
+
+impl From<BufferedValue> for Value {
+    fn from(BufferedValue(value): BufferedValue) -> Self {
+        value
+    }
+}
+
+impl From<BufferedObject> for Map<String, Value> {
+    fn from(BufferedObject(object): BufferedObject) -> Self {
+        object
+    }
+}
+
+/// Deserializes a [`serde_json::Value`] as [`BufferedValue`] does.
+///
+/// Name it in `#[serde(deserialize_with = "...")]` on a field of type `Value`.
+/// The result differs from what `Value`'s own impl builds in the two cases
+/// that [`BufferedValue`] lists.
+///
+/// # Errors
+///
+/// Returns an error if `deserializer` fails, for example when `serde_json`
+/// finds input nested past its recursion limit. Returns an error if
+/// `deserializer` produces a value that a `Value` cannot hold, such as bytes.
+///
+/// # Examples
+///
+/// ```
+/// #[derive(serde::Deserialize)]
+/// struct Event {
+///     #[serde(deserialize_with = "buffa::json_helpers::buffered::value")]
+///     payload: serde_json::Value,
+/// }
+///
+/// let text = r#"{"payload": {"$serde_json::private::RawValue": "[1, 2]"}}"#;
+/// let event: Event = serde_json::from_str(text)?;
+/// assert_eq!(event.payload["$serde_json::private::RawValue"], "[1, 2]");
+/// # Ok::<(), serde_json::Error>(())
+/// ```
+pub fn value<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Value, D::Error> {
+    BufferedValue::deserialize(deserializer).map(Value::from)
+}
+
+/// Deserializes an `Option<serde_json::Value>` as [`BufferedValue`] does.
+///
+/// JSON `null` deserializes to `None`, and so does a missing field when the
+/// field has `#[serde(default)]`. Without `default`, serde rejects input that
+/// omits a field with `deserialize_with`.
+///
+/// # Errors
+///
+/// Returns the errors that [`value`] returns.
+///
+/// # Examples
+///
+/// ```
+/// #[derive(serde::Deserialize)]
+/// struct Event {
+///     #[serde(default, deserialize_with = "buffa::json_helpers::buffered::opt_value")]
+///     payload: Option<serde_json::Value>,
+/// }
+///
+/// let event: Event = serde_json::from_str("{}")?;
+/// assert_eq!(event.payload, None);
+/// # Ok::<(), serde_json::Error>(())
+/// ```
+pub fn opt_value<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Value>, D::Error> {
+    Option::<BufferedValue>::deserialize(deserializer).map(|value| value.map(Value::from))
+}
+
+/// Deserializes a `serde_json::Map<String, Value>` as [`BufferedObject`] does.
+///
+/// Name it in `#[serde(deserialize_with = "...")]` on a field of type
+/// `Map<String, Value>`, including a field with `#[serde(flatten)]` that
+/// collects the keys that no other field names.
+///
+/// # Errors
+///
+/// Returns the errors that [`value`] returns. Returns an error if the input
+/// is not an object.
+pub fn object<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Map<String, Value>, D::Error> {
+    BufferedObject::deserialize(deserializer).map(Map::from)
+}
 
 impl<'de> Deserialize<'de> for BufferedValue {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
@@ -184,9 +336,9 @@ mod tests {
         inner
     }
 
-    /// The tests below pass with the fix reverted unless `serde_json` has
-    /// `raw_value` on. It is a dev-dependency feature of this crate, so a
-    /// test build always has it.
+    /// The tests of the private key also pass against `serde_json::Value`'s
+    /// own `Deserialize` impl unless `serde_json` has `raw_value` on. It is a
+    /// dev-dependency feature of this crate, so a test build always has it.
     #[test]
     fn the_test_build_has_serde_json_raw_value_enabled() {
         let text = json!({ RAW_VALUE_KEY: "[1]" }).to_string();
@@ -278,6 +430,76 @@ mod tests {
                 .map_err(|e| e.to_string());
             assert_eq!(got, expected, "{text}");
         }
+        assert!(serde_json::from_str::<BufferedObject>("null").is_err());
+        assert!(BufferedObject::deserialize(Value::Null).is_err());
+    }
+
+    #[test]
+    fn the_field_functions_read_the_raw_value_key_as_data() {
+        #[derive(Debug, serde::Deserialize)]
+        struct Fields {
+            #[serde(deserialize_with = "value")]
+            required: Value,
+            #[serde(default, deserialize_with = "opt_value")]
+            optional: Option<Value>,
+            #[serde(deserialize_with = "object")]
+            named: Map<String, Value>,
+            #[serde(flatten, deserialize_with = "object")]
+            rest: Map<String, Value>,
+        }
+
+        let hidden = json!({ RAW_VALUE_KEY: "[1]" });
+        let built = json!({
+            "required": hidden,
+            "optional": hidden,
+            "named": { "a": hidden },
+            "other": hidden,
+        });
+        let from_text: Fields = serde_json::from_str(&built.to_string()).unwrap();
+        let from_value: Fields = serde_json::from_value(built).unwrap();
+        for fields in [from_text, from_value] {
+            assert_eq!(fields.required, hidden);
+            assert_eq!(fields.optional, Some(hidden.clone()));
+            assert_eq!(fields.named["a"], hidden);
+            assert_eq!(fields.rest["other"], hidden);
+        }
+
+        for text in [
+            r#"{"required": 1, "named": {}}"#,
+            r#"{"required": 1, "named": {}, "optional": null}"#,
+        ] {
+            let fields: Fields = serde_json::from_str(text).unwrap();
+            assert_eq!(fields.optional, None, "{text}");
+        }
+        let err = serde_json::from_str::<Fields>(r#"{"required": 1, "named": null}"#).unwrap_err();
+        assert!(err.to_string().contains("expected a map"), "{err}");
+    }
+
+    #[test]
+    fn a_field_with_a_field_function_and_no_default_is_required() {
+        #[derive(Debug, serde::Deserialize)]
+        struct Fields {
+            #[serde(deserialize_with = "opt_value")]
+            #[allow(dead_code)]
+            optional: Option<Value>,
+        }
+
+        let err = serde_json::from_str::<Fields>("{}").unwrap_err();
+        assert!(
+            err.to_string().contains("missing field `optional`"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_buffer_converts_into_what_it_holds() {
+        let built = json!({ "a": [1] });
+        let buffered = BufferedValue::deserialize(built.clone()).unwrap();
+        assert_eq!(buffered, BufferedValue(built.clone()));
+        assert_eq!(Value::from(buffered), built);
+
+        let object = BufferedObject::deserialize(built.clone()).unwrap();
+        assert_eq!(Value::Object(object.into()), built);
     }
 
     #[test]

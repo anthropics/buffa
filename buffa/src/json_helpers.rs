@@ -11,7 +11,7 @@
 //! | `double`            | Number, or `"NaN"` / `"Infinity"` / `"-Infinity"` |
 //! | `bytes`             | Base64-encoded string (RFC 4648 standard)    |
 //!
-//! Each submodule provides `serialize` / `deserialize` functions compatible
+//! Most submodules provide `serialize` / `deserialize` functions compatible
 //! with serde's `#[serde(with = "...")]` attribute.
 //!
 //! A [`skip_if`] submodule provides `skip_serializing_if` predicates for
@@ -25,8 +25,12 @@
 //! suite exercises. It's `#[doc(hidden)]` because the supported entry
 //! points are the typed serde impls and `DynamicMessage`'s JSON codec —
 //! these helpers operate on raw scalars and have no semver contract.
+//!
+//! The [`buffered`] submodule deserializes a `serde_json::Value` with every
+//! object key read as data. Use it wherever a `Deserialize` impl, hand-written
+//! or derived, keeps untrusted JSON as a `serde_json::Value`. It provides
+//! types, and functions for `#[serde(deserialize_with = "...")]`.
 
-#[doc(hidden)]
 pub mod buffered;
 #[doc(hidden)]
 pub mod wkt;

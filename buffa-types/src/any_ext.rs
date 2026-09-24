@@ -794,9 +794,9 @@ mod tests {
 
         const RAW_VALUE_KEY: &str = "$serde_json::private::RawValue";
 
-        /// The tests of the private key pass with the fix reverted unless
-        /// `serde_json` has `raw_value` on. It is a dev-dependency feature
-        /// of this crate.
+        /// The tests of the private key also pass against
+        /// `serde_json::Value`'s own `Deserialize` impl unless `serde_json`
+        /// has `raw_value` on. It is a dev-dependency feature of this crate.
         #[test]
         fn the_test_build_has_serde_json_raw_value_enabled() {
             let text = serde_json::json!({ RAW_VALUE_KEY: "[1]" }).to_string();
