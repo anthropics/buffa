@@ -923,15 +923,14 @@ pub(crate) fn oneof_variant_deser_arm(
 }
 
 /// Build the Rust identifier for a oneof enum: `{PascalCase(oneof_name)}`,
-/// sanitized against reserved Rust idents exactly as
-/// [`oneof_variant_ident`] is. A oneof named `self`, `self_` or `_self`
-/// PascalCases to `Self`, which `make_field_ident` suffixes to `Self_`.
+/// keyword-escaped like [`oneof_variant_ident`], so a oneof named `self`,
+/// `self_` or `_self` becomes `Self_`.
 ///
 /// No collision check — oneof enums live in the dedicated
 /// `__buffa::oneof::<msg>::` tree where they cannot collide with nested
-/// types, nested enums, or view structs. Two sibling oneofs would only
-/// produce the same ident if they share a proto name, which protoc
-/// rejects at parse time.
+/// types, nested enums, or view structs. Two sibling oneofs whose names
+/// PascalCase alike (`foo_bar` and `foo__bar`, or `self` and `self_`) do
+/// produce the same ident; that is not diagnosed.
 fn oneof_enum_ident(oneof_name: &str) -> proc_macro2::Ident {
     crate::idents::make_field_ident(&to_pascal_case(oneof_name))
 }

@@ -1,5 +1,4 @@
 kind: Fixed
 body: |-
-    **A oneof whose name PascalCases to `Self` no longer breaks code generation.** The oneof enum's identifier was built with a bare `format_ident!`, so a oneof named `self`, `self_` or `_self` emitted `pub enum Self`, which is not a legal Rust item name; `generate` failed with `InvalidSyntax("generated code failed to parse as Rust")` naming no oneof. The enum name now goes through `make_field_ident`, the same escape its variants already used, and becomes `Self_`.
-    Only `Self` is reachable, because PascalCasing always yields a leading capital and `Self` is the one reserved Rust identifier with that shape. The struct field for such a oneof was already escaped to `self_`, so the two halves now agree. No other generated name changes.
+    **A oneof whose name PascalCases to `Self` no longer breaks code generation** (#465). A oneof named `self`, `self_` or `_self` produced `pub enum Self`, which does not parse, so `generate` failed with `InvalidSyntax` and named no oneof. The enum is now `Self_`, the same escape its variants and the `self_` struct field already used. No other generated name changes.
 time: 2026-09-19T21:02:00.000000000+01:00
