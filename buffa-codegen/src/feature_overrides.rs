@@ -171,9 +171,9 @@ fn collect_message_enum_fqns(
 
 /// Does any rule match this dotted FQN? Marks every matching rule in
 /// `matched` (no short-circuit), so inert rules can be reported. Mirrors the
-/// path-scoped option matching used elsewhere (`bytes_fields` et al): `"."`
-/// matches everything, a leading dot is optional, trailing dots are ignored,
-/// and prefixes only match on proto segment boundaries.
+/// path-scoped prefix matching used by other options: `"."` matches
+/// everything, a leading dot is optional, trailing dots are ignored, and
+/// prefixes only match on proto segment boundaries.
 fn rule_matches(rules: &[String], fqn_dotted: &str, matched: &mut [bool]) -> bool {
     let mut any = false;
     for (i, rule) in rules.iter().enumerate() {

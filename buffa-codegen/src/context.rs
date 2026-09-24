@@ -1058,18 +1058,21 @@ impl<'a> CodeGenContext<'a> {
     /// given proto path.
     ///
     /// `field_fqn` is the fully-qualified proto field path, e.g.,
-    /// `".my.pkg.MyMessage.data"`. Rules in `config.bytes_fields` are matched
-    /// using proto-segment-aware prefix matching (`"."` matches all,
-    /// `".my.pkg"` matches `".my.pkg.Msg.data"` but not `".my.pkgs.X.data"`);
-    /// the **last** matching rule wins, letting a specific override follow a
-    /// broad default. Fields matching no rule use
+    /// `".my.pkg.MyMessage.data"`. A selector in `config.bytes_fields` that
+    /// starts with `.` uses proto-segment-aware prefix matching (`"."` matches
+    /// all, `".my.pkg"` matches `".my.pkg.Msg.data"` but not
+    /// `".my.pkgs.X.data"`). A selector without a leading dot matches complete
+    /// trailing path segments, so `"data"` matches any field named `data` and
+    /// `"MyMessage.data"` matches fields ending with those two segments. The
+    /// **last** matching rule wins, letting a specific override follow a broad
+    /// default. Fields matching no rule use
     /// [`BytesRepr::Vec`](crate::BytesRepr::Vec).
     pub fn bytes_repr(&self, field_fqn: &str) -> crate::BytesRepr {
         self.config
             .bytes_fields
             .iter()
             .rev()
-            .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
+            .find(|(selector, _)| matches_field_selector(selector, field_fqn))
             .map_or(crate::BytesRepr::default(), |(_, repr)| repr.clone())
     }
 
@@ -1145,9 +1148,8 @@ impl<'a> CodeGenContext<'a> {
     /// given proto path.
     ///
     /// `field_fqn` is the fully-qualified proto field path, e.g.
-    /// `".my.pkg.MyMessage.name"`. Rules in `config.string_fields` are matched
-    /// with the same proto-segment-aware prefix logic as
-    /// [`bytes_repr`](Self::bytes_repr); the **last** matching rule wins,
+    /// `".my.pkg.MyMessage.name"`. Rules in `config.string_fields` use
+    /// proto-segment-aware prefix matching; the **last** matching rule wins,
     /// letting a specific override follow a broad default. Fields matching no
     /// rule use [`StringRepr::String`](crate::StringRepr::String).
     pub fn string_repr(&self, field_fqn: &str) -> crate::StringRepr {
@@ -1163,17 +1165,18 @@ impl<'a> CodeGenContext<'a> {
     /// proto path.
     ///
     /// `field_fqn` is the fully-qualified proto field path, e.g.
-    /// `".my.pkg.MyMessage.entries"`. Rules in `config.map_fields` are matched
-    /// with the same proto-segment-aware prefix logic as
-    /// [`string_repr`](Self::string_repr); the **last** matching rule wins,
-    /// letting a specific override follow a broad default. Fields matching no
-    /// rule use [`MapRepr::HashMap`](crate::MapRepr::HashMap).
+    /// `".my.pkg.MyMessage.entries"`. A selector in `config.map_fields` that
+    /// starts with `.` uses proto-segment-aware prefix matching; `"."` matches
+    /// every field. A selector without a leading dot matches complete trailing
+    /// path segments. The **last** matching rule wins, so add specific
+    /// overrides after broad rules. Fields matching no rule use
+    /// [`MapRepr::HashMap`](crate::MapRepr::HashMap).
     pub fn map_repr(&self, field_fqn: &str) -> crate::MapRepr {
         self.config
             .map_fields
             .iter()
             .rev()
-            .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
+            .find(|(selector, _)| matches_field_selector(selector, field_fqn))
             .map_or(crate::MapRepr::default(), |(_, repr)| repr.clone())
     }
 
@@ -1367,6 +1370,27 @@ pub(crate) fn matches_proto_prefix(prefix: &str, fqn_dotted: &str) -> bool {
         || prefix == fqn_dotted
         || (fqn_dotted.starts_with(prefix)
             && fqn_dotted.as_bytes().get(prefix.len()) == Some(&b'.'))
+}
+
+/// Match a field selector against a fully-qualified field path.
+///
+/// Selectors with a leading dot retain proto-segment-aware prefix matching.
+/// Selectors without one match complete trailing path segments, so `"data"`
+/// matches `".pkg.Message.data"` and `"Message.data"` matches the same field,
+/// but neither selector matches a partial segment such as `"metadata"`.
+pub(crate) fn matches_field_selector(selector: &str, field_fqn: &str) -> bool {
+    if selector.is_empty() || field_fqn.is_empty() {
+        return false;
+    }
+    if selector.starts_with('.') {
+        return matches_proto_prefix(selector, field_fqn);
+    }
+
+    let field_path = field_fqn.strip_prefix('.').unwrap_or(field_fqn);
+    field_path == selector
+        || field_path
+            .strip_suffix(selector)
+            .is_some_and(|prefix| prefix.ends_with('.'))
 }
 
 /// Look up a file-level extern mapping by exact proto file path.
@@ -2952,6 +2976,69 @@ mod tests {
         assert!(!matches_proto_prefix(".my.pk", ".my.pkg.Msg"));
         // But full-segment prefix match does.
         assert!(matches_proto_prefix(".my.pkg", ".my.pkg.Msg"));
+    }
+
+    #[test]
+    fn field_selector_leading_dot_keeps_prefix_matching() {
+        assert!(matches_field_selector(".", ".my.pkg.Msg.items"));
+        assert!(matches_field_selector(".my.pkg", ".my.pkg.Msg.items"));
+        assert!(matches_field_selector(".my.pkg.Msg", ".my.pkg.Msg.items"));
+        assert!(!matches_field_selector(".my.pk", ".my.pkg.Msg.items"));
+        // A leading-dot selector is still rooted at the proto package root.
+        assert!(!matches_field_selector(".Msg.items", ".my.pkg.Msg.items"));
+    }
+
+    #[test]
+    fn field_selector_without_dot_matches_complete_suffix_segments() {
+        assert!(matches_field_selector("items", ".my.pkg.Msg.items"));
+        assert!(matches_field_selector("Msg.items", ".my.pkg.Msg.items"));
+        assert!(matches_field_selector(
+            "my.pkg.Msg.items",
+            ".my.pkg.Msg.items"
+        ));
+        assert!(!matches_field_selector("item", ".my.pkg.Msg.items"));
+        assert!(!matches_field_selector("items", ".my.pkg.Msg.other_items"));
+        assert!(!matches_field_selector(
+            "Msg.items",
+            ".my.pkg.OtherMsg.items"
+        ));
+        assert!(!matches_field_selector(
+            "Msg.items",
+            ".my.pkg.Msg.items_extra"
+        ));
+        assert!(!matches_field_selector("", ".my.pkg.Msg.items"));
+    }
+
+    #[test]
+    fn field_representation_rules_match_suffixes_and_keep_last_match_wins() {
+        let config = CodeGenConfig {
+            bytes_fields: vec![
+                (".".into(), crate::BytesRepr::Bytes),
+                ("data".into(), crate::BytesRepr::Vec),
+                ("Message.data".into(), crate::BytesRepr::Bytes),
+            ],
+            map_fields: vec![
+                (".".into(), crate::MapRepr::HashMap),
+                ("items".into(), crate::MapRepr::BTreeMap),
+                ("Message.items".into(), crate::MapRepr::HashMap),
+            ],
+            ..CodeGenConfig::default()
+        };
+        let ctx = CodeGenContext::new(&[], &config, &[]);
+
+        // The suffix rule wins for other messages, while the later, narrower
+        // selector overrides it for Message.data.
+        assert_eq!(ctx.bytes_repr(".pkg.Other.data"), crate::BytesRepr::Vec);
+        assert_eq!(ctx.bytes_repr(".pkg.Message.data"), crate::BytesRepr::Bytes);
+        assert_eq!(
+            ctx.bytes_repr(".pkg.Other.payload"),
+            crate::BytesRepr::Bytes
+        );
+
+        // The longer suffix selector is applied after the bare field name.
+        assert_eq!(ctx.map_repr(".pkg.Other.items"), crate::MapRepr::BTreeMap);
+        assert_eq!(ctx.map_repr(".pkg.Message.items"), crate::MapRepr::HashMap);
+        assert_eq!(ctx.map_repr(".pkg.Other.entries"), crate::MapRepr::HashMap);
     }
 
     /// Resolve `fqns` under `global` + `rules` for JSON strictness, in order.

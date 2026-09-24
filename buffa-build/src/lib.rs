@@ -1075,9 +1075,11 @@ impl Config {
 
     /// Configure `bytes` fields to use `bytes::Bytes` instead of `Vec<u8>`.
     ///
-    /// Each path is a fully-qualified proto path prefix. Use `"."` to apply
-    /// to all bytes fields, or specify individual field paths like
-    /// `".my.pkg.MyMessage.data"`.
+    /// Selectors with a leading dot are proto path prefixes. Use `"."` to
+    /// apply to all bytes fields, or specify a fully-qualified field path like
+    /// `".my.pkg.MyMessage.data"`. Selectors without a leading dot match
+    /// complete trailing path segments: `"data"` matches fields named `data`,
+    /// and `"MyMessage.data"` matches fields with that message and field name.
     ///
     /// Applies uniformly to singular, optional, repeated, oneof, **and
     /// `map<K, bytes>`** values — the map case lets `view → owned`
@@ -1130,8 +1132,10 @@ impl Config {
     }
 
     /// Map `bytes` fields to a [`BytesRepr`] other than `Vec<u8>` for the given
-    /// proto path prefixes. The bytes counterpart to
-    /// [`string_type_in`](Self::string_type_in).
+    /// proto path selectors. Dot-prefixed selectors use proto path prefix
+    /// matching; selectors without a leading dot match complete trailing path
+    /// segments, as in [`use_bytes_type_in`](Self::use_bytes_type_in). The
+    /// bytes counterpart to [`string_type_in`](Self::string_type_in).
     ///
     /// Rules accumulate and the **last** matching rule wins, so call the broad
     /// [`bytes_type`](Self::bytes_type) *first*, then `bytes_type_in` for
@@ -1203,9 +1207,8 @@ impl Config {
     ///
     /// Each path is a fully-qualified proto variant path prefix, e.g.
     /// `".my.pkg.MyMessage.body.small"` for one variant or `".my.pkg"` for a
-    /// package (same matching as [`use_bytes_type_in`](Self::use_bytes_type_in)).
-    /// A leading dot is added if missing, mirroring
-    /// [`extern_path`](Self::extern_path).
+    /// package. Paths use proto-segment-aware prefix matching; a leading dot
+    /// is added if missing, mirroring [`extern_path`](Self::extern_path).
     ///
     /// Recursive variants cannot be stored inline (the type would be
     /// unsized). A rule that names a recursive variant *exactly* is rejected
@@ -1260,9 +1263,9 @@ impl Config {
     /// (orphan rule) — point at a local newtype, or the `buffa-smolstr` crate for
     /// `smol_str::SmolStr`.
     ///
-    /// Only the owned Rust type changes: the wire format is unchanged, view
-    /// types still borrow `&str`, and `map<_, string>` keys and values stay
-    /// `String`.
+    /// Only the owned Rust type changes: the wire format is unchanged and view
+    /// types still borrow `&str`. String key/value slots inside map fields use
+    /// the same configured representation as other string fields.
     ///
     /// # Example
     ///
@@ -1288,7 +1291,8 @@ impl Config {
     /// Convenience for `.string_type_in(repr, &["."])`. Call this *before* any
     /// [`string_type_in`](Self::string_type_in) overrides, since the last
     /// matching rule wins (a `"."` rule added later shadows earlier specific
-    /// rules). `map<_, string>` keys and values stay `String`.
+    /// rules). String key/value slots inside map fields use the configured
+    /// representation too.
     #[must_use]
     pub fn string_type(mut self, repr: StringRepr) -> Self {
         self.codegen_config
@@ -1334,9 +1338,10 @@ impl Config {
     }
 
     /// Map the matching `map` fields to a [`MapRepr`] other than the default
-    /// `HashMap`. Rules are matched with proto-segment-aware prefix logic; the
-    /// **last** matching rule wins, so add a broad rule first and narrower
-    /// overrides after.
+    /// `HashMap`. Dot-prefixed selectors use proto-segment-aware prefix
+    /// matching; selectors without a leading dot match complete trailing path
+    /// segments. The **last** matching rule wins, so add a broad rule first and
+    /// narrower overrides after.
     ///
     /// Use [`MapRepr::BTreeMap`] for the buffa-provided `BTreeMap` (deterministic
     /// key order, no extra dependency, no consumer code), or
@@ -1351,7 +1356,8 @@ impl Config {
     /// ```rust,ignore
     /// buffa_build::Config::new()
     ///     .map_type(buffa_build::MapRepr::BTreeMap)                       // broad default
-    ///     .map_type_in(buffa_build::MapRepr::HashMap, &[".my.pkg.Msg.cache"]) // narrow override
+    ///     .map_type_in(buffa_build::MapRepr::HashMap, &[".my.pkg.Msg.cache"]) // prefix override
+    ///     .map_type_in(buffa_build::MapRepr::BTreeMap, &["items"])           // suffix selector
     ///     .compile()
     ///     .unwrap();
     /// ```
