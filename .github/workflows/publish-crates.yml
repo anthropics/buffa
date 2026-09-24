@@ -38,9 +38,9 @@ jobs:
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable (sha-pinned)
 
       # OIDC token exchange. Skipped in dry-run (never hits crates.io) and
       # bootstrap (secret present). The action's post-step revokes the token.

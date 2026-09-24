@@ -14,7 +14,9 @@
 #
 # See `task tools-image` / `task tools-image-local` in the root Taskfile.
 
-FROM alpine:3.21 AS builder
+# Index digest of alpine:3.21 (multi-arch). A floating tag can be retargeted
+# after this file is reviewed; the digest cannot.
+FROM alpine:3.21@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507 AS builder
 
 # Build dependencies.  alpine-sdk includes make; linux-headers lets abseil
 # detect the target architecture.  libstdc++-dev supplies libstdc++.a for
@@ -24,15 +26,21 @@ RUN apk add --no-cache \
     libstdc++-dev file
 
 ARG PROTOBUF_TAG=v33.5
-ARG JSONCPP_TAG=1.9.6
+# Commits that v33.5 and jsoncpp 1.9.6 resolved to when this file was pinned.
+# Clone these, not the tags: a tag can move without a review of this file.
+ARG PROTOBUF_COMMIT=b6f9284da830b69be787732ffdaa35049d20a088
+ARG JSONCPP_COMMIT=89e2973c754a9c02a49974d839779b151e95afd6
 
 # Pre-install jsoncpp as a static library.  protobuf's conformance cmake
 # expects the `jsoncpp_lib` cmake target, which jsoncpp only creates when
 # BUILD_SHARED_LIBS=ON.  Building and installing it separately (as a static
 # library) produces the cmake config files that `find_package(jsoncpp)` needs
 # to create the expected target.
-RUN git clone --depth=1 --branch ${JSONCPP_TAG} \
-    https://github.com/open-source-parsers/jsoncpp.git /tmp/jsoncpp \
+RUN git init /tmp/jsoncpp \
+    && git -C /tmp/jsoncpp remote add origin https://github.com/open-source-parsers/jsoncpp.git \
+    && git -C /tmp/jsoncpp fetch --depth=1 origin ${JSONCPP_COMMIT} \
+    && git -C /tmp/jsoncpp checkout --detach FETCH_HEAD \
+    && test "$(git -C /tmp/jsoncpp rev-parse HEAD)" = "${JSONCPP_COMMIT}" \
     && cmake -B /tmp/jsoncpp/_build -S /tmp/jsoncpp \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_SHARED_LIBS=ON \
@@ -42,9 +50,12 @@ RUN git clone --depth=1 --branch ${JSONCPP_TAG} \
     && cmake --install /tmp/jsoncpp/_build \
     && rm -rf /tmp/jsoncpp
 
-# Clone just the tag we need (shallow clone keeps the layer small).
-RUN git clone --depth=1 --branch ${PROTOBUF_TAG} \
-    https://github.com/protocolbuffers/protobuf.git /src/protobuf
+# Clone the pinned commit (shallow fetch keeps the layer small).
+RUN git init /src/protobuf \
+    && git -C /src/protobuf remote add origin https://github.com/protocolbuffers/protobuf.git \
+    && git -C /src/protobuf fetch --depth=1 origin ${PROTOBUF_COMMIT} \
+    && git -C /src/protobuf checkout --detach FETCH_HEAD \
+    && test "$(git -C /src/protobuf rev-parse HEAD)" = "${PROTOBUF_COMMIT}"
 
 WORKDIR /src/protobuf
 
