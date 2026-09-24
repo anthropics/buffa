@@ -740,6 +740,12 @@ where
 mod tests {
     use super::*;
 
+    /// Serializes the tests below that install or clear the global registry.
+    /// `set_type_registry` replaces the JSON and the text halves together, so
+    /// the `json` and `text` tests must share one lock.
+    #[cfg(any(feature = "json", feature = "text"))]
+    static GLOBAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn default_is_empty() {
         let reg = TypeRegistry::default();
@@ -806,11 +812,6 @@ mod tests {
             assert!(reg.json_ext_by_number("test.Foo", 100).is_some());
             assert!(reg.json_ext_by_name("test.ext").is_some());
         }
-
-        /// Serializes this test with the global-registry tests in `any_registry`
-        /// and `extension_registry` — all three modules share the same two
-        /// `AtomicPtr` globals.
-        static GLOBAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
         #[test]
         fn set_type_registry_installs_json_halves() {
@@ -1081,9 +1082,6 @@ mod tests {
             );
         }
 
-        /// Serializes with other tests touching the global TEXT_ANY/TEXT_EXT.
-        static GLOBAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
         #[test]
         fn set_type_registry_installs_text_halves() {
             let _g = GLOBAL_LOCK.lock().unwrap();
@@ -1113,6 +1111,48 @@ mod tests {
 
             clear_text_registry();
             assert!(global_text_any("type.example.com/Global").is_none());
+        }
+
+        #[test]
+        fn bracketed_names_with_trivia_resolve_through_the_registry() {
+            let _g = GLOBAL_LOCK.lock().unwrap();
+
+            let mut reg = TypeRegistry::new();
+            reg.register_text_any(TextAnyEntry {
+                type_url: "type.example.com/pkg.Inner",
+                text_encode: any_encode_text::<Inner>,
+                text_merge: any_merge_text::<Inner>,
+            });
+            reg.register_text_ext(TextExtEntry {
+                number: 77,
+                full_name: "pkg.trivia_ext",
+                extendee: "pkg.Msg",
+                text_encode: message_encode_text::<Inner>,
+                text_merge: message_merge_text::<Inner>,
+            });
+            set_type_registry(reg);
+
+            let input = "[ type.example.com / # ] is comment text\n pkg . Inner ] { n: 7 }";
+            let mut dec = crate::text::TextDecoder::new(input);
+            let name = dec.read_field_name().unwrap().unwrap();
+            let (url, value) = dec.read_any_expansion(name).unwrap();
+            assert_eq!(url, "type.example.com/pkg.Inner");
+            assert_eq!(value, alloc::vec![0x08, 0x07]);
+
+            let input = "[ pkg . # ] is comment text\n trivia_ext ] { n: 7 }";
+            let mut dec = crate::text::TextDecoder::new(input);
+            let name = dec.read_field_name().unwrap().unwrap();
+            let records = dec.read_extension(name, "pkg.Msg").unwrap();
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].number, 77);
+
+            // Stripping trivia does not make an unregistered name resolve.
+            let mut dec = crate::text::TextDecoder::new("[ pkg . other_ext ] { n: 7 }");
+            let name = dec.read_field_name().unwrap().unwrap();
+            let err = dec.read_extension(name, "pkg.Msg").unwrap_err();
+            assert_eq!(err.kind, crate::text::ParseErrorKind::UnknownField);
+
+            clear_text_registry();
         }
     }
 }

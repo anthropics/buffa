@@ -1047,6 +1047,114 @@ fn for_each_set_agrees_with_has_on_containers() {
 }
 
 #[test]
+fn iter_set_fields_on_an_empty_message_yields_nothing() {
+    let p = pool();
+    let scalars_idx = p.message_index("reflect.test.Scalars").unwrap();
+    let msg = DynamicMessage::new(Arc::clone(&p), scalars_idx);
+    assert_eq!(msg.iter_set_fields().count(), 0);
+}
+
+/// Asserts that `iter_set_fields` yields exactly `expected`, in that order,
+/// and that `for_each_set`, `.rev()` and a clone taken mid-iteration agree.
+fn assert_iter_set_fields_yields(msg: &DynamicMessage, expected: &[u32]) {
+    let forward: Vec<u32> = msg.iter_set_fields().map(|(fd, _)| fd.number()).collect();
+    assert_eq!(forward, expected);
+
+    let mut via_callback = Vec::new();
+    msg.for_each_set(&mut |fd, _| via_callback.push(fd.number()));
+    assert_eq!(via_callback, expected);
+
+    let reversed: Vec<u32> = msg
+        .iter_set_fields()
+        .rev()
+        .map(|(fd, _)| fd.number())
+        .collect();
+    let expected_reversed: Vec<u32> = expected.iter().rev().copied().collect();
+    assert_eq!(reversed, expected_reversed);
+
+    let mut partly_consumed = msg.iter_set_fields();
+    assert_eq!(
+        partly_consumed.next().map(|(fd, _)| fd.number()),
+        expected.first().copied()
+    );
+    let from_clone: Vec<u32> = partly_consumed.clone().map(|(fd, _)| fd.number()).collect();
+    let from_original: Vec<u32> = partly_consumed.map(|(fd, _)| fd.number()).collect();
+    let rest = expected.get(1..).unwrap_or_default();
+    assert_eq!(from_clone, rest);
+    assert_eq!(from_original, rest);
+}
+
+#[test]
+fn iter_set_fields_yields_present_fields_in_ascending_number_order() {
+    let p = pool();
+
+    // Fields are set in descending order so insertion order cannot pass.
+    let scalars_idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut scalars = DynamicMessage::new(Arc::clone(&p), scalars_idx);
+    // Explicit presence at the default: present.
+    scalars.set(md.field(16).unwrap(), Value::I32(0));
+    // Implicit presence at the default: absent.
+    scalars.set(md.field(14).unwrap(), Value::String(String::new()));
+    scalars.set(md.field(13).unwrap(), Value::Bool(false));
+    scalars.set(md.field(3).unwrap(), Value::I32(0));
+    // Implicit presence, non-default: present.
+    scalars.set(md.field(4).unwrap(), Value::I64(7));
+    scalars.set(md.field(1).unwrap(), Value::F64(1.5));
+    assert_iter_set_fields_yields(&scalars, &[1, 4, 16]);
+
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let md = p.message_by_name("reflect.test.Containers").unwrap();
+    let mut containers = DynamicMessage::new(Arc::clone(&p), containers_idx);
+    let mut tags = MapValue::new();
+    tags.insert(MapKey::String("k".into()), Value::I32(1));
+    containers.set(
+        md.field(7).unwrap(),
+        Value::List(vec![Value::EnumNumber(1), Value::EnumNumber(2)]),
+    );
+    // Implicit-presence enum at its default (0): absent.
+    containers.set(md.field(6).unwrap(), Value::EnumNumber(0));
+    // Empty map and empty list: absent.
+    containers.set(md.field(4).unwrap(), Value::Map(MapValue::new()));
+    containers.set(md.field(3).unwrap(), Value::Map(tags));
+    containers.set(
+        md.field(2).unwrap(),
+        Value::List(vec![Value::String("s".into())]),
+    );
+    containers.set(md.field(1).unwrap(), Value::List(Vec::new()));
+    assert_iter_set_fields_yields(&containers, &[2, 3, 7]);
+}
+
+#[test]
+fn iter_set_fields_items_outlive_the_iteration() {
+    // A nested message collected from the iterator is read after the loop ends.
+    let p = pool();
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let containers_md = p.message_by_name("reflect.test.Containers").unwrap();
+    let inner_idx = p.message_index("reflect.test.Inner").unwrap();
+    let inner_md = p.message_by_name("reflect.test.Inner").unwrap();
+
+    let mut inner = DynamicMessage::new(Arc::clone(&p), inner_idx);
+    inner.set(inner_md.field(1).unwrap(), Value::String("child".into()));
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), containers_idx);
+    msg.set(containers_md.field(5).unwrap(), Value::Message(inner));
+
+    let worklist: Vec<_> = msg.iter_set_fields().collect();
+    assert_eq!(worklist.len(), 1);
+
+    let (fd, value) = worklist[0];
+    assert_eq!(fd.number(), 5);
+    let Value::Message(nested) = value else {
+        panic!("expected a message value, got {value:?}");
+    };
+    match nested.get(inner_md.field(1).unwrap()) {
+        ValueRef::String(s) => assert_eq!(s, "child"),
+        other => panic!("expected a string, got {other:?}"),
+    }
+}
+
+#[test]
 fn which_oneof_resolves_set_member() {
     let p = pool();
     let oneof_idx = p.message_index("reflect.test.OneOf").unwrap();
@@ -1869,6 +1977,131 @@ fn reflective_closed_enum_elements_are_charged_element_memory() {
     );
 }
 
+/// `fixedw.Packed { repeated fixed32 narrow = 1; repeated double wide = 2; }`.
+/// The protoc-compiled test schema has no repeated fixed-width field.
+fn fixed_width_pool() -> Arc<DescriptorPool> {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let repeated = |name: &str, number: i32, r#type: Type| FieldDescriptorProto {
+        name: Some(name.into()),
+        number: Some(number),
+        label: Some(Label::LABEL_REPEATED),
+        r#type: Some(r#type),
+        ..Default::default()
+    };
+    let file = FileDescriptorProto {
+        name: Some("fixedw.proto".into()),
+        package: Some("fixedw".into()),
+        syntax: Some("proto3".into()),
+        message_type: vec![DescriptorProto {
+            name: Some("Packed".into()),
+            field: vec![
+                repeated("narrow", 1, Type::TYPE_FIXED32),
+                repeated("wide", 2, Type::TYPE_DOUBLE),
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    Arc::new(
+        DescriptorPool::new(FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        })
+        .expect("pool builds from hand-built descriptor"),
+    )
+}
+
+/// One packed record for field `number` whose payload is `payload` verbatim.
+fn packed_record(number: u32, payload: &[u8]) -> Vec<u8> {
+    let mut wire = Vec::new();
+    Tag::new(number, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(payload.len() as u64, &mut wire);
+    wire.extend_from_slice(payload);
+    wire
+}
+
+/// A packed fixed-width payload states its element count up front, and each
+/// element becomes a `Value` several times its wire size. The up-front
+/// reservation has to stay inside the element-memory budget just as the
+/// per-element charge does.
+#[test]
+fn packed_fixed_width_reservation_is_capped_by_element_memory() {
+    use buffa::DecodeOptions;
+
+    let p = fixed_width_pool();
+    let idx = p.message_index("fixedw.Packed").unwrap();
+    let value_size = core::mem::size_of::<Value>();
+    let budget_elements = 16;
+    let opts = DecodeOptions::new().with_element_memory_limit(budget_elements * value_size);
+
+    for (number, width) in [(1, 4), (2, 8)] {
+        let wire = packed_record(number, &vec![0u8; 1000 * width]);
+        // `merge_with_options` leaves what it decoded in place on error, which
+        // is what makes the list's capacity observable.
+        let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+        assert_eq!(
+            msg.merge_with_options(&wire, &opts),
+            Err(DecodeError::ElementMemoryLimitExceeded),
+            "field {number}"
+        );
+        let Some(Value::List(list)) = msg.field_by_number(number) else {
+            panic!("field {number} holds the elements decoded before the limit");
+        };
+        assert_eq!(list.len(), budget_elements, "field {number}");
+        // `Vec` may round a reservation up, so allow amortized growth's
+        // factor of two. An unclamped reservation would be 1000 elements.
+        assert!(
+            list.capacity() <= 2 * budget_elements,
+            "field {number}: reserved {} elements under a budget of {budget_elements}",
+            list.capacity()
+        );
+    }
+}
+
+#[test]
+fn packed_fixed_width_records_for_one_field_concatenate() {
+    let p = fixed_width_pool();
+    let idx = p.message_index("fixedw.Packed").unwrap();
+
+    let first: Vec<u8> = [1u32, 2].iter().flat_map(|v| v.to_le_bytes()).collect();
+    let second: Vec<u8> = [3u32, 4, 5].iter().flat_map(|v| v.to_le_bytes()).collect();
+    let mut wire = packed_record(1, &first);
+    wire.extend(packed_record(1, &second));
+    wire.extend(packed_record(2, &1.5f64.to_le_bytes()));
+    wire.extend(packed_record(2, &(-2.5f64).to_le_bytes()));
+
+    let msg = DynamicMessage::decode(Arc::clone(&p), idx, &wire).unwrap();
+    assert_eq!(
+        msg.field_by_number(1),
+        Some(&Value::List((1..=5).map(Value::U32).collect()))
+    );
+    assert_eq!(
+        msg.field_by_number(2),
+        Some(&Value::List(vec![Value::F64(1.5), Value::F64(-2.5)]))
+    );
+}
+
+/// A payload that is not a whole number of elements decodes the complete
+/// elements and then runs out of bytes inside the last one.
+#[test]
+fn packed_fixed_width_payload_with_a_partial_element_is_eof() {
+    let p = fixed_width_pool();
+    let idx = p.message_index("fixedw.Packed").unwrap();
+
+    for (number, len) in [(1, 6), (1, 3), (2, 12), (2, 7)] {
+        let wire = packed_record(number, &vec![0u8; len]);
+        assert_eq!(
+            DynamicMessage::decode(Arc::clone(&p), idx, &wire).err(),
+            Some(DecodeError::UnexpectedEof),
+            "field {number}, {len}-byte payload"
+        );
+    }
+}
+
 /// Reflective map decode must not be quadratic in the entry count.
 ///
 /// `MapValue` is a sorted `Vec`, so a sorted insert per wire entry shifts the
@@ -2134,4 +2367,153 @@ fn empty_message_reads_nest_and_do_not_keep_the_pool_alive() {
     drop(file);
     drop(p);
     assert!(weak.upgrade().is_none(), "the pool must be freed");
+}
+
+#[test]
+fn take_field_returns_owned_value_and_respects_presence() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+
+    // A non-default implicit-presence value is returned and removed.
+    let text = md.field(14).unwrap();
+    msg.set(text, Value::String("hello".into()));
+    assert_eq!(msg.take_field(text), Some(Value::String("hello".into())));
+    assert!(msg.field_by_number(14).is_none());
+    assert_eq!(msg.take_field(text), None);
+
+    // A stored implicit default is not semantically present, but is still
+    // cleared from the backing map.
+    let implicit = md.field(3).unwrap();
+    msg.set(implicit, Value::I32(0));
+    assert!(!msg.has(implicit));
+    assert_eq!(msg.field_by_number(3), Some(&Value::I32(0)));
+    assert_eq!(msg.take_field(implicit), None);
+    assert!(msg.field_by_number(3).is_none());
+
+    // Explicit presence preserves a default-valued field as a real value.
+    let explicit = md.field(16).unwrap();
+    msg.set(explicit, Value::I32(0));
+    assert!(msg.has(explicit));
+    assert_eq!(msg.take_field(explicit), Some(Value::I32(0)));
+    assert!(!msg.has(explicit));
+}
+
+#[test]
+fn take_field_moves_out_containers_and_skips_empty_ones() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let md = p.message_by_name("reflect.test.Containers").unwrap();
+    let inner_idx = p.message_index("reflect.test.Inner").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+
+    let nested = md.field(5).unwrap();
+    msg.set(
+        nested,
+        Value::Message(DynamicMessage::new(Arc::clone(&p), inner_idx)),
+    );
+    assert!(matches!(msg.take_field(nested), Some(Value::Message(_))));
+    assert!(!msg.has(nested));
+
+    let strings = md.field(2).unwrap();
+    msg.set(strings, Value::List(vec![Value::String("a".into())]));
+    assert_eq!(
+        msg.take_field(strings),
+        Some(Value::List(vec![Value::String("a".into())]))
+    );
+
+    // An empty list is stored but not set, so it is removed and not returned.
+    msg.set(strings, Value::List(Vec::new()));
+    assert!(msg.field_by_number(2).is_some());
+    assert_eq!(msg.take_field(strings), None);
+    assert!(msg.field_by_number(2).is_none());
+}
+
+#[test]
+fn take_field_of_a_oneof_member_leaves_the_oneof_unset() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.OneOf").unwrap();
+    let md = p.message_by_name("reflect.test.OneOf").unwrap();
+    let oneof = &md.oneofs()[0];
+    let text = md.field(2).unwrap();
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+    msg.set(text, Value::String("hello".into()));
+    assert_eq!(msg.take_field(text), Some(Value::String("hello".into())));
+    assert!(msg.which_oneof(oneof).is_none());
+}
+
+#[test]
+fn take_field_by_number_follows_the_same_presence_rule() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+
+    msg.set(md.field(14).unwrap(), Value::String("hello".into()));
+    assert_eq!(
+        msg.take_field_by_number(14),
+        Some(Value::String("hello".into()))
+    );
+    assert_eq!(msg.take_field_by_number(14), None);
+
+    // A stored implicit default is removed and not returned.
+    msg.set(md.field(3).unwrap(), Value::I32(0));
+    assert_eq!(msg.take_field_by_number(3), None);
+    assert!(msg.field_by_number(3).is_none());
+
+    // No field 9999 on this message.
+    assert_eq!(msg.take_field_by_number(9999), None);
+}
+
+#[test]
+fn try_take_field_rejects_a_foreign_descriptor_and_leaves_the_field() {
+    let p = foreign_field_pool();
+    let owner_idx = p.message_index("foreign.test.Owner").unwrap();
+    let owner_field = p
+        .message_by_name("foreign.test.Owner")
+        .unwrap()
+        .field(1)
+        .unwrap();
+    // Same number, different message type.
+    let foreign = p
+        .message_by_name("foreign.test.Foreign")
+        .unwrap()
+        .field(1)
+        .unwrap();
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), owner_idx);
+    msg.set(owner_field, Value::String("kept".into()));
+
+    let err = msg.try_take_field(foreign).unwrap_err();
+    assert!(matches!(
+        err,
+        ReflectError::FieldNotMember {
+            ref message,
+            ref field_name,
+            number,
+        } if message == "foreign.test.Owner" && field_name == "alien" && number == 1
+    ));
+    assert_eq!(msg.field_by_number(1), Some(&Value::String("kept".into())));
+
+    assert_eq!(
+        msg.try_take_field(owner_field),
+        Ok(Some(Value::String("kept".into())))
+    );
+}
+
+#[test]
+#[should_panic(expected = "is not a member of foreign.test.Owner")]
+fn take_field_panics_on_a_foreign_descriptor() {
+    let p = foreign_field_pool();
+    let owner_idx = p.message_index("foreign.test.Owner").unwrap();
+    let foreign = p
+        .message_by_name("foreign.test.Foreign")
+        .unwrap()
+        .field(1)
+        .unwrap();
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), owner_idx);
+    let _ = msg.take_field(foreign);
 }

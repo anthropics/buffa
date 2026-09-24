@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`MessageField` equality is inlined into its callers** (#455, refs #450). `PartialEq::eq` compared an unset field with a set one through `DefaultInstance::default_instance()`, whose one-time initialisation was inlined into `eq` and kept `eq` itself a function call, even for two set fields. Those two comparisons are now separate functions and `eq` is `#[inline]`. The keyed-list diff reported in #450, which compares message-typed keys in a loop, went from about 8.7 µs to 3.6 µs per operation in the reporter's measurement, level with the same code on prost. Equality is unchanged, including unset == set-to-default.
+time: 2026-09-21T13:29:00+02:00

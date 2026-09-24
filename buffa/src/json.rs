@@ -5,6 +5,14 @@
 //! option, matching the per-call semantics of C++ and Java reference
 //! implementations.
 //!
+//! The options here are runtime ones: unknown enum *values*
+//! ([`JsonParseOptions::ignore_unknown_enum_values`]) and unregistered
+//! extension keys ([`JsonParseOptions::strict_extension_keys`]). Unknown
+//! *field names* are not governed here: generated deserializers ignore them
+//! unless the code was generated with
+//! `buffa_build::Config::deny_unknown_json_fields` (or its path-scoped
+//! `deny_unknown_json_fields_in`).
+//!
 //! # Two mutually exclusive APIs: scoped (std) vs global (no_std)
 //!
 //! Serde's `Deserialize` trait has no context parameter, so runtime options
@@ -92,6 +100,12 @@ pub struct JsonParseOptions {
     /// Extendee mismatch (key IS registered but extends a different message)
     /// always errors regardless of this flag — that's a contract violation,
     /// not a mere miss.
+    ///
+    /// This flag covers `"[pkg.ext]"` keys only, and only for messages that
+    /// preserve unknown fields. Ordinary unknown field names are governed by
+    /// the codegen option `buffa_build::Config::deny_unknown_json_fields`,
+    /// which also rejects `"[pkg.ext]"` keys on a message generated with
+    /// preservation off.
     pub strict_extension_keys: bool,
 }
 

@@ -209,6 +209,22 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                 ));
             }
             "json" => codegen.generate_json = parse_bool("json", value)?,
+            // Reject unknown JSON keys instead of ignoring them. Without
+            // `json=true` it changes nothing and codegen warns.
+            "deny_unknown_json_fields" => {
+                codegen.deny_unknown_json_fields = parse_bool("deny_unknown_json_fields", value)?
+            }
+            // Repeatable. Enables strict JSON parsing for matching messages
+            // (and the messages nested in them) on top of the global
+            // `deny_unknown_json_fields` default, whatever the option order;
+            // last matching rule wins. Same path grammar as
+            // `unknown_fields_in`.
+            "deny_unknown_json_fields_in" => {
+                codegen.deny_unknown_json_fields_in.push((
+                    normalize_proto_path(value.trim(), "deny_unknown_json_fields_in")?,
+                    true,
+                ));
+            }
             "text" => codegen.generate_text = parse_bool("text", value)?,
             "arbitrary" => codegen.generate_arbitrary = parse_bool("arbitrary", value)?,
             // `gate_impls=true` wraps generated impls in `#[cfg(feature = ...)]`
@@ -297,6 +313,12 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             // JSON, and text-format names are unaffected. Default off.
             "idiomatic_field_names" => {
                 codegen.idiomatic_field_names = parse_bool("idiomatic_field_names", value)?
+            }
+            // `idiomatic_enum_aliases=false` omits the `UpperCamelCase`
+            // associated-const aliases for enum values. The
+            // `SHOUTY_SNAKE_CASE` variants are unaffected. Default on.
+            "idiomatic_enum_aliases" => {
+                codegen.idiomatic_enum_aliases = parse_bool("idiomatic_enum_aliases", value)?
             }
             // `unbox_oneof=true` opts every non-recursive message/group
             // variant into inline storage. Path-scoped rules use the
@@ -591,6 +613,34 @@ mod tests {
     }
 
     #[test]
+    fn deny_unknown_json_fields_options_parse() {
+        let config = parse_config(
+            "json=true,deny_unknown_json_fields=true,deny_unknown_json_fields_in=demo.Cfg,\
+             deny_unknown_json_fields_in=.demo.Other.",
+        )
+        .unwrap();
+        assert!(config.codegen.deny_unknown_json_fields);
+        assert_eq!(
+            config.codegen.deny_unknown_json_fields_in,
+            vec![
+                (".demo.Cfg".to_string(), true),
+                (".demo.Other".to_string(), true),
+            ]
+        );
+    }
+
+    #[test]
+    fn deny_unknown_json_fields_in_rejects_empty_or_whitespace() {
+        for params in [
+            "deny_unknown_json_fields_in=",
+            "deny_unknown_json_fields_in=   ",
+            "deny_unknown_json_fields_in=...",
+        ] {
+            assert!(parse_config(params).is_err(), "{params}");
+        }
+    }
+
+    #[test]
     fn unknown_fields_in_is_repeatable_and_normalized() {
         let config = parse_config(
             "unknown_fields_in=wa.Keep,unknown_fields=false,unknown_fields_in=.wa.Also.,unknown_fields_in= . ",
@@ -654,6 +704,26 @@ mod tests {
     fn idiomatic_field_names_defaults_off() {
         let config = parse_config("").unwrap();
         assert!(!config.codegen.idiomatic_field_names);
+    }
+
+    #[test]
+    fn idiomatic_enum_aliases_can_be_disabled_and_reenabled() {
+        let config = parse_config("").unwrap();
+        assert!(config.codegen.idiomatic_enum_aliases);
+
+        let config = parse_config("idiomatic_enum_aliases=false").unwrap();
+        assert!(!config.codegen.idiomatic_enum_aliases);
+
+        let config =
+            parse_config("idiomatic_enum_aliases=false,idiomatic_enum_aliases=true").unwrap();
+        assert!(config.codegen.idiomatic_enum_aliases);
+    }
+
+    #[test]
+    fn idiomatic_enum_aliases_rejects_non_boolean_values() {
+        let err = parse_err("idiomatic_enum_aliases=1");
+        assert!(err.contains("idiomatic_enum_aliases"));
+        assert!(err.contains("expected true or false"));
     }
 
     #[test]

@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Textproto accepts `#` comments between adjacent string literals** (#461). Adjacent quoted literals are concatenated into one value, but the lexer skipped only whitespace between them, so `value: "foo" # note` followed on the next line by `"bar"` failed to parse. That input now decodes as `"foobar"`, as it does in protobuf-go and C++.
+time: 2026-09-21T16:14:00+02:00

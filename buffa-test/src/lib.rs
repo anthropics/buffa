@@ -820,6 +820,21 @@ pub mod custopts {
     buffa::include_proto!("buffa.test.options");
 }
 
+/// Strict JSON unknown-field rejection — `deny_unknown_json_fields_in` over
+/// the derive path, the hand-written-visitor path and the extension path, with
+/// lenient siblings in the same module as the control.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod strictjson {
+    buffa::include_proto!("buffa.test.strictjson");
+}
+
+/// Strict JSON unknown-field rejection, proto3 field shapes — the mixed-shape
+/// message that checks nothing drops out of the accepted-key list.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod strictjson3 {
+    buffa::include_proto!("buffa.test.strictjson3");
+}
+
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,
@@ -1003,6 +1018,38 @@ pub mod string_proto2 {
 )]
 pub mod basic_no_uf {
     include!(concat!(env!("OUT_DIR"), "/no_unknown_views/basic.mod.rs"));
+}
+
+// Self-recursive messages with preserve_unknown_fields=false: #449. The eager
+// views need the generated lifetime anchor to compile at all, and the lazy ones
+// must keep compiling without it, so both families are built here and compiling
+// this module is the coverage for the generated code. Which structs carry the
+// marker is asserted in both directions in
+// `buffa-codegen/src/tests/lifetime_anchor.rs`.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod self_recursive_views {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/self_recursive_views/test.selfrecursive.mod.rs"
+    ));
+}
+
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod self_recursive_lazy {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/self_recursive_lazy/test.selfrecursive.mod.rs"
+    ));
 }
 
 // These tests intentionally use the field-assignment style

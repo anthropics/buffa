@@ -201,6 +201,8 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.generate_views(bool)` | `true` | Generate zero-copy view types |
 | `.generate_json(bool)` | `false` | Generate serde Serialize/Deserialize for proto3 JSON |
 | `.generate_text(bool)` | `false` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
+| `.deny_unknown_json_fields(bool)` | `false` | Reject unknown keys when parsing JSON instead of ignoring them; see [Unknown fields in JSON](#unknown-fields-in-json) |
+| `.deny_unknown_json_fields_in(&[...])` | — | Reject unknown JSON keys for matching messages and the messages nested in them (proto-path prefixes), on top of the global setting. Rules can only enable |
 | `.preserve_unknown_fields(bool)` | `true` | Preserve unknown fields for round-trip fidelity |
 | `.preserve_unknown_fields_in(&[...])` | — | Re-enable unknown-field preservation for matching messages and the messages nested in them (proto-path prefixes). Pair with `.preserve_unknown_fields(false)` to keep the memory savings globally while selected types still round-trip; see [Path-scoped re-enable](#path-scoped-re-enable) |
 | `.override_feature_in(path, feature)` | — | Apply a path-scoped editions feature override to the compiled descriptors — for protos you cannot modify; see [Enums](#enumvaluet--type-safe-open-enums) for the `enum_type` override's semantics |
@@ -609,6 +611,8 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `text=true` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
 | `unknown_fields=false` | Disable unknown field preservation |
 | `unknown_fields_in=<path>` | Re-enable unknown-field preservation for matching messages and the messages nested in them. Repeatable; same proto-path prefix matching as `open_enums_in`; see [Path-scoped re-enable](#path-scoped-re-enable) |
+| `deny_unknown_json_fields=true` | Reject unknown keys when parsing JSON instead of ignoring them; without `json=true` it changes nothing and the plugin prints a warning. See [Unknown fields in JSON](#unknown-fields-in-json) |
+| `deny_unknown_json_fields_in=<path>` | Reject unknown JSON keys for matching messages and the messages nested in them; rules can only enable, and need `json=true` like the global option. Repeatable; same proto-path prefix matching as `unknown_fields_in`. See [Unknown fields in JSON](#unknown-fields-in-json) |
 | `arbitrary=true` | Emit `#[derive(arbitrary::Arbitrary)]` for fuzzing |
 | `gate_impls=true` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface (default: emitted unconditionally) |
 | `json_feature=<name>` | Rename the crate feature a gated impl kind is conditioned on (also `views_feature=`, `text_feature=`, `reflect_feature=`); inert without `gate_impls=true` |
@@ -618,6 +622,8 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `allow_message_set=true` | Permit `option message_set_wire_format = true;` instead of rejecting it (default: false) |
 | `strict_utf8=true` | Map `string` fields to `Vec<u8>`/`&[u8]` (no UTF-8 validation) instead of `String`/`&str`. Alias: `strict_utf8_mapping`. |
 | `type_name_prefix=<prefix>` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`) |
+| `idiomatic_field_names=true` | Convert camelCase proto field and oneof names to snake_case Rust identifiers (`webMessageInfo` → `web_message_info`) (default: false). JSON, text-format and reflection names are unchanged. A converted field that collides with another member (proto2 only) gets an `_f<number>` suffix, with a build warning |
+| `idiomatic_enum_aliases=false` | Omit the `UpperCamelCase` associated-const aliases for enum values (`Status::Active`); the `SHOUTY_SNAKE_CASE` variants are unaffected (default: emitted). See [Enums](#enumvaluet--type-safe-open-enums) |
 | `override_feature_in=<path>=<feature>:<value>` | Apply a path-scoped editions feature override (currently `enum_type:OPEN`) to the compiled descriptors. Repeatable |
 | `open_enums_in=<path>` | Shorthand for `override_feature_in=<path>=enum_type:OPEN`. Repeatable |
 | `unbox_oneof=true` | Store every non-recursive message/group oneof variant inline instead of `Box<T>`. Recursive variants stay boxed. |
@@ -881,7 +887,7 @@ assert_eq!(Status::values().len(), 3);
 
 Aliases (additional names sharing an existing value, allowed by `option allow_alias = true`) are not enum variants in Rust — they're emitted as `pub const` aliases — so they don't appear in `values()`.
 
-**Idiomatic `UpperCamelCase` aliases.** Generated enums also carry one associated `const` per value with the enum-name prefix (if present) stripped and the rest converted to `UpperCamelCase` — for the `Status` example above, `Status::ACTIVE` is also reachable as `Status::Active`, and a prefixed value like `STATUS_ACTIVE` would produce the same alias. The aliases work in expressions and in `match` patterns, and like the `allow_alias` consts they don't appear in `values()` or in `Debug` output. If two values of an enum would collide after conversion, the aliases are suppressed for that enum as a whole, with a build warning. Disable per compilation unit with `.idiomatic_enum_aliases(false)`.
+**Idiomatic `UpperCamelCase` aliases.** Generated enums also carry one associated `const` per value with the enum-name prefix (if present) stripped and the rest converted to `UpperCamelCase` — for the `Status` example above, `Status::ACTIVE` is also reachable as `Status::Active`, and a prefixed value like `STATUS_ACTIVE` would produce the same alias. The aliases work in expressions and in `match` patterns, and like the `allow_alias` consts they don't appear in `values()` or in `Debug` output. If two values of an enum would collide after conversion, the aliases are suppressed for that enum as a whole, with a build warning. Disable per compilation unit with `.idiomatic_enum_aliases(false)` on the `buffa_build::Config` builder, or `idiomatic_enum_aliases=false` as a `protoc-gen-buffa` plugin option. With the aliases disabled, the consts are not generated, so code that references `Status::Active` no longer compiles; `Status::ACTIVE` is unaffected.
 
 ### Oneofs
 
@@ -1570,6 +1576,80 @@ JSON. Which mechanism the generated path should use is still open in
 (`DynamicMessage::from_json`) is already bounded — see
 [the limits section](#what-these-limits-do-and-do-not-bound).
 
+### Unknown fields in JSON
+
+Generated JSON deserializers **ignore** unknown keys by default, so a
+misspelled or wrong-schema key parses into a default message rather than an
+error — and `.validate()` then runs against a well-formed default, so the
+mistake is silent in both directions. buffa's other two decoders are
+strict: generated textproto parsers reject unknown field names (see
+[Text format](#text-format-textproto)), and so does the reflective JSON
+decoder (`DynamicMessage::from_json`; `from_json_ignoring_unknown` opts out), which is
+also what proto3's JSON mapping specifies.
+
+Opt into the strict behaviour at codegen time:
+
+```rust,ignore
+// build.rs
+buffa_build::Config::new()
+    .files(&["proto/device.proto"])
+    .includes(&["proto/"])
+    .generate_json(true)
+    .deny_unknown_json_fields(true)
+    // or, per message / package:
+    // .deny_unknown_json_fields_in(&[".device.Config"])
+    .compile()
+    .unwrap();
+```
+
+For `message Config { int32 max_items = 1; string name = 2; bool enabled = 3; }`,
+the misspelled key `maxItemsTypo` produces this error:
+
+```text
+unknown field `maxItemsTypo`, expected one of `maxItems`, `max_items`, `name`, `enabled`
+```
+
+Both spellings of every field stay accepted — the option rejects keys that
+match *no* field, not the proto-name spelling. Messages whose `Deserialize` is
+hand-written (those with a oneof, or with extension ranges under preservation)
+report through the same serde constructor as the derived ones, so the
+diagnostic does not depend on a message's shape.
+
+The option is a codegen-time switch rather than a
+[`JsonParseOptions`](#json-parse-options) flag, because serde's derive has no
+runtime hook. A runtime flag has two possible designs. The first leaves
+derive-path messages lenient, which makes strictness depend on whether a
+message happens to declare a oneof. The second emits the hand-written visitor
+for the messages a rule names, so their terminal arm can consult the ambient
+state. The codegen-time switch costs nothing when off and needs no ambient
+state on `no_std`.
+
+A codegen-time switch fixes strictness in the generated type. A library crate
+that publishes those types decides for its consumers, who have no override
+short of regenerating, and one process cannot hold both behaviours for the
+same type. A caller that must be lenient for some inputs and strict for others
+needs a runtime override, which buffa does not have yet. The second design
+would provide one, and only opted-in messages would pay for it;
+[#444](https://github.com/anthropics/buffa/issues/444) tracks it.
+
+Weigh these consequences before you enable the option for every message:
+
+- Keys your schema no longer declares are rejected, so a client still sending
+  a removed field starts failing instead of being ignored. That is the point of
+  the option, but it is a wire-compatibility decision.
+- For a message with `extensions N to M;` and preservation **off** there is no
+  extension arm, so `[pkg.ext]` keys are unknown keys like any other and are
+  rejected too. With preservation on they keep going through the extension
+  registry, where `JsonParseOptions::strict_extension_keys` governs
+  unregistered ones.
+- Only messages generated in this run become strict. A field whose type comes
+  from another crate through `extern_path` still ignores unknown keys inside
+  it, unless that crate was generated with the option too.
+- The option emits `#[serde(deny_unknown_fields)]` on messages that derive
+  `Deserialize`. If you already add that attribute yourself through
+  `type_attribute`, remove it first; serde rejects the duplicate at compile
+  time.
+
 ### JSON parse options
 
 For lenient parsing (e.g., ignoring unknown enum string values):
@@ -1908,6 +1988,12 @@ let opts = JsonParseOptions::new().strict_extension_keys(true);
 let msg = with_json_parse_options(&opts, || serde_json::from_str::<MyMsg>(json))?;
 ```
 
+`strict_extension_keys` covers `"[...]"` keys only. Ordinary unknown field
+names are governed by the codegen-time
+[`deny_unknown_json_fields`](#unknown-fields-in-json) instead; that section
+also says what happens to `"[...]"` keys on a message generated with
+unknown-field preservation off.
+
 ### MessageSet
 
 `option message_set_wire_format = true` is a legacy Google-internal wire
@@ -2214,6 +2300,8 @@ By default, buffa preserves fields that aren't recognized by the current schema.
 
 Unknown fields are stored in the `__buffa_unknown_fields` field on every generated struct.
 
+This is about the binary wire format. Unknown *keys* in JSON are a separate question — they are ignored rather than preserved, and rejecting them is opt-in; see [Unknown fields in JSON](#unknown-fields-in-json).
+
 ### Disabling preservation
 
 To disable (omits the `UnknownFields` field from generated structs entirely):
@@ -2231,6 +2319,8 @@ either way, because the unknown-field branch never fires. Carrying the handle
 still shapes how the compiler moves the view, though, which costs view-decode
 throughput on message-dense shapes. Disabling is what removes the field
 outright, and it is the lever for a hot view-decode path.
+
+A view struct whose fields do not borrow the decode buffer itself carries a `#[doc(hidden)] __buffa_phantom: PhantomData<&'a ()>` marker so that its lifetime parameter is used non-recursively. That is an all-scalar message and, in eager views, a message whose fields reach `'a` solely through another view (a self-reference, a `oneof` of messages, or two messages that reference each other); a lazy view's message field borrows the buffer itself and needs no marker. The marker is zero-sized and absent from serialized output, but it is a public field, so construct or destructure such a view with `..Default::default()` rather than exhaustively.
 
 Leave preservation enabled unless you are memory-constrained (embedded / `no_std`
 targets) or maintain large in-memory collections of small messages where struct

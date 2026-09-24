@@ -371,7 +371,6 @@ impl DynamicMessage {
     /// Returns a `serde_json::Error` if the input is not valid JSON, does
     /// not match the message descriptor, or would materialize more element
     /// memory than the default budget allows.
-    #[cfg(feature = "std")]
     pub fn from_json(
         pool: Arc<DescriptorPool>,
         msg_idx: MessageIndex,
@@ -406,7 +405,6 @@ impl DynamicMessage {
     /// Returns a `serde_json::Error` if the input is not valid JSON, a
     /// *known* field does not match its descriptor, or the parse would
     /// exceed the element-memory budget.
-    #[cfg(feature = "std")]
     pub fn from_json_ignoring_unknown(
         pool: Arc<DescriptorPool>,
         msg_idx: MessageIndex,
@@ -428,7 +426,6 @@ impl DynamicMessage {
     /// message nesting, counting `google.protobuf.Any` payloads, exceeds
     /// [`buffa::RECURSION_LIMIT`] (see the [`Serialize`] impl), or when an
     /// `Any` names a type that is not in the pool.
-    #[cfg(feature = "std")]
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
     }

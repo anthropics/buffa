@@ -718,6 +718,36 @@ fn main() {
         .compile()
         .expect("buffa_build failed for custom_options.proto");
 
+    // Strict JSON unknown-field rejection. Path-scoped rather than global so
+    // one generated module carries both behaviours: the three `Strict*`
+    // messages are named, `StrictPlain.Nested` is covered by its parent's
+    // rule, and the `Lenient*` messages are the control for the default.
+    buffa_build::Config::new()
+        .files(&["protos/strict_json.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .generate_json(true)
+        .deny_unknown_json_fields_in(&[
+            ".buffa.test.strictjson.StrictPlain",
+            ".buffa.test.strictjson.StrictOneof",
+            ".buffa.test.strictjson.StrictExt",
+        ])
+        .compile()
+        .expect("buffa_build failed for strict_json.proto");
+
+    // Strict JSON unknown-field rejection, proto3 field shapes: synthetic
+    // oneof, map, repeated, `google.protobuf.Value` and a plain scalar
+    // alongside a real oneof, all in one message on the hand-written-visitor
+    // path. Global flag here rather than path-scoped.
+    buffa_build::Config::new()
+        .files(&["protos/strict_json3.proto"])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .generate_json(true)
+        .deny_unknown_json_fields(true)
+        .compile()
+        .expect("buffa_build failed for strict_json3.proto");
+
     // Extension JSON registry — message/enum/repeated extensions with a local
     // extendee. `generate_json(true)` so the `#[serde(flatten)]` wrapper and
     // `register_extensions` are emitted alongside the `Extension<_>` consts.
@@ -801,6 +831,39 @@ fn main() {
         .preserve_unknown_fields(false)
         .compile()
         .expect("buffa_build failed for lazy_views_lean.proto");
+
+    // Recursive messages + preserve_unknown_fields=false (#449). Eagerly, a
+    // singular message field is `MessageFieldView<V>` with no lifetime of its
+    // own, so a schema whose fields only lead back to themselves needs the
+    // generated lifetime anchor; the repeated, map, borrowed-scalar and
+    // scalar-in-oneof shapes already anchor it and must keep compiling without
+    // one. Lazily, a message field is `LazyMessageFieldView<'a, V>` and anchors
+    // 'a by itself, so no lazy struct is expected to carry the marker.
+    // Compilation is the coverage here; `buffa-codegen/src/tests/
+    // lifetime_anchor.rs` pins which structs get the marker in both directions.
+    let self_recursive_views_out =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("self_recursive_views");
+    std::fs::create_dir_all(&self_recursive_views_out).expect("create self_recursive_views dir");
+    buffa_build::Config::new()
+        .files(&["protos/self_recursive_lean.proto"])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .preserve_unknown_fields(false)
+        .out_dir(self_recursive_views_out)
+        .compile()
+        .expect("buffa_build failed for self_recursive_lean.proto with views");
+
+    let self_recursive_lazy_out =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("self_recursive_lazy");
+    std::fs::create_dir_all(&self_recursive_lazy_out).expect("create self_recursive_lazy dir");
+    buffa_build::Config::new()
+        .files(&["protos/self_recursive_lean.proto"])
+        .includes(&["protos/"])
+        .lazy_views(true)
+        .preserve_unknown_fields(false)
+        .out_dir(self_recursive_lazy_out)
+        .compile()
+        .expect("buffa_build failed for self_recursive_lean.proto with lazy views");
 
     // Path-scoped unknown-field preservation: global off, `Keep` re-enabled.
     // Every codec that reads the flag per message (owned, view, lazy view,

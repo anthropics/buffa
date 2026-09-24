@@ -72,6 +72,8 @@ pub enum Value {
 /// field can read as its empty default without allocating.
 ///
 /// The variant set is closed (same as [`Value`]); exhaustive matching is safe.
+/// The [`ReflectCow`] inside `Message` is `#[non_exhaustive]`, so a pattern
+/// that looks inside it needs a wildcard arm.
 #[derive(Debug)]
 pub enum ValueRef<'a> {
     Bool(bool),
