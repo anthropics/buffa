@@ -123,6 +123,7 @@ impl WktKind {
         midx: MessageIndex,
         d: D,
         ignore_unknown: bool,
+        budget: &Cell<usize>,
     ) -> Result<DynamicMessage, D::Error> {
         // Two WKTs consult `ignore_unknown`: `Any` recurses into a
         // user-defined message type, and `Empty` parses from a plain object
@@ -130,7 +131,7 @@ impl WktKind {
         // scalar (a type error, never an unknown field) or are open schemas
         // that accept any member by construction.
         match self {
-            Self::Any => deserialize_any(pool, midx, d, ignore_unknown),
+            Self::Any => deserialize_any(pool, midx, d, ignore_unknown, budget),
             Self::Timestamp => {
                 let s: String = String::deserialize(d)?;
                 let (secs, nanos) = parse_rfc3339(&s).map_err(de::Error::custom)?;
@@ -143,9 +144,23 @@ impl WktKind {
             }
             Self::FieldMask => {
                 let s: String = String::deserialize(d)?;
+                // A `FieldMask` is `repeated string paths`, and each comma
+                // in the input buys another `Value` slot — the same
+                // amplification a repeated field has, so the same charge.
                 let paths: Result<Vec<Value>, _> = if s.is_empty() {
                     Ok(Vec::new())
                 } else {
+                    // `saturating_mul`: the count is bounded only by the
+                    // input length, which overflows a 32-bit `usize` (a
+                    // supported target with its own CI job) above ~134M
+                    // commas. Saturating charges the whole budget there,
+                    // which is the correct verdict anyway.
+                    charge(
+                        budget,
+                        s.split(',')
+                            .count()
+                            .saturating_mul(core::mem::size_of::<Value>()),
+                    )?;
                     s.split(',')
                         .map(|p| field_mask_to_snake(p).map(Value::String))
                         .collect()
@@ -185,9 +200,9 @@ impl WktKind {
                 m.set_by_number(1, v);
                 Ok(m)
             }
-            Self::Struct => deserialize_struct(pool, midx, d),
-            Self::ListValue => deserialize_list_value(pool, midx, d),
-            Self::JsonValue => deserialize_json_value(pool, midx, d),
+            Self::Struct => deserialize_struct(pool, midx, d, budget),
+            Self::ListValue => deserialize_list_value(pool, midx, d, budget),
+            Self::JsonValue => deserialize_json_value(pool, midx, d, budget),
         }
     }
 }
@@ -288,12 +303,14 @@ fn deserialize_json_value<'de, D: Deserializer<'de>>(
     pool: Arc<DescriptorPool>,
     midx: MessageIndex,
     d: D,
+    budget: &Cell<usize>,
 ) -> Result<DynamicMessage, D::Error> {
-    struct ValueVisitor {
+    struct ValueVisitor<'a> {
         pool: Arc<DescriptorPool>,
         midx: MessageIndex,
+        budget: &'a Cell<usize>,
     }
-    impl<'de> Visitor<'de> for ValueVisitor {
+    impl<'de> Visitor<'de> for ValueVisitor<'_> {
         type Value = DynamicMessage;
         fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
             write!(f, "any JSON value")
@@ -335,6 +352,7 @@ fn deserialize_json_value<'de, D: Deserializer<'de>>(
             let lv = ListValueVisitor {
                 pool: Arc::clone(&self.pool),
                 midx: lv_idx,
+                budget: self.budget,
             }
             .visit_seq(seq)?;
             let mut m = DynamicMessage::new(self.pool, self.midx);
@@ -349,6 +367,7 @@ fn deserialize_json_value<'de, D: Deserializer<'de>>(
             let s = StructVisitor {
                 pool: Arc::clone(&self.pool),
                 midx: s_idx,
+                budget: self.budget,
             }
             .visit_map(map)?;
             let mut m = DynamicMessage::new(self.pool, self.midx);
@@ -356,15 +375,16 @@ fn deserialize_json_value<'de, D: Deserializer<'de>>(
             Ok(m)
         }
     }
-    d.deserialize_any(ValueVisitor { pool, midx })
+    d.deserialize_any(ValueVisitor { pool, midx, budget })
 }
 
-struct StructVisitor {
+struct StructVisitor<'a> {
     pool: Arc<DescriptorPool>,
     midx: MessageIndex,
+    budget: &'a Cell<usize>,
 }
 
-impl<'de> Visitor<'de> for StructVisitor {
+impl<'de> Visitor<'de> for StructVisitor<'_> {
     type Value = DynamicMessage;
     fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "a JSON object")
@@ -380,7 +400,18 @@ impl<'de> Visitor<'de> for StructVisitor {
             // `google.protobuf.Value` is a closed schema (null/bool/number/
             // string/Struct/ListValue) that cannot recurse into a
             // user-defined message where unknown fields could appear.
-            let v = map.next_value_seed(DynamicMessageSeed::new(Arc::clone(&self.pool), value_idx))?;
+            let v = map.next_value_seed(NestedSeed {
+                pool: Arc::clone(&self.pool),
+                msg_idx: value_idx,
+                ignore_unknown: false,
+                budget: self.budget,
+            })?;
+            // `Struct.fields` is `map<string, Value>`; charge what the
+            // ordinary map path charges for an entry.
+            charge(
+                self.budget,
+                core::mem::size_of::<MapKey>() + core::mem::size_of::<Value>(),
+            )?;
             fields.push((MapKey::String(key), Value::Message(v)));
         }
         let mut m = DynamicMessage::new(self.pool, self.midx);
@@ -393,16 +424,18 @@ fn deserialize_struct<'de, D: Deserializer<'de>>(
     pool: Arc<DescriptorPool>,
     midx: MessageIndex,
     d: D,
+    budget: &Cell<usize>,
 ) -> Result<DynamicMessage, D::Error> {
-    d.deserialize_map(StructVisitor { pool, midx })
+    d.deserialize_map(StructVisitor { pool, midx, budget })
 }
 
-struct ListValueVisitor {
+struct ListValueVisitor<'a> {
     pool: Arc<DescriptorPool>,
     midx: MessageIndex,
+    budget: &'a Cell<usize>,
 }
 
-impl<'de> Visitor<'de> for ListValueVisitor {
+impl<'de> Visitor<'de> for ListValueVisitor<'_> {
     type Value = DynamicMessage;
     fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "a JSON array")
@@ -415,9 +448,15 @@ impl<'de> Visitor<'de> for ListValueVisitor {
         let mut items = Vec::new();
         // See `StructVisitor::visit_map` for why the Value seed doesn't
         // carry `ignore_unknown`.
-        while let Some(v) =
-            seq.next_element_seed(DynamicMessageSeed::new(Arc::clone(&self.pool), value_idx))?
-        {
+        while let Some(v) = seq.next_element_seed(NestedSeed {
+            pool: Arc::clone(&self.pool),
+            msg_idx: value_idx,
+            ignore_unknown: false,
+            budget: self.budget,
+        })? {
+            // `ListValue.values` is `repeated Value`; charge what the
+            // ordinary repeated path charges for an element.
+            charge(self.budget, core::mem::size_of::<Value>())?;
             items.push(Value::Message(v));
         }
         let mut m = DynamicMessage::new(self.pool, self.midx);
@@ -430,8 +469,9 @@ fn deserialize_list_value<'de, D: Deserializer<'de>>(
     pool: Arc<DescriptorPool>,
     midx: MessageIndex,
     d: D,
+    budget: &Cell<usize>,
 ) -> Result<DynamicMessage, D::Error> {
-    d.deserialize_seq(ListValueVisitor { pool, midx })
+    d.deserialize_seq(ListValueVisitor { pool, midx, budget })
 }
 
 // ── google.protobuf.Any ─────────────────────────────────────────────────────
@@ -522,6 +562,7 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     midx: MessageIndex,
     d: D,
     ignore_unknown: bool,
+    budget: &Cell<usize>,
 ) -> Result<DynamicMessage, D::Error> {
     use serde::de::Error as _;
     let mut obj: serde_json::Map<String, serde_json::Value> =
@@ -565,10 +606,17 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     };
     // Re-deserialize the inner JSON value into the inner message type,
     // propagating the lenient-parsing flag.
-    let inner = DynamicMessageSeed::new(Arc::clone(&pool), inner_idx)
-        .ignore_unknown_fields(ignore_unknown)
-        .deserialize(inner_json)
-        .map_err(|e| D::Error::custom(format!("Any inner deserialize failed: {e}")))?;
+    // The inner parse continues the outer budget rather than starting a
+    // fresh one, so N nested `Any` layers cannot each spend the full
+    // allowance.
+    let inner = NestedSeed {
+        pool: Arc::clone(&pool),
+        msg_idx: inner_idx,
+        ignore_unknown,
+        budget,
+    }
+    .deserialize(inner_json)
+    .map_err(|e| D::Error::custom(format!("Any inner deserialize failed: {e}")))?;
     let inner_bytes = inner
         .try_encode_to_vec()
         .map_err(|e| D::Error::custom(format!("Any inner re-encode failed: {e}")))?;
@@ -583,6 +631,7 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     _midx: MessageIndex,
     _d: D,
     _ignore_unknown: bool,
+    _budget: &Cell<usize>,
 ) -> Result<DynamicMessage, D::Error> {
     Err(de::Error::custom(
         "Any JSON deserialization requires the `std` feature",
