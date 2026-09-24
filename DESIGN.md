@@ -511,7 +511,7 @@ Reflection lets code process messages by descriptor rather than by static type �
 
 **The runtime engine — `DynamicMessage`.** A schema-agnostic message: a `BTreeMap<u32, Value>` keyed by field number, plus an `Arc<DescriptorPool>` and the message's `MessageIndex`. It encodes, decodes, and JSON-serializes entirely from descriptor data, with no generated type involved. Generated packages embed their own `FileDescriptorSet` bytes and expose a lazily-built (`OnceLock`) pool as `your_crate::your_pkg::descriptor_pool()`, which all reflection in that package resolves against.
 
-**Reflection over generated types — two modes.** Generated types implement `Reflectable`, whose `reflect()` returns a `ReflectCow<'a>` — either `Owned(Box<DynamicMessage>)` or `Borrowed(&'a dyn ReflectMessage)`. Codegen emits one of two bodies, selected by `ReflectMode` (`Off` / `Bridge` / `VTable`); the call site (`foo.reflect().get(fd)`) is identical either way, so switching modes is a zero-diff change for consumers.
+**Reflection over generated types — two modes.** Generated types implement `Reflectable`, whose `reflect()` returns a `ReflectCow<'a>` (a `#[non_exhaustive]` enum; generated code produces `Owned(Box<DynamicMessage>)` or `Borrowed(&'a dyn ReflectMessage)`). Codegen emits one of two bodies, selected by `ReflectMode` (`Off` / `Bridge` / `VTable`); the call site (`foo.reflect().get(fd)`) is identical either way, so switching modes is a zero-diff change for consumers.
 
 | | **Bridge** | **Vtable** (default) |
 |---|---|---|

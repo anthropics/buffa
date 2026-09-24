@@ -331,6 +331,43 @@ pub trait ReflectMessageMut: ReflectMessage {
 /// what [`DynamicMessage`] returns for an unset singular message field: an
 /// [`EmptyMessage`] that borrows the pool and allocates nothing.
 ///
+/// Most code should not match on the variants. Every variant implements
+/// [`ReflectMessage`] and `ReflectCow` dereferences to `dyn ReflectMessage`,
+/// so `cow.get(fd)` and `&*cow` read the message whichever variant it is, and
+/// [`to_dynamic`](Self::to_dynamic) copies it into an owned [`DynamicMessage`].
+///
+/// The enum is `#[non_exhaustive]`, so a `match` in another crate needs a
+/// wildcard arm and a variant added later does not break it. The wildcard arm should read through
+/// the same `dyn ReflectMessage` rather than panic, because `Empty` is the
+/// common result for an unset field:
+///
+/// ```
+/// use buffa_descriptor::reflect::{DynamicMessage, ReflectCow};
+///
+/// fn into_dynamic(cow: ReflectCow<'_>) -> DynamicMessage {
+///     match cow {
+///         // Moves the box's contents out without copying the message.
+///         ReflectCow::Owned(boxed) => *boxed,
+///         other => other.to_dynamic(),
+///     }
+/// }
+/// ```
+///
+/// A `match` that names every current variant and has no wildcard arm does not
+/// compile:
+///
+/// ```compile_fail,E0004
+/// use buffa_descriptor::reflect::ReflectCow;
+///
+/// fn kind(cow: &ReflectCow<'_>) -> &'static str {
+///     match cow {
+///         ReflectCow::Borrowed(_) => "borrowed",
+///         ReflectCow::Owned(_) => "owned",
+///         ReflectCow::Empty(_) => "empty",
+///     }
+/// }
+/// ```
+///
 /// Boxing the `Owned` variant is load-bearing for [`ValueRef`](super::ValueRef)'s
 /// size budget. The dominant variant is `Borrowed(&dyn ReflectMessage)`, a
 /// 16-byte fat pointer; with the 1-byte discriminant aligned to 8 bytes,
@@ -347,6 +384,7 @@ pub trait ReflectMessageMut: ReflectMessage {
 /// happening — noise against that backdrop.
 ///
 /// The `const _:` assertion in `value.rs` locks the budget in.
+#[non_exhaustive]
 pub enum ReflectCow<'a> {
     /// Borrowed reflective view over the source — the vtable path.
     Borrowed(&'a dyn ReflectMessage),
