@@ -1679,10 +1679,14 @@ fn scalar_compute_size_stmt(
             });
         }
         Type::TYPE_MESSAGE => {
+            // `as_option()` rather than `is_set()` and a deref: the deref falls
+            // back to `T::default_instance()`, which would pull a lazily
+            // initialised static default, its initialiser and drop glue into
+            // the binary for every message type an encoder can reach.
             return Ok(quote! {
-                if self.#ident.is_set() {
+                if let ::core::option::Option::Some(__v) = self.#ident.as_option() {
                     let __slot = __cache.reserve();
-                    let inner_size = self.#ident.compute_size(__cache);
+                    let inner_size = __v.compute_size(__cache);
                     __cache.set(__slot, inner_size);
                     size += #tag_len
                         + ::buffa::encoding::varint_len(inner_size as u64) as u64
@@ -1693,8 +1697,8 @@ fn scalar_compute_size_stmt(
         Type::TYPE_GROUP => {
             // Groups: start_tag + body + end_tag (no length prefix).
             return Ok(quote! {
-                if self.#ident.is_set() {
-                    let inner_size = self.#ident.compute_size(__cache);
+                if let ::core::option::Option::Some(__v) = self.#ident.as_option() {
+                    let inner_size = __v.compute_size(__cache);
                     size += #tag_len + inner_size as u64 + #tag_len;
                 }
             });
@@ -1805,22 +1809,23 @@ fn scalar_write_to_stmt(
             });
         }
         Type::TYPE_MESSAGE => {
+            // `as_option()` for the same reason as in `compute_size`.
             return Ok(quote! {
-                if self.#ident.is_set() {
+                if let ::core::option::Option::Some(__v) = self.#ident.as_option() {
                     ::buffa::types::put_len_delimited_header(
                         #field_number,
                         u64::from(__cache.consume_next()),
                         buf,
                     );
-                    self.#ident.write_to(__cache, buf);
+                    __v.write_to(__cache, buf);
                 }
             });
         }
         Type::TYPE_GROUP => {
             return Ok(quote! {
-                if self.#ident.is_set() {
+                if let ::core::option::Option::Some(__v) = self.#ident.as_option() {
                     ::buffa::types::put_group_start(#field_number, buf);
-                    self.#ident.write_to(__cache, buf);
+                    __v.write_to(__cache, buf);
                     ::buffa::types::put_group_end(#field_number, buf);
                 }
             });

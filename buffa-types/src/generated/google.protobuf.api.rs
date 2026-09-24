@@ -260,9 +260,9 @@ impl ::buffa::Message for Api {
         if !self.version.is_empty() {
             size += 1u64 + ::buffa::types::string_encoded_len(&self.version) as u64;
         }
-        if self.source_context.is_set() {
+        if let ::core::option::Option::Some(__v) = self.source_context.as_option() {
             let __slot = __cache.reserve();
-            let inner_size = self.source_context.compute_size(__cache);
+            let inner_size = __v.compute_size(__cache);
             __cache.set(__slot, inner_size);
             size
                 += 1u64 + ::buffa::encoding::varint_len(inner_size as u64) as u64
@@ -317,13 +317,13 @@ impl ::buffa::Message for Api {
         if !self.version.is_empty() {
             ::buffa::types::put_string_field(4u32, &self.version, buf);
         }
-        if self.source_context.is_set() {
+        if let ::core::option::Option::Some(__v) = self.source_context.as_option() {
             ::buffa::types::put_len_delimited_header(
                 5u32,
                 u64::from(__cache.consume_next()),
                 buf,
             );
-            self.source_context.write_to(__cache, buf);
+            __v.write_to(__cache, buf);
         }
         for v in &self.mixins {
             ::buffa::types::put_len_delimited_header(
@@ -475,9 +475,9 @@ impl ::buffa::text::TextFormat for Api {
             enc.write_field_name("version")?;
             enc.write_string(&self.version)?;
         }
-        if self.source_context.is_set() {
+        if let ::core::option::Option::Some(__v) = self.source_context.as_option() {
             enc.write_field_name("source_context")?;
-            enc.write_message(&*self.source_context)?;
+            enc.write_message(__v)?;
         }
         if self.syntax.to_i32() != 0 {
             enc.write_field_name("syntax")?;

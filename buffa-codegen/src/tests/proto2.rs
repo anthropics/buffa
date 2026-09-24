@@ -575,3 +575,59 @@ fn test_proto2_open_enum_override_required_enum_implicit_default_uses_enum_defau
         "clear() must restore the enum's declared default: {content}"
     );
 }
+
+#[test]
+fn test_message_and_group_fields_encode_through_as_option() {
+    // Message and group fields are bound with `as_option()` in `compute_size`
+    // and `write_to`, not tested with `is_set()` and dereferenced.
+    let mut file = proto2_file("as_option.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Inner".to_string()),
+        ..Default::default()
+    });
+    let mut child = make_field("child", 1, Label::LABEL_OPTIONAL, Type::TYPE_MESSAGE);
+    child.type_name = Some(".Inner".to_string());
+    let mut grp = make_field("grp", 2, Label::LABEL_OPTIONAL, Type::TYPE_GROUP);
+    grp.type_name = Some(".Inner".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Outer".to_string()),
+        field: vec![child, grp],
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["as_option.proto".to_string()],
+        &CodeGenConfig {
+            generate_text: true,
+            ..CodeGenConfig::default()
+        },
+    )
+    .expect("message and group fields should generate");
+    // prettyplease wraps a long receiver across lines, so match without whitespace.
+    let content = &joined(&files).split_whitespace().collect::<String>();
+    for field in ["child", "grp"] {
+        assert!(
+            content.contains(&format!("self.{field}.as_option()")),
+            "{field} must be bound with as_option(): {content}"
+        );
+        for call in ["compute_size", "write_to"] {
+            assert!(
+                !content.contains(&format!("self.{field}.{call}(")),
+                "{field} must not call {call} through a deref: {content}"
+            );
+        }
+        assert!(
+            !content.contains(&format!("self.{field}.is_set()")),
+            "{field} must not be tested with is_set(): {content}"
+        );
+    }
+    assert!(
+        content.contains("enc.write_message(__v)"),
+        "the text encoder must write the bound value: {content}"
+    );
+    assert!(
+        content.contains("__v.compute_size(__cache)")
+            && content.contains("__v.write_to(__cache,buf)"),
+        "the bound value must be sized and written: {content}"
+    );
+}

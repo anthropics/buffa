@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **Generated binary and text encoders bind singular message and group fields with `as_option()` instead of testing `is_set()` and dereferencing** (#471). Dereferencing an unset `MessageField` falls back to `T::default_instance()`, which linked a lazily initialised static default, its initialiser and drop glue into every binary for each message type reachable from an encoder. The encoded bytes and `encoded_len` are unchanged, and only regenerated code benefits, so regenerate to pick this up. On the `waproto` schema from whatsapp-rust, built with fat LTO and `panic = "abort"`, the `.text` of a binary that encodes every owned message type shrinks by 5.4% (89 KB) at `opt-level = "z"`, and by 3.5% when views are generated too; at `opt-level = 3` it grows by 0.02%.
+time: 2026-09-23T11:41:53.635346013-07:00
