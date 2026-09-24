@@ -238,6 +238,20 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// A field marked `proto3_optional` is not declared in a proto3 file.
+    Proto3OptionalOutsideProto3 { field: String },
+    /// A field marked `proto3_optional` does not have optional cardinality.
+    InvalidProto3OptionalCardinality { field: String },
+    /// A field marked `proto3_optional` is not a member of a oneof.
+    Proto3OptionalWithoutOneof { field: String },
+    /// A field marked `proto3_optional` shares its oneof with another field.
+    Proto3OptionalOneofHasMultipleMembers {
+        field: String,
+        oneof: String,
+        member_count: usize,
+    },
+    /// A real oneof appears after a synthetic oneof in the declaration list.
+    RealOneofAfterSyntheticOneof { message: String, oneof: String },
     /// Two oneof declarations in one message have the same name.
     DuplicateOneofName { message: String, name: String },
     /// A field number is outside the valid range
@@ -452,6 +466,30 @@ impl core::fmt::Display for PoolError {
             } => write!(
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
+            ),
+            Self::Proto3OptionalOutsideProto3 { field } => write!(
+                f,
+                "field {field} is marked proto3_optional outside a proto3 file"
+            ),
+            Self::InvalidProto3OptionalCardinality { field } => write!(
+                f,
+                "field {field} is marked proto3_optional but is not optional"
+            ),
+            Self::Proto3OptionalWithoutOneof { field } => write!(
+                f,
+                "field {field} is marked proto3_optional but has no oneof"
+            ),
+            Self::Proto3OptionalOneofHasMultipleMembers {
+                field,
+                oneof,
+                member_count,
+            } => write!(
+                f,
+                "field {field} is marked proto3_optional but oneof {oneof} has {member_count} members"
+            ),
+            Self::RealOneofAfterSyntheticOneof { message, oneof } => write!(
+                f,
+                "real oneof {oneof} in message {message} appears after a synthetic oneof"
             ),
             Self::DuplicateOneofName { message, name } => {
                 write!(
@@ -719,6 +757,8 @@ impl LinkOptions {
 struct LinkScope<'a> {
     /// Index of the referring file in `files` / `file_by_name`.
     file: usize,
+    /// Whether the referring file declares proto3 syntax.
+    proto3: bool,
     /// Itself, its direct and weak dependencies, and their transitive
     /// `public_dependency` closure; `None` when visibility is not enforced.
     visible: Option<&'a BTreeSet<usize>>,
@@ -1024,6 +1064,7 @@ impl DescriptorPool {
             let visible = self.visible_files(base + i, file, base, &new_files);
             let scope = LinkScope {
                 file: base + i,
+                proto3: file.syntax.as_deref() == Some("proto3"),
                 visible: visible.as_ref(),
             };
             for msg in &file.message_type {
@@ -1047,6 +1088,7 @@ impl DescriptorPool {
             let visible = self.visible_files(base + i, file, base, &new_files);
             let scope = LinkScope {
                 file: base + i,
+                proto3: file.syntax.as_deref() == Some("proto3"),
                 visible: visible.as_ref(),
             };
             for svc in &file.service {
@@ -1721,15 +1763,40 @@ impl DescriptorPool {
         field_by_number.sort_unstable_by_key(|&(n, _)| n);
         field_by_name.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
-        // Mark synthetic oneofs (proto3 optional). Per protobuf semantics,
-        // a synthetic oneof has exactly one member field and that field has
-        // `proto3_optional = true`.
+        // Validate and mark synthetic oneofs (proto3 optional). Per protobuf
+        // semantics, a proto3 optional field must be the only member of its
+        // oneof.
         for o in &mut oneofs {
-            if o.field_indices.len() == 1 {
-                let fidx = o.field_indices[0] as usize;
-                if msg.field[fidx].proto3_optional == Some(true) {
-                    o.synthetic = true;
-                }
+            let Some(&field_idx) = o
+                .field_indices
+                .iter()
+                .find(|&&field_idx| msg.field[field_idx as usize].proto3_optional == Some(true))
+            else {
+                continue;
+            };
+            if o.field_indices.len() != 1 {
+                return Err(PoolError::Proto3OptionalOneofHasMultipleMembers {
+                    field: format!(
+                        "{fqn}.{}",
+                        msg.field[field_idx as usize].name.as_deref().unwrap_or("")
+                    ),
+                    oneof: format!("{fqn}.{}", o.name),
+                    member_count: o.field_indices.len(),
+                });
+            }
+            o.synthetic = true;
+        }
+        // Synthetic oneofs are descriptor-only compatibility entries and
+        // must follow every real oneof in declaration order.
+        let mut saw_synthetic_oneof = false;
+        for oneof in &oneofs {
+            if oneof.synthetic {
+                saw_synthetic_oneof = true;
+            } else if saw_synthetic_oneof {
+                return Err(PoolError::RealOneofAfterSyntheticOneof {
+                    message: fqn.clone(),
+                    oneof: format!("{fqn}.{}", oneof.name),
+                });
             }
         }
 
@@ -2149,6 +2216,19 @@ impl DescriptorPool {
         let resolved = features::resolve_child(parent_features, features::field_features(f));
 
         let label = f.label.unwrap_or_default();
+        if f.proto3_optional == Some(true) {
+            if !scope.proto3 {
+                return Err(PoolError::Proto3OptionalOutsideProto3 { field: field_fqn });
+            }
+            if label != Label::LABEL_OPTIONAL {
+                return Err(PoolError::InvalidProto3OptionalCardinality { field: field_fqn });
+            }
+            // protoc emits proto3_optional on proto3 option extensions too,
+            // even though extensions cannot belong to a oneof.
+            if containing_msg.is_some() && f.oneof_index.is_none() {
+                return Err(PoolError::Proto3OptionalWithoutOneof { field: field_fqn });
+            }
+        }
         let proto_ty = f.r#type.unwrap_or_default();
         let is_repeated = label == Label::LABEL_REPEATED;
 

@@ -1813,6 +1813,194 @@ fn negative_oneof_indices_are_rejected_without_mutating_pool() {
 }
 
 #[test]
+fn proto3_optional_fields_without_oneofs_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    let mut field = scalar_field("value", 1, Type::TYPE_INT32);
+    field.proto3_optional = Some(true);
+
+    assert_rejected_without_mutating_pool(
+        "proto3-optional-without-oneof.proto",
+        "invalid.test.MissingSyntheticOneof",
+        DescriptorProto {
+            name: Some("MissingSyntheticOneof".into()),
+            field: vec![field],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::Proto3OptionalWithoutOneof { field }
+                    if field == "invalid.test.MissingSyntheticOneof.value"
+            ));
+        },
+    );
+}
+
+#[test]
+fn proto3_optional_fields_must_be_the_only_oneof_member() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{DescriptorProto, OneofDescriptorProto};
+
+    let mut optional = scalar_field("optional_value", 1, Type::TYPE_INT32);
+    optional.oneof_index = Some(0);
+    optional.proto3_optional = Some(true);
+    let mut other = scalar_field("other_value", 2, Type::TYPE_STRING);
+    other.oneof_index = Some(0);
+
+    assert_rejected_without_mutating_pool(
+        "proto3-optional-shared-oneof.proto",
+        "invalid.test.SharedSyntheticOneof",
+        DescriptorProto {
+            name: Some("SharedSyntheticOneof".into()),
+            field: vec![optional, other],
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("_optional_value".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::Proto3OptionalOneofHasMultipleMembers {
+                    field,
+                    oneof,
+                    member_count: 2,
+                } if field == "invalid.test.SharedSyntheticOneof.optional_value"
+                    && oneof == "invalid.test.SharedSyntheticOneof._optional_value"
+            ));
+        },
+    );
+}
+
+#[test]
+fn synthetic_oneofs_must_follow_real_oneofs() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{DescriptorProto, OneofDescriptorProto};
+
+    let mut optional = scalar_field("optional_value", 1, Type::TYPE_INT32);
+    optional.oneof_index = Some(0);
+    optional.proto3_optional = Some(true);
+    let mut real = scalar_field("real_value", 2, Type::TYPE_STRING);
+    real.oneof_index = Some(1);
+
+    assert_rejected_without_mutating_pool(
+        "proto3-optional-oneof-order.proto",
+        "invalid.test.WrongOneofOrder",
+        DescriptorProto {
+            name: Some("WrongOneofOrder".into()),
+            field: vec![optional, real],
+            oneof_decl: vec![
+                OneofDescriptorProto {
+                    name: Some("_optional_value".into()),
+                    ..Default::default()
+                },
+                OneofDescriptorProto {
+                    name: Some("real_choice".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::RealOneofAfterSyntheticOneof { message, oneof }
+                    if message == "invalid.test.WrongOneofOrder"
+                        && oneof == "invalid.test.WrongOneofOrder.real_choice"
+            ));
+        },
+    );
+}
+
+#[test]
+fn proto3_optional_fields_require_optional_cardinality() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    for (file_name, message_name, label) in [
+        (
+            "proto3-optional-repeated.proto",
+            "RepeatedProto3Optional",
+            Label::LABEL_REPEATED,
+        ),
+        (
+            "proto3-optional-required.proto",
+            "RequiredProto3Optional",
+            Label::LABEL_REQUIRED,
+        ),
+    ] {
+        let mut field = scalar_field("value", 1, Type::TYPE_INT32);
+        field.label = Some(label);
+        field.proto3_optional = Some(true);
+        let expected_field = format!("invalid.test.{message_name}.value");
+
+        assert_rejected_without_mutating_pool(
+            file_name,
+            &format!("invalid.test.{message_name}"),
+            DescriptorProto {
+                name: Some(message_name.into()),
+                field: vec![field],
+                ..Default::default()
+            },
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidProto3OptionalCardinality { field }
+                        if field == &expected_field
+                ));
+            },
+        );
+    }
+}
+
+#[test]
+fn proto3_optional_fields_are_rejected_in_proto2_files() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+    };
+
+    let mut field = scalar_field("value", 1, Type::TYPE_INT32);
+    field.oneof_index = Some(0);
+    field.proto3_optional = Some(true);
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("proto2-proto3-optional.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Proto2Proto3Optional".into()),
+                field: vec![field],
+                oneof_decl: vec![OneofDescriptorProto {
+                    name: Some("_value".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "proto2-proto3-optional.proto",
+        "invalid.test.Proto2Proto3Optional",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::Proto3OptionalOutsideProto3 { field }
+                    if field == "invalid.test.Proto2Proto3Optional.value"
+            ));
+        },
+    );
+}
+
+#[test]
 fn message_and_service_symbol_collisions_are_rejected_transactionally() {
     use buffa_descriptor::generated::descriptor::{
         DescriptorProto, FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto,
