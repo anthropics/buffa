@@ -1047,6 +1047,114 @@ fn for_each_set_agrees_with_has_on_containers() {
 }
 
 #[test]
+fn iter_set_fields_on_an_empty_message_yields_nothing() {
+    let p = pool();
+    let scalars_idx = p.message_index("reflect.test.Scalars").unwrap();
+    let msg = DynamicMessage::new(Arc::clone(&p), scalars_idx);
+    assert_eq!(msg.iter_set_fields().count(), 0);
+}
+
+/// Asserts that `iter_set_fields` yields exactly `expected`, in that order,
+/// and that `for_each_set`, `.rev()` and a clone taken mid-iteration agree.
+fn assert_iter_set_fields_yields(msg: &DynamicMessage, expected: &[u32]) {
+    let forward: Vec<u32> = msg.iter_set_fields().map(|(fd, _)| fd.number()).collect();
+    assert_eq!(forward, expected);
+
+    let mut via_callback = Vec::new();
+    msg.for_each_set(&mut |fd, _| via_callback.push(fd.number()));
+    assert_eq!(via_callback, expected);
+
+    let reversed: Vec<u32> = msg
+        .iter_set_fields()
+        .rev()
+        .map(|(fd, _)| fd.number())
+        .collect();
+    let expected_reversed: Vec<u32> = expected.iter().rev().copied().collect();
+    assert_eq!(reversed, expected_reversed);
+
+    let mut partly_consumed = msg.iter_set_fields();
+    assert_eq!(
+        partly_consumed.next().map(|(fd, _)| fd.number()),
+        expected.first().copied()
+    );
+    let from_clone: Vec<u32> = partly_consumed.clone().map(|(fd, _)| fd.number()).collect();
+    let from_original: Vec<u32> = partly_consumed.map(|(fd, _)| fd.number()).collect();
+    let rest = expected.get(1..).unwrap_or_default();
+    assert_eq!(from_clone, rest);
+    assert_eq!(from_original, rest);
+}
+
+#[test]
+fn iter_set_fields_yields_present_fields_in_ascending_number_order() {
+    let p = pool();
+
+    // Fields are set in descending order so insertion order cannot pass.
+    let scalars_idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut scalars = DynamicMessage::new(Arc::clone(&p), scalars_idx);
+    // Explicit presence at the default: present.
+    scalars.set(md.field(16).unwrap(), Value::I32(0));
+    // Implicit presence at the default: absent.
+    scalars.set(md.field(14).unwrap(), Value::String(String::new()));
+    scalars.set(md.field(13).unwrap(), Value::Bool(false));
+    scalars.set(md.field(3).unwrap(), Value::I32(0));
+    // Implicit presence, non-default: present.
+    scalars.set(md.field(4).unwrap(), Value::I64(7));
+    scalars.set(md.field(1).unwrap(), Value::F64(1.5));
+    assert_iter_set_fields_yields(&scalars, &[1, 4, 16]);
+
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let md = p.message_by_name("reflect.test.Containers").unwrap();
+    let mut containers = DynamicMessage::new(Arc::clone(&p), containers_idx);
+    let mut tags = MapValue::new();
+    tags.insert(MapKey::String("k".into()), Value::I32(1));
+    containers.set(
+        md.field(7).unwrap(),
+        Value::List(vec![Value::EnumNumber(1), Value::EnumNumber(2)]),
+    );
+    // Implicit-presence enum at its default (0): absent.
+    containers.set(md.field(6).unwrap(), Value::EnumNumber(0));
+    // Empty map and empty list: absent.
+    containers.set(md.field(4).unwrap(), Value::Map(MapValue::new()));
+    containers.set(md.field(3).unwrap(), Value::Map(tags));
+    containers.set(
+        md.field(2).unwrap(),
+        Value::List(vec![Value::String("s".into())]),
+    );
+    containers.set(md.field(1).unwrap(), Value::List(Vec::new()));
+    assert_iter_set_fields_yields(&containers, &[2, 3, 7]);
+}
+
+#[test]
+fn iter_set_fields_items_outlive_the_iteration() {
+    // A nested message collected from the iterator is read after the loop ends.
+    let p = pool();
+    let containers_idx = p.message_index("reflect.test.Containers").unwrap();
+    let containers_md = p.message_by_name("reflect.test.Containers").unwrap();
+    let inner_idx = p.message_index("reflect.test.Inner").unwrap();
+    let inner_md = p.message_by_name("reflect.test.Inner").unwrap();
+
+    let mut inner = DynamicMessage::new(Arc::clone(&p), inner_idx);
+    inner.set(inner_md.field(1).unwrap(), Value::String("child".into()));
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), containers_idx);
+    msg.set(containers_md.field(5).unwrap(), Value::Message(inner));
+
+    let worklist: Vec<_> = msg.iter_set_fields().collect();
+    assert_eq!(worklist.len(), 1);
+
+    let (fd, value) = worklist[0];
+    assert_eq!(fd.number(), 5);
+    let Value::Message(nested) = value else {
+        panic!("expected a message value, got {value:?}");
+    };
+    match nested.get(inner_md.field(1).unwrap()) {
+        ValueRef::String(s) => assert_eq!(s, "child"),
+        other => panic!("expected a string, got {other:?}"),
+    }
+}
+
+#[test]
 fn which_oneof_resolves_set_member() {
     let p = pool();
     let oneof_idx = p.message_index("reflect.test.OneOf").unwrap();

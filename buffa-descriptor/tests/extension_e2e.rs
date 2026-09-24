@@ -42,6 +42,10 @@ fn extension_set_get_has_through_reflect_message() {
     msg.for_each_set(&mut |fd, _| seen.push(fd.number()));
     seen.sort_unstable();
     assert_eq!(seen, vec![1, 100]);
+
+    // iter_set_fields yields the declared field before the extension, by number.
+    let seen_via_iter: Vec<u32> = msg.iter_set_fields().map(|(fd, _)| fd.number()).collect();
+    assert_eq!(seen_via_iter, vec![1, 100]);
 }
 
 #[test]

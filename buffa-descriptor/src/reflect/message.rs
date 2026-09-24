@@ -167,6 +167,9 @@ pub trait ReflectMessage {
     /// "Set" follows the same semantics as [`Self::has`]. **Unknown fields
     /// are excluded** — they have no `FieldDescriptor`. Visit them
     /// separately via [`unknown_fields()`](Self::unknown_fields).
+    ///
+    /// [`DynamicMessage::iter_set_fields`] yields the same fields as an
+    /// iterator whose items borrow from the message.
     fn for_each_set(&self, f: &mut dyn FnMut(&FieldDescriptor, ValueRef<'_>));
 
     /// The fields preserved from decode that the message's descriptor does
