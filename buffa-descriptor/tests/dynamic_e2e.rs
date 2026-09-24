@@ -1977,6 +1977,131 @@ fn reflective_closed_enum_elements_are_charged_element_memory() {
     );
 }
 
+/// `fixedw.Packed { repeated fixed32 narrow = 1; repeated double wide = 2; }`.
+/// The protoc-compiled test schema has no repeated fixed-width field.
+fn fixed_width_pool() -> Arc<DescriptorPool> {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let repeated = |name: &str, number: i32, r#type: Type| FieldDescriptorProto {
+        name: Some(name.into()),
+        number: Some(number),
+        label: Some(Label::LABEL_REPEATED),
+        r#type: Some(r#type),
+        ..Default::default()
+    };
+    let file = FileDescriptorProto {
+        name: Some("fixedw.proto".into()),
+        package: Some("fixedw".into()),
+        syntax: Some("proto3".into()),
+        message_type: vec![DescriptorProto {
+            name: Some("Packed".into()),
+            field: vec![
+                repeated("narrow", 1, Type::TYPE_FIXED32),
+                repeated("wide", 2, Type::TYPE_DOUBLE),
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    Arc::new(
+        DescriptorPool::new(FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        })
+        .expect("pool builds from hand-built descriptor"),
+    )
+}
+
+/// One packed record for field `number` whose payload is `payload` verbatim.
+fn packed_record(number: u32, payload: &[u8]) -> Vec<u8> {
+    let mut wire = Vec::new();
+    Tag::new(number, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(payload.len() as u64, &mut wire);
+    wire.extend_from_slice(payload);
+    wire
+}
+
+/// A packed fixed-width payload states its element count up front, and each
+/// element becomes a `Value` several times its wire size. The up-front
+/// reservation has to stay inside the element-memory budget just as the
+/// per-element charge does.
+#[test]
+fn packed_fixed_width_reservation_is_capped_by_element_memory() {
+    use buffa::DecodeOptions;
+
+    let p = fixed_width_pool();
+    let idx = p.message_index("fixedw.Packed").unwrap();
+    let value_size = core::mem::size_of::<Value>();
+    let budget_elements = 16;
+    let opts = DecodeOptions::new().with_element_memory_limit(budget_elements * value_size);
+
+    for (number, width) in [(1, 4), (2, 8)] {
+        let wire = packed_record(number, &vec![0u8; 1000 * width]);
+        // `merge_with_options` leaves what it decoded in place on error, which
+        // is what makes the list's capacity observable.
+        let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+        assert_eq!(
+            msg.merge_with_options(&wire, &opts),
+            Err(DecodeError::ElementMemoryLimitExceeded),
+            "field {number}"
+        );
+        let Some(Value::List(list)) = msg.field_by_number(number) else {
+            panic!("field {number} holds the elements decoded before the limit");
+        };
+        assert_eq!(list.len(), budget_elements, "field {number}");
+        // `Vec` may round a reservation up, so allow amortized growth's
+        // factor of two. An unclamped reservation would be 1000 elements.
+        assert!(
+            list.capacity() <= 2 * budget_elements,
+            "field {number}: reserved {} elements under a budget of {budget_elements}",
+            list.capacity()
+        );
+    }
+}
+
+#[test]
+fn packed_fixed_width_records_for_one_field_concatenate() {
+    let p = fixed_width_pool();
+    let idx = p.message_index("fixedw.Packed").unwrap();
+
+    let first: Vec<u8> = [1u32, 2].iter().flat_map(|v| v.to_le_bytes()).collect();
+    let second: Vec<u8> = [3u32, 4, 5].iter().flat_map(|v| v.to_le_bytes()).collect();
+    let mut wire = packed_record(1, &first);
+    wire.extend(packed_record(1, &second));
+    wire.extend(packed_record(2, &1.5f64.to_le_bytes()));
+    wire.extend(packed_record(2, &(-2.5f64).to_le_bytes()));
+
+    let msg = DynamicMessage::decode(Arc::clone(&p), idx, &wire).unwrap();
+    assert_eq!(
+        msg.field_by_number(1),
+        Some(&Value::List((1..=5).map(Value::U32).collect()))
+    );
+    assert_eq!(
+        msg.field_by_number(2),
+        Some(&Value::List(vec![Value::F64(1.5), Value::F64(-2.5)]))
+    );
+}
+
+/// A payload that is not a whole number of elements decodes the complete
+/// elements and then runs out of bytes inside the last one.
+#[test]
+fn packed_fixed_width_payload_with_a_partial_element_is_eof() {
+    let p = fixed_width_pool();
+    let idx = p.message_index("fixedw.Packed").unwrap();
+
+    for (number, len) in [(1, 6), (1, 3), (2, 12), (2, 7)] {
+        let wire = packed_record(number, &vec![0u8; len]);
+        assert_eq!(
+            DynamicMessage::decode(Arc::clone(&p), idx, &wire).err(),
+            Some(DecodeError::UnexpectedEof),
+            "field {number}, {len}-byte payload"
+        );
+    }
+}
+
 /// Reflective map decode must not be quadratic in the entry count.
 ///
 /// `MapValue` is a sorted `Vec`, so a sorted insert per wire entry shifts the
