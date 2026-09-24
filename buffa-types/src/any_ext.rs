@@ -355,7 +355,9 @@ impl serde::Serialize for Any {
 impl<'de> serde::Deserialize<'de> for Any {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         // Buffer the entire object so @type can appear at any position.
-        let mut obj: serde_json::Map<String, serde_json::Value> =
+        // `BufferedObject`, never `serde_json::Map`'s own `Deserialize`:
+        // see `buffa::json_helpers::buffered`.
+        let buffa::json_helpers::buffered::BufferedObject(mut obj) =
             serde::Deserialize::deserialize(d)?;
 
         let type_url = match obj.remove("@type") {
@@ -787,6 +789,66 @@ mod tests {
                 let any = Any::default();
                 let json = serde_json::to_string(&any).unwrap();
                 assert_eq!(json, "{}");
+            });
+        }
+
+        const RAW_VALUE_KEY: &str = "$serde_json::private::RawValue";
+
+        /// The tests of the private key pass with the fix reverted unless
+        /// `serde_json` has `raw_value` on. It is a dev-dependency feature
+        /// of this crate.
+        #[test]
+        fn the_test_build_has_serde_json_raw_value_enabled() {
+            let text = serde_json::json!({ RAW_VALUE_KEY: "[1]" }).to_string();
+            let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(value, serde_json::json!([1]));
+        }
+
+        #[test]
+        fn a_payload_is_not_read_from_serde_jsons_private_key() {
+            with_registry(|| {
+                let plain = serde_json::json!({ "@type": Duration::TYPE_URL, "value": "1.5s" });
+                serde_json::from_str::<Any>(&plain.to_string()).unwrap();
+
+                let hidden = serde_json::json!({
+                    "@type": Duration::TYPE_URL,
+                    "value": { RAW_VALUE_KEY: "\"1.5s\"" },
+                });
+                serde_json::from_str::<Any>(&hidden.to_string())
+                    .expect_err("an object is not a Duration");
+            });
+        }
+
+        #[test]
+        fn the_private_key_inside_a_payload_stays_data() {
+            use crate::google::protobuf::{value::Kind, Value};
+            with_registry(|| {
+                // Read as `serde_json` reads it, the list would hold `[1]`.
+                let json = serde_json::json!({
+                    "@type": "type.googleapis.com/google.protobuf.Value",
+                    "value": { "list": [{ RAW_VALUE_KEY: "[1]" }] },
+                });
+                let any: Any = serde_json::from_str(&json.to_string()).unwrap();
+                let value: Value = any.unpack_unchecked().unwrap();
+                let back = serde_json::to_value(&value).unwrap();
+                assert_eq!(back, json["value"]);
+                assert!(matches!(value.kind, Some(Kind::StructValue(_))));
+            });
+        }
+
+        #[test]
+        fn a_string_under_the_private_key_is_not_parsed() {
+            with_registry(|| {
+                // Parsing the string fails the recursion limit. As data it
+                // is an object under `f`, which the fallback for a type
+                // that is not registered ignores.
+                let deep = alloc::format!("{}0{}", "[".repeat(200), "]".repeat(200));
+                let json = serde_json::json!({
+                    "@type": "type.googleapis.com/no.such.Type",
+                    "f": { RAW_VALUE_KEY: deep },
+                });
+                let decoded = serde_json::from_str::<Any>(&json.to_string());
+                assert!(decoded.is_ok(), "{decoded:?}");
             });
         }
 

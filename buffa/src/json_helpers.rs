@@ -27,7 +27,11 @@
 //! these helpers operate on raw scalars and have no semver contract.
 
 #[doc(hidden)]
+pub mod buffered;
+#[doc(hidden)]
 pub mod wkt;
+
+use buffered::BufferedValue;
 
 use alloc::string::ToString;
 
@@ -801,7 +805,7 @@ pub mod repeated_enum {
                 mut seq: A,
             ) -> Result<Vec<crate::EnumValue<E>>, A::Error> {
                 let mut out = Vec::with_capacity(super::clamp_size_hint(seq.size_hint()));
-                while let Some(raw) = seq.next_element::<serde_json::Value>()? {
+                while let Some(super::BufferedValue(raw)) = seq.next_element()? {
                     match super::try_deserialize_enum::<crate::EnumValue<E>>(raw) {
                         Ok(Some(v)) => out.push(v),
                         Ok(None) => continue,
@@ -873,7 +877,7 @@ pub mod map_enum {
             ) -> Result<Self::Value, A::Error> {
                 let mut out = C::default();
                 while let Some(key) = map.next_key::<C::Key>()? {
-                    let raw = map.next_value::<serde_json::Value>()?;
+                    let super::BufferedValue(raw) = map.next_value()?;
                     match super::try_deserialize_enum::<C::Value>(raw) {
                         Ok(Some(v)) => {
                             out.storage_insert(key, v);
@@ -1785,9 +1789,9 @@ pub mod opt_enum {
         d: D,
     ) -> Result<Option<crate::EnumValue<E>>, D::Error> {
         // First, deserialize the raw value. null → None immediately.
-        let raw: Option<serde_json::Value> = serde::Deserialize::deserialize(d)?;
+        let raw: Option<super::BufferedValue> = serde::Deserialize::deserialize(d)?;
         let raw = match raw {
-            Some(v) => v,
+            Some(super::BufferedValue(v)) => v,
             None => return Ok(None),
         };
 
@@ -2049,9 +2053,9 @@ pub mod opt_closed_enum {
     pub fn deserialize<'de, E: crate::Enumeration + Default, D: Deserializer<'de>>(
         d: D,
     ) -> Result<Option<E>, D::Error> {
-        let raw: Option<serde_json::Value> = serde::Deserialize::deserialize(d)?;
+        let raw: Option<super::BufferedValue> = serde::Deserialize::deserialize(d)?;
         let raw = match raw {
-            Some(v) => v,
+            Some(super::BufferedValue(v)) => v,
             None => return Ok(None),
         };
 
@@ -2101,7 +2105,7 @@ pub mod repeated_closed_enum {
                 mut seq: A,
             ) -> Result<Vec<E>, A::Error> {
                 let mut out = Vec::with_capacity(super::clamp_size_hint(seq.size_hint()));
-                while let Some(raw) = seq.next_element::<serde_json::Value>()? {
+                while let Some(super::BufferedValue(raw)) = seq.next_element()? {
                     match super::try_deserialize_closed_enum::<E>(&raw) {
                         Ok(Some(v)) => out.push(v),
                         Ok(None) => continue,
@@ -2171,7 +2175,7 @@ pub mod map_closed_enum {
             ) -> Result<Self::Value, A::Error> {
                 let mut out = C::default();
                 while let Some(key) = map.next_key::<C::Key>()? {
-                    let raw = map.next_value::<serde_json::Value>()?;
+                    let super::BufferedValue(raw) = map.next_value()?;
                     match super::try_deserialize_closed_enum::<C::Value>(&raw) {
                         Ok(Some(v)) => {
                             out.storage_insert(key, v);
