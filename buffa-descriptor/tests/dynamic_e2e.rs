@@ -2146,10 +2146,7 @@ fn take_field_returns_owned_value_and_respects_presence() {
     // A non-default implicit-presence value is returned and removed.
     let text = md.field(14).unwrap();
     msg.set(text, Value::String("hello".into()));
-    assert_eq!(
-        msg.take_field(text),
-        Some(Value::String("hello".into()))
-    );
+    assert_eq!(msg.take_field(text), Some(Value::String("hello".into())));
     assert!(msg.field_by_number(14).is_none());
     assert_eq!(msg.take_field(text), None);
 
@@ -2168,4 +2165,122 @@ fn take_field_returns_owned_value_and_respects_presence() {
     assert!(msg.has(explicit));
     assert_eq!(msg.take_field(explicit), Some(Value::I32(0)));
     assert!(!msg.has(explicit));
+}
+
+#[test]
+fn take_field_moves_out_containers_and_skips_empty_ones() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let md = p.message_by_name("reflect.test.Containers").unwrap();
+    let inner_idx = p.message_index("reflect.test.Inner").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+
+    let nested = md.field(5).unwrap();
+    msg.set(
+        nested,
+        Value::Message(DynamicMessage::new(Arc::clone(&p), inner_idx)),
+    );
+    assert!(matches!(msg.take_field(nested), Some(Value::Message(_))));
+    assert!(!msg.has(nested));
+
+    let strings = md.field(2).unwrap();
+    msg.set(strings, Value::List(vec![Value::String("a".into())]));
+    assert_eq!(
+        msg.take_field(strings),
+        Some(Value::List(vec![Value::String("a".into())]))
+    );
+
+    // An empty list is stored but not set, so it is removed and not returned.
+    msg.set(strings, Value::List(Vec::new()));
+    assert!(msg.field_by_number(2).is_some());
+    assert_eq!(msg.take_field(strings), None);
+    assert!(msg.field_by_number(2).is_none());
+}
+
+#[test]
+fn take_field_of_a_oneof_member_leaves_the_oneof_unset() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.OneOf").unwrap();
+    let md = p.message_by_name("reflect.test.OneOf").unwrap();
+    let oneof = &md.oneofs()[0];
+    let text = md.field(2).unwrap();
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+    msg.set(text, Value::String("hello".into()));
+    assert_eq!(msg.take_field(text), Some(Value::String("hello".into())));
+    assert!(msg.which_oneof(oneof).is_none());
+}
+
+#[test]
+fn take_field_by_number_follows_the_same_presence_rule() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+
+    msg.set(md.field(14).unwrap(), Value::String("hello".into()));
+    assert_eq!(
+        msg.take_field_by_number(14),
+        Some(Value::String("hello".into()))
+    );
+    assert_eq!(msg.take_field_by_number(14), None);
+
+    // A stored implicit default is removed and not returned.
+    msg.set(md.field(3).unwrap(), Value::I32(0));
+    assert_eq!(msg.take_field_by_number(3), None);
+    assert!(msg.field_by_number(3).is_none());
+
+    // No field 9999 on this message.
+    assert_eq!(msg.take_field_by_number(9999), None);
+}
+
+#[test]
+fn try_take_field_rejects_a_foreign_descriptor_and_leaves_the_field() {
+    let p = foreign_field_pool();
+    let owner_idx = p.message_index("foreign.test.Owner").unwrap();
+    let owner_field = p
+        .message_by_name("foreign.test.Owner")
+        .unwrap()
+        .field(1)
+        .unwrap();
+    // Same number, different message type.
+    let foreign = p
+        .message_by_name("foreign.test.Foreign")
+        .unwrap()
+        .field(1)
+        .unwrap();
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), owner_idx);
+    msg.set(owner_field, Value::String("kept".into()));
+
+    let err = msg.try_take_field(foreign).unwrap_err();
+    assert!(matches!(
+        err,
+        ReflectError::FieldNotMember {
+            ref message,
+            ref field_name,
+            number,
+        } if message == "foreign.test.Owner" && field_name == "alien" && number == 1
+    ));
+    assert_eq!(msg.field_by_number(1), Some(&Value::String("kept".into())));
+
+    assert_eq!(
+        msg.try_take_field(owner_field),
+        Ok(Some(Value::String("kept".into())))
+    );
+}
+
+#[test]
+#[should_panic(expected = "is not a member of foreign.test.Owner")]
+fn take_field_panics_on_a_foreign_descriptor() {
+    let p = foreign_field_pool();
+    let owner_idx = p.message_index("foreign.test.Owner").unwrap();
+    let foreign = p
+        .message_by_name("foreign.test.Foreign")
+        .unwrap()
+        .field(1)
+        .unwrap();
+
+    let mut msg = DynamicMessage::new(Arc::clone(&p), owner_idx);
+    let _ = msg.take_field(foreign);
 }

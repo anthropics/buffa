@@ -1336,30 +1336,92 @@ impl DynamicMessage {
         self.fields.get_mut(&field.number())
     }
 
-    /// Remove and return a field's value, if it is present.
+    /// Remove a field and return its value, if the field was set.
     ///
-    /// Presence follows [`ReflectMessage::has`]: an implicit-presence scalar
-    /// stored at its default value is cleared but returns `None`, while an
-    /// explicit-presence field set to its default still returns `Some`.
-    /// The returned [`Value`] is moved out of the message, so callers can
-    /// transform or transfer owned submessages and containers without cloning.
+    /// The [`Value`] is moved out of the message, so an owned submessage,
+    /// list or map can be transformed or handed on without a clone.
+    ///
+    /// "Set" follows [`ReflectMessage::has`]. Whatever was stored under the
+    /// field is removed either way, but `None` is returned for a value that
+    /// does not count as set: an implicit-presence scalar at its default, or
+    /// an empty list or map. An explicit-presence field set to its default
+    /// returns `Some`.
     ///
     /// `field` may be a declared field or a registered extension of this
-    /// message; both resolve by number.
+    /// message. To discard a field without reading it, use
+    /// [`clear`](ReflectMessageMut::clear).
+    ///
+    /// A descriptor reached through the message, such as one from
+    /// [`message_descriptor`](ReflectMessage::message_descriptor), borrows
+    /// the message and cannot be passed to a `&mut self` method. Clone the
+    /// [`Arc<DescriptorPool>`](Self::pool) first and resolve descriptors
+    /// through the clone:
+    ///
+    /// ```no_run
+    /// # use std::sync::Arc;
+    /// # use buffa_descriptor::reflect::{DynamicMessage, Value};
+    /// // Moves every set submessage out of `msg`.
+    /// fn take_submessages(msg: &mut DynamicMessage) -> Vec<DynamicMessage> {
+    ///     let pool = Arc::clone(msg.pool());
+    ///     let md = pool.message(msg.message_index());
+    ///     let mut taken = Vec::new();
+    ///     for fd in md.fields() {
+    ///         // Check the kind first: `take_field` removes whatever it finds.
+    ///         if !matches!(msg.field_by_number(fd.number()), Some(Value::Message(_))) {
+    ///             continue;
+    ///         }
+    ///         if let Some(Value::Message(inner)) = msg.take_field(fd) {
+    ///             taken.push(inner);
+    ///         }
+    ///     }
+    ///     taken
+    /// }
+    /// ```
     ///
     /// # Panics
     ///
-    /// Debug builds assert that `field` is a member of this message's
-    /// descriptor (a declared field or registered extension).
+    /// Panics if `field` is not a member of this message's descriptor. A
+    /// descriptor from another message type with the same number would
+    /// otherwise remove the wrong field. Membership is by identity, as
+    /// described on [`ReflectError::FieldNotMember`], so the same field
+    /// resolved from a different pool instance is not a member either. Use
+    /// [`try_take_field`](Self::try_take_field) when membership is not already
+    /// proven, or [`take_field_by_number`](Self::take_field_by_number) when
+    /// you hold a number, not a descriptor.
+    #[must_use = "use `clear` to discard a field without reading it"]
     pub fn take_field(&mut self, field: &FieldDescriptor) -> Option<Value> {
-        debug_assert!(
-            self.field_descriptor_is_member(field),
-            "FieldDescriptor passed to take_field() is not a member of {}",
-            self.message_descriptor().full_name,
-        );
-        self.fields
-            .remove(&field.number())
-            .filter(|value| value_is_present(value, field))
+        self.try_take_field(field)
+            .unwrap_or_else(|err| panic!("{err}"))
+    }
+
+    /// Checked variant of [`take_field`](Self::take_field). `Ok(None)` means
+    /// the field was not set, by the same rule.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReflectError::FieldNotMember`] if `field` is not a declared
+    /// field or registered extension of this message. The message is left
+    /// unchanged.
+    pub fn try_take_field(
+        &mut self,
+        field: &FieldDescriptor,
+    ) -> Result<Option<Value>, ReflectError> {
+        self.validate_field_descriptor(field)?;
+        Ok(self.take_field_by_number(field.number()))
+    }
+
+    /// Remove the field with this number and return its value, if the field
+    /// was set.
+    ///
+    /// The number-keyed form of [`take_field`](Self::take_field), with the
+    /// same presence rule, for a caller that holds a number and no
+    /// descriptor. A number that names no field or registered extension of
+    /// this message returns `None`; bytes kept for it in
+    /// [`unknown_fields`](ReflectMessage::unknown_fields) are left alone.
+    pub fn take_field_by_number(&mut self, number: u32) -> Option<Value> {
+        let value = self.fields.remove(&number)?;
+        let field = self.field_or_extension(number)?;
+        value_is_present(&value, field).then_some(value)
     }
 
     /// Insert a field value by number, bypassing the descriptor-keyed

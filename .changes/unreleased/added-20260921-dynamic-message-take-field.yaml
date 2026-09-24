@@ -1,4 +1,4 @@
 kind: Added
 body: |-
-    **`DynamicMessage::take_field`** removes a field and returns its owned `Value` when protobuf presence says the field is set, avoiding clone-then-clear in descriptor-driven transforms. Implicit default values are cleared without being returned, while explicit-presence defaults return `Some`.
+    **`DynamicMessage::take_field`** (#459) removes a field and returns its owned `Value`, so a submessage, list or map can be moved out of a dynamic message without a clone. "Set" follows `has`: an implicit-presence default or an empty list or map is removed but returns `None`. `try_take_field` is the checked variant, and `take_field_by_number` takes by field number.
 time: 2026-09-21T15:34:00+02:00

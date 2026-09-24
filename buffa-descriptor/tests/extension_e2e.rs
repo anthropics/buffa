@@ -45,6 +45,25 @@ fn extension_set_get_has_through_reflect_message() {
 }
 
 #[test]
+fn take_field_removes_an_extension_by_descriptor_or_number() {
+    let p = pool();
+    let idx = p.message_index("reflect.ext.Extendable").unwrap();
+    let ext = p.extension_by_name("reflect.ext.ext_int32").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+
+    msg.set(ext.field(), Value::I32(42));
+    assert_eq!(msg.take_field(ext.field()), Some(Value::I32(42)));
+    assert!(!msg.has(ext.field()));
+
+    msg.set(ext.field(), Value::I32(43));
+    assert_eq!(
+        msg.take_field_by_number(ext.field().number()),
+        Some(Value::I32(43))
+    );
+    assert!(!msg.has(ext.field()));
+}
+
+#[test]
 fn extension_binary_round_trip() {
     let p = pool();
     let idx = p.message_index("reflect.ext.Extendable").unwrap();
