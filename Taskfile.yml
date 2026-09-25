@@ -803,6 +803,7 @@ tasks:
     cmds:
       - rustup target add thumbv7em-none-eabihf
       - cargo check -p buffa --no-default-features
+      - cargo test -p buffa --no-default-features --features json --test nostd_json_options
       - cargo check -p buffa --no-default-features --target thumbv7em-none-eabihf
       - cargo check -p buffa-types --no-default-features
       - cargo check -p buffa-types --no-default-features --features chrono

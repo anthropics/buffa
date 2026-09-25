@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`ignore_unknown_enum_values` now filters open-enum optional, repeated, and map fields in `no_std` JSON builds.** The process-wide `set_global_json_parse_options` path now matches the `std` scoped option for these field shapes: unknown enum names are dropped while valid unknown numeric values remain `EnumValue::Unknown(n)`. The `no_std` option remains process-global and set-once.
+time: 2026-09-25T11:05:00+02:00

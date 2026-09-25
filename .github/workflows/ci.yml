@@ -318,6 +318,9 @@ jobs:
       - name: Check buffa no_std (host)
         run: cargo check -p buffa --no-default-features
 
+      - name: Test buffa no_std JSON options
+        run: cargo test -p buffa --no-default-features --features json --test nostd_json_options
+
       - name: Check buffa no_std (bare-metal ARM)
         run: cargo check -p buffa --no-default-features --target thumbv7em-none-eabihf
 
