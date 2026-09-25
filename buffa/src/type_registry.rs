@@ -35,6 +35,15 @@
 
 use alloc::boxed::Box;
 
+/// Return the protobuf full name carried by an `Any` type URL.
+///
+/// The `Any` contract identifies the embedded message by the path segment
+/// after the final slash; the URL prefix is application-defined.
+pub(crate) fn any_type_name(type_url: &str) -> Option<&str> {
+    let (_, type_name) = type_url.rsplit_once('/')?;
+    (!type_name.is_empty()).then_some(type_name)
+}
+
 /// Maximum nesting depth of `google.protobuf.Any` expansions in one
 /// serialization.
 ///
@@ -259,12 +268,28 @@ pub type ExtTextMergeFn =
 #[derive(Default)]
 struct TextAnyMap {
     entries: hashbrown::HashMap<alloc::string::String, TextAnyEntry>,
+    by_type_name: hashbrown::HashMap<alloc::string::String, alloc::string::String>,
 }
 
 #[cfg(feature = "text")]
 impl TextAnyMap {
+    fn register(&mut self, entry: TextAnyEntry) {
+        let type_url = alloc::string::String::from(entry.type_url);
+        if let Some(type_name) = any_type_name(entry.type_url) {
+            self.by_type_name
+                .insert(alloc::string::String::from(type_name), type_url.clone());
+        }
+        self.entries.insert(type_url, entry);
+    }
+
     fn lookup(&self, type_url: &str) -> Option<&TextAnyEntry> {
-        self.entries.get(type_url)
+        if let Some(entry) = self.entries.get(type_url) {
+            return Some(entry);
+        }
+
+        let type_name = any_type_name(type_url)?;
+        let registered_url = self.by_type_name.get(type_name)?;
+        self.entries.get(registered_url)
     }
 }
 
@@ -357,10 +382,7 @@ impl TypeRegistry {
     /// Registers a text `Any` type entry.
     #[cfg(feature = "text")]
     pub fn register_text_any(&mut self, entry: TextAnyEntry) {
-        use alloc::borrow::ToOwned;
-        self.text_any
-            .entries
-            .insert(entry.type_url.to_owned(), entry);
+        self.text_any.register(entry);
     }
 
     /// Registers a text extension entry. Replaces any existing entry at the
@@ -997,6 +1019,7 @@ mod tests {
                 text_merge: any_merge_text::<Inner>,
             });
             assert!(reg.text_any_by_url("type.example.com/Inner").is_some());
+            assert!(reg.text_any_by_url("custom.example/v1/Inner").is_some());
             assert!(reg.text_any_by_url("type.example.com/Missing").is_none());
         }
 
