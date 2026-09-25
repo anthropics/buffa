@@ -29,7 +29,7 @@ jobs:
     # modules are large) adds a few minutes on top of a cold-cache build.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
 
       # Pinned (not @stable) so rustfmt/clippy match rust-toolchain.toml and
       # local runs agree with CI. Bump together with that file.
@@ -38,7 +38,7 @@ jobs:
       # overrides — so the file is what actually selects the toolchain for
       # cargo. The pin here must NAME THE SAME VERSION as the file so the
       # components installed by this step belong to the toolchain cargo uses.
-      - uses: dtolnay/rust-toolchain@1.95
+      - uses: dtolnay/rust-toolchain@46817827a5bfabe028bf34e1cce71fd40e2ff697 # 1.95.0 (sha-pinned)
         with:
           components: clippy, rustfmt
 
@@ -109,7 +109,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
       - run: npx --yes markdownlint-cli@0.47.0 '**/*.md' --ignore target --ignore .claude
 
   # ── Workflow lint ────────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
       - name: Install actionlint
         env:
           ACTIONLINT_VERSION: 1.7.7
@@ -142,6 +142,8 @@ jobs:
           "${RUNNER_TEMP}/bin/actionlint" --version
       - name: Lint workflows
         run: actionlint -color
+      - name: Require SHA-pinned actions
+        run: ./scripts/check-action-pins.sh
 
   # ── Publish list ─────────────────────────────────────────────────────────
   # Adding a publishable crate to the workspace without adding it to
@@ -153,8 +155,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable (sha-pinned)
       # cargo metadata only reads manifests, so the pinned dev toolchain is not
       # needed; stable avoids downloading it just for this check.
       - name: Check publish coverage
@@ -169,7 +171,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
       - name: Install changie
         env:
           CHANGIE_VERSION: 1.24.2
@@ -200,9 +202,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable (sha-pinned)
 
       # The checked-in Cargo.lock is written by the pinned dev toolchain and
       # may resolve transitive deps (e.g. getrandom, clap_lex) to versions
@@ -215,7 +217,7 @@ jobs:
           CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
         run: rm -f Cargo.lock && cargo generate-lockfile
 
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (sha-pinned)
         with:
           toolchain: '1.75'
 
@@ -254,9 +256,9 @@ jobs:
     env:
       MIRI_TOOLCHAIN: nightly-2026-02-27
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
 
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (sha-pinned)
         with:
           toolchain: ${{ env.MIRI_TOOLCHAIN }}
           components: miri
@@ -267,7 +269,7 @@ jobs:
       # (~1-3 min to build); rust-cache does not cover it. Cache it keyed on the
       # pinned toolchain so steady-state runs skip the build.
       - name: Cache Miri sysroot
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0 (sha-pinned)
         with:
           path: ~/.cache/miri
           key: miri-sysroot-${{ runner.os }}-${{ env.MIRI_TOOLCHAIN }}
@@ -296,13 +298,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
 
       # Must name the same version as rust-toolchain.toml (which selects the
       # toolchain cargo uses) so the cross-targets installed here belong to
       # that toolchain. With @stable, the targets land on a toolchain the
       # file then bypasses, and the bare-metal check fails with E0463.
-      - uses: dtolnay/rust-toolchain@1.95
+      - uses: dtolnay/rust-toolchain@46817827a5bfabe028bf34e1cce71fd40e2ff697 # 1.95.0 (sha-pinned)
         with:
           targets: i686-unknown-linux-gnu, thumbv7em-none-eabihf
 
@@ -341,9 +343,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable (sha-pinned)
 
       - name: Install protoc
         run: |
@@ -395,9 +397,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable (sha-pinned)
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1 (sha-pinned)
         with:

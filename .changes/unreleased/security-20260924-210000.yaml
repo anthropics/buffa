@@ -1,0 +1,4 @@
+kind: Security
+body: |-
+  **GitHub Actions and the conformance tools image no longer follow movable upstream refs.** Workflow `uses:` lines are pinned to commit SHAs, and `conformance/Dockerfile.tools` builds Alpine, jsoncpp, and protobuf from a digest and two commits instead of floating tags. A retag of those refs can no longer change what CI or the published tools image runs without a review of this repository.
+time: 2026-09-24T21:00:00+00:00
