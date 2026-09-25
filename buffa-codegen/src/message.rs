@@ -792,12 +792,16 @@ fn generate_message_with_nesting(
             }
         })
         .collect();
-    let debug_impl = quote! {
-        impl ::core::fmt::Debug for #name_ident {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                f.debug_struct(#struct_name_str)
-                    #(.field(#debug_field_names, #debug_field_values))*
-                    .finish()
+    let debug_impl = if ctx.skip_debug(proto_fqn) {
+        quote! {}
+    } else {
+        quote! {
+            impl ::core::fmt::Debug for #name_ident {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct(#struct_name_str)
+                        #(.field(#debug_field_names, #debug_field_values))*
+                        .finish()
+                }
             }
         }
     };

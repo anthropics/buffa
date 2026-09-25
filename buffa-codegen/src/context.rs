@@ -1128,6 +1128,27 @@ impl<'a> CodeGenContext<'a> {
             })
     }
 
+    /// Whether the owned message type should omit its generated `Debug` impl.
+    ///
+    /// Rules use the same proto-segment-aware prefix matching as
+    /// [`preserve_unknown_fields`](Self::preserve_unknown_fields): a rule
+    /// naming a message also covers messages nested inside it, and `"."`
+    /// matches every message. View types and oneof enums are unaffected.
+    pub fn skip_debug(&self, msg_fqn: &str) -> bool {
+        if self.config.skip_debug.is_empty() {
+            return false;
+        }
+        let dotted = if msg_fqn.starts_with('.') {
+            Cow::Borrowed(msg_fqn)
+        } else {
+            Cow::Owned(format!(".{msg_fqn}"))
+        };
+        self.config
+            .skip_debug
+            .iter()
+            .any(|prefix| matches_proto_prefix(prefix, &dotted))
+    }
+
     /// Check whether a message-typed oneof variant at the given proto path is
     /// stored inline (opted out of `Box` wrapping).
     ///

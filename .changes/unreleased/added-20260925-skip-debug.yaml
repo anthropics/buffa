@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`buffa-build` adds `Config::skip_debug` for prost-compatible custom `Debug` implementations** (#448). Matching owned message types no longer receive buffa's generated `Debug` impl, so a crate can provide its own formatting without a conflicting implementation. Paths use proto-segment prefix matching and may cover a message, nested messages, a package, or all messages with `"."`; view types and oneof enums are unchanged.
+time: 2026-09-25T11:05:00+02:00

@@ -205,6 +205,32 @@ impl Config {
         self
     }
 
+    /// Omit the generated `Debug` implementation for matching owned messages.
+    ///
+    /// Each path is a fully-qualified proto path prefix, e.g.
+    /// `".demo.Uuid4"` for one message or `".demo"` for a package. A rule
+    /// naming a message also covers messages nested inside it, and `"."`
+    /// matches every message. A leading dot is added if missing and trailing
+    /// dots are trimmed.
+    ///
+    /// View types and oneof enums keep their generated `Debug`
+    /// implementations. Repeated calls accumulate.
+    #[must_use]
+    pub fn skip_debug(mut self, paths: &[impl AsRef<str>]) -> Self {
+        for raw in paths.iter().map(AsRef::as_ref) {
+            let normalized = normalize_override_path(raw);
+            if normalized.is_empty() {
+                println!(
+                    "cargo:warning=buffa: skip_debug path '{raw}' \\
+                     normalizes to empty and will be ignored"
+                );
+                continue;
+            }
+            self.codegen_config.skip_debug.push(normalized);
+        }
+        self
+    }
+
     /// Wrap generated `impl`s in `#[cfg(feature = "...")]` instead of
     /// emitting them unconditionally (default: false).
     ///
@@ -2159,7 +2185,7 @@ fn normalize_attr_path(mut path: String) -> String {
 }
 
 /// Normalize an `override_feature_in` / `preserve_unknown_fields_in` /
-/// `deny_unknown_json_fields_in` path:
+/// `deny_unknown_json_fields_in` / `skip_debug` path:
 /// trim whitespace, prepend the leading dot if absent, and strip trailing
 /// dots. Unlike
 /// [`normalize_attr_path`], an entry that normalizes to empty (e.g. `"..."`)

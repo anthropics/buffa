@@ -1188,6 +1188,13 @@ pub struct CodeGenConfig {
     /// covered. Map values are always `Vec<u8>` regardless of `bytes_fields`
     /// and require no special handling.
     pub generate_arbitrary: bool,
+    /// Proto path prefixes for messages whose owned types should omit the
+    /// generated `Debug` implementation.
+    ///
+    /// Matching is proto-segment-aware: `".pkg.Msg"` matches that message
+    /// and messages nested inside it, while `"."` matches every message.
+    /// View types and oneof enums are unaffected.
+    pub skip_debug: Vec<String>,
     /// External type path mappings.
     ///
     /// Each entry maps either a fully-qualified protobuf package prefix
@@ -1798,6 +1805,7 @@ impl Default for CodeGenConfig {
             deny_unknown_json_fields_in: Vec::new(),
             generate_json: false,
             generate_arbitrary: false,
+            skip_debug: Vec::new(),
             extern_paths: Vec::new(),
             bytes_fields: Vec::new(),
             string_fields: Vec::new(),

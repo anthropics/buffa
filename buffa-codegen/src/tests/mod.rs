@@ -71,6 +71,7 @@ mod reflect_view;
 mod repeated_type;
 mod shared_corpus_context;
 mod shared_pool;
+mod skip_debug;
 mod size_arithmetic;
 mod view_codegen;
 
