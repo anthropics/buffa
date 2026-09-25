@@ -469,8 +469,8 @@ pub(crate) fn parse_custom_list_path(
 /// Select a representation through `buffa_build`'s `string_type` /
 /// `string_type_custom` builder methods. The wire format is identical regardless
 /// of representation — only the in-memory owned type changes; view types keep
-/// borrowing `&str`, and `map<_, string>` / `map<string, _>` keys and values
-/// always stay `String`.
+/// borrowing `&str`. String key/value slots inside map fields use the same
+/// configured representation as other string fields.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum StringRepr {
@@ -541,7 +541,8 @@ impl StringRepr {
 /// `bytes_type_custom` builder methods (or the legacy `use_bytes_type`, which
 /// selects [`Bytes`](BytesRepr::Bytes)). The wire format is identical regardless
 /// of representation; view types keep borrowing `&[u8]`, and `map` bytes values
-/// follow the same rules as the string path.
+/// use the representation configured for their containing field except for
+/// effective `map<bytes, bytes>` values, which stay `Vec<u8>`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum BytesRepr {
@@ -556,13 +557,13 @@ pub enum BytesRepr {
     ///
     /// # Limitations
     ///
-    /// - A *foreign* custom type used as a `repeated` element fails to compile
-    ///   (the emitted `ReflectElement` / `ProtoElemJson` impls violate the
-    ///   orphan rule). Wrap it in a crate-local newtype for that case; singular
-    ///   / optional / oneof uses work with a foreign type directly.
-    /// - A `Custom` rule does **not** apply to `map<K, bytes>` values — they
-    ///   stay `Vec<u8>`. Only the built-in [`Bytes`](BytesRepr::Bytes) applies
-    ///   to map values.
+    /// - A *foreign* custom type used as a `repeated` element or a
+    ///   `map<K, bytes>` value fails to compile (the emitted `ReflectElement` /
+    ///   `ProtoElemJson` impls violate the orphan rule). Wrap it in a crate-local
+    ///   newtype for those cases; singular / optional / oneof uses work with a
+    ///   foreign type directly.
+    /// - A `Custom` rule applies to `map<K, bytes>` values, except for effective
+    ///   `map<bytes, bytes>` values, which stay `Vec<u8>`.
     /// - A path that does not parse as a Rust type surfaces as
     ///   [`CodeGenError::InvalidTypePath`] at generation (`.compile()`) time.
     /// - The per-element impls are deduplicated within a single generation, but
@@ -1113,8 +1114,8 @@ pub struct CodeGenConfig {
     /// [`preserve_unknown_fields`](Self::preserve_unknown_fields). Each entry is
     /// `(proto_path_prefix, enabled)`, with a leading dot (`".pkg.Msg"`).
     ///
-    /// Matching uses the same proto-segment-aware prefix rules as
-    /// `bytes_fields` and `unboxed_oneof_fields`: a rule covers the message it
+    /// Matching uses proto-segment-aware prefix rules, as in
+    /// `unboxed_oneof_fields`: a rule covers the message it
     /// names *and every message nested inside it*, and `"."` covers everything.
     /// A rule naming a nested message does not cover its enclosing message. The
     /// **last** matching rule wins, so a later, more specific entry can carve a
@@ -1184,9 +1185,9 @@ pub struct CodeGenConfig {
     ///
     /// For `bytes_fields`-typed fields, codegen emits `#[arbitrary(with = ...)]`
     /// using helpers in `::buffa::__private` since `bytes::Bytes` has no
-    /// `Arbitrary` impl. Singular, optional, and repeated bytes fields are all
-    /// covered. Map values are always `Vec<u8>` regardless of `bytes_fields`
-    /// and require no special handling.
+    /// `Arbitrary` impl. Singular, optional, repeated, and `map<K, bytes>`
+    /// values are covered. Effective `map<bytes, bytes>` values keep `Vec<u8>`
+    /// and need no special handling.
     pub generate_arbitrary: bool,
     /// External type path mappings.
     ///
@@ -1213,27 +1214,26 @@ pub struct CodeGenConfig {
     /// values in bytes-keyed maps; ordinary message containers use serde
     /// directly.
     pub extern_paths: Vec<(String, String)>,
-    /// Ordered (proto-path-prefix, [`BytesRepr`]) rules selecting the Rust type
-    /// for `bytes` fields. Later rules win, so a broad rule (e.g. `"."` →
-    /// `Bytes`) can be refined by a more specific one. Fields matching no rule
-    /// use `Vec<u8>`. The path is matched with the same proto-segment-aware
-    /// prefix logic as [`string_fields`](Self::string_fields).
+    /// Ordered (proto-path selector, [`BytesRepr`]) rules selecting the Rust
+    /// type for `bytes` fields. Later rules win, so a broad rule (e.g. `"."` →
+    /// `Bytes`) can be refined by a more specific one. Selectors with a leading
+    /// dot use proto-segment-aware prefix matching; selectors without one match
+    /// complete trailing path segments. Fields matching no rule use `Vec<u8>`.
     pub bytes_fields: Vec<(String, BytesRepr)>,
     /// Ordered (proto-path-prefix, [`StringRepr`]) rules selecting the Rust type
     /// for `string` fields. Later rules win, so a broad rule (e.g. `"."` →
     /// `SmolStr`) can be refined by a more specific one
     /// (`".my.pkg.Msg.field"` → `CompactString`). Fields matching no rule use
-    /// `String`. The path is matched with the same proto-segment-aware prefix
-    /// logic as [`bytes_fields`](Self::bytes_fields).
+    /// `String`. Paths use proto-segment-aware prefix matching.
     ///
-    /// Applies to singular, optional, and repeated `string` fields and oneof
-    /// `string` variants. Map keys and values always stay `String`, mirroring
-    /// the bytes path (where map values always stay `Vec<u8>`).
+    /// Applies to singular, optional, and repeated `string` fields, oneof
+    /// `string` variants, and string key/value slots inside map fields.
     pub string_fields: Vec<(String, StringRepr)>,
-    /// Ordered (proto-path-prefix, [`MapRepr`]) rules selecting the owned Rust
-    /// map collection for `map` fields. Later rules win, with the same
-    /// proto-segment-aware prefix matching as [`bytes_fields`](Self::bytes_fields)
-    /// (`"."` matches every field). Fields matching no rule use `HashMap<K, V>`.
+    /// Ordered (proto-path selector, [`MapRepr`]) rules selecting the owned Rust
+    /// map collection for `map` fields. Later rules win. Selectors with a
+    /// leading dot use proto-segment-aware prefix matching; selectors without
+    /// one match complete trailing path segments. `"."` matches every field.
+    /// Fields matching no rule use `HashMap<K, V>`.
     ///
     /// Independent of the element/value representation: a `map` field's key and
     /// value types are chosen by the usual scalar/string/bytes/message rules,
@@ -1241,17 +1241,16 @@ pub struct CodeGenConfig {
     pub map_fields: Vec<(String, MapRepr)>,
     /// Ordered (proto-path-prefix, [`PointerRepr`]) rules selecting the owned
     /// smart pointer for singular message fields (the pointer inside
-    /// `MessageField<T>`). Later rules win, same proto-segment-aware prefix
-    /// matching as [`bytes_fields`](Self::bytes_fields). Fields matching no rule
-    /// use `Box<T>`.
+    /// `MessageField<T>`). Later rules win, using proto-segment-aware prefix
+    /// matching. Fields matching no rule use `Box<T>`.
     ///
     /// Applies to singular (and proto2 optional/required) message fields only —
     /// not repeated message fields (a collection) or oneof message variants.
     pub pointer_fields: Vec<(String, PointerRepr)>,
     /// Ordered (proto-path-prefix, [`RepeatedRepr`]) rules selecting the owned
     /// Rust collection for `repeated` fields. Later rules win, with the same
-    /// proto-segment-aware prefix matching as [`bytes_fields`](Self::bytes_fields)
-    /// (`"."` matches every field). Fields matching no rule use `Vec<T>`.
+    /// proto-segment-aware prefix matching. `"."` matches every field. Fields
+    /// matching no rule use `Vec<T>`.
     ///
     /// Applies only to `repeated` fields (not `map`, whose collection stays
     /// the configured map type). The element type is chosen by the usual
@@ -1262,8 +1261,7 @@ pub struct CodeGenConfig {
     /// descriptors before generation.
     ///
     /// Each entry pairs a fully-qualified proto path prefix with a
-    /// [`FeatureOverride`]. Paths are matched with the same
-    /// proto-segment-aware logic as [`bytes_fields`](Self::bytes_fields): a
+    /// [`FeatureOverride`]. Paths use proto-segment-aware prefix matching: a
     /// rule may name a type (`".my.pkg.E"`), a field (`".my.pkg.Msg.e"`), a
     /// package/message prefix, or `"."` for everything the override targets.
     /// Leading dots are optional, trailing dots are ignored, and
@@ -1286,11 +1284,10 @@ pub struct CodeGenConfig {
     /// variant is boxed (so recursive types compile); entries here opt matching
     /// variants out, storing the message inline in the enum.
     ///
-    /// Each entry is a proto path prefix matched with the same
-    /// proto-segment-aware logic as [`bytes_fields`](Self::bytes_fields)
-    /// (`"."` matches every variant). Recursive variants cannot be stored
-    /// inline (the type would be unsized): an entry naming one *exactly* is
-    /// rejected at codegen time, while a broader prefix entry silently keeps
+    /// Each entry is a proto path prefix matched with proto-segment-aware
+    /// prefix logic; `"."` matches every variant. Recursive variants cannot be
+    /// stored inline (the type would be unsized): an entry naming one *exactly*
+    /// is rejected at codegen time, while a broader prefix entry silently keeps
     /// recursive variants boxed and inlines the rest.
     pub unboxed_oneof_fields: Vec<String>,
     /// Honor `features.utf8_validation = NONE` by emitting `Vec<u8>` / `&[u8]`

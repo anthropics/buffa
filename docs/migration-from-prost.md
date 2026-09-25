@@ -289,8 +289,8 @@ The buffa equivalent of each prost-build feature, or a note that there is none:
 
 | prost feature | buffa status |
 |---------------|-------------|
-| `btree_map(&[...])` | Supported. `.map_type(buffa_build::MapRepr::BTreeMap)` for all, or `.map_type_in(buffa_build::MapRepr::BTreeMap, &[...])` for specific fields. Paths must be fully qualified with a leading dot (`".my_pkg.MyMessage.items"`); prost's suffix paths (`"items"`, `"MyMessage.items"`) are not supported. A path without the leading dot matches no field, and buffa reports no error. |
-| `bytes(&[...])` | Supported. `.use_bytes_type()` for all, or `.use_bytes_type_in(&[...])` for specific fields. Paths need the leading dot, as for `map_type_in`. |
+| `btree_map(&[...])` | Supported. `.map_type(buffa_build::MapRepr::BTreeMap)` for all, or `.map_type_in(buffa_build::MapRepr::BTreeMap, &[...])` for specific fields. Leading-dot paths keep proto prefix matching (`".my_pkg.MyMessage.items"`); prost-style suffix paths (`"items"`, `"MyMessage.items"`) are also supported and match complete path segments. |
+| `bytes(&[...])` | Supported. `.use_bytes_type()` for all, or `.use_bytes_type_in(&[...])` for specific fields. It accepts the same leading-dot prefixes and dotless suffix selectors as `map_type_in`. |
 | `extern_path(proto, rust)` | Supported. Same API, both package-level (`.extern_path(".pkg", "::crate")`) and per-type (`.extern_path(".google.protobuf.Timestamp", "::pbjson_types::Timestamp")`) mappings. A per-type mapping to a non-buffa crate requires `.generate_views(false)`, or map to a buffa-generated crate instead — see [External type paths](guide.md#external-type-paths). |
 | `type_attribute(path, attr)` | Supported. Same API, plus `message_attribute` / `enum_attribute` / `oneof_attribute` for narrower targeting. (For serde, prefer `generate_json(true)`, which emits the proto3-canonical JSON impls.) |
 | `field_attribute(path, attr)` | Supported. Same API. |

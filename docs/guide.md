@@ -326,7 +326,7 @@ When several entries could match a reference, the most specific one wins: an exa
 > and its `FlexStr` shows the low-boilerplate alternative, deriving the
 > buffa-facing impls via the `buffa-remote-derive` crate.
 
-By default every proto `string` field is generated as `String` and every `bytes` field as `Vec<u8>`. For schemas dominated by many short strings — log labels, identifiers, header-like maps — a small-string type can avoid most of those heap allocations. The `string_type` / `bytes_type` options select an alternative owned representation, with the same path-prefix rules as `use_bytes_type_in` (rules accumulate, last match wins):
+By default every proto `string` field is generated as `String` and every `bytes` field as `Vec<u8>`. For schemas dominated by many short strings — log labels, identifiers, header-like maps — a small-string type can avoid most of those heap allocations. The `string_type` / `bytes_type` options select an alternative owned representation, and the last matching rule wins. `bytes_type` paths use the same selectors as `use_bytes_type_in`: leading-dot paths use prefix matching, while paths without a leading dot match complete trailing path segments. `string_type` paths continue to use leading-dot proto path prefixes:
 
 ```rust,ignore
 buffa_build::Config::new()

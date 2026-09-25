@@ -1026,8 +1026,9 @@ fn map_field_clear_stmt(
 /// retaining heap allocations where possible (String, Vec, MessageField).
 /// Resolve the [`BytesRepr`](crate::BytesRepr) for a `bytes`-typed field.
 ///
-/// `proto_fqn` is the fully-qualified message name (no leading dot). Matched
-/// against `config.bytes_fields` as `".my.pkg.Msg.field"`. Returns
+/// `proto_fqn` is the fully-qualified message name (no leading dot). The full
+/// field path is matched against `config.bytes_fields` using its selector
+/// rules. Returns
 /// [`BytesRepr::Vec`](crate::BytesRepr::Vec) for fields with no rule.
 pub(crate) fn field_bytes_repr(
     ctx: &CodeGenContext,
