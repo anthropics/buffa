@@ -643,12 +643,9 @@ pub mod proto_enum {
 /// for strings, `from_i32` after range-check for integers, default for
 /// `null` — so behaviour is unchanged for enums that *do* have one.
 ///
-/// Unlike [`try_deserialize_enum`], lenient filtering works in both `std`
-/// and `no_std` builds: there's no inner deserialize whose own lenient
-/// handling could mask the unknown-value case, so no scoped strict-mode
-/// override is needed. (Open-enum containers via [`try_deserialize_enum`]
-/// still need the `std` thread-local override and so don't filter under
-/// `no_std`.)
+/// Lenient filtering works in both `std` and `no_std` builds. Unlike the
+/// open-enum helper, this path decodes directly through [`Enumeration`], so
+/// it never needs a scoped strict-mode override.
 ///
 /// [`Enumeration`]: crate::Enumeration
 #[inline]
@@ -723,14 +720,11 @@ fn decode_closed_enum_strict<E: crate::Enumeration + Default>(
 /// unknown values instead of propagating the error. This supports the
 /// repeated-enum and map-enum filtering behaviour (skip unknown entries).
 ///
-/// **`std` only**: filtering requires temporarily forcing strict mode to get
-/// a distinguishable error for unknown values, which needs the scoped
-/// thread-local. In `no_std` builds with global lenient enabled, singular
-/// enum fields still get accept-with-default behaviour (via the unconditional
-/// check in `open_enum_value::deserialize`), but repeated/map filtering
-/// (removing unknown entries from the container) is unavailable — errors
-/// propagate as in strict mode. Closed-enum containers are unaffected: they
-/// use [`try_deserialize_closed_enum`], which doesn't have this limitation.
+/// In `std` builds, filtering temporarily forces strict mode so an unknown
+/// enum name remains distinguishable from the default value. In `no_std`
+/// builds, `EnumValue` deserialization is already strict, so the process-wide
+/// option can filter the resulting error directly. Closed-enum containers use
+/// [`try_deserialize_closed_enum`] and follow the same lenient behavior.
 #[inline]
 fn try_deserialize_enum<T: serde::de::DeserializeOwned>(
     raw: serde_json::Value,
@@ -755,10 +749,15 @@ fn try_deserialize_enum<T: serde::de::DeserializeOwned>(
     }
     #[cfg(not(feature = "std"))]
     {
-        // no_std: no scoped override available. Errors propagate as-is.
-        // (Global lenient mode only affects singular enum accept-with-default,
-        //  not container filtering.)
-        serde_json::from_value::<T>(raw).map(Some)
+        // Without std, the inner EnumValue deserialize stays strict. That
+        // gives this outer helper the error signal it needs to drop an
+        // unknown entry when the process-wide lenient option is enabled.
+        let ignore = crate::json::ignore_unknown_enum_values();
+        match serde_json::from_value::<T>(raw) {
+            Ok(v) => Ok(Some(v)),
+            Err(_) if ignore => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -766,10 +765,10 @@ fn try_deserialize_enum<T: serde::de::DeserializeOwned>(
 
 /// Serde with-module for `Vec<EnumValue<E>>` repeated enum fields.
 ///
-/// When `ignore_unknown_enum_values` is active (std only), unknown enum
-/// string values are silently skipped instead of producing an error.  In
-/// default mode (or no_std builds) this behaves identically to the standard
-/// `Vec<EnumValue<E>>` deserialization with null→empty-vec handling.
+/// When `ignore_unknown_enum_values` is active, unknown enum string values
+/// are silently skipped instead of producing an error. In default mode this
+/// behaves identically to the standard `Vec<EnumValue<E>>` deserialization
+/// with null→empty-vec handling.
 pub mod repeated_enum {
     use alloc::vec::Vec;
     use serde::{Deserializer, Serializer};
@@ -820,10 +819,9 @@ pub mod repeated_enum {
 /// Serde with-module for `HashMap<K, EnumValue<E>>` map fields where the
 /// value is an enum type.
 ///
-/// When `ignore_unknown_enum_values` is active (std only), map entries whose
-/// value is an unknown enum string are silently dropped.  In default mode
-/// (or no_std builds) this behaves identically to standard deserialization
-/// with null→empty-map handling.
+/// When `ignore_unknown_enum_values` is active, map entries whose value is
+/// an unknown enum string are silently dropped. In default mode this behaves
+/// identically to standard deserialization with null→empty-map handling.
 pub mod map_enum {
     use crate::map_codec::MapStorage;
     use serde::{Deserializer, Serializer};
@@ -1765,9 +1763,9 @@ pub mod opt_bytes {
 
 /// Serde with-module for `Option<EnumValue<E>>` optional enum fields (proto2).
 ///
-/// When `ignore_unknown_enum_values` is active (std only), unknown enum
-/// string values produce `None` (field not set) instead of `Some(default)`.
-/// In default mode (or no_std builds) unknown strings produce an error.
+/// When `ignore_unknown_enum_values` is active, unknown enum string values
+/// produce `None` (field not set) instead of `Some(default)`. In default
+/// mode unknown strings produce an error.
 pub mod opt_enum {
     use serde::{Deserializer, Serializer};
 
