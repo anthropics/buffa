@@ -63,6 +63,7 @@ pub type AnyTypeEntry = JsonAnyEntry;
 /// deserialize messages containing `Any` fields.
 pub struct AnyRegistry {
     entries: HashMap<String, JsonAnyEntry>,
+    by_type_name: HashMap<String, String>,
 }
 
 impl AnyRegistry {
@@ -70,17 +71,32 @@ impl AnyRegistry {
     pub fn new() -> Self {
         Self {
             entries: HashMap::new(),
+            by_type_name: HashMap::new(),
         }
     }
 
     /// Registers a type entry. Replaces any existing entry for the same type URL.
     pub fn register(&mut self, entry: JsonAnyEntry) {
-        self.entries.insert(entry.type_url.to_owned(), entry);
+        let type_url = entry.type_url.to_owned();
+        if let Some(type_name) = crate::type_registry::any_type_name(entry.type_url) {
+            self.by_type_name
+                .insert(type_name.to_owned(), type_url.clone());
+        }
+        self.entries.insert(type_url, entry);
     }
 
-    /// Looks up a type entry by its full type URL.
+    /// Looks up a type entry by type URL.
+    ///
+    /// Exact URLs take precedence. Otherwise the protobuf full name after the
+    /// final slash is used, matching `google.protobuf.Any` type-URL semantics.
     pub fn lookup(&self, type_url: &str) -> Option<&JsonAnyEntry> {
-        self.entries.get(type_url)
+        if let Some(entry) = self.entries.get(type_url) {
+            return Some(entry);
+        }
+
+        let type_name = crate::type_registry::any_type_name(type_url)?;
+        let registered_url = self.by_type_name.get(type_name)?;
+        self.entries.get(registered_url)
     }
 }
 
@@ -176,6 +192,9 @@ mod tests {
 
         assert!(registry
             .lookup("type.googleapis.com/test.Message")
+            .is_some());
+        assert!(registry
+            .lookup("custom.example/v1/test.Message")
             .is_some());
         assert!(registry.lookup("type.googleapis.com/test.Other").is_none());
     }

@@ -931,6 +931,24 @@ mod tests {
         }
 
         #[test]
+        fn registered_any_accepts_arbitrary_type_url_prefix() {
+            with_registry(|| {
+                let type_url = "custom.example/v1/google.protobuf.Duration";
+                let duration = Duration::from_secs_nanos(1, 500_000_000);
+                let any = Any::pack(&duration, type_url);
+
+                let json = serde_json::to_value(&any).unwrap();
+                assert_eq!(json["@type"], type_url);
+                assert_eq!(json["value"], "1.500s");
+
+                let decoded: Any = serde_json::from_value(json).unwrap();
+                assert_eq!(decoded.type_url, type_url);
+                let decoded_duration: Duration = decoded.unpack_unchecked().unwrap();
+                assert_eq!(decoded_duration, duration);
+            });
+        }
+
+        #[test]
         fn deserialize_rejects_type_url_with_empty_type_name() {
             without_registry(|| {
                 let json = r#"{"@type": "type.googleapis.com/", "value": ""}"#;

@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`google.protobuf.Any` registries now resolve registered message types across custom type-URL prefixes.** JSON and text lookups fall back to the protobuf full name after the final `/`, while exact URL matches still take precedence and the original `type_url` is preserved. For example, a type registered as `type.googleapis.com/pkg.Message` also resolves `company.example/v1/pkg.Message`.
+time: 2026-09-25T11:05:00+02:00
