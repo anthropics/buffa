@@ -396,15 +396,14 @@ impl MapValue {
         self.entries
             .binary_search_by(|(k, _)| match k {
                 MapKey::String(s) => s.as_str().cmp(key),
-                // All non-string variants precede String in MapKey's
-                // derived ordering and cannot match a string lookup.
+                // Every non-string variant sorts before `String` in
+                // `MapKey`'s derived `Ord`, so `Less` keeps the comparator
+                // consistent with the entry order. Only a string key
+                // compares `Equal`, so a hit is always a string entry.
                 _ => core::cmp::Ordering::Less,
             })
             .ok()
-            .and_then(|i| match &self.entries[i].0 {
-                MapKey::String(_) => Some(&self.entries[i].1),
-                _ => None,
-            })
+            .map(|i| &self.entries[i].1)
     }
 
     /// Look up a value by `i64` key. Resolves to `I32`, `I64`, `U32`, or
@@ -561,6 +560,26 @@ mod tests {
             assert!(reflected.get_str("1").is_none(), "key: {key:?}");
             assert_eq!(m.get(&key), Some(&Value::I32(42)));
         }
+    }
+
+    #[test]
+    fn map_value_get_str_finds_string_keys_after_non_string_keys() {
+        // Not a map protobuf allows, but `from_entries` accepts it, and it is
+        // the only shape in which the search has to step over non-string
+        // entries to reach a string one.
+        let m = MapValue::from_entries(vec![
+            (MapKey::String("b".into()), Value::I32(8)),
+            (MapKey::Bool(true), Value::I32(1)),
+            (MapKey::I32(1), Value::I32(2)),
+            (MapKey::I64(1), Value::I32(3)),
+            (MapKey::U32(1), Value::I32(4)),
+            (MapKey::U64(1), Value::I32(5)),
+            (MapKey::String("a".into()), Value::I32(7)),
+        ]);
+        assert_eq!(m.get_str("a"), Some(&Value::I32(7)));
+        assert_eq!(m.get_str("b"), Some(&Value::I32(8)));
+        assert_eq!(m.get_str("1"), None);
+        assert_eq!(m.get_str("c"), None);
     }
 
     #[test]
