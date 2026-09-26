@@ -395,30 +395,17 @@ impl MapValue {
     /// ```
     #[must_use]
     pub fn get_str(&self, key: &str) -> Option<&Value> {
-        // The protobuf spec restricts a `map<K, V>` field to a single key
-        // type, so a well-formed map's entries are homogeneous. The
-        // comparator below would be non-total over a mixed-key map; this
-        // assert catches a corrupt insert in tests before it can confuse
-        // a binary search.
-        debug_assert!(
-            self.entries
-                .first()
-                // MSRV: `Option::is_none_or` requires 1.82.
-                .map_or(true, |(k, _)| matches!(k, MapKey::String(_))),
-            "get_str called on a non-string-keyed MapValue"
-        );
         self.entries
             .binary_search_by(|(k, _)| match k {
                 MapKey::String(s) => s.as_str().cmp(key),
-                // Unreachable for a well-formed map; the debug_assert above
-                // catches the corrupt case in tests. Total-order fallback.
+                // Every non-string variant sorts before `String` in
+                // `MapKey`'s derived `Ord`, so `Less` keeps the comparator
+                // consistent with the entry order. Only a string key
+                // compares `Equal`, so a hit is always a string entry.
                 _ => core::cmp::Ordering::Less,
             })
             .ok()
-            .and_then(|i| match &self.entries[i].0 {
-                MapKey::String(_) => Some(&self.entries[i].1),
-                _ => None,
-            })
+            .map(|i| &self.entries[i].1)
     }
 
     /// Look up a value by `i64` key. Resolves to `I32`, `I64`, `U32`, or
@@ -557,6 +544,44 @@ mod tests {
         // Lookup by borrowed &str — no MapKey constructed.
         assert_eq!(m.get_str("banana"), Some(&Value::I32(2)));
         assert_eq!(m.get_str("durian"), None);
+    }
+
+    #[test]
+    fn map_value_get_str_non_string_keys_return_none() {
+        for key in [
+            MapKey::Bool(false),
+            MapKey::Bool(true),
+            MapKey::I32(1),
+            MapKey::I64(1),
+            MapKey::U32(1),
+            MapKey::U64(1),
+        ] {
+            let m = MapValue::from_entries(vec![(key.clone(), Value::I32(42))]);
+            assert_eq!(m.get_str("1"), None, "key: {key:?}");
+            let reflected: &dyn ReflectMap = &m;
+            assert!(reflected.get_str("1").is_none(), "key: {key:?}");
+            assert_eq!(m.get(&key), Some(&Value::I32(42)));
+        }
+    }
+
+    #[test]
+    fn map_value_get_str_finds_string_keys_after_non_string_keys() {
+        // Not a map protobuf allows, but `from_entries` accepts it, and it is
+        // the only shape in which the search has to step over non-string
+        // entries to reach a string one.
+        let m = MapValue::from_entries(vec![
+            (MapKey::String("b".into()), Value::I32(8)),
+            (MapKey::Bool(true), Value::I32(1)),
+            (MapKey::I32(1), Value::I32(2)),
+            (MapKey::I64(1), Value::I32(3)),
+            (MapKey::U32(1), Value::I32(4)),
+            (MapKey::U64(1), Value::I32(5)),
+            (MapKey::String("a".into()), Value::I32(7)),
+        ]);
+        assert_eq!(m.get_str("a"), Some(&Value::I32(7)));
+        assert_eq!(m.get_str("b"), Some(&Value::I32(8)));
+        assert_eq!(m.get_str("1"), None);
+        assert_eq!(m.get_str("c"), None);
     }
 
     #[test]
