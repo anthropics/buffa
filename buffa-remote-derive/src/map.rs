@@ -1,7 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::DeriveInput;
+use syn::{parse_quote, DeriveInput};
 
+use crate::forwarders;
 use crate::remote_field::{self, RemoteField};
 
 pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
@@ -26,6 +27,22 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let insert_call = remote_field::overridable_call(&overrides, "insert", field_ty, "insert");
     let clear_call = remote_field::overridable_call(&overrides, "clear", field_ty, "clear");
     let iter_call = remote_field::overridable_call(&overrides, "iter", field_ty, "iter");
+
+    // The canonical seed is `Vec<(Key, Value)>`, which `Arbitrary` builds from
+    // exactly the bytes `HashMap<Key, Value>` — the default `map`
+    // representation — would consume (both go through `Unstructured::
+    // arbitrary_iter`). The newtype's own `FromIterator`, which `MapStorage`
+    // asks the user to write, then assembles it.
+    let from_iter = quote! {
+        <Self as ::core::iter::FromIterator<(#key_ty, #value_ty)>>::from_iter(__buffa_seed)
+    };
+    let arbitrary_impl = forwarders::arbitrary(
+        &remote,
+        &quote! { ::buffa::alloc::vec::Vec<(#key_ty, #value_ty)> },
+        &from_iter,
+        forwarders::TakeRest::Seed,
+        &[parse_quote! { Self: ::core::iter::FromIterator<(#key_ty, #value_ty)> }],
+    );
 
     Ok(quote! {
         impl #impl_generics ::buffa::MapStorage for #ident #ty_generics #where_clause {
@@ -58,5 +75,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
                 #iter_call(&#accessor)
             }
         }
+
+        #arbitrary_impl
     })
 }

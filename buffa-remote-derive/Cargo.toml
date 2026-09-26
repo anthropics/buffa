@@ -12,12 +12,20 @@ categories = ["encoding"]
 [lib]
 proc-macro = true
 
+# Test-only. The emitted forwarders are gated on the *consuming* crate's
+# features and this crate's tests are that consumer, so they need a feature by
+# that name to compile. The macro reads no features: `#[buffa(arbitrary)]`
+# alone selects the forwarder, however this crate was built.
+[features]
+arbitrary = []
+
 [dependencies]
 proc-macro2 = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }
 
 [dev-dependencies]
+arbitrary = { workspace = true }
 buffa = { workspace = true, features = ["std"] }
 ecow = { workspace = true }
 smallvec = { version = "1", default-features = false }
