@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`buffa::json_helpers::buffered`** (#483) deserializes a `serde_json::Value` with every object key read as data. `BufferedValue` and `BufferedObject` are the types that `buffa` buffers untrusted JSON through, for a hand-written visitor. `value`, `opt_value` and `object` are functions for `#[serde(deserialize_with = "...")]` on a field of a derived impl. Use the module in any type of your own that keeps untrusted JSON as a `serde_json::Value`: in a build with `serde_json`'s `raw_value` feature, `Value`'s own impl parses the string under the key `$serde_json::private::RawValue` as JSON. In a build with `serde_json`'s `arbitrary_precision` feature, the module buffers a number that has a fraction or an exponent, or that is outside the `i64` and `u64` ranges, as an object and not as a number.
+time: 2026-09-24T05:00:00+00:00

@@ -271,7 +271,9 @@ pub fn deserialize_extensions<'de, D: serde::Deserializer<'de>>(
         fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<UnknownFields, M::Error> {
             let mut out = UnknownFields::new();
             while let Some(key) = map.next_key::<String>()? {
-                let value: serde_json::Value = map.next_value()?;
+                // Never `serde_json::Value`'s own `Deserialize`: see
+                // `json_helpers::buffered`.
+                let crate::json_helpers::buffered::BufferedValue(value) = map.next_value()?;
                 match deserialize_extension_key(self.extendee, &key, value) {
                     Some(Ok(records)) => {
                         for r in records {
@@ -1315,6 +1317,19 @@ mod tests {
         assert!(
             deserialize_extension_key("pkg.Msg", "[pkg.missing]", serde_json::json!(1)).is_none()
         );
+    }
+
+    #[test]
+    fn deserialize_extensions_reads_serde_jsons_private_key_as_data() {
+        // Parsed as JSON, the string fails the recursion limit. As data it
+        // sits under a key that names no extension, and is dropped. See
+        // `json_helpers::buffered`, whose tests check that `raw_value` is on.
+        let deep = alloc::format!("{}0{}", "[".repeat(200), "]".repeat(200));
+        let hidden = serde_json::json!({ "$serde_json::private::RawValue": deep });
+        let json = serde_json::json!({ "[pkg.not_registered]": hidden }).to_string();
+        let mut d = serde_json::Deserializer::from_str(&json);
+        let fields = deserialize_extensions("pkg.Msg", &mut d).expect("the key is data");
+        assert!(fields.is_empty());
     }
 
     #[test]
