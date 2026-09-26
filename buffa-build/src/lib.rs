@@ -24,8 +24,10 @@
 //!
 //! If `protoc` is unavailable or outdated on your platform, `buf` can be
 //! used instead — see [`Config::use_buf()`]. Alternatively, feed a
-//! pre-compiled descriptor set via [`Config::descriptor_set()`].
+//! pre-compiled descriptor set via [`Config::descriptor_set()`] (a file) or
+//! [`Config::descriptor_set_bytes()`] (in-memory bytes).
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -53,6 +55,8 @@ enum DescriptorSource {
     Buf,
     /// Read a pre-built `FileDescriptorSet` from a file.
     Precompiled(PathBuf),
+    /// Use a pre-built `FileDescriptorSet` already in memory.
+    Bytes(Vec<u8>),
 }
 
 /// Builder for configuring and running protobuf compilation.
@@ -1829,9 +1833,46 @@ impl Config {
     ///
     /// When using this, `.files()` specifies which proto files in the
     /// descriptor set to generate code for (matching by proto file name).
+    /// For in-memory input, use [`descriptor_set_bytes()`](Self::descriptor_set_bytes).
     #[must_use]
     pub fn descriptor_set(mut self, path: impl Into<PathBuf>) -> Self {
         self.descriptor_source = DescriptorSource::Precompiled(path.into());
+        self
+    }
+
+    /// Use a serialized `google.protobuf.FileDescriptorSet` from memory.
+    ///
+    /// Skips invoking `protoc` or `buf` entirely. Accepts an owned `Vec<u8>`
+    /// without copying, or a byte slice (which is copied into the configuration).
+    /// The bytes are decoded when [`compile()`](Self::compile) is called.
+    /// This replaces any previously configured descriptor source.
+    ///
+    /// [`files()`](Self::files) selects which proto files in the descriptor set
+    /// to generate, using their exact descriptor names (relative to the proto
+    /// source root). The set must also contain their transitive imports.
+    /// [`includes()`](Self::includes) is ignored.
+    ///
+    /// No file-based Cargo rebuild directives are emitted for this input.
+    /// The caller is responsible for emitting `cargo:rerun-if-changed` or
+    /// `cargo:rerun-if-env-changed` directives for the sources of these bytes.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// // The bytes can also come from an in-process compiler such as protox.
+    /// let bytes = std::fs::read("schema.binpb")?;
+    /// println!("cargo:rerun-if-changed=schema.binpb");
+    /// buffa_build::Config::new()
+    ///     .descriptor_set_bytes(bytes)
+    ///     .files(&["api/v1/service.proto"])
+    ///     .compile()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn descriptor_set_bytes(mut self, bytes: impl Into<Vec<u8>>) -> Self {
+        self.descriptor_source = DescriptorSource::Bytes(bytes.into());
         self
     }
 
@@ -1968,15 +2009,16 @@ impl Config {
             .ok_or("OUT_DIR not set and no out_dir configured")?;
 
         // Produce a FileDescriptorSet from the configured source.
-        let descriptor_bytes = match &self.descriptor_source {
-            DescriptorSource::Protoc => invoke_protoc(&self.files, &self.includes)?,
-            DescriptorSource::Buf => invoke_buf()?,
-            DescriptorSource::Precompiled(path) => std::fs::read(path).map_err(|e| {
-                format!("failed to read descriptor set '{}': {}", path.display(), e)
-            })?,
+        let descriptor_bytes: Cow<'_, [u8]> = match &self.descriptor_source {
+            DescriptorSource::Protoc => invoke_protoc(&self.files, &self.includes)?.into(),
+            DescriptorSource::Buf => invoke_buf()?.into(),
+            DescriptorSource::Precompiled(path) => std::fs::read(path)
+                .map_err(|e| format!("failed to read descriptor set '{}': {}", path.display(), e))?
+                .into(),
+            DescriptorSource::Bytes(bytes) => Cow::Borrowed(bytes),
         };
         // This descriptor set came from a protoc (or buf) invocation this build
-        // controls, or a path the caller named, so the bound is far above
+        // controls, or a path or bytes the caller supplied, so the bound is far above
         // buffa's untrusted-input default — that default is sized for wire
         // input and a schema of a few hundred `.proto` files exceeds it,
         // descriptor types being wide structs. Still finite, so a truncated or
@@ -1996,12 +2038,12 @@ impl Config {
         //
         // `FileDescriptorProto.name` contains the path relative to the proto
         // source root (protoc: `--proto_path`; buf: the module root). For
-        // Precompiled and Buf mode, `.files()` are expected to already be
+        // Precompiled, Bytes, and Buf mode, `.files()` are expected to already be
         // proto-relative names. For Protoc mode, strip the longest matching
         // include prefix.
         let files_to_generate: Vec<String> = if matches!(
             self.descriptor_source,
-            DescriptorSource::Precompiled(_) | DescriptorSource::Buf
+            DescriptorSource::Precompiled(_) | DescriptorSource::Bytes(_) | DescriptorSource::Buf
         ) {
             self.files
                 .iter()
@@ -2128,6 +2170,8 @@ impl Config {
             DescriptorSource::Precompiled(ref path) => {
                 println!("cargo:rerun-if-changed={}", path.display());
             }
+            // The caller tracks the inputs used to produce these bytes.
+            DescriptorSource::Bytes(_) => {}
         }
 
         Ok(())
@@ -3031,6 +3075,118 @@ mod tests {
             .map(|(_, a)| a.as_str())
             .collect();
         assert_eq!(paths, vec!["#[derive(A)]", "#[derive(B)]", "#[derive(C)]"]);
+    }
+
+    #[test]
+    fn descriptor_set_bytes_matches_file_input() {
+        use buffa_codegen::generated::descriptor::field_descriptor_proto::{Label, Type};
+        use buffa_codegen::generated::descriptor::{
+            DescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+        };
+
+        let files = [
+            FileDescriptorProto {
+                name: Some("common/types.proto".into()),
+                package: Some("common".into()),
+                syntax: Some("proto3".into()),
+                message_type: vec![DescriptorProto {
+                    name: Some("Item".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            FileDescriptorProto {
+                name: Some("api/v1/service.proto".into()),
+                package: Some("api.v1".into()),
+                syntax: Some("proto3".into()),
+                dependency: vec!["common/types.proto".into()],
+                message_type: vec![DescriptorProto {
+                    name: Some("Request".into()),
+                    field: vec![FieldDescriptorProto {
+                        name: Some("item".into()),
+                        number: Some(1),
+                        label: Some(Label::LABEL_OPTIONAL),
+                        r#type: Some(Type::TYPE_MESSAGE),
+                        type_name: Some(".common.Item".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        ];
+        let bytes = buffa_codegen::encode_descriptor_set(&files, &[]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("set.binpb");
+        std::fs::write(&path, &bytes).unwrap();
+
+        // Exercise both accepted input forms and replacement of a previous
+        // source. No proto sources or external compiler are needed.
+        let configs = [
+            Config::new().descriptor_set(&path),
+            Config::new()
+                .descriptor_set(dir.path().join("missing.binpb"))
+                .descriptor_set_bytes(bytes.as_slice()),
+            Config::new().use_buf().descriptor_set_bytes(bytes),
+        ];
+        let mut outputs = Vec::new();
+        for (i, config) in configs.into_iter().enumerate() {
+            let out = dir.path().join(i.to_string());
+            config
+                .files(&["api/v1/service.proto"])
+                // Must not strip this prefix from descriptor-relative names.
+                .includes(&["api"])
+                .out_dir(&out)
+                .include_file("gen_mod.rs")
+                .generate_reflection(true)
+                .shared_descriptor_pool(true)
+                .compile()
+                .unwrap();
+            let generated: std::collections::BTreeMap<_, _> = std::fs::read_dir(&out)
+                .unwrap()
+                .map(|entry| {
+                    let entry = entry.unwrap();
+                    (entry.file_name(), std::fs::read(entry.path()).unwrap())
+                })
+                .collect();
+            let source = generated
+                .values()
+                .map(|bytes| String::from_utf8_lossy(bytes))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(source.contains("pub struct Request"));
+            assert!(!source.contains("pub struct Item"));
+            outputs.push(generated);
+        }
+        assert_eq!(outputs[0], outputs[1]);
+        assert_eq!(outputs[0], outputs[2]);
+    }
+
+    #[test]
+    fn descriptor_set_bytes_rejects_malformed_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("gen");
+        let err = Config::new()
+            .descriptor_set_bytes(&[0xff][..])
+            .out_dir(&out)
+            .compile()
+            .unwrap_err();
+        assert!(err.to_string().contains("FileDescriptorSet"), "{err}");
+        assert!(!out.exists(), "invalid input must not produce output");
+    }
+
+    #[test]
+    fn descriptor_set_bytes_can_be_replaced() {
+        let cfg = Config::new().descriptor_set_bytes(Vec::new()).use_buf();
+        assert!(matches!(cfg.descriptor_source, DescriptorSource::Buf));
+
+        let cfg = Config::new()
+            .descriptor_set_bytes(Vec::new())
+            .descriptor_set("set.binpb");
+        assert!(matches!(
+            cfg.descriptor_source,
+            DescriptorSource::Precompiled(path) if path == Path::new("set.binpb")
+        ));
     }
 
     #[test]
