@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **In-memory descriptor sets for buffa-build** (#407). `Config::descriptor_set_bytes` accepts serialized `FileDescriptorSet` bytes from an owned vector or a byte slice, allowing build scripts to use compilers such as protox without writing a temporary descriptor file. The existing path-based `descriptor_set` API remains available. Callers supply Cargo rebuild directives for the sources of the bytes.
+time: 2026-09-26T12:00:00+08:00
