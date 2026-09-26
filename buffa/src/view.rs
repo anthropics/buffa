@@ -830,6 +830,24 @@ pub(crate) fn try_slice_ref(backing: &Bytes, slice: &[u8]) -> Option<Bytes> {
     (s_start >= b_start && s_end <= b_end).then(|| backing.slice_ref(slice))
 }
 
+// The `ViewEncode` twin of `write_sized` in message.rs; the two traits share
+// no supertrait to write it once.
+#[inline]
+fn write_sized<'a, V: ViewEncode<'a>>(
+    view: &V,
+    size: u32,
+    cache: &mut crate::SizeCache,
+    buf: &mut impl EncodeSink,
+) {
+    crate::encode_sink::write_contiguous(
+        size as usize,
+        cache,
+        buf,
+        |cache, sink| view.write_to(cache, sink),
+        |cache, sink| view.write_to(cache, sink),
+    );
+}
+
 /// Serialize a [`MessageView`] directly from its borrowed fields.
 ///
 /// Symmetric with [`Message`](crate::Message)'s two-pass
@@ -884,6 +902,11 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// provided encode entry points, so callers driving `compute_size` /
     /// `write_to` directly must validate the size themselves (via
     /// [`checked_encode_size`](crate::checked_encode_size)).
+    ///
+    /// An implementation must write exactly the number of bytes
+    /// `compute_size` returned. The provided encode methods write a
+    /// `BufMut` into space sized by `compute_size` and panic if `write_to`
+    /// writes more; in debug builds they also panic if it writes fewer.
     fn write_to(&self, cache: &mut crate::SizeCache, buf: &mut impl EncodeSink);
 
     /// Compute size, then write. Primary view-encode entry point.
@@ -898,6 +921,10 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// Panics if the encoded size exceeds the 2 GiB protobuf limit
     /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — see
     /// [`try_encode`](Self::try_encode) for the error-returning variant.
+    /// Also panics, when `buf` is a [`BufMut`](bytes::BufMut), if a manual
+    /// implementation's `write_to` produces more bytes than its
+    /// `compute_size` declared, and in debug builds if it produces a
+    /// different number.
     #[inline]
     fn encode(&self, buf: &mut impl EncodeSink) {
         self.try_encode(buf)
@@ -916,8 +943,8 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// if the encoded size exceeds the limit.
     fn try_encode(&self, buf: &mut impl EncodeSink) -> Result<(), crate::EncodeError> {
         let mut cache = crate::SizeCache::new();
-        crate::message::checked_encode_size(self.compute_size(&mut cache))?;
-        self.write_to(&mut cache, buf);
+        let size = crate::message::checked_encode_size(self.compute_size(&mut cache))?;
+        write_sized(self, size, &mut cache, buf);
         Ok(())
     }
 
@@ -930,6 +957,10 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — see
     /// [`try_encode_with_cache`](Self::try_encode_with_cache) for the
     /// error-returning variant.
+    /// Also panics, when `buf` is a [`BufMut`](bytes::BufMut), if a manual
+    /// implementation's `write_to` produces more bytes than its
+    /// `compute_size` declared, and in debug builds if it produces a
+    /// different number.
     #[inline]
     fn encode_with_cache(&self, cache: &mut crate::SizeCache, buf: &mut impl EncodeSink) {
         self.try_encode_with_cache(cache, buf)
@@ -953,8 +984,8 @@ pub trait ViewEncode<'a>: MessageView<'a> {
         buf: &mut impl EncodeSink,
     ) -> Result<(), crate::EncodeError> {
         cache.clear();
-        crate::message::checked_encode_size(self.compute_size(cache))?;
-        self.write_to(cache, buf);
+        let size = crate::message::checked_encode_size(self.compute_size(cache))?;
+        write_sized(self, size, cache, buf);
         Ok(())
     }
 
@@ -1011,7 +1042,7 @@ pub trait ViewEncode<'a>: MessageView<'a> {
         if len > max_bytes {
             return Err(crate::EncodeError::ExceedsBudget { len, max_bytes });
         }
-        self.write_to(cache, buf);
+        write_sized(self, len, cache, buf);
         Ok(len)
     }
 
@@ -1057,6 +1088,10 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// failure. See
     /// [`try_encode_length_delimited`](Self::try_encode_length_delimited)
     /// for the error-returning variant.
+    /// Also panics, when `buf` is a [`BufMut`](bytes::BufMut), if a manual
+    /// implementation's `write_to` produces more bytes than its
+    /// `compute_size` declared, and in debug builds if it produces a
+    /// different number.
     #[inline]
     fn encode_length_delimited(&self, buf: &mut impl EncodeSink) {
         self.try_encode_length_delimited(buf)
@@ -1079,8 +1114,8 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     ) -> Result<(), crate::EncodeError> {
         let mut cache = crate::SizeCache::new();
         let len = crate::message::checked_encode_size(self.compute_size(&mut cache))?;
-        crate::encoding::encode_varint(len as u64, buf);
-        self.write_to(&mut cache, buf);
+        crate::encoding::encode_varint(u64::from(len), buf);
+        write_sized(self, len, &mut cache, buf);
         Ok(())
     }
 
@@ -1091,9 +1126,10 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// Panics if the encoded size exceeds the 2 GiB protobuf limit
     /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — see
     /// [`try_encode_to_vec`](Self::try_encode_to_vec) for the
-    /// error-returning variant. In debug builds, also panics if a manual
-    /// implementation's `write_to` produces a different byte count than
-    /// its `compute_size` declared.
+    /// error-returning variant. Also panics if a manual
+    /// implementation's `write_to` produces more bytes than its
+    /// `compute_size` declared, and in debug builds if it produces a
+    /// different number.
     // Direct body rather than delegating to try_encode_to_vec — the
     // Result<Vec<u8>> niche survives inlining and costs measurably in
     // callers; see Message::encode_to_vec for the measurement.
@@ -1105,8 +1141,8 @@ pub trait ViewEncode<'a>: MessageView<'a> {
             Ok(size) => size as usize,
             Err(_) => crate::message::encode_size_overflow(),
         };
-        let mut buf = alloc::vec::Vec::with_capacity(size);
-        self.write_to(&mut cache, &mut buf);
+        let buf =
+            crate::encode_sink::write_to_new_vec(size, |sink| self.write_to(&mut cache, sink));
         crate::message::debug_assert_two_pass(buf.len(), size);
         buf
     }
@@ -1122,13 +1158,14 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     ///
     /// # Panics
     ///
-    /// In debug builds, panics if a manual implementation's `write_to`
-    /// produces a different byte count than its `compute_size` declared.
+    /// Panics if a manual implementation's `write_to` produces more
+    /// bytes than its `compute_size` declared, and in debug builds if it
+    /// produces a different number.
     fn try_encode_to_vec(&self) -> Result<alloc::vec::Vec<u8>, crate::EncodeError> {
         let mut cache = crate::SizeCache::new();
         let size = crate::message::checked_encode_size(self.compute_size(&mut cache))? as usize;
-        let mut buf = alloc::vec::Vec::with_capacity(size);
-        self.write_to(&mut cache, &mut buf);
+        let buf =
+            crate::encode_sink::write_to_new_vec(size, |sink| self.write_to(&mut cache, sink));
         crate::message::debug_assert_two_pass(buf.len(), size);
         Ok(buf)
     }
@@ -1144,9 +1181,10 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     /// Panics if the encoded size exceeds the 2 GiB protobuf limit
     /// ([`MAX_MESSAGE_BYTES`](crate::MAX_MESSAGE_BYTES)) — see
     /// [`try_encode_to_bytes`](Self::try_encode_to_bytes) for the
-    /// error-returning variant. In debug builds, also panics if a manual
-    /// implementation's `write_to` produces a different byte count than
-    /// its `compute_size` declared.
+    /// error-returning variant. Also panics if a manual
+    /// implementation's `write_to` produces more bytes than its
+    /// `compute_size` declared, and in debug builds if it produces a
+    /// different number.
     // Via `Vec<u8>` — see `Message::encode_to_bytes`.
     #[inline]
     #[must_use]
@@ -1165,8 +1203,9 @@ pub trait ViewEncode<'a>: MessageView<'a> {
     ///
     /// # Panics
     ///
-    /// In debug builds, panics if a manual implementation's `write_to`
-    /// produces a different byte count than its `compute_size` declared.
+    /// Panics if a manual implementation's `write_to` produces more
+    /// bytes than its `compute_size` declared, and in debug builds if it
+    /// produces a different number.
     fn try_encode_to_bytes(&self) -> Result<Bytes, crate::EncodeError> {
         self.try_encode_to_vec().map(Bytes::from)
     }
@@ -4122,6 +4161,55 @@ mod tests {
             name: name.into(),
         };
         Bytes::from(msg.encode_to_vec())
+    }
+
+    // The `contiguous_sink_` prefix is the filter for the `Miri` CI step that
+    // covers the pre-sized cursor.
+    #[test]
+    fn contiguous_sink_view_encode_matches_owned() {
+        let view = SimpleMessageView {
+            id: 300,
+            name: "view",
+        };
+        let owned = SimpleMessage {
+            id: 300,
+            name: "view".into(),
+        };
+        let expected = owned.encode_to_vec();
+        assert_eq!(view.encode_to_vec(), expected);
+
+        let mut bytes_mut = bytes::BytesMut::new();
+        view.encode(&mut bytes_mut);
+        assert_eq!(&bytes_mut[..], &expected[..]);
+
+        let mut roomy = alloc::vec::Vec::with_capacity(64);
+        view.encode_length_delimited(&mut roomy);
+        assert_eq!(roomy[0] as usize, expected.len());
+        assert_eq!(&roomy[1..], &expected[..]);
+
+        let mut rope = crate::Rope::new();
+        view.encode(&mut rope);
+        assert_eq!(&rope.to_contiguous_bytes()[..], &expected[..]);
+
+        let mut bounded = alloc::vec::Vec::new();
+        let len = view.try_encode_bounded(64, &mut bounded);
+        assert_eq!(len, Ok(expected.len() as u32));
+        assert_eq!(bounded, expected);
+    }
+
+    /// A `BufMut` with room receives the view through `advance_mut`, not
+    /// through `put_*`.
+    #[test]
+    fn contiguous_sink_view_encode_writes_in_place() {
+        let view = SimpleMessageView {
+            id: 300,
+            name: "view",
+        };
+        let mut probe = crate::test_doubles::Probe::default();
+        probe.inner.reserve(64);
+        view.encode(&mut probe);
+        assert_eq!((probe.advance_mut_calls, probe.put_slice_calls), (1, 0));
+        assert_eq!(probe.inner.len(), view.encoded_len() as usize);
     }
 
     #[test]
