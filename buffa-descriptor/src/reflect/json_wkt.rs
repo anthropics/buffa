@@ -498,18 +498,7 @@ fn serialize_any<S: Serializer>(
             return map.end();
         }
     }
-    // Spread the inner fields. We can't use `serialize_message` because that
-    // opens a new object; instead, replay the field walk.
-    for fd in &inner_md.fields {
-        if !inner.msg.has(fd) {
-            continue;
-        }
-        let value = inner
-            .msg
-            .field_by_number(fd.number)
-            .expect("has() implies present");
-        map.serialize_entry(&fd.json_name, &FieldRef::new(pool, fd, value, inner.depth))?;
-    }
+    serialize_fields(&mut map, inner.msg, inner.depth)?;
     map.end()
 }
 

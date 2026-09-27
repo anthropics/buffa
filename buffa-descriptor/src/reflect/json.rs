@@ -102,8 +102,19 @@ fn serialize_message<S: Serializer>(
     if let Some(wkt) = WktKind::from_full_name(&md.full_name) {
         return wkt.serialize_message(msg, depth, s);
     }
-    let pool = msg.pool();
     let mut map = s.serialize_map(None)?;
+    serialize_fields(&mut map, msg, depth)?;
+    map.end()
+}
+
+/// Write `msg`'s set fields, extensions included, into an open JSON object.
+fn serialize_fields<M: SerializeMap>(
+    map: &mut M,
+    msg: &DynamicMessage,
+    depth: u32,
+) -> Result<(), M::Error> {
+    let md = msg.message_descriptor();
+    let pool = msg.pool();
     for fd in &md.fields {
         if !msg.has(fd) {
             continue;
@@ -125,7 +136,7 @@ fn serialize_message<S: Serializer>(
             .expect("has() ⇒ field is present");
         map.serialize_entry(ext.json_key(), &FieldRef::new(pool, fd, value, depth))?;
     }
-    map.end()
+    Ok(())
 }
 
 /// A sub-message whose own level is already charged; `depth` is the budget
