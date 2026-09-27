@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Reflective JSON `float` text and range checks come from the shared codec** (#489). `DynamicMessage::to_json` printed `f32` values through a local `serialize_f64` call, so `0.1` became `0.10000000149011612` where the generated typed impl writes `0.1`, and its own upper-bound test rejected `f32::MAX`'s canonical `3.4028235e+38` — including the text it had just written for `f32::MAX`, which serde_json reads back one ULP high. The `float` branches now call `buffa::json_helpers::float`, the module `buffa-codegen` annotates generated fields with, so the reflective and generated paths share one rule instead of two that have to be kept in sync by hand; values are unchanged, only the printed decimal and the ~1 ULP of accepted input at the upper bound. The local special-value mapping stays for `double` and is renamed `serialize_double`.
+time: 2026-09-27T20:14:45+08:00
