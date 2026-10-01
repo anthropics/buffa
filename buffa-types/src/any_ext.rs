@@ -410,7 +410,12 @@ impl<'de> serde::Deserialize<'de> for Any {
                     Some(serde_json::Value::String(s)) => buffa::json_helpers::bytes::deserialize(
                         serde::de::value::StringDeserializer::<D::Error>::new(s),
                     )?,
-                    _ => alloc::vec::Vec::new(),
+                    None | Some(serde_json::Value::Null) => alloc::vec::Vec::new(),
+                    Some(_) => {
+                        return Err(serde::de::Error::custom(
+                            "Any: \"value\" for an unregistered type must be a base64 string",
+                        ));
+                    }
                 }
             }
         };
@@ -978,6 +983,45 @@ mod tests {
                 let decoded_dur: Duration = decoded_inner.unpack_unchecked().unwrap();
                 assert_eq!(decoded_dur.seconds, 42);
             });
+        }
+
+        #[test]
+        fn fallback_base64_rejects_non_string_payloads() {
+            let check = || {
+                for value in ["123", "{}", "[]", "true", "false"] {
+                    let json = alloc::format!(
+                        r#"{{"@type":"type.googleapis.com/unknown.Type","value":{value}}}"#
+                    );
+                    let err = serde_json::from_str::<Any>(&json).unwrap_err();
+                    assert!(
+                        err.to_string().contains("must be a base64 string"),
+                        "{json}: {err}"
+                    );
+                }
+            };
+            without_registry(check);
+            with_registry(check);
+        }
+
+        #[test]
+        fn fallback_base64_accepts_empty_and_valid_payloads() {
+            let check = || {
+                for (field, expected) in [
+                    ("", &[][..]),
+                    (r#", "value": null"#, &[][..]),
+                    (r#", "value": """#, &[][..]),
+                    (r#", "value": "CJYB""#, &[0x08, 0x96, 0x01][..]),
+                ] {
+                    let json =
+                        alloc::format!(r#"{{"@type":"type.googleapis.com/unknown.Type"{field}}}"#);
+                    let any: Any = serde_json::from_str(&json).unwrap();
+                    assert_eq!(any.value.as_ref(), expected, "{json}");
+                }
+                let json = r#"{"@type":"type.googleapis.com/unknown.Type","value":"!!!"}"#;
+                assert!(serde_json::from_str::<Any>(json).is_err());
+            };
+            without_registry(check);
+            with_registry(check);
         }
 
         #[test]
