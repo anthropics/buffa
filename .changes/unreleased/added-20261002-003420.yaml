@@ -1,0 +1,3 @@
+kind: Added
+body: Expose the external shared descriptor pool root through buffa-build.
+time: 2026-10-02T00:34:20.717105+02:00

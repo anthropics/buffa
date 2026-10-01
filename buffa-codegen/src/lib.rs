@@ -1605,9 +1605,10 @@ pub struct CodeGenConfig {
     /// run reflects on. A root missing a type fails at runtime with a
     /// `reflect()` lookup panic, not at `generate()` or `cargo build` time.
     ///
-    /// Must be an absolute (`::`-prefixed) or `crate`-relative path of plain
-    /// `::`-separated identifiers — no generic or parenthesized arguments —
-    /// since the same string is spliced verbatim at every package depth.
+    /// Must be an absolute (`::`-prefixed) or crate-relative (`crate` or
+    /// `crate::`-prefixed) path of plain `::`-separated identifiers — no generic
+    /// or parenthesized arguments — since the same string is spliced verbatim
+    /// at every package depth.
     /// [`generate`] rejects a malformed value immediately, before splicing it
     /// into generated source. Example: `"::my_shared_fds_crate::__buffa_fds"`.
     ///
@@ -3074,7 +3075,7 @@ pub fn generate_with_diagnostics(
                     .into(),
             ));
         }
-        validate_shared_root_path(root)?;
+        validate_shared_descriptor_pool_root(root)?;
     }
 
     // Idiomatic imports place `use` directives in the package-root scope,
@@ -3725,24 +3726,34 @@ pub fn shared_descriptor_root_module(
     prettyplease::unparse(&file)
 }
 
-/// Validate [`CodeGenConfig::shared_descriptor_pool_root`]'s string form: an
-/// absolute (`::`-prefixed) or `crate`-relative path of plain `::`-separated
-/// identifiers, no generic or parenthesized arguments.
+/// Validate a path accepted by [`CodeGenConfig::shared_descriptor_pool_root`].
+///
+/// The path must be absolute (`::`-prefixed) or crate-relative (`crate` or
+/// `crate::`-prefixed), with plain `::`-separated identifiers and no generic
+/// or parenthesized arguments. Build frontends can call this before invoking
+/// `protoc` or `buf`; code generation calls it before splicing the path into
+/// generated source.
+///
+/// # Errors
+///
+/// Returns an error when the path is not absolute or crate-relative, has no
+/// path after the `::` prefix, or contains a non-identifier or path keyword.
 ///
 /// `syn::Path` alone isn't strict enough here — it happily parses
 /// `::k::__buffa_fds<T>`, which would then splice into uncompilable
 /// generated code (`pub use ::k::__buffa_fds<T>::FILE_DESCRIPTOR_SET_BYTES;`),
 /// exactly the downstream failure this check exists to prevent. A leading
-/// `::` or `crate` is required because the same string is spliced verbatim
+/// `::` or `crate` (optionally followed by `::` and more segments) is required
+/// because the same string is spliced verbatim
 /// at every package depth in the tree — a plain relative path could only
 /// ever be correct from one depth.
-fn validate_shared_root_path(path: &str) -> Result<(), CodeGenError> {
+pub fn validate_shared_descriptor_pool_root(path: &str) -> Result<(), CodeGenError> {
     let is_absolute = path.starts_with("::");
     let is_crate_relative = path == "crate" || path.starts_with("crate::");
     if !is_absolute && !is_crate_relative {
         return Err(CodeGenError::Other(format!(
             "shared_descriptor_pool_root must be an absolute (`::`-prefixed) or \
-             crate-relative (`crate`-prefixed) path — the same value is spliced \
+             crate-relative (`crate` or `crate::`-prefixed) path — the same value is spliced \
              verbatim at every package depth, so a plain relative path would only \
              be correct from one depth: {path:?}"
         )));

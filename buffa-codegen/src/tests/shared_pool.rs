@@ -299,6 +299,25 @@ fn shared_mode_with_crate_relative_root_override_is_accepted() {
 }
 
 #[test]
+fn shared_mode_with_crate_root_override_is_accepted() {
+    let config = CodeGenConfig {
+        shared_descriptor_pool_root: Some("crate".to_string()),
+        ..shared_config()
+    };
+    let files = generate(
+        &[msg_in_package("x.proto", "x.v1", "X")],
+        &["x.proto".to_string()],
+        &config,
+    )
+    .expect("crate root override must be accepted");
+    let all = joined(&files);
+    assert!(
+        all.contains("pub use crate::FILE_DESCRIPTOR_SET_BYTES"),
+        "generated output must use the crate root override verbatim: {all}"
+    );
+}
+
+#[test]
 fn shared_mode_allows_reserved_name_in_ungenerated_import() {
     // An import-only package named `__buffa_fds` emits no module, so the
     // reservation must not reject it — only generated files are checked.

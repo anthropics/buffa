@@ -542,7 +542,10 @@ impl Config {
     /// crate this is one copy. For a multi-package codegen run the bytes
     /// duplicate per package — measurable for large proto trees;
     /// [`shared_descriptor_pool`](Self::shared_descriptor_pool) collapses that
-    /// to one `include_bytes!` sidecar. The serialization happens once per
+    /// to one `include_bytes!` sidecar in local-root mode. With an external
+    /// [`shared_descriptor_pool_root`](Self::shared_descriptor_pool_root),
+    /// generated packages point at the caller's shared root and this build
+    /// emits no sidecar. In local-root mode, serialization happens once per
     /// `compile()` call (not per package), so build-time CPU does not scale
     /// with package count. Vtable mode also emits an `impl ReflectMessage` per
     /// type, so it produces more code than bridge mode.
@@ -611,37 +614,64 @@ impl Config {
     /// With reflection enabled, each package normally embeds its own copy of
     /// the full-closure `FileDescriptorSet`. For a multi-package build those
     /// copies are identical, so a large proto tree carries the same bytes once
-    /// per package. When this is on, the descriptor set is written once as a
-    /// binary sidecar next to the generated tree and `include_bytes!`-d by a
-    /// single shared `__buffa_fds` module; every package's `descriptor_pool()`
-    /// / `FILE_DESCRIPTOR_SET_BYTES` delegates to it. This removes both the
-    /// per-package duplication and the byte-literal source expansion.
+    /// per package. Without an external root override, the descriptor set is
+    /// written once as a binary sidecar next to the generated tree and
+    /// `include_bytes!`-d by a single shared `__buffa_fds` module; every
+    /// package's `descriptor_pool()` / `FILE_DESCRIPTOR_SET_BYTES` delegates
+    /// to it. This removes both the per-package duplication and the
+    /// byte-literal source expansion.
     ///
-    /// The sidecar is named `<include-file-stem>.descriptor_set.binpb` (so
+    /// In local-root mode, the sidecar is named
+    /// `<include-file-stem>.descriptor_set.binpb` (so
     /// `.include_file("gen_mod.rs")` writes `gen_mod.descriptor_set.binpb`)
     /// and lands in the output directory next to the include file. With a
     /// checked-in [`out_dir`](Self::out_dir), commit the sidecar alongside
     /// the generated `.rs` files — the `include_bytes!` resolves relative to
     /// the include file, so the pair must travel together.
     ///
-    /// Requires [`include_file`](Self::include_file) (the shared module is
-    /// emitted into that file at the tree root) and reflection to be enabled;
-    /// [`compile`](Self::compile) errors otherwise. The include file name must
-    /// be a bare file name, not a path. See
-    /// [`CodeGenConfig::shared_descriptor_pool`].
+    /// Set [`shared_descriptor_pool_root`](Self::shared_descriptor_pool_root)
+    /// to use a shared root assembled elsewhere. In that mode, this build
+    /// does not write a sidecar or emit `__buffa_fds`; an include file is
+    /// optional and, when set, only assembles the package modules.
     ///
-    /// In this mode the generated tree must be consumed *through the include
-    /// file* (`include!(concat!(env!("OUT_DIR"), "/gen_mod.rs"))`, or the
-    /// checked-in `mod gen;` flavour). Each package delegates to `__buffa_fds`
-    /// by a fixed number of `super::` hops from the tree root, so wiring
-    /// packages individually with `buffa::include_proto!` does not compile
-    /// here: the delegation resolves against whatever module the macro lands
-    /// in. Two shared-pool `compile()` calls included at the same module scope
-    /// likewise collide on `__buffa_fds`; give each include file its own
-    /// module.
+    /// Reflection is required. Without an external root override, this also
+    /// requires [`include_file`](Self::include_file) with a bare file name,
+    /// not a path, because the shared module is emitted into that file and
+    /// the sidecar name is based on its stem. Without an override, consume
+    /// the generated tree through the include file; each package delegates
+    /// to `__buffa_fds` by a fixed number of `super::` hops, so wiring packages
+    /// individually with `buffa::include_proto!` does not compile. Two
+    /// shared-pool `compile()` calls included at the same module scope also
+    /// collide on `__buffa_fds`; give each include file its own module.
     #[must_use]
     pub fn shared_descriptor_pool(mut self, enabled: bool) -> Self {
         self.codegen_config.shared_descriptor_pool = enabled;
+        self
+    }
+
+    /// Point generated packages at an externally assembled shared descriptor
+    /// root instead of emitting one from this build.
+    ///
+    /// `root` follows [`CodeGenConfig::shared_descriptor_pool_root`]: it must
+    /// be an absolute (`::`-prefixed) or crate-relative (`crate` or
+    /// `crate::`-prefixed) path of plain `::`-separated identifiers. It must
+    /// name a public shared root produced
+    /// by `buffa_codegen::shared_descriptor_root_module` that contains every
+    /// message reflected by this build.
+    ///
+    /// Requires [`shared_descriptor_pool`](Self::shared_descriptor_pool)
+    /// and reflection to be enabled. With this override, `compile()` does not
+    /// emit `__buffa_fds` or a descriptor-set sidecar, and
+    /// [`include_file`](Self::include_file) is optional. If set, the include
+    /// file still assembles the generated package modules.
+    ///
+    /// This supports layouts where each proto package is generated in a
+    /// separate Cargo crate. For example, pass
+    /// `"::shared_fds::__buffa_fds"` for an absolute path or
+    /// `"crate::shared_fds::__buffa_fds"` for a crate-relative path.
+    #[must_use]
+    pub fn shared_descriptor_pool_root(mut self, root: impl Into<String>) -> Self {
+        self.codegen_config.shared_descriptor_pool_root = Some(root.into());
         self
     }
 
@@ -2051,9 +2081,12 @@ impl Config {
     /// Returns an error if:
     /// - `OUT_DIR` is not set and no `out_dir` was configured
     /// - [`shared_descriptor_pool`](Self::shared_descriptor_pool) is set
-    ///   without reflection enabled, without
-    ///   [`include_file`](Self::include_file), or with an `include_file`
-    ///   lacking a file-name stem (the sidecar is named after it)
+    ///   without reflection enabled, or without
+    ///   [`include_file`](Self::include_file) when no external root override
+    ///   is set, or with an `include_file` lacking a file-name stem when the
+    ///   sidecar is emitted
+    /// - [`shared_descriptor_pool_root`](Self::shared_descriptor_pool_root) is
+    ///   set without shared-pool mode enabled or to a malformed path
     /// - `protoc` or `buf` cannot be found on `PATH` (when using those sources)
     /// - the proto compiler exits with a non-zero status (syntax errors,
     ///   missing imports, etc.)
@@ -2071,38 +2104,52 @@ impl Config {
             }
         }
 
+        let has_external_root = self.codegen_config.shared_descriptor_pool_root.is_some();
+        if has_external_root && !self.codegen_config.shared_descriptor_pool {
+            return Err(
+                "shared_descriptor_pool_root requires shared_descriptor_pool to be enabled".into(),
+            );
+        }
+
+        if self.codegen_config.shared_descriptor_pool && !self.codegen_config.generate_reflection {
+            return Err("shared_descriptor_pool requires reflection to be enabled \
+                        (call generate_reflection(true) or reflect_mode(...))"
+                .into());
+        }
+
+        if let Some(root) = &self.codegen_config.shared_descriptor_pool_root {
+            buffa_codegen::validate_shared_descriptor_pool_root(root)?;
+        }
+
         // Validate the shared-pool prerequisites before doing any work, and
-        // check reflection first so the error names the actually-missing
-        // prerequisite rather than a downstream one. `generate_reflection` is
-        // also enforced in `buffa-codegen`, but catching it here gives a
-        // buffa-build-shaped message.
+        // check reflection before the local-root include-file requirements.
+        // `generate_reflection` is also enforced in `buffa-codegen`, but
+        // catching it here gives a buffa-build-shaped message.
         let sidecar = if self.codegen_config.shared_descriptor_pool {
-            if !self.codegen_config.generate_reflection {
-                return Err("shared_descriptor_pool requires reflection to be enabled \
-                            (call generate_reflection(true) or reflect_mode(...))"
-                    .into());
-            }
-            // The shared `__buffa_fds` module is emitted into the include file
-            // at the tree root; without it the per-package delegations have
-            // nothing to resolve against.
-            let Some(include_name) = self.include_file.as_deref() else {
-                return Err("shared_descriptor_pool requires include_file to be set \
-                            (the shared descriptor module is emitted into it)"
-                    .into());
-            };
-            // The sidecar is named after the include file's stem; reject names
-            // without one ("", ".", "..") here rather than writing a stray
-            // misnamed sidecar before the include-file write fails. The stem
-            // is computed once here and reused when the sidecar is written.
-            match Path::new(include_name).file_stem().and_then(|s| s.to_str()) {
-                Some(stem) => Some(format!("{stem}.descriptor_set.binpb")),
-                None => {
-                    return Err(format!(
-                        "shared_descriptor_pool requires include_file to have a file name \
-                         (the descriptor-set sidecar is named after its stem); \
-                         got {include_name:?}"
-                    )
-                    .into());
+            if has_external_root {
+                None
+            } else {
+                // The shared `__buffa_fds` module is emitted into the include
+                // file at the tree root; without it the per-package
+                // delegations have nothing to resolve against.
+                let Some(include_name) = self.include_file.as_deref() else {
+                    return Err("shared_descriptor_pool requires include_file to be set \
+                                when shared_descriptor_pool_root is not set"
+                        .into());
+                };
+                // The sidecar is named after the include file's stem; reject
+                // names without one ("", ".", "..") here rather than writing
+                // a stray misnamed sidecar before the include-file write fails.
+                match Path::new(include_name).file_stem().and_then(|s| s.to_str()) {
+                    Some(stem) => Some(format!("{stem}.descriptor_set.binpb")),
+                    None => {
+                        return Err(format!(
+                            "shared_descriptor_pool requires include_file to have a file name \
+                             (the descriptor-set sidecar is named after its stem); \
+                             got {include_name:?}"
+                        )
+                        .into());
+                    }
                 }
             }
         } else {
@@ -2200,10 +2247,9 @@ impl Config {
             }
         }
 
-        // Shared-pool mode needs a tree root to host the one `__buffa_fds`
-        // module; that root is the include file. The reflection and
-        // include-file prerequisites were validated up front, and `sidecar`
-        // is `Some` exactly when the mode is on.
+        // Local shared-pool mode emits its `__buffa_fds` module into the
+        // include-file root. External-root mode relies on the caller's module,
+        // and `sidecar` is `Some` exactly when the local sidecar is emitted.
 
         // Generate the include file if requested.
         if let Some(ref include_name) = self.include_file {
@@ -2576,6 +2622,34 @@ fn generate_include_file(entries: &[(String, String)], relative: bool) -> String
 mod tests {
     use super::*;
 
+    const SHARED_DESCRIPTOR_POOL_ROOT: &str = "::shared_fds::__buffa_fds";
+
+    fn shared_pool_test_descriptor_set() -> Vec<u8> {
+        use buffa_codegen::generated::descriptor::field_descriptor_proto::{Label, Type};
+        use buffa_codegen::generated::descriptor::{
+            DescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+        };
+
+        let file = FileDescriptorProto {
+            name: Some("foo/v1/thing.proto".into()),
+            package: Some("foo.v1".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Thing".into()),
+                field: vec![FieldDescriptorProto {
+                    name: Some("id".into()),
+                    number: Some(1),
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(Type::TYPE_INT32),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        buffa_codegen::encode_descriptor_set(std::slice::from_ref(&file), &[])
+    }
+
     #[test]
     fn feature_name_setters_reach_codegen_config() {
         let config = Config::new()
@@ -2614,6 +2688,103 @@ mod tests {
     }
 
     #[test]
+    fn shared_descriptor_pool_root_setter_reaches_codegen_config() {
+        let config = Config::new()
+            .shared_descriptor_pool_root(SHARED_DESCRIPTOR_POOL_ROOT)
+            .codegen_config;
+        assert_eq!(
+            config.shared_descriptor_pool_root.as_deref(),
+            Some(SHARED_DESCRIPTOR_POOL_ROOT)
+        );
+    }
+
+    #[test]
+    fn shared_descriptor_pool_root_requires_shared_pool() {
+        let err = Config::new()
+            .shared_descriptor_pool_root(SHARED_DESCRIPTOR_POOL_ROOT)
+            .out_dir("unused")
+            .compile()
+            .expect_err("shared_descriptor_pool_root without shared-pool mode must error");
+        assert!(
+            err.to_string().contains("shared_descriptor_pool_root")
+                && err.to_string().contains("shared_descriptor_pool"),
+            "error should name both settings: {err}"
+        );
+    }
+
+    #[test]
+    fn shared_descriptor_pool_root_is_validated_before_reading_descriptor_set() {
+        let err = Config::new()
+            .descriptor_set("missing-descriptor-set.binpb")
+            .out_dir("unused")
+            .generate_reflection(true)
+            .shared_descriptor_pool(true)
+            .shared_descriptor_pool_root("shared_fds::__buffa_fds")
+            .compile()
+            .expect_err("malformed root path should fail before reading the descriptor set");
+        assert!(
+            err.to_string().contains("must be an absolute")
+                && err.to_string().contains("shared_fds::__buffa_fds"),
+            "error should identify the malformed root path: {err}"
+        );
+    }
+
+    #[test]
+    fn shared_descriptor_pool_root_uses_external_module_without_sidecar() {
+        let fds_bytes = shared_pool_test_descriptor_set();
+        let dir = tempfile::tempdir().unwrap();
+        let fds_path = dir.path().join("set.binpb");
+        std::fs::write(&fds_path, &fds_bytes).unwrap();
+
+        for with_include_file in [false, true] {
+            let out = dir.path().join(if with_include_file {
+                "with_include_file"
+            } else {
+                "without_include_file"
+            });
+            let mut config = Config::new()
+                .descriptor_set(&fds_path)
+                .files(&["foo/v1/thing.proto"])
+                .out_dir(&out)
+                .generate_reflection(true)
+                .shared_descriptor_pool(true)
+                .shared_descriptor_pool_root(SHARED_DESCRIPTOR_POOL_ROOT);
+            if with_include_file {
+                config = config.include_file("gen_mod.rs");
+            }
+            config
+                .compile()
+                .expect("external shared-pool root should compile");
+
+            let package = std::fs::read_to_string(out.join("foo.v1.mod.rs")).unwrap();
+            assert!(
+                package.contains(SHARED_DESCRIPTOR_POOL_ROOT),
+                "package should reference the external root: {package}"
+            );
+            assert!(
+                !package.contains("FILE_DESCRIPTOR_SET_BYTES: &[u8] = b\""),
+                "package must not embed its own descriptor copy: {package}"
+            );
+            assert!(
+                !out.join("gen_mod.descriptor_set.binpb").exists(),
+                "external-root mode must not write a local sidecar"
+            );
+
+            if with_include_file {
+                let include = std::fs::read_to_string(out.join("gen_mod.rs")).unwrap();
+                assert!(include.contains("pub mod foo"), "{include}");
+                assert!(!include.contains("pub mod __buffa_fds"), "{include}");
+                assert!(!include.contains("include_bytes!"), "{include}");
+            } else {
+                assert!(
+                    !out.join("gen_mod.rs").exists(),
+                    "without include_file, no module-tree file should be emitted"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn shared_descriptor_pool_rejects_stemless_include_file() {
         // The sidecar is named after the include file's stem; a name without
         // one ("", ".", "..") must fail up front rather than writing a
@@ -2637,7 +2808,7 @@ mod tests {
         // prerequisite.
         let err = Config::new()
             .shared_descriptor_pool(true)
-            .include_file("gen_mod.rs")
+            .shared_descriptor_pool_root(SHARED_DESCRIPTOR_POOL_ROOT)
             .out_dir("unused")
             .compile()
             .expect_err("shared_descriptor_pool without reflection must error");
@@ -2649,31 +2820,7 @@ mod tests {
 
     #[test]
     fn shared_descriptor_pool_writes_sidecar_and_shared_root() {
-        use buffa_codegen::generated::descriptor::field_descriptor_proto::{Label, Type};
-        use buffa_codegen::generated::descriptor::{
-            DescriptorProto, FieldDescriptorProto, FileDescriptorProto,
-        };
-
-        // A minimal one-package descriptor set, fed through descriptor_set()
-        // so the test needs no protoc.
-        let file = FileDescriptorProto {
-            name: Some("foo/v1/thing.proto".into()),
-            package: Some("foo.v1".into()),
-            syntax: Some("proto3".into()),
-            message_type: vec![DescriptorProto {
-                name: Some("Thing".into()),
-                field: vec![FieldDescriptorProto {
-                    name: Some("id".into()),
-                    number: Some(1),
-                    label: Some(Label::LABEL_OPTIONAL),
-                    r#type: Some(Type::TYPE_INT32),
-                    ..Default::default()
-                }],
-                ..Default::default()
-            }],
-            ..Default::default()
-        };
-        let fds_bytes = buffa_codegen::encode_descriptor_set(std::slice::from_ref(&file), &[]);
+        let fds_bytes = shared_pool_test_descriptor_set();
 
         let dir = tempfile::tempdir().unwrap();
         let fds_path = dir.path().join("set.binpb");
