@@ -600,8 +600,9 @@ fn main() {
     // string code path (decode/clear/view/json/arbitrary) is compiled; EcoStr
     // wraps a type with no native Arbitrary, exercising the generic builder.
     // The repeated `many` field stays `String` — a custom repeated element must
-    // be crate-local (covered by `LocalStr` in `vtable_string_repr`). Map
-    // keys/values stay String.
+    // be crate-local (covered by `LocalStr` in `vtable_string_repr`). The
+    // `by_key` map is outside the rules' paths, so its key and value are
+    // String.
     let string_out =
         std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("string_variant");
     std::fs::create_dir_all(&string_out).expect("create string_variant dir");

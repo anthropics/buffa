@@ -1570,7 +1570,8 @@ struct FieldInfo {
     /// has no matching rule.
     map_value_bytes_repr: crate::BytesRepr,
     /// The owned Rust type used for this field when it is proto type `string`
-    /// (singular, optional, or repeated; map keys/values are unaffected).
+    /// (singular, optional, or repeated). Map keys and values resolve theirs
+    /// through `map_string_repr`.
     /// [`StringRepr::String`] for non-string fields and for string fields with
     /// no matching `string_fields` rule.
     string_repr: crate::StringRepr,

@@ -14,7 +14,8 @@ message StringContexts {
   // Per-field override targets (see build.rs string_type_in rules).
   string compact = 4;
   string eco = 5;
-  // Map keys/values are unaffected by string_type — always String.
+  // No string_type rule in build.rs covers this field, so its key and value
+  // are String.
   map<string, string> by_key = 6;
   oneof choice {
     string named = 7;

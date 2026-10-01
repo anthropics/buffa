@@ -1160,7 +1160,9 @@ impl Config {
     ///
     /// Each path is a fully-qualified proto path prefix. Use `"."` to apply
     /// to all bytes fields, or specify individual field paths like
-    /// `".my.pkg.MyMessage.data"`.
+    /// `".my.pkg.MyMessage.data"`. Path normalization and the warning for a
+    /// rule that matches nothing are as described on
+    /// [`bytes_type_in`](Self::bytes_type_in).
     ///
     /// Applies uniformly to singular, optional, repeated, oneof, **and
     /// `map<K, bytes>`** values — the map case lets `view → owned`
@@ -1216,6 +1218,17 @@ impl Config {
     /// proto path prefixes. The bytes counterpart to
     /// [`string_type_in`](Self::string_type_in).
     ///
+    /// Each path is a fully-qualified proto path prefix: a field
+    /// (`".my.pkg.Msg.data"`), a message, a package, or `"."` for every field.
+    /// A leading dot is added to each path if missing, surrounding whitespace
+    /// and trailing dots are ignored, and a blank entry is skipped with a
+    /// `cargo:warning`.
+    ///
+    /// A rule whose path does not match a field of any type in a generated
+    /// message produces a `cargo:warning`
+    /// ([`CodeGenWarning::FieldTypeRuleMatchedNothing`](buffa_codegen::CodeGenWarning::FieldTypeRuleMatchedNothing)).
+    /// A path that matches only fields of another type does not warn.
+    ///
     /// Rules accumulate and the **last** matching rule wins, so call the broad
     /// [`bytes_type`](Self::bytes_type) *first*, then `bytes_type_in` for
     /// narrower overrides. For [`BytesRepr::Custom`], the downstream crate must
@@ -1224,9 +1237,11 @@ impl Config {
     /// types still borrow `&[u8]`.
     #[must_use]
     pub fn bytes_type_in(mut self, repr: BytesRepr, paths: &[impl AsRef<str>]) -> Self {
-        self.codegen_config
-            .bytes_fields
-            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+        self.codegen_config.bytes_fields.extend(
+            field_rule_paths("bytes_type_in", paths)
+                .into_iter()
+                .map(|path| (path, repr.clone())),
+        );
         self
     }
 
@@ -1287,8 +1302,8 @@ impl Config {
     /// Each path is a fully-qualified proto variant path prefix, e.g.
     /// `".my.pkg.MyMessage.body.small"` for one variant or `".my.pkg"` for a
     /// package (same matching as [`use_bytes_type_in`](Self::use_bytes_type_in)).
-    /// A leading dot is added if missing, mirroring
-    /// [`extern_path`](Self::extern_path).
+    /// Paths are normalized as for [`bytes_type_in`](Self::bytes_type_in). A
+    /// rule that matches no variant is not reported.
     ///
     /// Recursive variants cannot be stored inline (the type would be
     /// unsized). A rule that names a recursive variant *exactly* is rejected
@@ -1301,16 +1316,9 @@ impl Config {
     pub fn unbox_oneof_in(mut self, paths: &[impl AsRef<str>]) -> Self {
         self.codegen_config
             .unboxed_oneof_fields
-            .extend(paths.iter().map(|p| {
-                let p = p.as_ref();
-                // Normalize to the leading-dot form: matching and the
-                // exact-path recursion error both depend on it.
-                if p.starts_with('.') {
-                    p.to_string()
-                } else {
-                    format!(".{p}")
-                }
-            }));
+            // The exact-path recursion error compares against the normalized
+            // form.
+            .extend(field_rule_paths("unbox_oneof_in", paths));
         self
     }
 
@@ -1343,9 +1351,12 @@ impl Config {
     /// (orphan rule) — point at a local newtype, or the `buffa-smolstr` crate for
     /// `smol_str::SmolStr`.
     ///
-    /// Only the owned Rust type changes: the wire format is unchanged, view
-    /// types still borrow `&str`, and `map<_, string>` keys and values stay
-    /// `String`.
+    /// Only the owned Rust type changes: the wire format is unchanged and view
+    /// types still borrow `&str`. A rule that matches a `map` field applies to
+    /// its `string` key and its `string` value.
+    ///
+    /// Path normalization and the warning for a rule that matches nothing are
+    /// as described on [`bytes_type_in`](Self::bytes_type_in).
     ///
     /// # Example
     ///
@@ -1360,9 +1371,11 @@ impl Config {
     /// ```
     #[must_use]
     pub fn string_type_in(mut self, repr: StringRepr, paths: &[impl AsRef<str>]) -> Self {
-        self.codegen_config
-            .string_fields
-            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+        self.codegen_config.string_fields.extend(
+            field_rule_paths("string_type_in", paths)
+                .into_iter()
+                .map(|path| (path, repr.clone())),
+        );
         self
     }
 
@@ -1371,7 +1384,8 @@ impl Config {
     /// Convenience for `.string_type_in(repr, &["."])`. Call this *before* any
     /// [`string_type_in`](Self::string_type_in) overrides, since the last
     /// matching rule wins (a `"."` rule added later shadows earlier specific
-    /// rules). `map<_, string>` keys and values stay `String`.
+    /// rules). The rule also covers the `string` keys and values of `map`
+    /// fields.
     #[must_use]
     pub fn string_type(mut self, repr: StringRepr) -> Self {
         self.codegen_config
@@ -1389,28 +1403,33 @@ impl Config {
     ///
     /// # Limitations
     ///
-    /// - A **foreign** custom type used as a `repeated` element fails to compile:
-    ///   codegen emits a `ReflectElement` impl for it, which the orphan rule
-    ///   forbids for a foreign type. Wrap it in a crate-local newtype for the
-    ///   repeated case; singular / optional / oneof uses work directly.
-    /// - **JSON of a `repeated` custom string** serializes elements through their
-    ///   native `serde`, so such a type must derive `Serialize` / `Deserialize`
-    ///   (and an external type must enable its `serde` feature). Singular /
-    ///   optional / oneof custom strings use the `proto_string` with-module and
-    ///   need no `serde` impl.
+    /// - Under vtable reflection ([`reflect_mode`](Self::reflect_mode) with
+    ///   `ReflectMode::VTable`), a **foreign** custom type used as a `repeated`
+    ///   element or as a `map` key or value fails to compile: codegen emits a
+    ///   `ReflectElement` or `ReflectMapKey` impl for it, which the orphan rule
+    ///   forbids for a foreign type. Wrap it in a crate-local newtype for
+    ///   those cases; singular / optional / oneof uses work directly.
+    /// - **JSON of an `optional`, `repeated` or `oneof` custom string, or of
+    ///   one in a `map`,** serializes through the type's own `serde` impls, so
+    ///   such a type must derive `Serialize` / `Deserialize` (and an external
+    ///   type must enable its `serde` feature). A singular field without
+    ///   `optional` uses the `proto_string` with-module and needs no `serde`
+    ///   impl.
+    /// - A custom type used as a `map` key must implement `Hash + Eq` for the
+    ///   default `HashMap` container, or `Ord` for `BTreeMap`.
     /// - A `path` that does not parse as a Rust type is reported as a codegen
     ///   error from [`compile`](Self::compile).
-    /// - A custom string type needs no native `arbitrary::Arbitrary` impl (a
-    ///   generic builder handles it under `generate_arbitrary`).
+    /// - A custom string type needs no native `arbitrary::Arbitrary` impl on
+    ///   singular, optional, repeated and oneof fields (a generic builder
+    ///   handles them under `generate_arbitrary`). One used as a `map` key or
+    ///   value must implement `Arbitrary`.
     #[must_use]
     pub fn string_type_custom_in(self, path: &str, paths: &[impl AsRef<str>]) -> Self {
         self.string_type_in(StringRepr::Custom(path.to_string()), paths)
     }
 
     /// Map every `string` field to the given custom type path. Convenience for
-    /// `.string_type_custom_in(path, &["."])`; see it for the limitations
-    /// (foreign `repeated` elements, the `repeated` JSON `serde` requirement,
-    /// path parsing).
+    /// `.string_type_custom_in(path, &["."])`; see it for the limitations.
     #[must_use]
     pub fn string_type_custom(self, path: &str) -> Self {
         self.string_type(StringRepr::Custom(path.to_string()))
@@ -1420,6 +1439,9 @@ impl Config {
     /// `HashMap`. Rules are matched with proto-segment-aware prefix logic; the
     /// **last** matching rule wins, so add a broad rule first and narrower
     /// overrides after.
+    ///
+    /// Path normalization and the warning for a rule that matches nothing are
+    /// as described on [`bytes_type_in`](Self::bytes_type_in).
     ///
     /// Use [`MapRepr::BTreeMap`] for the buffa-provided `BTreeMap` (deterministic
     /// key order, no extra dependency, no consumer code), or
@@ -1440,9 +1462,11 @@ impl Config {
     /// ```
     #[must_use]
     pub fn map_type_in(mut self, repr: MapRepr, paths: &[impl AsRef<str>]) -> Self {
-        self.codegen_config
-            .map_fields
-            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+        self.codegen_config.map_fields.extend(
+            field_rule_paths("map_type_in", paths)
+                .into_iter()
+                .map(|path| (path, repr.clone())),
+        );
         self
     }
 
@@ -1491,8 +1515,10 @@ impl Config {
     /// Map the matching message fields to a [`PointerRepr`] other than the
     /// default `Inline`. Rules are matched with proto-segment-aware prefix
     /// logic; the **last** matching rule wins, so add a broad rule first and
-    /// narrower overrides after. A leading dot is added to each path if
-    /// missing.
+    /// narrower overrides after.
+    ///
+    /// Paths are normalized as for [`bytes_type_in`](Self::bytes_type_in). A
+    /// rule that matches no field is not reported.
     ///
     /// The default `Inline` is recursion-aware (recursive fields stay on
     /// `Box`), so this knob is for opting *out*: `PointerRepr::Box` for large
@@ -1515,17 +1541,13 @@ impl Config {
     pub fn box_type_in(mut self, repr: PointerRepr, paths: &[impl AsRef<str>]) -> Self {
         self.codegen_config
             .pointer_fields
-            .extend(paths.iter().map(|p| {
-                let p = p.as_ref();
-                // Normalize to the leading-dot form: matching and the
-                // exact-path Inline recursion error both depend on it.
-                let p = if p.starts_with('.') {
-                    p.to_string()
-                } else {
-                    format!(".{p}")
-                };
-                (p, repr.clone())
-            }));
+            // The exact-path Inline recursion error compares against the
+            // normalized form.
+            .extend(
+                field_rule_paths("box_type_in", paths)
+                    .into_iter()
+                    .map(|path| (path, repr.clone())),
+            );
         self
     }
 
@@ -1574,6 +1596,9 @@ impl Config {
     /// logic; the **last** matching rule wins, so add a broad rule first and
     /// narrower overrides after. Applies only to `repeated` fields (not `map`).
     ///
+    /// Path normalization and the warning for a rule that matches nothing are
+    /// as described on [`bytes_type_in`](Self::bytes_type_in).
+    ///
     /// For [`RepeatedRepr::Custom`], the collection must implement
     /// `buffa::ProtoList<T>`. Unlike the scalar `string_type_custom` /
     /// `bytes_type_custom` knobs (which take a *complete* type path), this path
@@ -1597,9 +1622,11 @@ impl Config {
     /// ```
     #[must_use]
     pub fn repeated_type_in(mut self, repr: RepeatedRepr, paths: &[impl AsRef<str>]) -> Self {
-        self.codegen_config
-            .repeated_fields
-            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+        self.codegen_config.repeated_fields.extend(
+            field_rule_paths("repeated_type_in", paths)
+                .into_iter()
+                .map(|path| (path, repr.clone())),
+        );
         self
     }
 
@@ -2307,6 +2334,27 @@ fn normalize_override_path(path: &str) -> String {
     path
 }
 
+/// Normalize the paths given to the field-rule builder method `method` with
+/// [`normalize_override_path`]. An entry that normalizes to empty is skipped
+/// with a `cargo:warning`.
+fn field_rule_paths(method: &str, paths: &[impl AsRef<str>]) -> Vec<String> {
+    paths
+        .iter()
+        .map(AsRef::as_ref)
+        .filter_map(|raw| {
+            let normalized = normalize_override_path(raw);
+            if normalized.is_empty() {
+                println!(
+                    "cargo:warning=buffa: {method} path '{raw}' normalizes to empty \
+                     and will be ignored"
+                );
+                return None;
+            }
+            Some(normalized)
+        })
+        .collect()
+}
+
 /// Write `content` to `path` only if the file doesn't already exist with
 /// identical content. Avoids bumping timestamps on unchanged files, which
 /// prevents unnecessary downstream recompilation.
@@ -2700,6 +2748,50 @@ mod tests {
                 (".my.pkg.Other".to_string(), PointerRepr::Box),
             ]
         );
+    }
+
+    fn rule_paths<R>(rules: &[(String, R)]) -> Vec<&str> {
+        rules.iter().map(|(path, _)| path.as_str()).collect()
+    }
+
+    #[test]
+    fn type_in_builders_normalize_paths() {
+        // A missing leading dot, surrounding whitespace and a trailing dot
+        // are normalized; a blank entry is skipped, so `"."` is the only
+        // spelling of "every field".
+        let paths = &["my.pkg.Msg.field", " .my.pkg.Other. ", ".", "", " ", "..."];
+        let expected = [".my.pkg.Msg.field", ".my.pkg.Other", "."];
+        let config = Config::new()
+            .bytes_type_in(BytesRepr::Bytes, paths)
+            .string_type_in(StringRepr::String, paths)
+            .map_type_in(MapRepr::BTreeMap, paths)
+            .repeated_type_in(RepeatedRepr::Vec, paths)
+            .box_type_in(PointerRepr::Box, paths)
+            .unbox_oneof_in(paths)
+            .codegen_config;
+
+        assert_eq!(rule_paths(&config.bytes_fields), expected);
+        assert_eq!(rule_paths(&config.string_fields), expected);
+        assert_eq!(rule_paths(&config.map_fields), expected);
+        assert_eq!(rule_paths(&config.repeated_fields), expected);
+        assert_eq!(rule_paths(&config.pointer_fields), expected);
+        assert_eq!(config.unboxed_oneof_fields, expected);
+    }
+
+    #[test]
+    fn bytes_alias_and_custom_in_builders_normalize_paths() {
+        let config = Config::new()
+            .use_bytes_type_in(&["my.pkg.A.data"])
+            .bytes_type_custom_in("::my::Bytes", &["my.pkg.B.data"])
+            .string_type_custom_in("::my::Str", &["my.pkg.C.name"])
+            .map_type_custom_in("::my::Map", &["my.pkg.D.entries"])
+            .repeated_type_custom_in("::my::List<*>", &["my.pkg.E.items"])
+            .codegen_config;
+        assert_eq!(config.bytes_fields[0].0, ".my.pkg.A.data");
+        assert_eq!(config.bytes_fields[1].0, ".my.pkg.B.data");
+        assert_eq!(config.string_fields[0].0, ".my.pkg.C.name");
+        assert_eq!(config.map_fields[0].0, ".my.pkg.D.entries");
+        assert_eq!(config.repeated_fields[0].0, ".my.pkg.E.items");
     }
 
     #[test]
