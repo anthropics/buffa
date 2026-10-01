@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **A `bytes_type_in`, `string_type_in`, `map_type_in` or `repeated_type_in` rule that matches no field produces a build warning** (#494). The warning is `CodeGenWarning::FieldTypeRuleMatchedNothing`, which `buffa-build` prints as a `cargo:warning`. It catches a typo, a path without its package, and a prost-style bare name such as `"items"`; a rule that matches only messages the run does not generate (an imported file, or a package under `extern_path` or `exclude_package`) gets its own wording. The check compares paths, so a rule on a field of another type does not warn.
+time: 2026-09-30T21:58:01-07:00

@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **A oneof whose name PascalCases to `Self` no longer breaks code generation** (#465). A oneof named `self`, `self_` or `_self` produced `pub enum Self`, which does not parse, so `generate` failed with `InvalidSyntax` and named no oneof. The enum is now `Self_`, the same escape its variants and the `self_` struct field already used. No other generated name changes.
+time: 2026-09-19T21:02:00.000000000+01:00

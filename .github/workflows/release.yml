@@ -65,7 +65,7 @@ jobs:
         shell: bash
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
         with:
           ref: ${{ inputs.tag || github.ref_name }}
 
@@ -75,7 +75,7 @@ jobs:
       # fails with E0463 (this bit the v0.7.1 darwin-x86_64 job). Keep in
       # sync with rust-toolchain.toml and ci.yml; bump together.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95
+        uses: dtolnay/rust-toolchain@46817827a5bfabe028bf34e1cce71fd40e2ff697 # 1.95.0 (sha-pinned)
         with:
           targets: ${{ matrix.target }}
 
@@ -114,7 +114,7 @@ jobs:
           done
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 (sha-pinned)
         with:
           name: ${{ matrix.name }}
           path: dist/*
@@ -124,10 +124,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0 (sha-pinned)
         with:
           path: artifacts
           merge-multiple: true
@@ -144,7 +144,7 @@ jobs:
       #
       # Runs before cosign so the glob matches only the binaries.
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2 (sha-pinned)
         with:
           subject-path: artifacts/${{ env.BINARY_PREFIX }}-*
 

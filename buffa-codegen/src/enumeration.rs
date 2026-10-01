@@ -286,6 +286,14 @@ pub fn generate_enum(
         proto_fqn,
     )?;
 
+    // A `skip_debug` rule naming the enum leaves `Debug` to the consuming
+    // crate.
+    let derives = if ctx.skip_debug_enum(proto_fqn) {
+        quote! { #[derive(Clone, Copy, PartialEq, Eq, Hash)] }
+    } else {
+        quote! { #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)] }
+    };
+
     // Proto enum values are SCREAMING_CASE variants. The module-tree wrapper
     // already allows this lint (`ALLOW_LINTS`), but a content file consumed
     // on its own (`include!` or `mod` without the wrapper) is not covered, so
@@ -295,7 +303,7 @@ pub fn generate_enum(
     Ok(quote! {
         #enum_doc
         #[allow(non_camel_case_types)]
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+        #derives
         #arbitrary_derive
         #custom_type_attrs
         #custom_enum_attrs

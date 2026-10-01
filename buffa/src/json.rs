@@ -60,16 +60,25 @@
 //! in debug builds; the second call is silently ignored in release). Treat the
 //! first successful call as locking in behaviour for the process lifetime.
 //!
-//! ### `no_std` caveat: no container filtering
+//! # Unknown enum names by field shape
 //!
-//! In `std`, `ignore_unknown_enum_values` supports *filtering*: unknown
-//! entries in `repeated enum` or `map<_, enum>` fields are dropped from the
-//! container. This requires temporarily forcing strict mode to get a
-//! distinguishable error, which needs the scoped thread-local.
+//! For these field shapes, `ignore_unknown_enum_values` treats an unknown enum
+//! name the same way in `std` and `no_std` builds:
 //!
-//! In `no_std`, only *accept-with-default* works: unknown singular enum
-//! values become the default (0) variant. Unknown entries in containers
-//! still produce an error — the filtering behaviour is unavailable.
+//! - a singular enum field takes the enum's default value (0 for an open
+//!   enum);
+//! - an `optional` enum field is left unset;
+//! - an unknown entry in a `repeated enum` or `map<_, enum>` field is dropped
+//!   from the container.
+//!
+//! An enum member of a `oneof` and an enum-typed extension are read by the
+//! enum's own decoder, which this list does not cover. An unknown name in an
+//! open-enum `oneof` member takes the default value with `std` and is a
+//! parse error without it. In a closed-enum `oneof` member or an enum-typed
+//! extension it is a parse error whether or not the option is set.
+//!
+//! An unknown number in an open-enum field is kept as
+//! `EnumValue::Unknown(n)` whether or not the option is set.
 
 /// Options controlling protobuf JSON parsing behavior.
 ///
@@ -83,9 +92,9 @@
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct JsonParseOptions {
-    /// When `true`, unknown enum string values are silently replaced with the
-    /// default value (0) for singular fields, or skipped for repeated/map
-    /// fields, instead of producing an error.
+    /// When `true`, an unknown enum string value is replaced with the default
+    /// value, left unset, or skipped, depending on the field's shape, instead
+    /// of producing an error. See the [module docs](self) for each shape.
     pub ignore_unknown_enum_values: bool,
     /// When `true`, `"[pkg.ext]"` JSON keys that are not in the extension
     /// registry produce a parse error instead of being silently dropped.
@@ -115,8 +124,9 @@ impl JsonParseOptions {
         Self::default()
     }
 
-    /// Set whether unknown enum string values are ignored (replaced with the
-    /// default) instead of producing a parse error.
+    /// Set whether unknown enum string values are ignored instead of
+    /// producing a parse error. See the [module docs](self) for what
+    /// "ignored" means for each field shape.
     #[must_use]
     pub fn ignore_unknown_enum_values(mut self, ignore: bool) -> Self {
         self.ignore_unknown_enum_values = ignore;

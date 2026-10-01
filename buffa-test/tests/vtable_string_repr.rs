@@ -7,7 +7,8 @@
 //! codegen-emitted `ReflectElement` / `ProtoElemJson` impls — which compile
 //! only because the type is local to this crate (a foreign type would violate
 //! the orphan rule). Singular string fields reflect via deref regardless of the
-//! repr, and map string keys/values stay `String`.
+//! repr. The `attrs` map is outside the rule's paths, so its keys and values
+//! are `String`.
 
 use buffa_descriptor::reflect::{Reflectable, ValueRef};
 use buffa_test::vtable_string_repr::Labels;

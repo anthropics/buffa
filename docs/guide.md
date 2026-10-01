@@ -209,6 +209,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.open_enums_in(&[...])` | — | Shorthand for `override_feature_in(path, FeatureOverride::EnumType(EnumTypeOverride::Open))` per path: treat matching closed enums (or closed enum fields) as open in generated Rust (`EnumValue<E>`) |
 | `.generate_with_setters(bool)` | `true` | Emit `with_<name>()` builder-style setters for explicit-presence fields |
 | `.generate_arbitrary(bool)` | `false` | Emit `#[derive(arbitrary::Arbitrary)]` gated behind the `arbitrary` feature (for fuzzing) |
+| `.skip_debug(&[...])` | — | Omit the generated `Debug` impl for matching messages (proto-path prefixes), with their oneof enums, and for enums named exactly, so your crate can write its own. A matched enum needs a hand-written impl to compile. See [`skip_debug` and hand-written `Debug`](#skip_debug-and-hand-written-debug) |
 | `.gate_impls_on_crate_features(bool)` | `false` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface |
 | `.json_feature_name(name)` etc. | `"json"`, `"views"`, `"text"`, `"reflect"` | Rename the crate feature a gated impl kind is conditioned on (one setter per kind: `json_feature_name`, `views_feature_name`, `text_feature_name`, `reflect_feature_name`); inert without `gate_impls_on_crate_features`. The renamed feature must be declared in the consuming crate's `[features]` table — an undeclared name leaves the `#[cfg]` permanently false and the impls silently absent |
 | `.strict_utf8_mapping(bool)` | `false` | Map `utf8_validation = NONE` string fields to `Vec<u8>` / `&[u8]` instead of `String` (see [Skipping UTF-8 validation](#skipping-utf-8-validation)) |
@@ -232,6 +233,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.use_buf()` | — | Use `buf build` instead of `protoc` for descriptor generation |
 | `.include_file(name)` | — | Generate a module tree file for `include!` (recommended) |
 | `.descriptor_set(path)` | — | Use a pre-compiled `FileDescriptorSet` file |
+| `.descriptor_set_bytes(bytes)` | — | Use a serialized `FileDescriptorSet` held in memory, for example from an in-process compiler. The build script must print `cargo:rerun-if-changed` lines for the files the bytes were built from |
 
 ### Well-known types
 
@@ -373,9 +375,10 @@ If you see a `ProtoString` / `ProtoBytes` bound error pointing at *generated* co
 Key points:
 
 - **Point `string_type_custom` at your newtype, not the foreign type.** `string_type_custom("::smol_str::SmolStr")` no longer compiles — use `::buffa_smolstr::SmolStr` or your own newtype path. Add the newtype's crate (e.g. `buffa-smolstr`) to your `Cargo.toml`.
+- **A rule is a fully-qualified proto path.** `.my.pkg.Msg.field`, `.my.pkg.Msg`, `.my.pkg`, or `.` for every field; the leading dot is optional. A rule that matches no field of a generated message produces a `cargo:warning`, so a typo or a prost-style bare name (`"field"`) does not pass silently. `map_type_in` and `repeated_type_in` take the same paths and warn the same way.
 - **Only the owned struct field type changes.** The wire format is identical regardless of representation, and view types still borrow `&str` / `&[u8]`.
 - **The rule also covers `map` `string` slots.** A `string_type` rule on a `map<string, V>` / `map<K, string>` field applies to the key and/or value — one rule on the field path covers both slots of a `map<string, string>`. The `map` container itself stays the configured type (the `map_type` knob); only the `string` element type changes. (`bytes` is value-only here, since proto forbids `bytes` map keys.) Because the rule is keyed on the field path, a `map<string, string>` is all-or-nothing: you cannot give the key a custom type and leave the value `String` (or vice versa) on the same field. Asymmetric cases where only one slot is `string` (`map<string, int64>`, `map<int32, string>`) are unaffected.
-- **A custom type needs no `Arbitrary` impl — except in a `map`.** Under `generate_arbitrary`, singular / optional / repeated fields get a generic builder. The `map` arbitrary path currently has no per-key shim, so a custom string used as a `map` key or value must itself derive `Arbitrary` (a one-line derive on the newtype).
+- **A custom type needs no `Arbitrary` impl — except in a `map`.** Under `generate_arbitrary`, singular / optional / repeated fields get a generic builder. The `map` arbitrary path currently has no per-key shim, so a custom string used as a `map` key or value must itself implement `Arbitrary`: a one-line derive on a hand-written newtype, or `#[cfg_attr(feature = "arbitrary", buffa(arbitrary))]` on one made with `buffa-remote-derive`.
 - **JSON of an `optional`, `repeated`, or `oneof` custom string, or any custom string in a `map`,** serializes through the element's native `serde`, so such a newtype must derive `Serialize` / `Deserialize` (`buffa-smolstr`'s `serde` feature does this). Non-optional singular string fields use buffa's `proto_string` with-module and need no `serde` impl.
 - **A custom string used as a `map` key needs `Hash + Eq`** (for the default / `HashMap` container) or `Ord` (for `map_type(BTreeMap)`). The bound is enforced at the generated map field type, so a missing impl is a clear compile error at that field.
 - **A custom type used as a `repeated` element, or as a `map` key/value, must be crate-local.** Codegen emits per-element `ReflectElement` (vtable reflection), `ReflectMapKey` (vtable, for a custom `string` map key), and base64 `ProtoElemJson` (JSON, bytes only) impls for it, which the orphan rule forbids for a foreign type — a local newtype satisfies this. Singular / optional / oneof uses have no such restriction.
@@ -613,6 +616,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `unknown_fields_in=<path>` | Re-enable unknown-field preservation for matching messages and the messages nested in them. Repeatable; same proto-path prefix matching as `open_enums_in`; see [Path-scoped re-enable](#path-scoped-re-enable) |
 | `deny_unknown_json_fields=true` | Reject unknown keys when parsing JSON instead of ignoring them; without `json=true` it changes nothing and the plugin prints a warning. See [Unknown fields in JSON](#unknown-fields-in-json) |
 | `deny_unknown_json_fields_in=<path>` | Reject unknown JSON keys for matching messages and the messages nested in them; rules can only enable, and need `json=true` like the global option. Repeatable; same proto-path prefix matching as `unknown_fields_in`. See [Unknown fields in JSON](#unknown-fields-in-json) |
+| `skip_debug=<path>` | Omit the generated `Debug` impl for matching messages (with their oneof enums) and for enums named exactly, so the crate can write its own. A matched enum needs a hand-written impl to compile. Repeatable; message paths use the same proto-path prefix matching as `unknown_fields_in`. See [`skip_debug` and hand-written `Debug`](#skip_debug-and-hand-written-debug) |
 | `arbitrary=true` | Emit `#[derive(arbitrary::Arbitrary)]` for fuzzing |
 | `gate_impls=true` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface (default: emitted unconditionally) |
 | `json_feature=<name>` | Rename the crate feature a gated impl kind is conditioned on (also `views_feature=`, `text_feature=`, `reflect_feature=`); inert without `gate_impls=true` |
@@ -622,6 +626,8 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `allow_message_set=true` | Permit `option message_set_wire_format = true;` instead of rejecting it (default: false) |
 | `strict_utf8=true` | Map `string` fields to `Vec<u8>`/`&[u8]` (no UTF-8 validation) instead of `String`/`&str`. Alias: `strict_utf8_mapping`. |
 | `type_name_prefix=<prefix>` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`) |
+| `idiomatic_field_names=true` | Convert camelCase proto field and oneof names to snake_case Rust identifiers (`webMessageInfo` → `web_message_info`) (default: false). JSON, text-format and reflection names are unchanged. A converted field that collides with another member (proto2 only) gets an `_f<number>` suffix, with a build warning |
+| `idiomatic_enum_aliases=false` | Omit the `UpperCamelCase` associated-const aliases for enum values (`Status::Active`); the `SHOUTY_SNAKE_CASE` variants are unaffected (default: emitted). See [Enums](#enumvaluet--type-safe-open-enums) |
 | `override_feature_in=<path>=<feature>:<value>` | Apply a path-scoped editions feature override (currently `enum_type:OPEN`) to the compiled descriptors. Repeatable |
 | `open_enums_in=<path>` | Shorthand for `override_feature_in=<path>=enum_type:OPEN`. Repeatable |
 | `unbox_oneof=true` | Store every non-recursive message/group oneof variant inline instead of `Box<T>`. Recursive variants stay boxed. |
@@ -885,7 +891,7 @@ assert_eq!(Status::values().len(), 3);
 
 Aliases (additional names sharing an existing value, allowed by `option allow_alias = true`) are not enum variants in Rust — they're emitted as `pub const` aliases — so they don't appear in `values()`.
 
-**Idiomatic `UpperCamelCase` aliases.** Generated enums also carry one associated `const` per value with the enum-name prefix (if present) stripped and the rest converted to `UpperCamelCase` — for the `Status` example above, `Status::ACTIVE` is also reachable as `Status::Active`, and a prefixed value like `STATUS_ACTIVE` would produce the same alias. The aliases work in expressions and in `match` patterns, and like the `allow_alias` consts they don't appear in `values()` or in `Debug` output. If two values of an enum would collide after conversion, the aliases are suppressed for that enum as a whole, with a build warning. Disable per compilation unit with `.idiomatic_enum_aliases(false)`.
+**Idiomatic `UpperCamelCase` aliases.** Generated enums also carry one associated `const` per value with the enum-name prefix (if present) stripped and the rest converted to `UpperCamelCase` — for the `Status` example above, `Status::ACTIVE` is also reachable as `Status::Active`, and a prefixed value like `STATUS_ACTIVE` would produce the same alias. The aliases work in expressions and in `match` patterns, and like the `allow_alias` consts they don't appear in `values()` or in `Debug` output. If two values of an enum would collide after conversion, the aliases are suppressed for that enum as a whole, with a build warning. Disable per compilation unit with `.idiomatic_enum_aliases(false)` on the `buffa_build::Config` builder, or `idiomatic_enum_aliases=false` as a `protoc-gen-buffa` plugin option. With the aliases disabled, the consts are not generated, so code that references `Status::Active` no longer compiles; `Status::ACTIVE` is unaffected.
 
 ### Oneofs
 
@@ -1026,6 +1032,22 @@ the option too, so descriptor-driven decode paths redact the same fields.
 This affects `Debug` formatting only — binary, JSON, and text-format
 serialization are unchanged.
 
+### `skip_debug` and hand-written `Debug`
+
+`skip_debug` omits the generated `Debug` impl so that your crate can write its own, for example to print a UUID message as one hex string. A rule is a fully-qualified proto path:
+
+- A message path (`.demo.Uuid4`) covers that message, its oneof enums and the messages nested in it. A package path (`.demo`) covers every message in the package and its sub-packages, and `.` covers every message.
+- An enum loses its `Debug` only when a rule is its exact name (`.demo.Level`). A message or package rule leaves the enums under it as they are.
+- View types keep their generated `Debug`, so a view still prints every field. `skip_debug` is for formatting; to hide a value, use `[debug_redact = true]`, which covers the owned message, the view and reflective output. The option does not reach a matched message or oneof, whose output is your impl's.
+
+Your crate then implements `Debug` where something needs it:
+
+- for every matched enum, because `buffa::Enumeration` requires `Debug`. Writing `buffa::Enumeration::proto_name(self)` prints what the derive printed.
+- for a matched message that an unmatched message or oneof holds, that is generated with reflection, or that a custom `repeated_type` collection holds.
+- for a matched message's oneof enum, if your impl for the message prints it. For a oneof `kind` in `demo.Uuid4` the enum is `demo::uuid4::Kind`.
+
+A rule that matches no generated message and names no generated enum produces a build warning. The usual causes are a typo and a path without its package: `Uuid4` is read as `.Uuid4`.
+
 ## Encoding and decoding
 
 ### The `Message` trait
@@ -1159,11 +1181,15 @@ The default `Message::decode` / `decode_from_slice` methods use the defaults (10
 
 Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. The carve-outs are `ReflectMessage::to_dynamic` and the generated-message bridge (`DynamicMessage::from_message` / `try_from_message*`), whose internal round-trip re-decodes bytes buffa just encoded with memory bounds scaled to the encoded length: 128 bytes of element memory per encoded byte and one unknown-field slot per encoded byte, each floored at its default. They read messages you already hold, not wire input, so this avoids false rejection by the fixed defaults without making the second representation unbounded. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
 
-Textproto is the exception among the non-binary formats: `decode_from_str` applies the element-memory limit on its own. The amplification there is very nearly as large as on the wire — `{},` is three input bytes for the same element footprint that costs two encoded — so the parser needs the same bound, and carries its own because `DecodeContext` never reaches it. Raise it with `buffa::text::decode_from_str_with_element_memory_limit`. The recursion limit already applied there, enforced by the tokenizer.
+The reflective JSON parser applies an element-memory limit of its own. `DynamicMessage::from_json` owns its `Deserializer`, so it carries the budget the way textproto does: 32 MiB by default, charged per repeated element, map entry, `Struct` member, `ListValue` element and `FieldMask` path, with the charges the reflective binary decoder applies, and shared across the whole parse rather than reset per nested message. To parse with another limit, call `DynamicMessageSeed::new(pool, index).with_element_memory_limit(n).parse_json(json)`. A parse that exceeds the limit fails with a `serde_json::Error`, and `DynamicMessageSeed::is_element_memory_limit_error(&err)` tells that error from a malformed-input one, for a server that answers the two differently. The recursion and message-size limits still do not reach this parser, and generated-message JSON is unbounded as described above.
 
-The one JSON-side bound is on reflective *serialization*: `DynamicMessage`'s `Serialize` impl caps message nesting at `RECURSION_LIMIT` (100), counting `google.protobuf.Any` payloads — which it decodes at serialize time — toward the same budget, and fails with a serde error beyond it. That cap is fixed rather than read from `DecodeOptions`, and decode success alone does not imply the message will serialize — an over-deep `Any` chain decodes fine as opaque bytes — so serialize at ingest if you need that guarantee.
+The limit does not bound the memory a `google.protobuf.Any` payload takes to read. `@type` can follow the fields it types, so the payload object is buffered as a `serde_json::Value` tree before any of it is charged, and only the message built from that tree draws on the budget. Peak memory for input that carries an `Any` therefore grows with the input length whatever the limit is; one measurement put it at about 27 times the input length for an `Any` full of empty objects. Cap the input length as well when an `Any` is reachable from the message type.
 
-If you accept untrusted JSON, impose your own bound before parsing; capping the input length is the simplest form and is the one thing that transfers. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
+Textproto also bounds itself: `decode_from_str` applies the element-memory limit on its own. The amplification there is very nearly as large as on the wire — `{},` is three input bytes for the same element footprint that costs two encoded — so the parser needs the same bound, and carries its own because `DecodeContext` never reaches it. Raise it with `buffa::text::decode_from_str_with_element_memory_limit`. The recursion limit already applied there, enforced by the tokenizer.
+
+Reflective JSON *serialization* is bounded too, by nesting rather than by footprint: `DynamicMessage`'s `Serialize` impl caps message nesting at `RECURSION_LIMIT` (100), counting `google.protobuf.Any` payloads — which it decodes at serialize time — toward the same budget, and fails with a serde error beyond it. That cap is fixed rather than read from `DecodeOptions`, and decode success alone does not imply the message will serialize — an over-deep `Any` chain decodes fine as opaque bytes — so serialize at ingest if you need that guarantee.
+
+If you accept untrusted JSON into a *generated* message, impose your own bound before parsing; capping the input length is the simplest form. [#330](https://github.com/anthropics/buffa/issues/330) tracks a built-in limit for that path.
 
 ### `Any` expansion is separately capped
 
@@ -1565,7 +1591,38 @@ Because JSON parsing goes straight from `serde_json` into the generated
 `Deserialize` impls, buffa is never handed a `DecodeOptions` on this path, so
 [the decode limits](#what-these-limits-do-and-do-not-bound) that bound the
 binary codec do not bound JSON. Cap the input yourself before parsing untrusted
-JSON. Tracked in [#330](https://github.com/anthropics/buffa/issues/330).
+JSON. Tracked in [#330](https://github.com/anthropics/buffa/issues/330). The
+reflective parser (`DynamicMessage::from_json`) applies an element-memory
+limit of its own; see
+[the limits section](#what-these-limits-do-and-do-not-bound).
+
+buffa does not support `serde_json`'s `arbitrary_precision` feature. When any
+crate in the build enables it, buffa rejects every number that has a fraction
+or an exponent, and every whole number outside the `i64` and `u64` ranges. It
+reads such a number in a `google.protobuf.Value` as a struct. To check your
+build, run `cargo tree -e features -i serde_json` in your workspace, and look
+for `arbitrary_precision` in the output. Tracked in
+[#482](https://github.com/anthropics/buffa/issues/482).
+
+If one of your own types keeps untrusted JSON as a `serde_json::Value` before
+decoding it, do not deserialize that value with `Value`'s own `Deserialize`
+impl. When any crate in the build enables `serde_json`'s `raw_value` feature,
+that impl parses the string under a first key `$serde_json::private::RawValue`
+as JSON. The value you decode then differs from the text that a filter or a
+signature check saw, and nested strings pass the recursion limit. Generated
+code reads that key as data, and your types can do the same with
+`buffa::json_helpers::buffered`:
+
+```rust,ignore
+#[derive(serde::Deserialize)]
+struct Event {
+    #[serde(default, deserialize_with = "buffa::json_helpers::buffered::opt_value")]
+    payload: Option<serde_json::Value>,
+}
+
+// In a hand-written visitor:
+let buffa::json_helpers::buffered::BufferedValue(payload) = map.next_value()?;
+```
 
 ### Unknown fields in JSON
 
@@ -1782,6 +1839,11 @@ if any.is_type(MyMessage::TYPE_URL) { /* ... */ }
 let msg: Option<MyMessage> = any.unpack_if::<MyMessage>(MyMessage::TYPE_URL)?;
 ```
 
+`is_type` and `unpack_if` compare the whole URL, prefix included. JSON and text
+serialization look the message up in the `TypeRegistry` instead, and a type
+registered under one prefix is found under any other, by the message name
+after the last `/`. The `Any` keeps its own URL.
+
 ### Value and Struct
 
 Ergonomic builders for dynamic JSON-like values:
@@ -1818,7 +1880,7 @@ In `no_std` mode:
 
 - Map fields use `hashbrown::HashMap` instead of `std::collections::HashMap`
 - `std::time` conversions on Timestamp/Duration are unavailable
-- Scoped [`with_json_parse_options`] is unavailable (requires thread-local); use [`set_global_json_parse_options`] to set options process-wide once at startup. Note: the global API supports singular-enum accept-with-default but not repeated/map container filtering (unknown entries still error).
+- Scoped [`with_json_parse_options`] is unavailable (requires thread-local); use [`set_global_json_parse_options`] to set options process-wide once at startup. The options cannot vary between individual parse calls. The `buffa::json` module docs list how `ignore_unknown_enum_values` treats each field shape, and the one shape where `no_std` differs.
 - JSON serialization via serde works fully (both `serde` and `serde_json` support `no_std` + `alloc`)
 
 [`with_json_parse_options`]: https://docs.rs/buffa/latest/buffa/json/fn.with_json_parse_options.html
@@ -2116,6 +2178,10 @@ reflection surface:
 - **Lenient JSON** — `from_json_ignoring_unknown` discards unknown JSON keys
   (recursively, including inside `Any`); the strict form rejects them, and
   both reject duplicate keys per the proto3 JSON spec.
+- **Bounded JSON parsing** — `from_json` limits the repeated elements and map
+  entries it builds (32 MiB by default), and `DynamicMessageSeed` parses with
+  another limit; see
+  [what the limits bound](#what-these-limits-do-and-do-not-bound).
 - **`Any`** — `pack_any()` / `unpack_any()` resolve `type_url`s against the
   pool.
 - **Extensions** — extension fields are decoded, encoded, and carried in JSON
@@ -2310,6 +2376,8 @@ either way, because the unknown-field branch never fires. Carrying the handle
 still shapes how the compiler moves the view, though, which costs view-decode
 throughput on message-dense shapes. Disabling is what removes the field
 outright, and it is the lever for a hot view-decode path.
+
+A view struct whose fields do not borrow the decode buffer itself carries a `#[doc(hidden)] __buffa_phantom: PhantomData<&'a ()>` marker so that its lifetime parameter is used non-recursively. That is an all-scalar message and, in eager views, a message whose fields reach `'a` solely through another view (a self-reference, a `oneof` of messages, or two messages that reference each other); a lazy view's message field borrows the buffer itself and needs no marker. The marker is zero-sized and absent from serialized output, but it is a public field, so construct or destructure such a view with `..Default::default()` rather than exhaustively.
 
 Leave preservation enabled unless you are memory-constrained (embedded / `no_std`
 targets) or maintain large in-memory collections of small messages where struct

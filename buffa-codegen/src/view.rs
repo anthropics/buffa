@@ -294,11 +294,11 @@ pub(crate) fn generate_view_with_nesting(
         quote! {}
     };
 
-    // If no field borrows from 'a (all-scalar message with unknown-fields
-    // preservation disabled), inject PhantomData<&'a ()> so the struct's
-    // lifetime param is used. decode_view_ctx(buf: &'a [u8]) requires 'a.
+    // Eager views: `message_fields_anchor_lifetime` is false, because a message
+    // field is emitted as `MessageFieldView<V>`, which carries no lifetime of its
+    // own.
     let has_phantom_field =
-        !message_view_has_borrowing_field(ctx, msg, features, preserve_unknown_fields);
+        !message_view_anchors_lifetime(ctx, msg, features, preserve_unknown_fields, false);
     let phantom_field = if has_phantom_field {
         quote! { #[doc(hidden)] pub __buffa_phantom: ::core::marker::PhantomData<&'a ()>, }
     } else {
@@ -895,49 +895,98 @@ pub(crate) fn oneof_view_needs_lifetime(
     })
 }
 
-/// Does the message's view struct have any field that borrows from `'a`?
+/// Does any variant of this oneof borrow the decode buffer itself?
 ///
-/// Repeated, map, string, bytes, message, group fields all use `'a`.
-/// Only an all-scalar/enum message with `preserve_unknown_fields=false`
-/// has no borrowing fields — in that case a PhantomData marker is needed
-/// to keep the `<'a>` lifetime valid for `decode_view_ctx(buf: &'a [u8])`.
-pub(crate) fn message_view_has_borrowing_field(
+/// A message or group variant still needs `'a` on the generated enum — see
+/// [`oneof_view_needs_lifetime`] — so whether it anchors the struct that owns the
+/// enum depends on the field type that variant is emitted as, exactly as for a
+/// singular message field.
+fn oneof_has_borrowing_variant(
+    ctx: &CodeGenContext,
+    fields: &[&FieldDescriptorProto],
+    features: &ResolvedFeatures,
+    message_fields_anchor_lifetime: bool,
+) -> bool {
+    fields.iter().any(|f| {
+        let ty = effective_type(ctx, f, features);
+        matches!(ty, Type::TYPE_STRING | Type::TYPE_BYTES)
+            || (message_fields_anchor_lifetime
+                && matches!(ty, Type::TYPE_MESSAGE | Type::TYPE_GROUP))
+    })
+}
+
+/// Does the message's view struct anchor `'a` without reaching it back through
+/// itself?
+///
+/// rustc rejects a lifetime parameter whose only uses lead back to the type
+/// being defined — `lifetime parameter 'a is only used recursively`, and E0392
+/// once a struct in that set is left with no use at all — so a view struct needs
+/// a field that borrows the decode buffer directly. Repeated, map, string, bytes
+/// and unknown-field-preservation fields all do: `RepeatedView<'a, T>` and
+/// `MapView<'a, K, V>` carry `'a` as their own parameter, which anchors it even
+/// when the element type is this message, and `&'a str` / `&'a [u8]` /
+/// `UnknownFieldsView<'a>` borrow the buffer outright.
+///
+/// `message_fields_anchor_lifetime` is where the two view families genuinely
+/// differ, and each caller passes it rather than reading the config: a build with
+/// `lazy_views(true)` emits the eager view structs too, so one config selects
+/// both field types. Eager views emit `MessageFieldView<V>`, which has no
+/// lifetime parameter of its own, so such a field reaches `'a` only through
+/// another view — and that view can lead back, whether by a direct self-reference,
+/// through a `oneof`, by a self-reference inside a nested message, or mutually
+/// between two messages. Lazy views emit `LazyMessageFieldView<'a, V>`, which
+/// borrows the undecoded bytes itself, so there the same field anchors `'a` and
+/// no marker is needed anywhere in that family.
+///
+/// For eager views the answer is therefore conservative in one direction: a
+/// message-typed field that is not on a recursion path also gets the marker,
+/// because separating the two would mean resolving the message graph — including
+/// over `extern_path` and cross-crate views, where codegen cannot observe the
+/// target at all — for a decision that is free to make broadly. The marker is a
+/// `#[doc(hidden)]` zero-sized `PhantomData<&'a ()>`, and because every eager
+/// view struct now has a non-recursive use of `'a`, the shared oneof enums'
+/// `Box<OtherView<'a>>` variants are well-founded too.
+pub(crate) fn message_view_anchors_lifetime(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
     features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
+    message_fields_anchor_lifetime: bool,
 ) -> bool {
     if preserve_unknown_fields {
         // UnknownFieldsView<'a> always uses 'a.
         return true;
     }
+    let anchors_lifetime = |ty: Type| match ty {
+        Type::TYPE_STRING | Type::TYPE_BYTES => true,
+        // A lazy view's singular message field is `LazyMessageFieldView<'a, V>`,
+        // which borrows the decode buffer itself. The eager `MessageFieldView<V>`
+        // has no lifetime parameter, so it does not.
+        Type::TYPE_MESSAGE | Type::TYPE_GROUP => message_fields_anchor_lifetime,
+        _ => false,
+    };
     for f in &msg.field {
         if is_real_oneof_member(f) {
-            continue; // oneof members checked below via oneof_view_needs_lifetime
+            continue; // oneof members counted via oneof_has_borrowing_variant
         }
-        // Repeated and map fields always use 'a (RepeatedView<'a, T>, MapView<'a, K, V>).
+        // Repeated and map fields always carry 'a themselves
+        // (RepeatedView<'a, T>, MapView<'a, K, V>).
         if f.label.unwrap_or_default()
             == crate::generated::descriptor::field_descriptor_proto::Label::LABEL_REPEATED
         {
             return true;
         }
-        // Singular string/bytes/message/group borrow.
-        if matches!(
-            effective_type(ctx, f, features),
-            Type::TYPE_STRING | Type::TYPE_BYTES | Type::TYPE_MESSAGE | Type::TYPE_GROUP
-        ) {
+        if anchors_lifetime(effective_type(ctx, f, features)) {
             return true;
         }
     }
-    // Check oneofs: an all-scalar oneof doesn't borrow, but one with a
-    // string/bytes/message/group variant does.
     for (idx, _) in msg.oneof_decl.iter().enumerate() {
         let fields: Vec<_> = msg
             .field
             .iter()
             .filter(|f| is_real_oneof_member(f) && f.oneof_index == Some(idx as i32))
             .collect();
-        if oneof_view_needs_lifetime(ctx, &fields, features) {
+        if oneof_has_borrowing_variant(ctx, &fields, features, message_fields_anchor_lifetime) {
             return true;
         }
     }

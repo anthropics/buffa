@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a malformed `proto3_optional` field** (#480). protoc gives each `proto3_optional` message field a synthetic oneof of its own, placed after the message's real oneofs, and sets the flag only on `optional` fields and extensions in proto3 files. A descriptor set that departs from this shape now fails to link with one of five new `PoolError` variants (`Proto3OptionalOutsideProto3`, `InvalidProto3OptionalCardinality`, `Proto3OptionalWithoutOneof`, `Proto3OptionalOneofHasMultipleMembers`, `RealOneofAfterSyntheticOneof`). Before, such a field linked, and a oneof it shared with other fields was treated as an ordinary oneof. Descriptor sets written by protoc or buf are unaffected.
+time: 2026-09-24T23:26:49.945981+02:00

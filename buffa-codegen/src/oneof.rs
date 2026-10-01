@@ -5,7 +5,7 @@ use crate::generated::descriptor::{
     DescriptorProto, FieldDescriptorProto, FileDescriptorProto, OneofDescriptorProto,
 };
 use proc_macro2::{Ident, TokenStream};
-use quote::{format_ident, quote};
+use quote::quote;
 
 use crate::context::CodeGenContext;
 use crate::features::ResolvedFeatures;
@@ -631,8 +631,13 @@ pub fn generate_oneof_enum(
     // instead of their payload. The `Debug` derive is swapped for a manual
     // impl only when at least one variant is redacted, so unaffected oneofs
     // keep byte-identical output.
+    //
+    // A `skip_debug` rule on the owning message leaves the oneof's `Debug` to
+    // the consuming crate as well.
     let any_redacted = variants_info.iter().any(|v| v.debug_redact);
-    let (debug_derive, debug_impl) = if any_redacted {
+    let (debug_derive, debug_impl) = if ctx.skip_debug(proto_fqn) {
+        (quote! { #[derive(Clone, PartialEq)] }, quote! {})
+    } else if any_redacted {
         let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
         let arms: Vec<TokenStream> = variants_info
             .iter()
@@ -930,15 +935,17 @@ pub(crate) fn oneof_variant_deser_arm(
     })
 }
 
-/// Build the Rust identifier for a oneof enum: `{PascalCase(oneof_name)}`.
+/// Build the Rust identifier for a oneof enum: `{PascalCase(oneof_name)}`,
+/// keyword-escaped like [`oneof_variant_ident`], so a oneof named `self`,
+/// `self_` or `_self` becomes `Self_`.
 ///
-/// No suffix and no collision check — oneof enums live in the dedicated
+/// No collision check — oneof enums live in the dedicated
 /// `__buffa::oneof::<msg>::` tree where they cannot collide with nested
-/// types, nested enums, or view structs. Two sibling oneofs would only
-/// produce the same ident if they share a proto name, which protoc
-/// rejects at parse time.
+/// types, nested enums, or view structs. Two sibling oneofs whose names
+/// PascalCase alike (`foo_bar` and `foo__bar`, or `self` and `self_`) do
+/// produce the same ident; that is not diagnosed.
 fn oneof_enum_ident(oneof_name: &str) -> proc_macro2::Ident {
-    format_ident!("{}", to_pascal_case(oneof_name))
+    crate::idents::make_field_ident(&to_pascal_case(oneof_name))
 }
 
 /// Compute oneof enum identifiers for all non-synthetic oneofs in a message.

@@ -1128,6 +1128,45 @@ impl<'a> CodeGenContext<'a> {
             })
     }
 
+    /// Whether a [`skip_debug`](crate::CodeGenConfig::skip_debug) rule covers
+    /// the message at `message_fqn`, so that the generated `Debug` impls of
+    /// the message and of its oneof enums are omitted.
+    ///
+    /// Rules use the same proto-segment-aware prefix matching as
+    /// [`preserve_unknown_fields`](Self::preserve_unknown_fields): a rule
+    /// naming a message also covers the messages nested inside it, and `"."`
+    /// matches every message. Enums are matched by
+    /// [`skip_debug_enum`](Self::skip_debug_enum).
+    pub fn skip_debug(&self, message_fqn: &str) -> bool {
+        if self.config.skip_debug.is_empty() {
+            return false;
+        }
+        let dotted = if message_fqn.starts_with('.') {
+            Cow::Borrowed(message_fqn)
+        } else {
+            Cow::Owned(format!(".{message_fqn}"))
+        };
+        self.config
+            .skip_debug
+            .iter()
+            .any(|prefix| matches_proto_prefix(prefix, &dotted))
+    }
+
+    /// Whether a [`skip_debug`](crate::CodeGenConfig::skip_debug) rule names
+    /// the enum at `enum_fqn`, so that its derived `Debug` is omitted.
+    ///
+    /// The match is exact. A rule for an enclosing message or package leaves
+    /// the enum's derive in place, because `buffa::Enumeration` requires
+    /// `Debug` and an enum without it compiles only once the consuming crate
+    /// implements it.
+    pub fn skip_debug_enum(&self, enum_fqn: &str) -> bool {
+        let name = enum_fqn.strip_prefix('.').unwrap_or(enum_fqn);
+        self.config
+            .skip_debug
+            .iter()
+            .any(|rule| rule.strip_prefix('.') == Some(name))
+    }
+
     /// Check whether a message-typed oneof variant at the given proto path is
     /// stored inline (opted out of `Box` wrapping).
     ///

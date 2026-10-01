@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`DynamicMessageSeed::with_element_memory_limit`, `parse_json` and `is_element_memory_limit_error`** (#466). `DynamicMessageSeed::new(pool, index).with_element_memory_limit(n).parse_json(json)` parses reflective JSON under a limit other than the 32 MiB default; pass `usize::MAX` for no limit. `parse_json` is `DynamicMessage::from_json` with the seed's options, and rejects input after the document as `from_json` does. `DynamicMessageSeed::is_element_memory_limit_error(&err)` tells the over-limit error from a malformed-input one, for a server that answers the two differently. `DynamicMessageSeed` is now `Clone`.
+time: 2026-09-22T18:45:01+03:00

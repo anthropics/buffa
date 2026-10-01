@@ -17,6 +17,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::iter::FusedIterator;
 
 use crate::{
     DescriptorPool, EnumIndex, FieldDescriptor, FieldKind, MessageDescriptor, MessageIndex,
@@ -589,6 +590,19 @@ impl DynamicMessage {
             let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
             if buf.remaining() < len {
                 return Err(DecodeError::UnexpectedEof);
+            }
+            // A fixed-width payload holds exactly `len / width` elements, so
+            // reserve for them once. Each decoded `Value` is larger than its 4
+            // or 8 wire bytes, so the reservation is capped by the remaining
+            // element-memory budget, the same bound the loop below enforces.
+            if let Some(width) = fixed_width(elem) {
+                let elements = len / width;
+                let additional = ctx
+                    .remaining_element_memory()
+                    .map_or(elements, |remaining| {
+                        elements.min(remaining / core::mem::size_of::<Value>())
+                    });
+                list.reserve(additional);
             }
             // Take a sub-buffer of `len` bytes and decode elements from it.
             let mut packed = buf.copy_to_bytes(len);
@@ -1265,6 +1279,59 @@ impl DynamicMessage {
         self.fields.get(&number)
     }
 
+    /// Iterates over this message's set fields, yielding each field's
+    /// descriptor and its stored [`Value`].
+    ///
+    /// Items borrow from `&self`, so a nested `Value::Message` can outlive
+    /// the iteration: a non-recursive walk can push it onto a worklist and
+    /// read it later. The callback of
+    /// [`for_each_set`](ReflectMessage::for_each_set) does not allow that,
+    /// because the `ValueRef<'_>` it receives is valid only for the call. To
+    /// borrow a single field's value, use
+    /// [`field_by_number`](Self::field_by_number).
+    ///
+    /// Presence follows the same rule as `for_each_set`. Unknown fields are
+    /// excluded because they have no `FieldDescriptor`; read them through
+    /// [`unknown_fields`](ReflectMessage::unknown_fields). Extensions are
+    /// yielded alongside declared fields, matching protobuf-go's
+    /// `Message.Range`; `message_descriptor().field(fd.number())` returns
+    /// `None` for an extension's descriptor. Fields are yielded in ascending
+    /// field-number order, which the trait method does not promise.
+    ///
+    /// ```no_run
+    /// # use buffa_descriptor::reflect::{DynamicMessage, Value};
+    /// // Counts the messages nested anywhere under `root`, including those in
+    /// // repeated and map fields, with a worklist instead of recursion.
+    /// fn count_nested(root: &DynamicMessage) -> usize {
+    ///     let mut count = 0;
+    ///     let mut worklist: Vec<&Value> = root.iter_set_fields().map(|(_, v)| v).collect();
+    ///     while let Some(value) = worklist.pop() {
+    ///         match value {
+    ///             Value::Message(msg) => {
+    ///                 count += 1;
+    ///                 worklist.extend(msg.iter_set_fields().map(|(_, v)| v));
+    ///             }
+    ///             Value::List(items) => worklist.extend(items),
+    ///             Value::Map(entries) => worklist.extend(entries.iter().map(|(_, v)| v)),
+    ///             _ => {}
+    ///         }
+    ///     }
+    ///     count
+    /// }
+    /// ```
+    #[must_use]
+    pub fn iter_set_fields(
+        &self,
+    ) -> impl Clone + DoubleEndedIterator<Item = (&FieldDescriptor, &Value)> + FusedIterator + '_
+    {
+        self.fields.iter().filter_map(|(&number, value)| {
+            // `value` is the one stored under `number`, so presence needs no
+            // second lookup through `has`.
+            let fd = self.field_or_extension(number)?;
+            value_is_present(value, fd).then_some((fd, value))
+        })
+    }
+
     /// Mutably borrow a field's value by field number, if present.
     ///
     /// In-place mutation, the counterpart to [`field_by_number`](Self::field_by_number).
@@ -1334,6 +1401,94 @@ impl DynamicMessage {
             self.message_descriptor().full_name,
         );
         self.fields.get_mut(&field.number())
+    }
+
+    /// Remove a field and return its value, if the field was set.
+    ///
+    /// The [`Value`] is moved out of the message, so an owned submessage,
+    /// list or map can be transformed or handed on without a clone.
+    ///
+    /// "Set" follows [`ReflectMessage::has`]. Whatever was stored under the
+    /// field is removed either way, but `None` is returned for a value that
+    /// does not count as set: an implicit-presence scalar at its default, or
+    /// an empty list or map. An explicit-presence field set to its default
+    /// returns `Some`.
+    ///
+    /// `field` may be a declared field or a registered extension of this
+    /// message. To discard a field without reading it, use
+    /// [`clear`](ReflectMessageMut::clear).
+    ///
+    /// A descriptor reached through the message, such as one from
+    /// [`message_descriptor`](ReflectMessage::message_descriptor), borrows
+    /// the message and cannot be passed to a `&mut self` method. Clone the
+    /// [`Arc<DescriptorPool>`](Self::pool) first and resolve descriptors
+    /// through the clone:
+    ///
+    /// ```no_run
+    /// # use std::sync::Arc;
+    /// # use buffa_descriptor::reflect::{DynamicMessage, Value};
+    /// // Moves every set submessage out of `msg`.
+    /// fn take_submessages(msg: &mut DynamicMessage) -> Vec<DynamicMessage> {
+    ///     let pool = Arc::clone(msg.pool());
+    ///     let md = pool.message(msg.message_index());
+    ///     let mut taken = Vec::new();
+    ///     for fd in md.fields() {
+    ///         // Check the kind first: `take_field` removes whatever it finds.
+    ///         if !matches!(msg.field_by_number(fd.number()), Some(Value::Message(_))) {
+    ///             continue;
+    ///         }
+    ///         if let Some(Value::Message(inner)) = msg.take_field(fd) {
+    ///             taken.push(inner);
+    ///         }
+    ///     }
+    ///     taken
+    /// }
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if `field` is not a member of this message's descriptor. A
+    /// descriptor from another message type with the same number would
+    /// otherwise remove the wrong field. Membership is by identity, as
+    /// described on [`ReflectError::FieldNotMember`], so the same field
+    /// resolved from a different pool instance is not a member either. Use
+    /// [`try_take_field`](Self::try_take_field) when membership is not already
+    /// proven, or [`take_field_by_number`](Self::take_field_by_number) when
+    /// you hold a number, not a descriptor.
+    #[must_use = "use `clear` to discard a field without reading it"]
+    pub fn take_field(&mut self, field: &FieldDescriptor) -> Option<Value> {
+        self.try_take_field(field)
+            .unwrap_or_else(|err| panic!("{err}"))
+    }
+
+    /// Checked variant of [`take_field`](Self::take_field). `Ok(None)` means
+    /// the field was not set, by the same rule.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReflectError::FieldNotMember`] if `field` is not a declared
+    /// field or registered extension of this message. The message is left
+    /// unchanged.
+    pub fn try_take_field(
+        &mut self,
+        field: &FieldDescriptor,
+    ) -> Result<Option<Value>, ReflectError> {
+        self.validate_field_descriptor(field)?;
+        Ok(self.take_field_by_number(field.number()))
+    }
+
+    /// Remove the field with this number and return its value, if the field
+    /// was set.
+    ///
+    /// The number-keyed form of [`take_field`](Self::take_field), with the
+    /// same presence rule, for a caller that holds a number and no
+    /// descriptor. A number that names no field or registered extension of
+    /// this message returns `None`; bytes kept for it in
+    /// [`unknown_fields`](ReflectMessage::unknown_fields) are left alone.
+    pub fn take_field_by_number(&mut self, number: u32) -> Option<Value> {
+        let value = self.fields.remove(&number)?;
+        let field = self.field_or_extension(number)?;
+        value_is_present(&value, field).then_some(value)
     }
 
     /// Insert a field value by number, bypassing the descriptor-keyed
@@ -1641,20 +1796,9 @@ impl ReflectMessage for DynamicMessage {
     }
 
     fn for_each_set(&self, f: &mut dyn FnMut(&FieldDescriptor, ValueRef<'_>)) {
-        // Extensions present on this message are visited alongside declared
-        // fields, matching protobuf-go's `Message.Range`. Callers that need
-        // to distinguish can check `message_descriptor().field(fd.number())`
-        // — `None` means the descriptor came from the extension index.
-        for (&number, value) in &self.fields {
-            if let Some(fd) = self.field_or_extension(number) {
-                // `field_or_extension` resolved `fd` *by* `number`, so `value`
-                // is the one `has(fd)` would look up. Applying the presence
-                // rule to it directly keeps each field to a single resolution.
-                if !value_is_present(value, fd) {
-                    continue;
-                }
-                f(fd, value.as_ref());
-            }
+        // Delegates to `iter_set_fields` so the two cannot disagree.
+        for (fd, value) in self.iter_set_fields() {
+            f(fd, value.as_ref());
         }
     }
 
@@ -2160,7 +2304,7 @@ fn map_key_shape(key: &MapKey) -> &'static str {
 /// they appear in the field map.
 ///
 /// `value` must be the one stored under `field.number()`. `has` looks it up;
-/// `for_each_set` already holds it.
+/// `iter_set_fields` already holds it.
 fn value_is_present(value: &Value, field: &FieldDescriptor) -> bool {
     match value {
         Value::List(l) => !l.is_empty(),
@@ -2193,6 +2337,32 @@ fn is_packable(kind: SingularKind) -> bool {
         SingularKind::Scalar(s) => !matches!(s, ScalarType::String | ScalarType::Bytes),
         SingularKind::Enum(_) => true,
         SingularKind::Message(_) => false,
+    }
+}
+
+/// Wire size in bytes of one element of a fixed-width scalar kind, or `None`
+/// for kinds whose elements vary in size.
+fn fixed_width(kind: SingularKind) -> Option<usize> {
+    match kind {
+        SingularKind::Scalar(ScalarType::Double | ScalarType::Fixed64 | ScalarType::Sfixed64) => {
+            Some(8)
+        }
+        SingularKind::Scalar(ScalarType::Float | ScalarType::Fixed32 | ScalarType::Sfixed32) => {
+            Some(4)
+        }
+        SingularKind::Scalar(
+            ScalarType::Int64
+            | ScalarType::Uint64
+            | ScalarType::Int32
+            | ScalarType::Bool
+            | ScalarType::String
+            | ScalarType::Bytes
+            | ScalarType::Uint32
+            | ScalarType::Sint32
+            | ScalarType::Sint64,
+        )
+        | SingularKind::Enum(_)
+        | SingularKind::Message(_) => None,
     }
 }
 
@@ -2707,6 +2877,23 @@ mod tests {
         assert!(decode(&one_level, 1).is_ok());
         // Depth 0 still admits a flat message: `{ name: "n" }`.
         assert!(decode(&[0x0A, 0x01, b'n'], 0).is_ok());
+    }
+
+    #[test]
+    fn iter_set_fields_skips_a_number_with_no_descriptor() {
+        use alloc::sync::Arc;
+
+        use crate::reflect::Value;
+        use crate::DescriptorPool;
+
+        let fds = include_bytes!("../../tests/protos/reflect_test.fds");
+        let pool = Arc::new(DescriptorPool::decode(fds).unwrap());
+        let idx = pool.message_index("reflect.test.Inner").unwrap();
+        let mut msg = DynamicMessage::new(pool, idx);
+        msg.insert_value(999, Value::I32(1));
+
+        assert!(msg.field_by_number(999).is_some());
+        assert_eq!(msg.iter_set_fields().count(), 0);
     }
 
     mod empty_message {

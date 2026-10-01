@@ -53,6 +53,9 @@ thiserror = { workspace = true }
 # Regenerate with `task gen-wkt-types` if codegen output format changes.
 
 [dev-dependencies]
+# The `Any` JSON tests need `serde_json::Value` to parse the string under
+# its private `RawValue` key: see `buffa/src/json_helpers/buffered.rs`.
+serde_json = { workspace = true, features = ["raw_value"] }
 criterion = "0.5"
 
 [[bench]]

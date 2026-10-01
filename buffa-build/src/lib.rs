@@ -24,8 +24,10 @@
 //!
 //! If `protoc` is unavailable or outdated on your platform, `buf` can be
 //! used instead — see [`Config::use_buf()`]. Alternatively, feed a
-//! pre-compiled descriptor set via [`Config::descriptor_set()`].
+//! pre-compiled descriptor set via [`Config::descriptor_set()`] (a file) or
+//! [`Config::descriptor_set_bytes()`] (in-memory bytes).
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -53,6 +55,8 @@ enum DescriptorSource {
     Buf,
     /// Read a pre-built `FileDescriptorSet` from a file.
     Precompiled(PathBuf),
+    /// Use a pre-built `FileDescriptorSet` already in memory.
+    Bytes(Vec<u8>),
 }
 
 /// Builder for configuring and running protobuf compilation.
@@ -202,6 +206,85 @@ impl Config {
     #[must_use]
     pub fn generate_arbitrary(mut self, enabled: bool) -> Self {
         self.codegen_config.generate_arbitrary = enabled;
+        self
+    }
+
+    /// Omit the generated `Debug` implementation for the matching messages
+    /// and enums, so that your crate can write its own.
+    ///
+    /// Each path is a fully-qualified proto path. For messages it is a
+    /// prefix: `".demo.Uuid4"` names that message and the messages nested
+    /// inside it, `".demo"` every message in the package and its
+    /// sub-packages, and `"."` every message. A matched message's oneof
+    /// enums lose their `Debug` with it. An enum loses its `Debug` only when
+    /// a path is its exact name, such as `".demo.Level"`: a message or
+    /// package path leaves the enums under it as they are. A leading dot is
+    /// added if missing and trailing dots are trimmed. Repeated calls
+    /// accumulate.
+    ///
+    /// View types keep their generated `Debug`, so a view still prints every
+    /// field. To hide a field's value in all generated `Debug` output, use
+    /// the `[debug_redact = true]` field option instead. That option does
+    /// not reach a matched message or oneof: your impl decides what it
+    /// prints.
+    ///
+    /// Your crate then implements `Debug`:
+    ///
+    /// - for every matched enum, because [`buffa::Enumeration`] requires it;
+    /// - for a matched message that an unmatched message or oneof holds
+    ///   (their generated `Debug` formats it), that is generated with
+    ///   reflection, or that a custom `repeated_type` collection holds;
+    /// - for a matched message's oneof enum, if your `Debug` for the message
+    ///   prints it. For a oneof `kind` in `demo.Uuid4` the enum is
+    ///   `demo::uuid4::Kind`.
+    ///
+    /// A missing impl is a compile error. For an enum it is error E0277
+    /// (`Level` doesn't implement `Debug`) at the generated
+    /// `impl ::buffa::Enumeration for Level`. A path that matches no
+    /// generated message and names no generated enum prints a
+    /// `cargo:warning`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // build.rs
+    /// buffa_build::Config::new()
+    ///     .files(&["proto/demo.proto"])
+    ///     .includes(&["proto/"])
+    ///     .skip_debug(&[".demo.Uuid4", ".demo.Level"])
+    ///     .compile()?;
+    ///
+    /// // src/lib.rs
+    /// pub mod demo {
+    ///     buffa::include_proto!("demo");
+    /// }
+    ///
+    /// impl core::fmt::Debug for demo::Uuid4 {
+    ///     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    ///         write!(f, "Uuid4({:016x}{:016x})", self.msb, self.lsb)
+    ///     }
+    /// }
+    ///
+    /// // Prints the value's proto name, as the derive it replaces does.
+    /// impl core::fmt::Debug for demo::Level {
+    ///     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    ///         f.write_str(buffa::Enumeration::proto_name(self))
+    ///     }
+    /// }
+    /// ```
+    #[must_use]
+    pub fn skip_debug(mut self, paths: &[impl AsRef<str>]) -> Self {
+        for raw in paths.iter().map(AsRef::as_ref) {
+            let normalized = normalize_override_path(raw);
+            if normalized.is_empty() {
+                println!(
+                    "cargo:warning=buffa: skip_debug path '{raw}' \
+                     normalizes to empty and will be ignored"
+                );
+                continue;
+            }
+            self.codegen_config.skip_debug.push(normalized);
+        }
         self
     }
 
@@ -1077,7 +1160,9 @@ impl Config {
     ///
     /// Each path is a fully-qualified proto path prefix. Use `"."` to apply
     /// to all bytes fields, or specify individual field paths like
-    /// `".my.pkg.MyMessage.data"`.
+    /// `".my.pkg.MyMessage.data"`. Path normalization and the warning for a
+    /// rule that matches nothing are as described on
+    /// [`bytes_type_in`](Self::bytes_type_in).
     ///
     /// Applies uniformly to singular, optional, repeated, oneof, **and
     /// `map<K, bytes>`** values — the map case lets `view → owned`
@@ -1133,6 +1218,17 @@ impl Config {
     /// proto path prefixes. The bytes counterpart to
     /// [`string_type_in`](Self::string_type_in).
     ///
+    /// Each path is a fully-qualified proto path prefix: a field
+    /// (`".my.pkg.Msg.data"`), a message, a package, or `"."` for every field.
+    /// A leading dot is added to each path if missing, surrounding whitespace
+    /// and trailing dots are ignored, and a blank entry is skipped with a
+    /// `cargo:warning`.
+    ///
+    /// A rule whose path does not match a field of any type in a generated
+    /// message produces a `cargo:warning`
+    /// ([`CodeGenWarning::FieldTypeRuleMatchedNothing`](buffa_codegen::CodeGenWarning::FieldTypeRuleMatchedNothing)).
+    /// A path that matches only fields of another type does not warn.
+    ///
     /// Rules accumulate and the **last** matching rule wins, so call the broad
     /// [`bytes_type`](Self::bytes_type) *first*, then `bytes_type_in` for
     /// narrower overrides. For [`BytesRepr::Custom`], the downstream crate must
@@ -1141,9 +1237,11 @@ impl Config {
     /// types still borrow `&[u8]`.
     #[must_use]
     pub fn bytes_type_in(mut self, repr: BytesRepr, paths: &[impl AsRef<str>]) -> Self {
-        self.codegen_config
-            .bytes_fields
-            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+        self.codegen_config.bytes_fields.extend(
+            field_rule_paths("bytes_type_in", paths)
+                .into_iter()
+                .map(|path| (path, repr.clone())),
+        );
         self
     }
 
@@ -1204,8 +1302,8 @@ impl Config {
     /// Each path is a fully-qualified proto variant path prefix, e.g.
     /// `".my.pkg.MyMessage.body.small"` for one variant or `".my.pkg"` for a
     /// package (same matching as [`use_bytes_type_in`](Self::use_bytes_type_in)).
-    /// A leading dot is added if missing, mirroring
-    /// [`extern_path`](Self::extern_path).
+    /// Paths are normalized as for [`bytes_type_in`](Self::bytes_type_in). A
+    /// rule that matches no variant is not reported.
     ///
     /// Recursive variants cannot be stored inline (the type would be
     /// unsized). A rule that names a recursive variant *exactly* is rejected
@@ -1218,16 +1316,9 @@ impl Config {
     pub fn unbox_oneof_in(mut self, paths: &[impl AsRef<str>]) -> Self {
         self.codegen_config
             .unboxed_oneof_fields
-            .extend(paths.iter().map(|p| {
-                let p = p.as_ref();
-                // Normalize to the leading-dot form: matching and the
-                // exact-path recursion error both depend on it.
-                if p.starts_with('.') {
-                    p.to_string()
-                } else {
-                    format!(".{p}")
-                }
-            }));
+            // The exact-path recursion error compares against the normalized
+            // form.
+            .extend(field_rule_paths("unbox_oneof_in", paths));
         self
     }
 
@@ -1260,9 +1351,12 @@ impl Config {
     /// (orphan rule) — point at a local newtype, or the `buffa-smolstr` crate for
     /// `smol_str::SmolStr`.
     ///
-    /// Only the owned Rust type changes: the wire format is unchanged, view
-    /// types still borrow `&str`, and `map<_, string>` keys and values stay
-    /// `String`.
+    /// Only the owned Rust type changes: the wire format is unchanged and view
+    /// types still borrow `&str`. A rule that matches a `map` field applies to
+    /// its `string` key and its `string` value.
+    ///
+    /// Path normalization and the warning for a rule that matches nothing are
+    /// as described on [`bytes_type_in`](Self::bytes_type_in).
     ///
     /// # Example
     ///
@@ -1277,9 +1371,11 @@ impl Config {
     /// ```
     #[must_use]
     pub fn string_type_in(mut self, repr: StringRepr, paths: &[impl AsRef<str>]) -> Self {
-        self.codegen_config
-            .string_fields
-            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+        self.codegen_config.string_fields.extend(
+            field_rule_paths("string_type_in", paths)
+                .into_iter()
+                .map(|path| (path, repr.clone())),
+        );
         self
     }
 
@@ -1288,7 +1384,8 @@ impl Config {
     /// Convenience for `.string_type_in(repr, &["."])`. Call this *before* any
     /// [`string_type_in`](Self::string_type_in) overrides, since the last
     /// matching rule wins (a `"."` rule added later shadows earlier specific
-    /// rules). `map<_, string>` keys and values stay `String`.
+    /// rules). The rule also covers the `string` keys and values of `map`
+    /// fields.
     #[must_use]
     pub fn string_type(mut self, repr: StringRepr) -> Self {
         self.codegen_config
@@ -1306,28 +1403,33 @@ impl Config {
     ///
     /// # Limitations
     ///
-    /// - A **foreign** custom type used as a `repeated` element fails to compile:
-    ///   codegen emits a `ReflectElement` impl for it, which the orphan rule
-    ///   forbids for a foreign type. Wrap it in a crate-local newtype for the
-    ///   repeated case; singular / optional / oneof uses work directly.
-    /// - **JSON of a `repeated` custom string** serializes elements through their
-    ///   native `serde`, so such a type must derive `Serialize` / `Deserialize`
-    ///   (and an external type must enable its `serde` feature). Singular /
-    ///   optional / oneof custom strings use the `proto_string` with-module and
-    ///   need no `serde` impl.
+    /// - Under vtable reflection ([`reflect_mode`](Self::reflect_mode) with
+    ///   `ReflectMode::VTable`), a **foreign** custom type used as a `repeated`
+    ///   element or as a `map` key or value fails to compile: codegen emits a
+    ///   `ReflectElement` or `ReflectMapKey` impl for it, which the orphan rule
+    ///   forbids for a foreign type. Wrap it in a crate-local newtype for
+    ///   those cases; singular / optional / oneof uses work directly.
+    /// - **JSON of an `optional`, `repeated` or `oneof` custom string, or of
+    ///   one in a `map`,** serializes through the type's own `serde` impls, so
+    ///   such a type must derive `Serialize` / `Deserialize` (and an external
+    ///   type must enable its `serde` feature). A singular field without
+    ///   `optional` uses the `proto_string` with-module and needs no `serde`
+    ///   impl.
+    /// - A custom type used as a `map` key must implement `Hash + Eq` for the
+    ///   default `HashMap` container, or `Ord` for `BTreeMap`.
     /// - A `path` that does not parse as a Rust type is reported as a codegen
     ///   error from [`compile`](Self::compile).
-    /// - A custom string type needs no native `arbitrary::Arbitrary` impl (a
-    ///   generic builder handles it under `generate_arbitrary`).
+    /// - A custom string type needs no native `arbitrary::Arbitrary` impl on
+    ///   singular, optional, repeated and oneof fields (a generic builder
+    ///   handles them under `generate_arbitrary`). One used as a `map` key or
+    ///   value must implement `Arbitrary`.
     #[must_use]
     pub fn string_type_custom_in(self, path: &str, paths: &[impl AsRef<str>]) -> Self {
         self.string_type_in(StringRepr::Custom(path.to_string()), paths)
     }
 
     /// Map every `string` field to the given custom type path. Convenience for
-    /// `.string_type_custom_in(path, &["."])`; see it for the limitations
-    /// (foreign `repeated` elements, the `repeated` JSON `serde` requirement,
-    /// path parsing).
+    /// `.string_type_custom_in(path, &["."])`; see it for the limitations.
     #[must_use]
     pub fn string_type_custom(self, path: &str) -> Self {
         self.string_type(StringRepr::Custom(path.to_string()))
@@ -1337,6 +1439,9 @@ impl Config {
     /// `HashMap`. Rules are matched with proto-segment-aware prefix logic; the
     /// **last** matching rule wins, so add a broad rule first and narrower
     /// overrides after.
+    ///
+    /// Path normalization and the warning for a rule that matches nothing are
+    /// as described on [`bytes_type_in`](Self::bytes_type_in).
     ///
     /// Use [`MapRepr::BTreeMap`] for the buffa-provided `BTreeMap` (deterministic
     /// key order, no extra dependency, no consumer code), or
@@ -1357,9 +1462,11 @@ impl Config {
     /// ```
     #[must_use]
     pub fn map_type_in(mut self, repr: MapRepr, paths: &[impl AsRef<str>]) -> Self {
-        self.codegen_config
-            .map_fields
-            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+        self.codegen_config.map_fields.extend(
+            field_rule_paths("map_type_in", paths)
+                .into_iter()
+                .map(|path| (path, repr.clone())),
+        );
         self
     }
 
@@ -1408,8 +1515,10 @@ impl Config {
     /// Map the matching message fields to a [`PointerRepr`] other than the
     /// default `Inline`. Rules are matched with proto-segment-aware prefix
     /// logic; the **last** matching rule wins, so add a broad rule first and
-    /// narrower overrides after. A leading dot is added to each path if
-    /// missing.
+    /// narrower overrides after.
+    ///
+    /// Paths are normalized as for [`bytes_type_in`](Self::bytes_type_in). A
+    /// rule that matches no field is not reported.
     ///
     /// The default `Inline` is recursion-aware (recursive fields stay on
     /// `Box`), so this knob is for opting *out*: `PointerRepr::Box` for large
@@ -1432,17 +1541,13 @@ impl Config {
     pub fn box_type_in(mut self, repr: PointerRepr, paths: &[impl AsRef<str>]) -> Self {
         self.codegen_config
             .pointer_fields
-            .extend(paths.iter().map(|p| {
-                let p = p.as_ref();
-                // Normalize to the leading-dot form: matching and the
-                // exact-path Inline recursion error both depend on it.
-                let p = if p.starts_with('.') {
-                    p.to_string()
-                } else {
-                    format!(".{p}")
-                };
-                (p, repr.clone())
-            }));
+            // The exact-path Inline recursion error compares against the
+            // normalized form.
+            .extend(
+                field_rule_paths("box_type_in", paths)
+                    .into_iter()
+                    .map(|path| (path, repr.clone())),
+            );
         self
     }
 
@@ -1491,6 +1596,9 @@ impl Config {
     /// logic; the **last** matching rule wins, so add a broad rule first and
     /// narrower overrides after. Applies only to `repeated` fields (not `map`).
     ///
+    /// Path normalization and the warning for a rule that matches nothing are
+    /// as described on [`bytes_type_in`](Self::bytes_type_in).
+    ///
     /// For [`RepeatedRepr::Custom`], the collection must implement
     /// `buffa::ProtoList<T>`. Unlike the scalar `string_type_custom` /
     /// `bytes_type_custom` knobs (which take a *complete* type path), this path
@@ -1514,9 +1622,11 @@ impl Config {
     /// ```
     #[must_use]
     pub fn repeated_type_in(mut self, repr: RepeatedRepr, paths: &[impl AsRef<str>]) -> Self {
-        self.codegen_config
-            .repeated_fields
-            .extend(paths.iter().map(|p| (p.as_ref().to_string(), repr.clone())));
+        self.codegen_config.repeated_fields.extend(
+            field_rule_paths("repeated_type_in", paths)
+                .into_iter()
+                .map(|path| (path, repr.clone())),
+        );
         self
     }
 
@@ -1829,9 +1939,53 @@ impl Config {
     ///
     /// When using this, `.files()` specifies which proto files in the
     /// descriptor set to generate code for (matching by proto file name).
+    /// For in-memory input, use [`descriptor_set_bytes()`](Self::descriptor_set_bytes).
     #[must_use]
     pub fn descriptor_set(mut self, path: impl Into<PathBuf>) -> Self {
         self.descriptor_source = DescriptorSource::Precompiled(path.into());
+        self
+    }
+
+    /// Use a serialized `google.protobuf.FileDescriptorSet` held in memory.
+    ///
+    /// Use this when the build script produces the descriptor set itself, for
+    /// example with an in-process compiler such as `protox`.
+    /// [`compile()`](Self::compile) decodes the bytes and does not invoke
+    /// `protoc` or `buf`. This replaces any previously configured descriptor
+    /// source. Pass a slice as `bytes.to_vec()`.
+    ///
+    /// [`files()`](Self::files) selects which proto files in the descriptor set
+    /// to generate, using their exact descriptor names (relative to the proto
+    /// source root). The set must also contain their transitive imports.
+    /// [`includes()`](Self::includes) is ignored.
+    ///
+    /// # Rebuilds
+    ///
+    /// Print a `cargo:rerun-if-changed` or `cargo:rerun-if-env-changed` line
+    /// for every input the bytes were built from. `buffa-build` cannot see
+    /// those inputs, and `compile()` always prints a `rerun-if-env-changed`
+    /// line of its own, which turns off Cargo's default of rerunning the build
+    /// script when any file in the package changes. Without your own lines, an
+    /// edited `.proto` file does not rerun the script, and the generated code
+    /// goes stale.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # fn compile_protos_in_process() -> Vec<u8> { Vec::new() }
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let bytes: Vec<u8> = compile_protos_in_process();
+    /// println!("cargo:rerun-if-changed=proto");
+    /// buffa_build::Config::new()
+    ///     .descriptor_set_bytes(bytes)
+    ///     .files(&["api/v1/service.proto"])
+    ///     .compile()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn descriptor_set_bytes(mut self, bytes: Vec<u8>) -> Self {
+        self.descriptor_source = DescriptorSource::Bytes(bytes);
         self
     }
 
@@ -1968,15 +2122,16 @@ impl Config {
             .ok_or("OUT_DIR not set and no out_dir configured")?;
 
         // Produce a FileDescriptorSet from the configured source.
-        let descriptor_bytes = match &self.descriptor_source {
-            DescriptorSource::Protoc => invoke_protoc(&self.files, &self.includes)?,
-            DescriptorSource::Buf => invoke_buf()?,
-            DescriptorSource::Precompiled(path) => std::fs::read(path).map_err(|e| {
-                format!("failed to read descriptor set '{}': {}", path.display(), e)
-            })?,
+        let descriptor_bytes: Cow<'_, [u8]> = match &self.descriptor_source {
+            DescriptorSource::Protoc => invoke_protoc(&self.files, &self.includes)?.into(),
+            DescriptorSource::Buf => invoke_buf()?.into(),
+            DescriptorSource::Precompiled(path) => std::fs::read(path)
+                .map_err(|e| format!("failed to read descriptor set '{}': {}", path.display(), e))?
+                .into(),
+            DescriptorSource::Bytes(bytes) => Cow::Borrowed(bytes),
         };
         // This descriptor set came from a protoc (or buf) invocation this build
-        // controls, or a path the caller named, so the bound is far above
+        // controls, or a path or bytes the caller supplied, so the bound is far above
         // buffa's untrusted-input default — that default is sized for wire
         // input and a schema of a few hundred `.proto` files exceeds it,
         // descriptor types being wide structs. Still finite, so a truncated or
@@ -1996,12 +2151,12 @@ impl Config {
         //
         // `FileDescriptorProto.name` contains the path relative to the proto
         // source root (protoc: `--proto_path`; buf: the module root). For
-        // Precompiled and Buf mode, `.files()` are expected to already be
+        // Precompiled, Bytes, and Buf mode, `.files()` are expected to already be
         // proto-relative names. For Protoc mode, strip the longest matching
         // include prefix.
         let files_to_generate: Vec<String> = if matches!(
             self.descriptor_source,
-            DescriptorSource::Precompiled(_) | DescriptorSource::Buf
+            DescriptorSource::Precompiled(_) | DescriptorSource::Bytes(_) | DescriptorSource::Buf
         ) {
             self.files
                 .iter()
@@ -2128,6 +2283,8 @@ impl Config {
             DescriptorSource::Precompiled(ref path) => {
                 println!("cargo:rerun-if-changed={}", path.display());
             }
+            // The caller tracks the inputs used to produce these bytes.
+            DescriptorSource::Bytes(_) => {}
         }
 
         Ok(())
@@ -2158,10 +2315,8 @@ fn normalize_attr_path(mut path: String) -> String {
     path
 }
 
-/// Normalize an `override_feature_in` / `preserve_unknown_fields_in` /
-/// `deny_unknown_json_fields_in` path:
-/// trim whitespace, prepend the leading dot if absent, and strip trailing
-/// dots. Unlike
+/// Normalize a path-scoped rule's proto path: trim whitespace, prepend the
+/// leading dot if absent, and strip trailing dots. Unlike
 /// [`normalize_attr_path`], an entry that normalizes to empty (e.g. `"..."`)
 /// is returned empty rather than collapsing to the `"."` catch-all — the
 /// caller skips it, so `"."` stays the only global opt-in spelling.
@@ -2177,6 +2332,27 @@ fn normalize_override_path(path: &str) -> String {
         path.pop();
     }
     path
+}
+
+/// Normalize the paths given to the field-rule builder method `method` with
+/// [`normalize_override_path`]. An entry that normalizes to empty is skipped
+/// with a `cargo:warning`.
+fn field_rule_paths(method: &str, paths: &[impl AsRef<str>]) -> Vec<String> {
+    paths
+        .iter()
+        .map(AsRef::as_ref)
+        .filter_map(|raw| {
+            let normalized = normalize_override_path(raw);
+            if normalized.is_empty() {
+                println!(
+                    "cargo:warning=buffa: {method} path '{raw}' normalizes to empty \
+                     and will be ignored"
+                );
+                return None;
+            }
+            Some(normalized)
+        })
+        .collect()
 }
 
 /// Write `content` to `path` only if the file doesn't already exist with
@@ -2574,6 +2750,50 @@ mod tests {
         );
     }
 
+    fn rule_paths<R>(rules: &[(String, R)]) -> Vec<&str> {
+        rules.iter().map(|(path, _)| path.as_str()).collect()
+    }
+
+    #[test]
+    fn type_in_builders_normalize_paths() {
+        // A missing leading dot, surrounding whitespace and a trailing dot
+        // are normalized; a blank entry is skipped, so `"."` is the only
+        // spelling of "every field".
+        let paths = &["my.pkg.Msg.field", " .my.pkg.Other. ", ".", "", " ", "..."];
+        let expected = [".my.pkg.Msg.field", ".my.pkg.Other", "."];
+        let config = Config::new()
+            .bytes_type_in(BytesRepr::Bytes, paths)
+            .string_type_in(StringRepr::String, paths)
+            .map_type_in(MapRepr::BTreeMap, paths)
+            .repeated_type_in(RepeatedRepr::Vec, paths)
+            .box_type_in(PointerRepr::Box, paths)
+            .unbox_oneof_in(paths)
+            .codegen_config;
+
+        assert_eq!(rule_paths(&config.bytes_fields), expected);
+        assert_eq!(rule_paths(&config.string_fields), expected);
+        assert_eq!(rule_paths(&config.map_fields), expected);
+        assert_eq!(rule_paths(&config.repeated_fields), expected);
+        assert_eq!(rule_paths(&config.pointer_fields), expected);
+        assert_eq!(config.unboxed_oneof_fields, expected);
+    }
+
+    #[test]
+    fn bytes_alias_and_custom_in_builders_normalize_paths() {
+        let config = Config::new()
+            .use_bytes_type_in(&["my.pkg.A.data"])
+            .bytes_type_custom_in("::my::Bytes", &["my.pkg.B.data"])
+            .string_type_custom_in("::my::Str", &["my.pkg.C.name"])
+            .map_type_custom_in("::my::Map", &["my.pkg.D.entries"])
+            .repeated_type_custom_in("::my::List<*>", &["my.pkg.E.items"])
+            .codegen_config;
+        assert_eq!(config.bytes_fields[0].0, ".my.pkg.A.data");
+        assert_eq!(config.bytes_fields[1].0, ".my.pkg.B.data");
+        assert_eq!(config.string_fields[0].0, ".my.pkg.C.name");
+        assert_eq!(config.map_fields[0].0, ".my.pkg.D.entries");
+        assert_eq!(config.repeated_fields[0].0, ".my.pkg.E.items");
+    }
+
     #[test]
     fn unbox_oneof_in_normalizes_leading_dot() {
         // Without normalization a dotless path would silently match nothing,
@@ -2587,6 +2807,19 @@ mod tests {
                 ".my.pkg.Msg.body.small".to_string(),
                 ".my.pkg.Other".to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn skip_debug_normalizes_and_accumulates_paths() {
+        let config = Config::new()
+            .skip_debug(&["demo.Uuid4", ".demo.Level.", "..."])
+            .skip_debug(&[" .demo.Other ", "."])
+            .codegen_config;
+        // `"..."` normalizes to empty and is dropped.
+        assert_eq!(
+            config.skip_debug,
+            [".demo.Uuid4", ".demo.Level", ".demo.Other", "."]
         );
     }
 
@@ -3031,6 +3264,119 @@ mod tests {
             .map(|(_, a)| a.as_str())
             .collect();
         assert_eq!(paths, vec!["#[derive(A)]", "#[derive(B)]", "#[derive(C)]"]);
+    }
+
+    #[test]
+    fn descriptor_set_bytes_matches_file_input() {
+        use buffa_codegen::generated::descriptor::field_descriptor_proto::{Label, Type};
+        use buffa_codegen::generated::descriptor::{
+            DescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+        };
+
+        let files = [
+            FileDescriptorProto {
+                name: Some("common/types.proto".into()),
+                package: Some("common".into()),
+                syntax: Some("proto3".into()),
+                message_type: vec![DescriptorProto {
+                    name: Some("Item".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            FileDescriptorProto {
+                name: Some("api/v1/service.proto".into()),
+                package: Some("api.v1".into()),
+                syntax: Some("proto3".into()),
+                dependency: vec!["common/types.proto".into()],
+                message_type: vec![DescriptorProto {
+                    name: Some("Request".into()),
+                    field: vec![FieldDescriptorProto {
+                        name: Some("item".into()),
+                        number: Some(1),
+                        label: Some(Label::LABEL_OPTIONAL),
+                        r#type: Some(Type::TYPE_MESSAGE),
+                        type_name: Some(".common.Item".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        ];
+        let bytes = buffa_codegen::encode_descriptor_set(&files, &[]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("set.binpb");
+        std::fs::write(&path, &bytes).unwrap();
+
+        // The file and in-memory sources produce the same output, and
+        // `descriptor_set_bytes` replaces a previously configured file or
+        // `buf` source. No proto sources or external compiler are needed.
+        let configs = [
+            Config::new().descriptor_set(&path),
+            Config::new()
+                .descriptor_set(dir.path().join("missing.binpb"))
+                .descriptor_set_bytes(bytes.clone()),
+            Config::new().use_buf().descriptor_set_bytes(bytes),
+        ];
+        let mut outputs = Vec::new();
+        for (i, config) in configs.into_iter().enumerate() {
+            let out = dir.path().join(i.to_string());
+            config
+                .files(&["api/v1/service.proto"])
+                // Must not strip this prefix from descriptor-relative names.
+                .includes(&["api"])
+                .out_dir(&out)
+                .include_file("gen_mod.rs")
+                .generate_reflection(true)
+                .shared_descriptor_pool(true)
+                .compile()
+                .unwrap();
+            let generated: std::collections::BTreeMap<_, _> = std::fs::read_dir(&out)
+                .unwrap()
+                .map(|entry| {
+                    let entry = entry.unwrap();
+                    (entry.file_name(), std::fs::read(entry.path()).unwrap())
+                })
+                .collect();
+            let source = generated
+                .values()
+                .map(|bytes| String::from_utf8_lossy(bytes))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(source.contains("pub struct Request"));
+            assert!(!source.contains("pub struct Item"));
+            outputs.push(generated);
+        }
+        assert_eq!(outputs[0], outputs[1]);
+        assert_eq!(outputs[0], outputs[2]);
+    }
+
+    #[test]
+    fn descriptor_set_bytes_rejects_malformed_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("gen");
+        let err = Config::new()
+            .descriptor_set_bytes(vec![0xff])
+            .out_dir(&out)
+            .compile()
+            .unwrap_err();
+        assert!(err.to_string().contains("FileDescriptorSet"), "{err}");
+        assert!(!out.exists(), "invalid input must not produce output");
+    }
+
+    #[test]
+    fn descriptor_set_bytes_can_be_replaced() {
+        let cfg = Config::new().descriptor_set_bytes(Vec::new()).use_buf();
+        assert!(matches!(cfg.descriptor_source, DescriptorSource::Buf));
+
+        let cfg = Config::new()
+            .descriptor_set_bytes(Vec::new())
+            .descriptor_set("set.binpb");
+        assert!(matches!(
+            cfg.descriptor_source,
+            DescriptorSource::Precompiled(path) if path == Path::new("set.binpb")
+        ));
     }
 
     #[test]

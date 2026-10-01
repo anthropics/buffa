@@ -67,6 +67,8 @@ With configuration:
 +    .files(&["src/items.proto"])
 +    .includes(&["src/"])
 +    .out_dir("src/generated/")
++    .map_type(buffa_build::MapRepr::BTreeMap)
++    .use_bytes_type_in(&[".my_pkg.MyMessage.data"])
 +    .generate_json(true)       // built-in, proto-conformant JSON
 +    .compile()?;
 ```
@@ -283,15 +285,16 @@ Buffa's two-pass `compute_size()` / `write_to()` model avoids the quadratic size
 
 ## 10. Feature comparison
 
-Features that prost supports but buffa does not (yet):
+The buffa equivalent of each prost-build feature, or a note that there is none:
 
 | prost feature | buffa status |
 |---------------|-------------|
-| `btree_map(&[...])` | Not supported. Maps always use `HashMap`. |
-| `bytes(&[...])` | Supported. `.use_bytes_type()` for all, or `.use_bytes_type_in(&[...])` for specific fields. |
+| `btree_map(&[...])` | Supported. `.map_type(buffa_build::MapRepr::BTreeMap)` for all, or `.map_type_in(buffa_build::MapRepr::BTreeMap, &[...])` for specific fields. Paths are fully qualified (`".my_pkg.MyMessage.items"`), and the leading dot is optional. prost's suffix paths (`"items"`, `"MyMessage.items"`) are not supported: `"items"` is read as `".items"`, matches no field, and produces a build warning. |
+| `bytes(&[...])` | Supported. `.use_bytes_type()` for all, or `.use_bytes_type_in(&[...])` for specific fields. Paths are matched as for `map_type_in`. |
 | `extern_path(proto, rust)` | Supported. Same API, both package-level (`.extern_path(".pkg", "::crate")`) and per-type (`.extern_path(".google.protobuf.Timestamp", "::pbjson_types::Timestamp")`) mappings. A per-type mapping to a non-buffa crate requires `.generate_views(false)`, or map to a buffa-generated crate instead — see [External type paths](guide.md#external-type-paths). |
 | `type_attribute(path, attr)` | Supported. Same API, plus `message_attribute` / `enum_attribute` / `oneof_attribute` for narrower targeting. (For serde, prefer `generate_json(true)`, which emits the proto3-canonical JSON impls.) |
 | `field_attribute(path, attr)` | Supported. Same API. |
+| `skip_debug(&[...])` | Supported. `buffa_build::Config::skip_debug(&[...])` omits the generated `Debug` for matching messages and their oneof enums, so you can write your own. Four differences from prost-build. Paths must be fully qualified (`".my_pkg.Uuid4"`): a prost suffix path (`"Uuid4"`) matches nothing and produces a build warning. Repeated calls accumulate, where prost-build's replace the list. An enum loses its `Debug` only when a path is its exact name, and then needs a hand-written impl, because `buffa::Enumeration` requires `Debug`. View types keep their generated `Debug`, so `skip_debug(&["."])` removes the impls of owned messages and their oneof enums only. |
 | `service_generator(...)` | Not supported. Services codegen is planned. |
 | `#[derive(prost::Message)]` | No derive; generate from `.proto` or use `extern_path` for an existing Rust type. See [Where is `#[derive(Message)]`?](#where-is-derivemessage). |
 | `prost::Name` trait | `buffa::MessageName` — same shape (`PACKAGE`, `NAME`, plus `FULL_NAME` and `TYPE_URL`), but all four are `&'static str` consts computed at codegen time rather than runtime `format!` calls. Replace `M::full_name()` with `M::FULL_NAME` and `M::type_url()` with `M::TYPE_URL`. Implemented for both owned messages and view types. |

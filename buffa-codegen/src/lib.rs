@@ -45,7 +45,7 @@ pub(crate) mod reflect_owned;
 pub(crate) mod reflect_view;
 pub(crate) mod view;
 
-use crate::generated::descriptor::{DescriptorProto, FileDescriptorProto};
+use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDescriptorProto};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -468,9 +468,9 @@ pub(crate) fn parse_custom_list_path(
 ///
 /// Select a representation through `buffa_build`'s `string_type` /
 /// `string_type_custom` builder methods. The wire format is identical regardless
-/// of representation — only the in-memory owned type changes; view types keep
-/// borrowing `&str`, and `map<_, string>` / `map<string, _>` keys and values
-/// always stay `String`.
+/// of representation — only the in-memory owned type changes, and view types
+/// keep borrowing `&str`. A rule that matches a `map` field applies to its
+/// `string` key and its `string` value.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum StringRepr {
@@ -483,10 +483,17 @@ pub enum StringRepr {
     ///
     /// # Limitations
     ///
-    /// - A *foreign* custom type used as a `repeated` element fails to compile
-    ///   (the emitted `ReflectElement` impl violates the orphan rule). Wrap it
-    ///   in a crate-local newtype for that case; singular / optional / oneof /
-    ///   map uses work with a foreign type directly.
+    /// - With `generate_reflection_vtable`, a *foreign* custom type used as a
+    ///   `repeated` element or as a `map` key or value fails to compile (the
+    ///   emitted `ReflectElement` / `ReflectMapKey` impl violates the orphan
+    ///   rule). Wrap it in a crate-local newtype for those cases; singular /
+    ///   optional / oneof uses work with a foreign type directly.
+    /// - A custom type used as a `map` key must implement `Hash + Eq` for
+    ///   [`MapRepr::HashMap`], or `Ord` for [`MapRepr::BTreeMap`].
+    /// - With `generate_json`, a custom type on an `optional`, `repeated` or
+    ///   oneof field, or used as a `map` key or value, must implement
+    ///   `serde::Serialize` and `serde::Deserialize`. A singular field without
+    ///   `optional` needs no `serde` impl.
     /// - A path that does not parse as a Rust type surfaces as
     ///   [`CodeGenError::InvalidTypePath`] at generation (`.compile()`) time.
     /// - The per-element impls are deduplicated within a single generation, but
@@ -540,8 +547,11 @@ impl StringRepr {
 /// Select a representation through `buffa_build`'s `bytes_type` /
 /// `bytes_type_custom` builder methods (or the legacy `use_bytes_type`, which
 /// selects [`Bytes`](BytesRepr::Bytes)). The wire format is identical regardless
-/// of representation; view types keep borrowing `&[u8]`, and `map` bytes values
-/// follow the same rules as the string path.
+/// of representation, and view types keep borrowing `&[u8]`. A rule that
+/// matches a `map` field applies to its `bytes` value. One map shape keeps
+/// `Vec<u8>` values whatever rule matches: a map whose `string` key is mapped
+/// to `bytes` by [`strict_utf8_mapping`](CodeGenConfig::strict_utf8_mapping)
+/// (`utf8_validation = NONE` on the key) and whose value is `bytes`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum BytesRepr {
@@ -560,9 +570,11 @@ pub enum BytesRepr {
     ///   (the emitted `ReflectElement` / `ProtoElemJson` impls violate the
     ///   orphan rule). Wrap it in a crate-local newtype for that case; singular
     ///   / optional / oneof uses work with a foreign type directly.
-    /// - A `Custom` rule does **not** apply to `map<K, bytes>` values — they
-    ///   stay `Vec<u8>`. Only the built-in [`Bytes`](BytesRepr::Bytes) applies
-    ///   to map values.
+    /// - A `Custom` rule applies to `map<K, bytes>` values, as
+    ///   [`Bytes`](BytesRepr::Bytes) does. With `generate_json` or
+    ///   `generate_reflection_vtable`, codegen emits `ProtoElemJson` /
+    ///   `ReflectElement` impls for the value type, so it must be a
+    ///   crate-local type.
     /// - A path that does not parse as a Rust type surfaces as
     ///   [`CodeGenError::InvalidTypePath`] at generation (`.compile()`) time.
     /// - The per-element impls are deduplicated within a single generation, but
@@ -704,7 +716,8 @@ impl MapRepr {
 /// The owned smart pointer a singular message field's `buffa::MessageField`
 /// wraps in generated owned structs.
 ///
-/// The default is [`Box`](PointerRepr::Box). [`Custom`](PointerRepr::Custom)
+/// The default is [`Inline`](PointerRepr::Inline); it was `Box` before 0.9.
+/// [`Custom`](PointerRepr::Custom)
 /// substitutes any pointer that satisfies the `buffa::ProtoBox<T>` bound — for
 /// example a `smallbox`-style pointer that stores small messages inline.
 /// Because the pointer *wraps* the message type, its path is a **template**
@@ -1180,14 +1193,36 @@ pub struct CodeGenConfig {
     /// exactly `"arbitrary"` — the generated `cfg_attr` uses that literal
     /// string and cannot be customized. This applies to both the struct-level
     /// `derive(Arbitrary)` and the per-field `#[arbitrary(with = ...)]`
-    /// attributes emitted for `bytes_fields`-typed fields.
+    /// attributes described below.
     ///
-    /// For `bytes_fields`-typed fields, codegen emits `#[arbitrary(with = ...)]`
-    /// using helpers in `::buffa::__private` since `bytes::Bytes` has no
-    /// `Arbitrary` impl. Singular, optional, and repeated bytes fields are all
-    /// covered. Map values are always `Vec<u8>` regardless of `bytes_fields`
-    /// and require no special handling.
+    /// For a field whose `bytes_fields` or `string_fields` rule selects a
+    /// non-default type, codegen emits `#[arbitrary(with = ...)]` using
+    /// helpers in `::buffa::__private`, so the substituted type needs no
+    /// `Arbitrary` impl. This covers singular, optional, repeated and oneof
+    /// fields, and `map<K, bytes>` values. A custom `string` type used as a
+    /// `map` key or value has no helper and must implement
+    /// `arbitrary::Arbitrary`.
     pub generate_arbitrary: bool,
+    /// Proto paths of the messages and enums whose generated `Debug`
+    /// implementation is omitted, so that the consuming crate can write its
+    /// own.
+    ///
+    /// For messages a rule is a proto-segment-aware prefix: `".pkg.Msg"`
+    /// matches that message and the messages nested inside it, `".pkg"`
+    /// matches every message in the package and its sub-packages, and `"."`
+    /// matches every message. The oneof enums of a matched message lose
+    /// their `Debug` with it. An enum loses its `Debug` only when a rule is
+    /// its exact name, such as `".pkg.Level"`. View types keep theirs.
+    ///
+    /// A matched enum does not compile until the crate implements `Debug`
+    /// for it, because `buffa::Enumeration` requires `Debug`. A matched
+    /// message needs an impl when an unmatched message or oneof holds it,
+    /// because their generated `Debug` formats it, and whenever reflection
+    /// is generated, because `ReflectElement` requires `Debug`.
+    ///
+    /// A rule that matches no generated message and names no generated enum
+    /// produces [`CodeGenWarning::SkipDebugRuleMatchedNothing`].
+    pub skip_debug: Vec<String>,
     /// External type path mappings.
     ///
     /// Each entry maps either a fully-qualified protobuf package prefix
@@ -1216,8 +1251,14 @@ pub struct CodeGenConfig {
     /// Ordered (proto-path-prefix, [`BytesRepr`]) rules selecting the Rust type
     /// for `bytes` fields. Later rules win, so a broad rule (e.g. `"."` →
     /// `Bytes`) can be refined by a more specific one. Fields matching no rule
-    /// use `Vec<u8>`. The path is matched with the same proto-segment-aware
-    /// prefix logic as [`string_fields`](Self::string_fields).
+    /// use `Vec<u8>`.
+    ///
+    /// A rule is a prefix of a fully-qualified field path, matched on whole
+    /// path segments, and starts with a dot: `".my.pkg.Msg.data"`,
+    /// `".my.pkg.Msg"`, `".my.pkg"`, or `"."` for every field. Codegen does
+    /// not add the dot (`buffa-build` does), and a path without it matches no
+    /// field. A rule that does not match a field of a generated message
+    /// produces [`CodeGenWarning::FieldTypeRuleMatchedNothing`].
     pub bytes_fields: Vec<(String, BytesRepr)>,
     /// Ordered (proto-path-prefix, [`StringRepr`]) rules selecting the Rust type
     /// for `string` fields. Later rules win, so a broad rule (e.g. `"."` →
@@ -1226,9 +1267,11 @@ pub struct CodeGenConfig {
     /// `String`. The path is matched with the same proto-segment-aware prefix
     /// logic as [`bytes_fields`](Self::bytes_fields).
     ///
-    /// Applies to singular, optional, and repeated `string` fields and oneof
-    /// `string` variants. Map keys and values always stay `String`, mirroring
-    /// the bytes path (where map values always stay `Vec<u8>`).
+    /// Applies to singular, optional, and repeated `string` fields, oneof
+    /// `string` variants, and the `string` keys and values of `map` fields
+    /// (matched by the map field's path). A rule that does not match a field
+    /// of a generated message produces
+    /// [`CodeGenWarning::FieldTypeRuleMatchedNothing`].
     pub string_fields: Vec<(String, StringRepr)>,
     /// Ordered (proto-path-prefix, [`MapRepr`]) rules selecting the owned Rust
     /// map collection for `map` fields. Later rules win, with the same
@@ -1237,7 +1280,9 @@ pub struct CodeGenConfig {
     ///
     /// Independent of the element/value representation: a `map` field's key and
     /// value types are chosen by the usual scalar/string/bytes/message rules,
-    /// and this knob only changes the surrounding collection.
+    /// and this option changes only the surrounding collection. A rule that
+    /// does not match a field of a generated message produces
+    /// [`CodeGenWarning::FieldTypeRuleMatchedNothing`].
     pub map_fields: Vec<(String, MapRepr)>,
     /// Ordered (proto-path-prefix, [`PointerRepr`]) rules selecting the owned
     /// smart pointer for singular message fields (the pointer inside
@@ -1256,7 +1301,8 @@ pub struct CodeGenConfig {
     /// Applies only to `repeated` fields (not `map`, whose collection stays
     /// the configured map type). The element type is chosen by the usual
     /// scalar/string/bytes/message rules and substituted into the collection
-    /// template.
+    /// template. A rule that does not match a field of a generated message
+    /// produces [`CodeGenWarning::FieldTypeRuleMatchedNothing`].
     pub repeated_fields: Vec<(String, RepeatedRepr)>,
     /// Path-scoped editions feature overrides, applied by mutating the parsed
     /// descriptors before generation.
@@ -1798,6 +1844,7 @@ impl Default for CodeGenConfig {
             deny_unknown_json_fields_in: Vec::new(),
             generate_json: false,
             generate_arbitrary: false,
+            skip_debug: Vec::new(),
             extern_paths: Vec::new(),
             bytes_fields: Vec::new(),
             string_fields: Vec::new(),
@@ -2182,6 +2229,60 @@ pub enum CodeGenWarning {
         /// The rule's path as configured.
         rule: String,
     },
+    /// A [`skip_debug`](CodeGenConfig::skip_debug) rule matched no generated
+    /// message and named no generated enum, so it changed nothing. Usually a
+    /// typo, a field or oneof path instead of a type path (a oneof is covered
+    /// by its message's rule), or a rule for a package mapped through
+    /// `extern_path`. Every generated `Debug` impl is still emitted, so a
+    /// hand-written impl for the intended type fails to compile as a
+    /// conflicting implementation.
+    #[non_exhaustive]
+    SkipDebugRuleMatchedNothing {
+        /// The rule's path as configured.
+        rule: String,
+    },
+    /// A [`bytes_fields`](CodeGenConfig::bytes_fields),
+    /// [`string_fields`](CodeGenConfig::string_fields),
+    /// [`map_fields`](CodeGenConfig::map_fields) or
+    /// [`repeated_fields`](CodeGenConfig::repeated_fields) rule matched no
+    /// field of a message generated by this call, so it changed nothing.
+    ///
+    /// Usually a typo, a path without its leading dot or its package, a
+    /// prost-style suffix path such as `"items"`, or a path into a map-entry
+    /// message (a rule reaches a map through the map field's own path). A
+    /// package rule over messages that have no fields also warns.
+    ///
+    /// The check compares paths only: a rule whose path is a field of another
+    /// type (a `string_fields` rule on an `int32` field) is also inert and
+    /// does not warn. It runs once per `generate` call, so a config shared by
+    /// several calls warns in each call whose files lack the field.
+    #[non_exhaustive]
+    FieldTypeRuleMatchedNothing {
+        /// The rule's path as it is in the [`CodeGenConfig`] list
+        /// (`buffa-build` has normalized it).
+        rule: String,
+        /// The [`CodeGenConfig`] list that contains the rule: `"bytes_fields"`,
+        /// `"string_fields"`, `"map_fields"` or `"repeated_fields"`.
+        option: &'static str,
+        /// Whether the rule matches a field of a message that this call does
+        /// not generate: one in an imported file, or in a package under
+        /// `extern_path` or `exclude_packages`. The `Display` text then says
+        /// so, in place of the path hint.
+        matches_ungenerated: bool,
+    },
+}
+
+/// The `buffa-build` methods that add to the field-type rule list `option`,
+/// for [`CodeGenWarning::FieldTypeRuleMatchedNothing`]'s text. A user of
+/// `buffa-build` typed one of these, not the [`CodeGenConfig`] field's name.
+fn field_type_rule_builders(option: &str) -> &'static str {
+    match option {
+        "bytes_fields" => "bytes_type_in / use_bytes_type_in / bytes_type_custom_in",
+        "string_fields" => "string_type_in / string_type_custom_in",
+        "map_fields" => "map_type_in / map_type_custom_in",
+        "repeated_fields" => "repeated_type_in / repeated_type_custom_in",
+        _ => "",
+    }
 }
 
 impl core::fmt::Display for CodeGenWarning {
@@ -2320,8 +2421,65 @@ impl core::fmt::Display for CodeGenWarning {
                      check the path against the fully-qualified proto message names"
                 )
             }
+            Self::SkipDebugRuleMatchedNothing { rule } => {
+                write!(
+                    f,
+                    "skip_debug rule '{rule}' matched no generated message or enum, \
+                     so a hand-written Debug impl will conflict with the generated one — \
+                     use the fully-qualified proto type name \
+                     (a oneof is covered by its message's rule)"
+                )
+            }
+            Self::FieldTypeRuleMatchedNothing {
+                rule,
+                option,
+                matches_ungenerated,
+            } => {
+                let builders = field_type_rule_builders(option);
+                write!(f, "{option} rule '{rule}' (buffa-build: {builders}) ")?;
+                if *matches_ungenerated {
+                    write!(
+                        f,
+                        "matches only fields of messages this run does not generate \
+                         (an imported file, or a package under extern_path or \
+                         exclude_package), so it changed nothing here"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "matched no field of a generated message, so it changed nothing — \
+                         a rule is a fully-qualified proto path with its leading dot \
+                         ('.my.pkg', '.my.pkg.Msg' or '.my.pkg.Msg.field'); a bare name \
+                         such as 'field' or 'Msg.field' does not match"
+                    )
+                }
+            }
         }
     }
+}
+
+/// The files named in `files_to_generate`, each with its package as a
+/// leading-dot proto path (empty for a file without a package).
+fn generated_files<'a>(
+    file_descriptors: &'a [FileDescriptorProto],
+    files_to_generate: &'a [String],
+) -> impl Iterator<Item = (&'a FileDescriptorProto, String)> {
+    file_descriptors
+        .iter()
+        .filter(move |fd| {
+            fd.name
+                .as_deref()
+                .is_some_and(|n| files_to_generate.iter().any(|g| g == n))
+        })
+        .map(|fd| {
+            let package = fd.package.as_deref().unwrap_or("");
+            let package_fqn = if package.is_empty() {
+                String::new()
+            } else {
+                format!(".{package}")
+            };
+            (fd, package_fqn)
+        })
 }
 
 /// Whether `rule` (a leading-dot proto path prefix) matches at least one
@@ -2340,22 +2498,72 @@ fn rule_matches_generated_message(
     }
 
     rule == "."
-        || file_descriptors
+        || generated_files(file_descriptors, files_to_generate)
+            .any(|(fd, package_fqn)| any_message_matches(rule, &package_fqn, &fd.message_type))
+}
+
+/// Whether `rule` (a leading-dot proto path) is the fully-qualified name of
+/// an enum, top-level or nested in a message, declared in
+/// `files_to_generate`.
+fn rule_names_generated_enum(
+    rule: &str,
+    file_descriptors: &[FileDescriptorProto],
+    files_to_generate: &[String],
+) -> bool {
+    fn names_enum(rule: &str, parent_fqn: &str, enums: &[EnumDescriptorProto]) -> bool {
+        enums
             .iter()
-            .filter(|fd| {
-                fd.name
-                    .as_deref()
-                    .is_some_and(|n| files_to_generate.iter().any(|g| g == n))
-            })
-            .any(|fd| {
-                let package = fd.package.as_deref().unwrap_or("");
-                let parent_fqn = if package.is_empty() {
-                    String::new()
-                } else {
-                    format!(".{package}")
-                };
-                any_message_matches(rule, &parent_fqn, &fd.message_type)
-            })
+            .any(|e| format!("{parent_fqn}.{}", e.name.as_deref().unwrap_or("")) == rule)
+    }
+    fn names_nested_enum(rule: &str, parent_fqn: &str, messages: &[DescriptorProto]) -> bool {
+        messages.iter().any(|m| {
+            let fqn = format!("{parent_fqn}.{}", m.name.as_deref().unwrap_or(""));
+            names_enum(rule, &fqn, &m.enum_type) || names_nested_enum(rule, &fqn, &m.nested_type)
+        })
+    }
+
+    generated_files(file_descriptors, files_to_generate).any(|(fd, package_fqn)| {
+        names_enum(rule, &package_fqn, &fd.enum_type)
+            || names_nested_enum(rule, &package_fqn, &fd.message_type)
+    })
+}
+
+/// Whether `rule` (a leading-dot proto path prefix) matches at least one
+/// field of a message, nested messages included, declared in the files named
+/// by `file_names`. The fields of a map-entry message do not count: a rule
+/// reaches a map through the map field's own path.
+fn rule_matches_field_in(
+    rule: &str,
+    file_descriptors: &[FileDescriptorProto],
+    file_names: &[String],
+) -> bool {
+    fn any_field_matches(rule: &str, parent_fqn: &str, messages: &[DescriptorProto]) -> bool {
+        messages.iter().any(|m| {
+            let is_map_entry = m
+                .options
+                .as_option()
+                .and_then(|o| o.map_entry)
+                .unwrap_or(false);
+            if is_map_entry {
+                return false;
+            }
+            let fqn = format!("{parent_fqn}.{}", m.name.as_deref().unwrap_or(""));
+            m.field.iter().any(|f| {
+                let field_fqn = format!("{fqn}.{}", f.name.as_deref().unwrap_or(""));
+                context::matches_proto_prefix(rule, &field_fqn)
+            }) || any_field_matches(rule, &fqn, &m.nested_type)
+        })
+    }
+
+    rule == "."
+        || generated_files(file_descriptors, file_names)
+            .any(|(fd, package_fqn)| any_field_matches(rule, &package_fqn, &fd.message_type))
+}
+
+/// The paths of a field-type rule list such as
+/// [`CodeGenConfig::string_fields`], in order.
+fn rule_paths<R>(rules: &[(String, R)]) -> Vec<&String> {
+    rules.iter().map(|(path, _)| path).collect()
 }
 
 /// Generate Rust source files from a set of file descriptors.
@@ -3000,6 +3208,45 @@ pub fn generate_with_diagnostics(
         if !rule_matches_generated_message(rule, file_descriptors, files_to_generate) {
             ctx.warn(CodeGenWarning::DenyUnknownJsonFieldsRuleMatchedNothing {
                 rule: rule.clone(),
+            });
+        }
+    }
+
+    // Warn per inert `skip_debug` rule; `SkipDebugRuleMatchedNothing`
+    // documents the consequence.
+    for rule in &config.skip_debug {
+        if !rule_matches_generated_message(rule, file_descriptors, files_to_generate)
+            && !rule_names_generated_enum(rule, file_descriptors, files_to_generate)
+        {
+            ctx.warn(CodeGenWarning::SkipDebugRuleMatchedNothing { rule: rule.clone() });
+        }
+    }
+
+    // A field-type rule that matches no generated field leaves the fields it
+    // was written for on their default Rust type, and the build still
+    // succeeds, so warn per rule.
+    let field_type_rules = [
+        ("bytes_fields", rule_paths(&config.bytes_fields)),
+        ("string_fields", rule_paths(&config.string_fields)),
+        ("map_fields", rule_paths(&config.map_fields)),
+        ("repeated_fields", rule_paths(&config.repeated_fields)),
+    ];
+    let mut every_file: Option<Vec<String>> = None;
+    for (option, rules) in field_type_rules {
+        for rule in rules {
+            if rule_matches_field_in(rule, file_descriptors, files_to_generate) {
+                continue;
+            }
+            let every_file: &[String] = every_file.get_or_insert_with(|| {
+                file_descriptors
+                    .iter()
+                    .filter_map(|fd| fd.name.clone())
+                    .collect()
+            });
+            ctx.warn(CodeGenWarning::FieldTypeRuleMatchedNothing {
+                rule: rule.clone(),
+                option,
+                matches_ungenerated: rule_matches_field_in(rule, file_descriptors, every_file),
             });
         }
     }

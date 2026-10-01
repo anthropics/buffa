@@ -109,6 +109,29 @@ fn any_wkt_wrapper_unknown_fields_follow_parse_mode() {
         .expect("lenient parsing must ignore unknown Any wrapper fields");
 }
 
+#[cfg(feature = "json")]
+#[test]
+fn any_json_spreads_payload_extensions() {
+    let p = pool();
+    let opts_idx = p.message_index("google.protobuf.MessageOptions").unwrap();
+    let audited = p.extension_by_name("reflect.opt.audited").unwrap();
+
+    let mut opts = DynamicMessage::new(Arc::clone(&p), opts_idx);
+    opts.set(audited.field(), Value::Bool(true));
+    assert_eq!(opts.to_json().unwrap(), r#"{"[reflect.opt.audited]":true}"#);
+
+    let any = opts.pack_any().expect("Any is in the pool");
+    let json = any.to_json().unwrap();
+    assert_eq!(
+        json,
+        r#"{"@type":"type.googleapis.com/google.protobuf.MessageOptions","[reflect.opt.audited]":true}"#
+    );
+
+    let any_idx = p.message_index("google.protobuf.Any").unwrap();
+    let parsed = DynamicMessage::from_json(Arc::clone(&p), any_idx, &json).unwrap();
+    assert_eq!(parsed.unpack_any().unwrap(), opts);
+}
+
 /// Read a custom option off a re-encoded options message: decode it as a
 /// `DynamicMessage` of `options_type` and pull the extension's value. This
 /// is the documented generic flow for reading a custom option by name when

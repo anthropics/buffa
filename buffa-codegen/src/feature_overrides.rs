@@ -170,10 +170,10 @@ fn collect_message_enum_fqns(
 }
 
 /// Does any rule match this dotted FQN? Marks every matching rule in
-/// `matched` (no short-circuit), so inert rules can be reported. Mirrors the
-/// path-scoped option matching used elsewhere (`bytes_fields` et al): `"."`
+/// `matched` (no short-circuit), so inert rules can be reported. `"."`
 /// matches everything, a leading dot is optional, trailing dots are ignored,
-/// and prefixes only match on proto segment boundaries.
+/// and prefixes only match on proto segment boundaries. `bytes_fields` and
+/// its siblings match on segment boundaries too, and require the leading dot.
 fn rule_matches(rules: &[String], fqn_dotted: &str, matched: &mut [bool]) -> bool {
     let mut any = false;
     for (i, rule) in rules.iter().enumerate() {

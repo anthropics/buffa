@@ -140,10 +140,9 @@
 pub extern crate alloc;
 #[doc(hidden)]
 pub use ::bytes;
-// Generated `Deserialize` impls for messages with extension ranges buffer
-// `"[pkg.ext]"` JSON keys into a `serde_json::Value` before dispatching to
-// `extension_registry::deserialize_extension_key`. Re-export so that path
-// resolves without the consumer adding `serde_json` to its own `Cargo.toml`.
+// The JSON converters that codegen emits for an extension take and return a
+// `::buffa::serde_json::Value`. Re-export so that path resolves without the
+// consumer adding `serde_json` to its own `Cargo.toml`.
 //
 // `serde` is *not* re-exported: the `#[derive(::serde::Serialize)]` macro
 // emits `extern crate serde as _serde;` by default, so the consumer crate

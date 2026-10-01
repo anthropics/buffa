@@ -1,5 +1,5 @@
 // Tests Rust keyword handling in proto package names, message names,
-// field names, and enum values.
+// field names, oneof names, and enum values.
 
 syntax = "proto3";
 
@@ -56,5 +56,14 @@ message Expression {
   oneof value {
     string literal = 4;
     Type type_ref = 5;
+  }
+}
+
+// Oneof whose name PascalCases to `Self`, the one reserved Rust identifier
+// with a leading capital. The enum is `Self_` and the field is `self_`.
+message Identity {
+  oneof self_ {
+    bool anonymous = 1;
+    string manager = 2;
   }
 }

@@ -2,6 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{parse_quote, DeriveInput};
 
+use crate::forwarders;
 use crate::remote_field::{self, RemoteField};
 
 pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
@@ -64,6 +65,14 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     }
     let list_where_clause = &list_generics.where_clause;
 
+    let arbitrary_impl = forwarders::arbitrary(
+        &remote,
+        &quote! { ::buffa::alloc::vec::Vec<#element_ty> },
+        &remote.construct(quote! { #from_vec(__buffa_seed) }),
+        forwarders::TakeRest::Seed,
+        &[],
+    );
+
     Ok(quote! {
         impl #impl_generics ::core::ops::Deref for #ident #ty_generics #where_clause {
             type Target = [#element_ty];
@@ -108,5 +117,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
                 *self = ::core::default::Default::default();
             }
         }
+
+        #arbitrary_impl
     })
 }

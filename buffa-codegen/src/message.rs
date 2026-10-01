@@ -302,7 +302,7 @@ fn generate_message_with_nesting(
     // without one can never have a registry entry naming it as extendee.
     // Without this gate, the wrapper is pure overhead — `#[serde(flatten)]`
     // on derive-Deserialize buffers every unknown key through serde's
-    // `Content::Map` (String key + `serde_json::Value` DOM) before the
+    // `Content::Map` (a `String` key and a buffered value) before the
     // wrapper can discard it. With the gate, extension-range-free messages
     // keep the pre-extensions `#[serde(skip)]` behavior (zero-alloc
     // `IgnoredAny` skip for unknown keys).
@@ -401,8 +401,8 @@ fn generate_message_with_nesting(
 
     // Messages declaring `extensions N to M;` accept `"[...]"` JSON keys.
     // With only `#[derive(Deserialize)]`, serde's flatten already routes them
-    // to the wrapper's Deserialize — but that path buffers all unclaimed keys
-    // into a serde_json::Value first. The custom impl matches them inline.
+    // to the wrapper's Deserialize — but that path buffers every unclaimed
+    // key first. The custom impl matches them inline.
 
     // When serde is enabled and the message has oneofs, we generate a custom
     // Deserialize impl so that duplicate-oneof-field and null-value errors
@@ -775,6 +775,7 @@ fn generate_message_with_nesting(
     // Generate a manual Debug impl that excludes internal __buffa_ fields.
     // Fields marked `[debug_redact = true]` print DEBUG_REDACT_PLACEHOLDER
     // instead of their value, mirroring protobuf's DebugString redaction.
+    // Omitted when a `skip_debug` rule covers the message.
     let struct_name_str = name_ident.to_string();
     // Labels match what `#[derive(Debug)]` prints: raw-ident fields (`r#type`)
     // show as `type`, consistent with the view struct's Debug impl.
@@ -792,12 +793,16 @@ fn generate_message_with_nesting(
             }
         })
         .collect();
-    let debug_impl = quote! {
-        impl ::core::fmt::Debug for #name_ident {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                f.debug_struct(#struct_name_str)
-                    #(.field(#debug_field_names, #debug_field_values))*
-                    .finish()
+    let debug_impl = if ctx.skip_debug(proto_fqn) {
+        quote! {}
+    } else {
+        quote! {
+            impl ::core::fmt::Debug for #name_ident {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct(#struct_name_str)
+                        #(.field(#debug_field_names, #debug_field_values))*
+                        .finish()
+                }
             }
         }
     };
@@ -1169,10 +1174,15 @@ fn generate_custom_deserialize(
             // `deny_unknown_json_fields` that is the difference between
             // rejecting it and silently accepting it, and in the lenient case
             // the fall-through is also cheaper — an `IgnoredAny` skip instead
-            // of buffering a `serde_json::Value`.
+            // of buffering the value.
+            //
+            // The value is buffered with `BufferedValue`, never with
+            // `serde_json::Value`'s own `Deserialize`: see
+            // `buffa::json_helpers::buffered`.
             let arm = quote! {
                 __k if __k.starts_with('[') && __k.ends_with(']') => {
-                    let __v: ::buffa::serde_json::Value = map.next_value()?;
+                    let ::buffa::json_helpers::buffered::BufferedValue(__v) =
+                        map.next_value()?;
                     match ::buffa::extension_registry::deserialize_extension_key(
                         #proto_fqn_lit, __k, __v,
                     ) {
@@ -1560,7 +1570,8 @@ struct FieldInfo {
     /// has no matching rule.
     map_value_bytes_repr: crate::BytesRepr,
     /// The owned Rust type used for this field when it is proto type `string`
-    /// (singular, optional, or repeated; map keys/values are unaffected).
+    /// (singular, optional, or repeated). Map keys and values resolve theirs
+    /// through `map_string_repr`.
     /// [`StringRepr::String`] for non-string fields and for string fields with
     /// no matching `string_fields` rule.
     string_repr: crate::StringRepr,

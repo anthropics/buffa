@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`MapValue::get_str` no longer panics in debug builds on a map whose keys are not strings** (#470). It returns `None`, as documented and as release builds already did; a `debug_assert!` rejected the call instead. The same applies to `ReflectMap::get_str` on the map of a `DynamicMessage` field, which now behaves like the other `ReflectMap` implementations.
+time: 2026-09-23T14:18:16Z

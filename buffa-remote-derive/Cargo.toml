@@ -18,6 +18,7 @@ quote = { workspace = true }
 syn = { workspace = true }
 
 [dev-dependencies]
+arbitrary = { workspace = true }
 buffa = { workspace = true, features = ["std"] }
 ecow = { workspace = true }
 smallvec = { version = "1", default-features = false }

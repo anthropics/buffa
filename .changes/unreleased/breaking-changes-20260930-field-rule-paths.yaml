@@ -1,0 +1,5 @@
+kind: Breaking changes
+body: |-
+    **`bytes_type_in`, `string_type_in`, `map_type_in` and `repeated_type_in` normalize their paths, so a rule written without its leading dot takes effect** (#494). `"my.pkg.Msg.field"` was stored as written and matched no field, and the field kept its default Rust type with no diagnostic. The four methods, with `use_bytes_type_in` and the `*_custom_in` forms, now add a missing leading dot, trim whitespace and trailing dots, and skip a blank entry with a `cargo:warning`, as `preserve_unknown_fields_in` does. `box_type_in` and `unbox_oneof_in` already added the dot and now share the rest.
+    If a build passes one of these methods a path without a leading dot, with a trailing dot, or with surrounding whitespace, that rule now applies and the matching fields change Rust type on upgrade (for example `Vec<u8>` to `bytes::Bytes`). Delete the rule to keep the current types. An empty path (`""`) used to match every field and is now skipped; write `"."`.
+time: 2026-09-30T21:58:00-07:00

@@ -217,6 +217,10 @@ impl<'de, E: Enumeration> serde::Deserialize<'de> for EnumValue<E> {
                 match E::from_proto_name(v) {
                     Some(e) => Ok(EnumValue::Known(e)),
                     None => {
+                        // Without `std` an unknown name is always an error
+                        // here, even when the process-wide option is set:
+                        // `json_helpers::try_deserialize_enum` needs the error
+                        // to tell an unknown name from the default value.
                         #[cfg(all(feature = "std", feature = "json"))]
                         if crate::json::ignore_unknown_enum_values() {
                             return Ok(EnumValue::from(0));

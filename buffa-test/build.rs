@@ -540,6 +540,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for debug_redact.proto");
 
+    // `skip_debug` — the hand-written `Debug` impls in `src/lib.rs` compile
+    // only if the generated ones are omitted. Views enabled so the view of a
+    // matched message compiles too.
+    buffa_build::Config::new()
+        .files(&["protos/skip_debug.proto"])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .skip_debug(&[".skip_debug.Token", ".skip_debug.Level"])
+        .compile()
+        .expect("buffa_build failed for skip_debug.proto");
+
     // Regression: use_bytes_type() previously produced uncompilable decode
     // code (merge_bytes expects &mut Vec<u8>, struct field was bytes::Bytes).
     // basic.proto has bytes fields (Person.avatar singular; BytesContexts
@@ -589,8 +600,9 @@ fn main() {
     // string code path (decode/clear/view/json/arbitrary) is compiled; EcoStr
     // wraps a type with no native Arbitrary, exercising the generic builder.
     // The repeated `many` field stays `String` — a custom repeated element must
-    // be crate-local (covered by `LocalStr` in `vtable_string_repr`). Map
-    // keys/values stay String.
+    // be crate-local (covered by `LocalStr` in `vtable_string_repr`). The
+    // `by_key` map is outside the rules' paths, so its key and value are
+    // String.
     let string_out =
         std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("string_variant");
     std::fs::create_dir_all(&string_out).expect("create string_variant dir");
@@ -831,6 +843,39 @@ fn main() {
         .preserve_unknown_fields(false)
         .compile()
         .expect("buffa_build failed for lazy_views_lean.proto");
+
+    // Recursive messages + preserve_unknown_fields=false (#449). Eagerly, a
+    // singular message field is `MessageFieldView<V>` with no lifetime of its
+    // own, so a schema whose fields only lead back to themselves needs the
+    // generated lifetime anchor; the repeated, map, borrowed-scalar and
+    // scalar-in-oneof shapes already anchor it and must keep compiling without
+    // one. Lazily, a message field is `LazyMessageFieldView<'a, V>` and anchors
+    // 'a by itself, so no lazy struct is expected to carry the marker.
+    // Compilation is the coverage here; `buffa-codegen/src/tests/
+    // lifetime_anchor.rs` pins which structs get the marker in both directions.
+    let self_recursive_views_out =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("self_recursive_views");
+    std::fs::create_dir_all(&self_recursive_views_out).expect("create self_recursive_views dir");
+    buffa_build::Config::new()
+        .files(&["protos/self_recursive_lean.proto"])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .preserve_unknown_fields(false)
+        .out_dir(self_recursive_views_out)
+        .compile()
+        .expect("buffa_build failed for self_recursive_lean.proto with views");
+
+    let self_recursive_lazy_out =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("self_recursive_lazy");
+    std::fs::create_dir_all(&self_recursive_lazy_out).expect("create self_recursive_lazy dir");
+    buffa_build::Config::new()
+        .files(&["protos/self_recursive_lean.proto"])
+        .includes(&["protos/"])
+        .lazy_views(true)
+        .preserve_unknown_fields(false)
+        .out_dir(self_recursive_lazy_out)
+        .compile()
+        .expect("buffa_build failed for self_recursive_lean.proto with lazy views");
 
     // Path-scoped unknown-field preservation: global off, `Keep` re-enabled.
     // Every codec that reads the flag per message (owned, view, lazy view,

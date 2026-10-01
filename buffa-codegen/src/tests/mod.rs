@@ -55,11 +55,13 @@ mod debug_redact;
 mod element_memory_limit;
 mod excluded_refs;
 mod feature_gating;
+mod field_rule_warnings;
 mod generation;
 mod idiomatic_enums;
 mod idiomatic_fields;
 mod idiomatic_imports;
 mod json_codegen;
+mod lifetime_anchor;
 mod map_type;
 mod naming;
 mod owned_view_codegen;
@@ -71,6 +73,7 @@ mod repeated_type;
 mod shared_corpus_context;
 mod shared_pool;
 mod size_arithmetic;
+mod skip_debug;
 mod view_codegen;
 
 /// Wrap paths as `EnumType(Open)` feature overrides — the shape used by the

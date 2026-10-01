@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **Reflective decode of packed fixed-width fields reserves list capacity once** (#456). When `DynamicMessage` decodes a packed `float`, `double`, `fixed32`, `sfixed32`, `fixed64`, or `sfixed64` field, it reserves room for the payload's element count up front instead of reallocating as the list grows. The reservation is capped at the number of elements the remaining element-memory limit allows.
+time: 2026-09-21T13:29:00+02:00

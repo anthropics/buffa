@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DynamicMessage::from_json`, `from_json_ignoring_unknown`, and `to_json` are available without the `std` feature.** They were gated on `std` although they only need `serde_json`'s `alloc` support, so a `no_std` build of `buffa-descriptor` with `json` + `reflect` had the reflective serde impls but not the convenience entry points. CI now builds `buffa-descriptor` with `--no-default-features --features json,reflect,text,views`.
+time: 2026-09-06T17:40:00+00:00

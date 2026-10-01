@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **Reflective JSON prints and parses `float` fields the way generated messages do** (#489). `DynamicMessage::to_json` widened each `f32` to `f64` before printing, so `0.1` came out as `0.10000000149011612` where a generated message writes `0.1`. The reflective parser also rejected `3.4028235e+38`, the canonical text of `f32::MAX`, as well as the widened text it wrote for that value itself. Both directions now go through `buffa::json_helpers::float`, the module generated `float` fields use.
+    The JSON text of a reflective `float` changes wherever the widened `f64` printed digits the `f32` does not have (`0.1`, not `0.5`), in singular, repeated, map-value and `FloatValue` positions alike. It is now the shortest decimal that round-trips as an `f32`. The values are unchanged, but golden files written from the old output will differ. On input, an unquoted number above `f32::MAX` that rounds to `f32::MAX` is now accepted, as it is for generated messages; every input that parsed before still parses.
+time: 2026-09-27T20:14:45+08:00

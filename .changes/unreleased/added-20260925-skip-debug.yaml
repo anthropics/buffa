@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`skip_debug` omits the generated `Debug` for selected messages and enums, so a crate can write its own** (#484, closes #448). The option is `buffa_build::Config::skip_debug`, `skip_debug=<path>` in `protoc-gen-buffa`, and `CodeGenConfig::skip_debug`; each takes fully-qualified proto paths such as `".demo.Uuid4"`. A message path covers that message, its oneof enums and the messages nested in it, and a package path or `"."` covers every message under it. An enum loses its `Debug` only when a path is its exact name, and the crate must then implement `Debug` for it, because `buffa::Enumeration` requires it. A matched message needs an impl when an unmatched message or oneof holds it or when reflection is generated. View types keep their `Debug`. A rule that matches no generated type produces a `SkipDebugRuleMatchedNothing` warning.
+time: 2026-09-25T11:05:00+02:00

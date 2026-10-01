@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`DynamicMessage::iter_set_fields`** (#454, refs #432) iterates over a dynamic message's set fields as `(&FieldDescriptor, &Value)` pairs in ascending field-number order, covering the same fields as `ReflectMessage::for_each_set`. The items borrow from the message, so a non-recursive walk can keep a nested `Value::Message` on a worklist after the loop that yielded it, which the `for_each_set` callback does not allow.
+time: 2026-09-21T12:00:00.000000000+00:00

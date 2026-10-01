@@ -42,6 +42,29 @@ fn extension_set_get_has_through_reflect_message() {
     msg.for_each_set(&mut |fd, _| seen.push(fd.number()));
     seen.sort_unstable();
     assert_eq!(seen, vec![1, 100]);
+
+    // iter_set_fields yields the declared field before the extension, by number.
+    let seen_via_iter: Vec<u32> = msg.iter_set_fields().map(|(fd, _)| fd.number()).collect();
+    assert_eq!(seen_via_iter, vec![1, 100]);
+}
+
+#[test]
+fn take_field_removes_an_extension_by_descriptor_or_number() {
+    let p = pool();
+    let idx = p.message_index("reflect.ext.Extendable").unwrap();
+    let ext = p.extension_by_name("reflect.ext.ext_int32").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+
+    msg.set(ext.field(), Value::I32(42));
+    assert_eq!(msg.take_field(ext.field()), Some(Value::I32(42)));
+    assert!(!msg.has(ext.field()));
+
+    msg.set(ext.field(), Value::I32(43));
+    assert_eq!(
+        msg.take_field_by_number(ext.field().number()),
+        Some(Value::I32(43))
+    );
+    assert!(!msg.has(ext.field()));
 }
 
 #[test]

@@ -35,6 +35,15 @@
 
 use alloc::boxed::Box;
 
+/// Return the protobuf full name carried by an `Any` type URL.
+///
+/// The `Any` contract identifies the embedded message by the path segment
+/// after the final slash; the URL prefix is application-defined.
+pub(crate) fn any_type_name(type_url: &str) -> Option<&str> {
+    let (_, type_name) = type_url.rsplit_once('/')?;
+    (!type_name.is_empty()).then_some(type_name)
+}
+
 /// Maximum nesting depth of `google.protobuf.Any` expansions in one
 /// serialization.
 ///
@@ -181,6 +190,9 @@ pub type ExtensionRegistryEntry = JsonExtEntry;
 #[cfg(feature = "text")]
 pub struct TextAnyEntry {
     /// Full type URL (e.g. `"type.googleapis.com/google.protobuf.Duration"`).
+    ///
+    /// A URL with no `/` carries no message name, and is found only by an
+    /// exact match.
     pub type_url: &'static str,
 
     /// `Any.value` bytes → textproto body: decode, write fields as `{ ... }`.
@@ -259,12 +271,28 @@ pub type ExtTextMergeFn =
 #[derive(Default)]
 struct TextAnyMap {
     entries: hashbrown::HashMap<alloc::string::String, TextAnyEntry>,
+    /// Message full name → the type URL most recently registered for it.
+    by_type_name: hashbrown::HashMap<&'static str, &'static str>,
 }
 
 #[cfg(feature = "text")]
 impl TextAnyMap {
+    fn register(&mut self, entry: TextAnyEntry) {
+        if let Some(type_name) = any_type_name(entry.type_url) {
+            self.by_type_name.insert(type_name, entry.type_url);
+        }
+        self.entries
+            .insert(alloc::string::String::from(entry.type_url), entry);
+    }
+
     fn lookup(&self, type_url: &str) -> Option<&TextAnyEntry> {
-        self.entries.get(type_url)
+        if let Some(entry) = self.entries.get(type_url) {
+            return Some(entry);
+        }
+
+        let type_name = any_type_name(type_url)?;
+        let registered_url = *self.by_type_name.get(type_name)?;
+        self.entries.get(registered_url)
     }
 }
 
@@ -340,8 +368,16 @@ impl TypeRegistry {
         Self::default()
     }
 
-    /// Registers a JSON `Any` type entry. Replaces any existing entry for
-    /// the same type URL.
+    /// Registers a JSON `Any` type entry.
+    ///
+    /// Replaces any existing entry for the same type URL. When the same
+    /// message full name is registered under several URLs, a
+    /// [`json_any_by_url`](Self::json_any_by_url) lookup of a URL that is not
+    /// itself registered uses the most recently registered one.
+    ///
+    /// A lookup by name decodes the payload as this message. A payload under
+    /// another prefix that does not decode as it fails to serialize as JSON;
+    /// one that does decode is written with this message's fields.
     #[cfg(feature = "json")]
     pub fn register_json_any(&mut self, entry: JsonAnyEntry) {
         self.json_any.register(entry);
@@ -355,12 +391,18 @@ impl TypeRegistry {
     }
 
     /// Registers a text `Any` type entry.
+    ///
+    /// Replaces any existing entry for the same type URL. When the same
+    /// message full name is registered under several URLs, a
+    /// [`text_any_by_url`](Self::text_any_by_url) lookup of a URL that is not
+    /// itself registered uses the most recently registered one.
+    ///
+    /// A lookup by name decodes the payload as this message. A payload under
+    /// another prefix that does not decode as it prints with an empty body;
+    /// one that does decode is written with this message's fields.
     #[cfg(feature = "text")]
     pub fn register_text_any(&mut self, entry: TextAnyEntry) {
-        use alloc::borrow::ToOwned;
-        self.text_any
-            .entries
-            .insert(entry.type_url.to_owned(), entry);
+        self.text_any.register(entry);
     }
 
     /// Registers a text extension entry. Replaces any existing entry at the
@@ -371,6 +413,11 @@ impl TypeRegistry {
     }
 
     /// Look up a JSON `Any` entry by type URL.
+    ///
+    /// A registered URL finds its own entry. Any other URL is matched by the
+    /// message full name after its last `/`. The entry's `type_url` is the
+    /// registered one, so keep the URL you looked up as the `Any`'s
+    /// `type_url`.
     #[cfg(feature = "json")]
     pub fn json_any_by_url(&self, type_url: &str) -> Option<&JsonAnyEntry> {
         self.json_any.lookup(type_url)
@@ -389,6 +436,11 @@ impl TypeRegistry {
     }
 
     /// Look up a text `Any` entry by type URL.
+    ///
+    /// A registered URL finds its own entry. Any other URL is matched by the
+    /// message full name after its last `/`. The entry's `type_url` is the
+    /// registered one, so keep the URL you looked up as the `Any`'s
+    /// `type_url`.
     #[cfg(feature = "text")]
     pub fn text_any_by_url(&self, type_url: &str) -> Option<&TextAnyEntry> {
         self.text_any.lookup(type_url)
@@ -488,7 +540,8 @@ pub fn set_json_registry(reg: TypeRegistry) {
 // ── Text global lookup (consulted by text encoder/decoder) ─────────────────
 
 /// Look up a text `Any` entry in the global registry. Returns `None` if no
-/// registry is installed or the URL is not registered.
+/// registry is installed, or neither the URL nor its message full name is
+/// registered.
 #[cfg(feature = "text")]
 pub(crate) fn global_text_any(type_url: &str) -> Option<&'static TextAnyEntry> {
     use core::sync::atomic::Ordering;
@@ -997,7 +1050,33 @@ mod tests {
                 text_merge: any_merge_text::<Inner>,
             });
             assert!(reg.text_any_by_url("type.example.com/Inner").is_some());
+            assert!(reg.text_any_by_url("custom.example/v1/Inner").is_some());
             assert!(reg.text_any_by_url("type.example.com/Missing").is_none());
+        }
+
+        #[test]
+        fn text_any_lookup_falls_back_to_the_last_url_registered_for_a_name() {
+            let mut reg = TypeRegistry::new();
+            for type_url in ["type.example.com/Inner", "custom.example/v1/Inner"] {
+                reg.register_text_any(TextAnyEntry {
+                    type_url,
+                    text_encode: any_encode_text::<Inner>,
+                    text_merge: any_merge_text::<Inner>,
+                });
+            }
+            let found = |url| reg.text_any_by_url(url).map(|entry| entry.type_url);
+            assert_eq!(
+                found("type.example.com/Inner"),
+                Some("type.example.com/Inner")
+            );
+            assert_eq!(
+                found("custom.example/v1/Inner"),
+                Some("custom.example/v1/Inner")
+            );
+            assert_eq!(
+                found("other.example/Inner"),
+                Some("custom.example/v1/Inner")
+            );
         }
 
         #[test]

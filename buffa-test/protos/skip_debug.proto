@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package skip_debug;
+
+// Named by a `skip_debug` rule: `Token` and its oneof enum have no generated
+// `Debug`, and the crate supplies its own. The nested enum keeps its derive,
+// because a message rule leaves enums alone.
+message Token {
+  enum Scope {
+    SCOPE_UNSPECIFIED = 0;
+    SCOPE_ADMIN = 1;
+  }
+
+  string id = 1;
+  Scope scope = 2;
+
+  oneof holder {
+    string user = 3;
+    int32 service = 4;
+  }
+}
+
+// Not named by a rule: keeps its generated `Debug`, which formats `token`
+// through the crate's impl.
+message Session {
+  Token token = 1;
+}
+
+// Named by its own rule, the only way an enum loses its `Debug`.
+enum Level {
+  LEVEL_UNSPECIFIED = 0;
+  LEVEL_HIGH = 1;
+}

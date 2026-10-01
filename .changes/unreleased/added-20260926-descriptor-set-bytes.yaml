@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **In-memory descriptor sets for buffa-build** (#488, closes #407). `Config::descriptor_set_bytes` takes a serialized `FileDescriptorSet` as a `Vec<u8>`, so a build script that compiles protos in-process (for example with protox) no longer writes a temporary descriptor file for `descriptor_set` to read back. The build script must print its own `cargo:rerun-if-changed` lines for the inputs the bytes came from, because buffa-build cannot see them.
+time: 2026-09-26T12:00:00+08:00

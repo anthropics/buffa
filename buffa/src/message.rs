@@ -83,6 +83,8 @@ pub const DEFAULT_UNKNOWN_FIELD_LIMIT: usize = 1_000_000;
 ///
 /// The textproto parser defaults to this same constant, raised through
 /// [`TextDecoder::with_element_memory_limit`](crate::text::TextDecoder::with_element_memory_limit).
+/// `buffa_descriptor`'s reflective JSON parser defaults to it too, raised
+/// through `buffa_descriptor::DynamicMessageSeed::with_element_memory_limit`.
 ///
 /// 32 MiB of elements is far more than a realistic message carries, and sits
 /// alongside what [`DEFAULT_UNKNOWN_FIELD_LIMIT`] already permits (~38 MiB of
@@ -1160,6 +1162,15 @@ pub trait MessageName {
 /// be bounded needs a bound imposed by the caller, for example by capping the
 /// input length before parsing.
 ///
+/// One JSON path applies an element-memory limit of its own:
+/// `buffa_descriptor`'s reflective parser (`DynamicMessage::from_json`)
+/// charges the repeated elements and map entries it builds against a limit
+/// that defaults to [`DEFAULT_ELEMENT_MEMORY_LIMIT`] and is changed with
+/// `buffa_descriptor::DynamicMessageSeed::with_element_memory_limit`, not
+/// here. That limit does not cover the buffer a `google.protobuf.Any`
+/// payload is read into, so a schema carrying an `Any` still needs the input
+/// length capped.
+///
 /// # Examples
 ///
 /// ```no_run
@@ -1336,9 +1347,12 @@ impl DecodeOptions {
     /// only. The textproto parser applies the same default through its own
     /// knob,
     /// [`TextDecoder::with_element_memory_limit`](crate::text::TextDecoder::with_element_memory_limit).
-    /// The same message decoded from JSON is not charged against this
-    /// budget, and the amplification it guards against is very nearly as large
-    /// there — `{}` is three JSON bytes for the same element footprint.
+    /// The same message decoded from JSON into a generated type is not
+    /// charged against this budget, and the amplification it guards against
+    /// is very nearly as large there — `{}` is three JSON bytes for the same
+    /// element footprint. The reflective JSON parser in `buffa_descriptor`
+    /// applies the same default, changed with
+    /// `buffa_descriptor::DynamicMessageSeed::with_element_memory_limit`.
     ///
     /// Default: 32 MiB ([`DEFAULT_ELEMENT_MEMORY_LIMIT`]).
     #[must_use]

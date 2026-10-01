@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`ignore_unknown_enum_values` drops unknown enum names from `optional`, `repeated` and map open-enum fields in `no_std` builds** (#486). With the option set through `set_global_json_parse_options`, an unknown name in one of these fields was a parse error; only singular fields and closed enums honoured the option. Now the field is left unset or the entry is dropped, as in `std` builds. An unknown number still parses to `EnumValue::Unknown(n)`.
+time: 2026-09-25T11:05:00+02:00

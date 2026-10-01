@@ -565,7 +565,27 @@ impl<T: Default + Clone, P: ProtoBox<T> + Clone> Clone for MessageField<T, P> {
     }
 }
 
+// The mixed set/unset arms of `PartialEq::eq`. The set side is compared against
+// `T::default_instance()`, so no temporary `T` is allocated. They are out of
+// line to keep `default_instance()`'s one-time initialisation out of `eq`: with
+// it inlined there, `eq` was not inlined into its callers even when marked
+// `#[inline]`, and a loop comparing message fields paid for a call each time.
+//
+// There are two functions because each keeps the operand order of the `eq`
+// arm it serves, which matters when `T`'s `PartialEq` is not symmetric. They
+// are generic over `T` alone so both pointer representations share one copy.
+#[inline(never)]
+fn value_eq_default_instance<T: DefaultInstance + PartialEq>(value: &T) -> bool {
+    *value == *T::default_instance()
+}
+
+#[inline(never)]
+fn default_instance_eq_value<T: DefaultInstance + PartialEq>(value: &T) -> bool {
+    *T::default_instance() == *value
+}
+
 impl<T: DefaultInstance + PartialEq, P: ProtoBox<T>> PartialEq for MessageField<T, P> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         // Compare the pointed-to `T` values (via `**`), not the pointers, so no
         // `P: PartialEq` bound is needed and a set-to-default field equals an
@@ -573,10 +593,8 @@ impl<T: DefaultInstance + PartialEq, P: ProtoBox<T>> PartialEq for MessageField<
         match (&self.inner, &other.inner) {
             (Some(a), Some(b)) => **a == **b,
             (None, None) => true,
-            // An unset field equals a set-to-default field. Use default_instance()
-            // to avoid allocating a temporary value for the comparison.
-            (Some(a), None) => **a == *T::default_instance(),
-            (None, Some(b)) => *T::default_instance() == **b,
+            (Some(a), None) => value_eq_default_instance(&**a),
+            (None, Some(b)) => default_instance_eq_value(&**b),
         }
     }
 }
@@ -722,12 +740,63 @@ mod tests {
         assert_eq!(field.value, 10);
     }
 
+    /// Equality cases shared by every pointer representation `P`.
+    fn assert_equality_cases<P: ProtoBox<Inner>>() {
+        let non_default = || Inner {
+            value: 1,
+            ..Default::default()
+        };
+        let unset: MessageField<Inner, P> = MessageField::none();
+        let other_unset: MessageField<Inner, P> = MessageField::none();
+        let default: MessageField<Inner, P> = MessageField::some(Inner::default());
+        let value: MessageField<Inner, P> = MessageField::some(non_default());
+        let same_value: MessageField<Inner, P> = MessageField::some(non_default());
+
+        assert_eq!(unset, other_unset);
+
+        // An unset field and a set-to-default field are equal in both directions.
+        assert_eq!(unset, default);
+        assert_eq!(default, unset);
+
+        assert_ne!(unset, value);
+        assert_ne!(value, unset);
+
+        assert_ne!(default, value);
+        assert_ne!(value, default);
+        assert_eq!(value, same_value);
+    }
+
     #[test]
     fn test_equality() {
-        let a: MessageField<Inner> = MessageField::none();
-        let b: MessageField<Inner> = MessageField::some(Inner::default());
-        // An unset field and a set-to-default field are equal.
-        assert_eq!(a, b);
+        assert_equality_cases::<Box<Inner>>();
+    }
+
+    /// `eq` is "self is at most other", which is not symmetric, so the result
+    /// shows which operand each mixed arm puts first.
+    #[derive(Clone, Debug, Default)]
+    struct AtMost(i32);
+
+    impl PartialEq for AtMost {
+        fn eq(&self, other: &Self) -> bool {
+            self.0 <= other.0
+        }
+    }
+
+    crate::impl_default_instance!(AtMost);
+
+    #[test]
+    fn mixed_arms_keep_operand_order() {
+        let unset: MessageField<AtMost> = MessageField::none();
+        let negative: MessageField<AtMost> = MessageField::some(AtMost(-1));
+
+        // `AtMost(-1) == AtMost(0)` holds; `AtMost(0) == AtMost(-1)` does not.
+        assert!(negative == unset);
+        assert!(unset != negative);
+    }
+
+    #[test]
+    fn test_equality_inline() {
+        assert_equality_cases::<Inline<Inner>>();
     }
 
     #[test]

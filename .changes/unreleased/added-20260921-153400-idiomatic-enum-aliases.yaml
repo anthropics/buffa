@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`protoc-gen-buffa` accepts an `idiomatic_enum_aliases` option** (#458). It is the plugin spelling of `buffa_build::Config::idiomatic_enum_aliases`: `idiomatic_enum_aliases=false` stops protoc and Buf builds from generating the `UpperCamelCase` associated-const aliases for enum values, which are emitted by default.
+time: 2026-09-21T15:34:00+02:00
