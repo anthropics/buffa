@@ -1,14 +1,13 @@
-//! Reflective JSON parsing must bound what it materializes.
+//! The reflective JSON parser bounds the repeated elements and map entries it
+//! builds.
 //!
-//! `DecodeOptions` never reaches the JSON path, so before this budget a
-//! `DynamicMessage` parsed from JSON was bounded by nothing but
-//! `serde_json`'s own 128-deep recursion limit: `{},` is three input bytes
-//! and `size_of::<Value>()` in the `Vec` it lands in, so a few hundred KiB
-//! of JSON expanded into tens of MiB. These tests pin that every site that
-//! accumulates from input — repeated fields, map entries, `Struct` members,
-//! `ListValue` elements, `FieldMask` paths — is charged, that one budget
-//! covers a whole parse rather than resetting per nested message or `Any`
-//! layer, and that the charges match the reflective binary decoder's.
+//! `{},` is three input bytes and one `size_of::<Value>()` slot in the `Vec`
+//! it lands in, so without a bound about 1.5 MB of JSON builds 32 MiB. These
+//! tests check that every site that accumulates from input —
+//! repeated fields, map entries, `Struct` members, `ListValue` elements,
+//! `FieldMask` paths — is charged, that one budget covers a whole parse
+//! rather than resetting per nested message or `Any` layer, and that the
+//! charges match the reflective binary decoder's.
 //!
 //! Run standalone with (the file compiles to nothing without the features):
 //! `cargo test -p buffa-descriptor --features reflect,json --test json_element_memory_limit`
@@ -17,8 +16,6 @@
 
 use std::mem::size_of;
 use std::sync::Arc;
-
-use serde::de::DeserializeSeed;
 
 use buffa_descriptor::reflect::{DynamicMessage, DynamicMessageSeed, MapKey, Value};
 use buffa_descriptor::DescriptorPool;
@@ -54,8 +51,7 @@ fn pool(bytes: &[u8]) -> Arc<DescriptorPool> {
     Arc::new(DescriptorPool::decode(bytes).expect("pool builds from protoc FDS"))
 }
 
-/// Parse under an explicit budget, the long-form API the `from_json_*`
-/// conveniences wrap.
+/// Parse under an explicit budget.
 fn parse_with_limit(
     p: &Arc<DescriptorPool>,
     full_name: &str,
@@ -63,18 +59,15 @@ fn parse_with_limit(
     limit: usize,
 ) -> Result<DynamicMessage, serde_json::Error> {
     let idx = p.message_index(full_name).expect("message is in the pool");
-    let mut d = serde_json::Deserializer::from_str(json);
-    let msg = DynamicMessageSeed::new(Arc::clone(p), idx)
+    DynamicMessageSeed::new(Arc::clone(p), idx)
         .with_element_memory_limit(limit)
-        .deserialize(&mut d)?;
-    d.end()?;
-    Ok(msg)
+        .parse_json(json)
 }
 
 /// The one error this budget produces, whatever the site that raised it.
 fn assert_over_budget(err: &serde_json::Error) {
     assert!(
-        err.to_string().contains("element memory limit exceeded"),
+        DynamicMessageSeed::is_element_memory_limit_error(err),
         "expected the element-memory error, got: {err}"
     );
 }
@@ -93,8 +86,8 @@ fn repeat_json(open: &str, item: &str, n: usize, close: &str) -> String {
     s
 }
 
-/// The reported gap: `DynamicMessage::from_json` with no options at all must
-/// still refuse the amplification that `DecodeOptions` refuses on the wire.
+/// `DynamicMessage::from_json` with no options refuses the amplification that
+/// `DecodeOptions` refuses on the wire.
 ///
 /// Sized off the real default rather than a lowered budget, so a regression
 /// that drops the default (or makes the limit opt-in) fails here.
@@ -105,8 +98,7 @@ fn from_json_bounds_repeated_message_elements_by_default() {
     let n = buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / ELEMENT + 1;
 
     let json = repeat_json(r#"{"inners":["#, "{}", n, "]}");
-    // The amplification the issue describes: a fraction of the materialized
-    // footprint as input.
+    // The input is a fraction of the footprint it would build.
     assert!(json.len() * 4 < buffa::DEFAULT_ELEMENT_MEMORY_LIMIT);
 
     let err = DynamicMessage::from_json(Arc::clone(&p), idx, &json)
@@ -290,16 +282,124 @@ fn any_payloads_continue_the_outer_budget() {
     parse_with_limit(&p, "reflect.opt.Envelope", &json, 8 * ELEMENT)
         .expect("8 elements inside the Any fit");
 
+    // The error is identifiable from inside the `Any` too.
     let err = parse_with_limit(&p, "reflect.opt.Envelope", &json, 8 * ELEMENT - 1)
         .expect_err("the Any payload spends the outer budget");
-    assert!(
-        err.to_string().contains("element memory limit exceeded"),
-        "expected the element-memory error, got: {err}"
+    assert_over_budget(&err);
+    // The text is the documented one, which the binary codec's error displays.
+    assert!(err.to_string().starts_with("element memory limit exceeded"));
+    assert_eq!(
+        buffa::DecodeError::ElementMemoryLimitExceeded.to_string(),
+        "element memory limit exceeded"
     );
 }
 
-/// `usize::MAX` restores the pre-budget behaviour for callers who parse
-/// trusted input and want no ceiling.
+/// The budget error keeps its text through two `Any` layers, and an inner
+/// error that only quotes that text does not pass for it.
+#[test]
+fn the_budget_error_is_identifiable_through_nested_any_layers() {
+    let p = pool(OPTIONS_FDS_BYTES);
+    let descriptor = repeat_json(
+        r#"{"@type":"type.googleapis.com/google.protobuf.DescriptorProto","nestedType":["#,
+        "{}",
+        2,
+        "]}",
+    );
+    let json = format!(
+        r#"{{"payload":{{"@type":"type.googleapis.com/reflect.opt.Envelope","payload":{descriptor}}}}}"#
+    );
+
+    parse_with_limit(&p, "reflect.opt.Envelope", &json, 2 * ELEMENT).expect("2 elements fit");
+    let err = parse_with_limit(&p, "reflect.opt.Envelope", &json, ELEMENT)
+        .expect_err("2 elements do not fit in 1 slot");
+    assert_over_budget(&err);
+
+    let quoted = concat!(
+        r#"{"payload":{"@type":"type.googleapis.com/google.protobuf.DescriptorProto","#,
+        r#""element memory limit exceeded":1}}"#
+    );
+    let err = parse_with_limit(&p, "reflect.opt.Envelope", quoted, usize::MAX)
+        .expect_err("an unknown field inside the Any is an error");
+    assert!(
+        !DynamicMessageSeed::is_element_memory_limit_error(&err),
+        "{err}"
+    );
+    assert!(
+        err.to_string()
+            .starts_with("Any inner deserialize failed: "),
+        "{err}"
+    );
+}
+
+/// A `ListValue` element is itself a `Value` and can hold another list. The
+/// inner lists draw on the budget the outer one does.
+#[test]
+fn nested_list_values_draw_on_one_shared_budget() {
+    let p = pool(STRUCT_FDS_BYTES);
+    let json = "[[1,2],[3,4]]";
+
+    // 2 outer elements + 4 inner ones.
+    let exact = 6 * ELEMENT;
+    parse_with_limit(&p, "google.protobuf.ListValue", json, exact).expect("the whole tree fits");
+
+    let err = parse_with_limit(&p, "google.protobuf.ListValue", json, exact - 1)
+        .expect_err("the inner lists share the outer budget");
+    assert_over_budget(&err);
+}
+
+/// `is_element_memory_limit_error` is true for the budget error only.
+#[test]
+fn malformed_input_is_not_the_budget_error() {
+    let p = pool(FDS_BYTES);
+    for malformed in [
+        r#"{"inners":7}"#,
+        r#"{"inners":["#,
+        // An unknown field whose name is the budget error's text.
+        r#"{"element memory limit exceeded":1}"#,
+    ] {
+        let err = parse_with_limit(&p, "reflect.test.Containers", malformed, usize::MAX)
+            .expect_err("malformed input is an error");
+        assert!(
+            !DynamicMessageSeed::is_element_memory_limit_error(&err),
+            "{malformed}: {err}"
+        );
+    }
+}
+
+/// `parse_json` applies the seed's options, and rejects input after the
+/// document as `from_json` does.
+#[test]
+fn parse_json_applies_the_seed_options_and_rejects_trailing_input() {
+    let p = pool(FDS_BYTES);
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let seed = || DynamicMessageSeed::new(Arc::clone(&p), idx);
+    let json = repeat_json(r#"{"inners":["#, "{}", 3, "]}");
+
+    seed()
+        .with_element_memory_limit(3 * ELEMENT)
+        .parse_json(&json)
+        .expect("3 elements fit");
+    let err = seed()
+        .with_element_memory_limit(2 * ELEMENT)
+        .parse_json(&json)
+        .expect_err("3 elements do not fit in 2 slots");
+    assert_over_budget(&err);
+
+    seed()
+        .parse_json(r#"{"nope":1}"#)
+        .expect_err("an unknown field is an error by default");
+    seed()
+        .ignore_unknown_fields(true)
+        .parse_json(r#"{"nope":1}"#)
+        .expect("an unknown field is ignored on request");
+
+    let err = seed()
+        .parse_json(r#"{"inners":[]} {}"#)
+        .expect_err("input after the document is an error");
+    assert!(!DynamicMessageSeed::is_element_memory_limit_error(&err));
+}
+
+/// `usize::MAX` means no limit, for callers who parse trusted input.
 #[test]
 fn usize_max_disables_the_budget() {
     let p = pool(FDS_BYTES);

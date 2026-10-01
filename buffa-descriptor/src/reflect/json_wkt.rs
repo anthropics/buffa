@@ -153,8 +153,8 @@ impl WktKind {
                     // `saturating_mul`: the count is bounded only by the
                     // input length, which overflows a 32-bit `usize` (a
                     // supported target with its own CI job) above ~134M
-                    // commas. Saturating charges the whole budget there,
-                    // which is the correct verdict anyway.
+                    // commas. A saturated charge exceeds any limit below
+                    // `usize::MAX`, so the parse fails there.
                     charge(
                         budget,
                         s.split(',')
@@ -406,8 +406,7 @@ impl<'de> Visitor<'de> for StructVisitor<'_> {
                 ignore_unknown: false,
                 budget: self.budget,
             })?;
-            // `Struct.fields` is `map<string, Value>`; charge what the
-            // ordinary map path charges for an entry.
+            // `Struct.fields` is `map<string, Value>`.
             charge(
                 self.budget,
                 core::mem::size_of::<MapKey>() + core::mem::size_of::<Value>(),
@@ -454,8 +453,7 @@ impl<'de> Visitor<'de> for ListValueVisitor<'_> {
             ignore_unknown: false,
             budget: self.budget,
         })? {
-            // `ListValue.values` is `repeated Value`; charge what the
-            // ordinary repeated path charges for an element.
+            // `ListValue.values` is `repeated Value`.
             charge(self.budget, core::mem::size_of::<Value>())?;
             items.push(Value::Message(v));
         }
@@ -605,10 +603,8 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
         serde_json::Value::Object(obj)
     };
     // Re-deserialize the inner JSON value into the inner message type,
-    // propagating the lenient-parsing flag.
-    // The inner parse continues the outer budget rather than starting a
-    // fresh one, so N nested `Any` layers cannot each spend the full
-    // allowance.
+    // propagating the lenient-parsing flag. The inner parse draws on the
+    // outer budget.
     let inner = NestedSeed {
         pool: Arc::clone(&pool),
         msg_idx: inner_idx,
@@ -616,7 +612,15 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
         budget,
     }
     .deserialize(inner_json)
-    .map_err(|e| D::Error::custom(format!("Any inner deserialize failed: {e}")))?;
+    .map_err(|e| {
+        // The budget error keeps its own text at any `Any` depth, so
+        // `DynamicMessageSeed::is_element_memory_limit_error` recognises it.
+        if DynamicMessageSeed::is_element_memory_limit_error(&e) {
+            D::Error::custom(e)
+        } else {
+            D::Error::custom(format!("Any inner deserialize failed: {e}"))
+        }
+    })?;
     let inner_bytes = inner
         .try_encode_to_vec()
         .map_err(|e| D::Error::custom(format!("Any inner re-encode failed: {e}")))?;
