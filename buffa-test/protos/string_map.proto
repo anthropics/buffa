@@ -20,6 +20,7 @@ import "google/protobuf/wrappers.proto";
 //   senum string→enum    : map_enum — custom key + open-enum value.
 //   wrapped string→UInt32Value : proto_str_key_map — custom key + wrapper
 //                               value uses the scalar ProtoJSON path.
+//   sbytes string→bytes  : custom string key + custom Bytes value.
 //
 // Compiling the crate exercises the owned codegen surface (the `ProtoStringMap`
 // codec for both key and value, view→owned `Into` conversion, vtable reflect,
@@ -34,6 +35,7 @@ message Maps {
   map<string, Inner> smsg = 5;
   map<string, Color> senum = 6;
   map<string, google.protobuf.UInt32Value> wrapped = 7;
+  map<string, bytes> sbytes = 8;
 }
 
 message Inner {

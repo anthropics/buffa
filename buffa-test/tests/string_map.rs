@@ -13,8 +13,8 @@
 //!   senum string→enum    : `map_enum`
 //!
 //! The checks below pin the field types and the binary / JSON / text / view→owned
-//! / reflection round-trips. `MapStr` is `Hash + Eq + Ord` (map key) and
-//! derives serde + (under the feature) `Arbitrary`.
+//! / reflection round-trips. `MapStr` is `Hash + Eq + Ord` (map key) and derives
+//! serde; generated arbitrary helpers construct it from canonical strings.
 
 use buffa::{Map, Message};
 use buffa_test::string_map::{Color, Inner, MapStr, Maps};
@@ -150,13 +150,14 @@ fn reflect_map_key_and_value() {
 fn arbitrary_builds_custom_string_map() {
     use arbitrary::{Arbitrary, Unstructured};
 
-    // The struct derives `Arbitrary`; each custom-string map slot requires the
-    // newtype's own `Arbitrary` impl (the map path has no per-key shim). Build
-    // one and touch the custom-keyed field to pin the derive ran.
     let raw: [u8; 256] = core::array::from_fn(|i| i as u8);
     let mut u = Unstructured::new(&raw);
     let msg = Maps::arbitrary(&mut u).unwrap();
     for k in msg.ss.keys() {
         let _: &str = k.as_ref();
+    }
+    for (k, v) in &msg.sbytes {
+        let _: &str = k.as_ref();
+        let _: &[u8] = v.as_ref();
     }
 }

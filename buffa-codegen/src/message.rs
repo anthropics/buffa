@@ -1606,6 +1606,9 @@ struct FieldInfo {
     /// `proto_str_key_map` (serde-based key handling) instead. See
     /// `map_serde_module`.
     map_key_custom_string: bool,
+    /// Whether this field's map value is proto `string` and has a custom
+    /// `string_type` representation.
+    map_value_custom_string: bool,
     /// The bare inner type `T` when `is_optional = true` (`rust_type` is `Option<T>`).
     /// `None` for all non-optional fields.
     inner_opt_type: Option<TokenStream>,
@@ -1822,8 +1825,9 @@ fn classify_field(
         None
     };
 
-    let map_key_custom_string = map_key_type == Some(Type::TYPE_STRING)
-        && matches!(map_string_repr, crate::StringRepr::Custom(_));
+    let map_string_is_custom = matches!(map_string_repr, crate::StringRepr::Custom(_));
+    let map_key_custom_string = map_key_type == Some(Type::TYPE_STRING) && map_string_is_custom;
+    let map_value_custom_string = map_value_type == Some(Type::TYPE_STRING) && map_string_is_custom;
 
     Ok(FieldInfo {
         rust_type,
@@ -1842,6 +1846,7 @@ fn classify_field(
         map_value_is_wkt_wrapper,
         map_value_enum_closed,
         map_key_custom_string,
+        map_value_custom_string,
         inner_opt_type,
     })
 }
@@ -1919,11 +1924,9 @@ fn generate_field(
     let custom_field_attrs =
         CodeGenContext::matching_attributes(&ctx.config.field_attributes, &field_fqn)?;
     // Non-default `string`/`bytes` representations attach a type-agnostic
-    // `Arbitrary` builder, selected by field *kind* (string vs bytes, singular
-    // vs optional vs repeated) rather than by concrete type. The builder
-    // materializes the canonical `String`/`Vec<u8>` and converts via `From`, so
-    // a substituted type needs no native `Arbitrary` impl. The default
-    // `String`/`Vec<u8>` representations keep their native derive (no attr).
+    // `Arbitrary` builder. It materializes canonical `String`/`Vec<u8>` values
+    // and converts via `From`, so substituted types need no native `Arbitrary`.
+    // Default representations keep their native derive (no attribute).
     let arbitrary_field_attr = if ctx.config.generate_arbitrary
         && !info.bytes_repr.is_default()
         && !info.is_map
@@ -1936,11 +1939,26 @@ fn generate_field(
             quote! { ::buffa::__private::arbitrary_proto_bytes }
         };
         quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = #helper))] }
+    } else if ctx.config.generate_arbitrary
+        && info.map_key_custom_string
+        && !info.map_value_bytes_repr.is_default()
+    {
+        quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = ::buffa::__private::arbitrary_proto_string_bytes_map))] }
     } else if ctx.config.generate_arbitrary && !info.map_value_bytes_repr.is_default() {
         // A non-default `map<K, bytes>` value (`Bytes` or a custom type) needs
         // the generic shim: it builds `HashMap<K, Vec<u8>>` first and maps values
         // through `From`, so the value type needs no native `Arbitrary` impl.
         quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = ::buffa::__private::arbitrary_proto_bytes_map))] }
+    } else if ctx.config.generate_arbitrary
+        && (info.map_key_custom_string || info.map_value_custom_string)
+    {
+        let helper = match (info.map_key_custom_string, info.map_value_custom_string) {
+            (true, true) => quote! { ::buffa::__private::arbitrary_proto_string_map },
+            (true, false) => quote! { ::buffa::__private::arbitrary_proto_string_map_key },
+            (false, true) => quote! { ::buffa::__private::arbitrary_proto_string_map_value },
+            (false, false) => unreachable!(),
+        };
+        quote! { #[cfg_attr(feature = "arbitrary", arbitrary(with = #helper))] }
     } else if ctx.config.generate_arbitrary && !info.string_repr.is_default() && !info.is_map {
         let helper = if info.is_optional {
             quote! { ::buffa::__private::arbitrary_proto_string_opt }

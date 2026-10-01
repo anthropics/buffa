@@ -1195,6 +1195,43 @@ fn inline_string_custom_emits_generic_arbitrary_builder() {
 }
 
 #[test]
+fn inline_custom_string_map_fields_use_generic_arbitrary_builders() {
+    use buffa_codegen::{BytesRepr, StringRepr};
+
+    let mut config = no_views();
+    config.generate_arbitrary = true;
+    config
+        .string_fields
+        .push((".".into(), StringRepr::Custom("::ecow::EcoString".into())));
+    config.bytes_fields.push((".".into(), BytesRepr::Bytes));
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package test;
+        message Msg {
+            map<string, int32> string_key = 1;
+            map<int32, string> string_value = 2;
+            map<string, string> both_strings = 3;
+            map<string, bytes> string_key_bytes_value = 4;
+        }
+        "#,
+        &config,
+    );
+
+    for helper in [
+        "arbitrary_proto_string_map_key",
+        "arbitrary_proto_string_map_value",
+        "arbitrary_proto_string_map",
+        "arbitrary_proto_string_bytes_map",
+    ] {
+        assert!(
+            content.contains(helper),
+            "custom string map fields must use {helper}: {content}"
+        );
+    }
+}
+
+#[test]
 fn inline_string_default_is_unchanged() {
     // With no string_fields rule, output must still use String + merge_string.
     let content = generate_proto(

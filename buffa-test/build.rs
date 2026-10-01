@@ -158,6 +158,7 @@ fn main() {
     buffa_build::Config::new()
         .files(&["protos/string_map.proto"])
         .includes(&["protos/"])
+        .bytes_type(buffa_build::BytesRepr::Bytes)
         .string_type_custom("crate::string_map::MapStr")
         .generate_json(true)
         .generate_text(true)

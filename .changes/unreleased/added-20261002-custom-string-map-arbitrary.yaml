@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **Generated `Arbitrary` support now covers custom string map keys and values.** The builder samples canonical `String` values and converts them to the configured custom type, so the type does not need its own `Arbitrary` impl. Custom string keys also work with custom `bytes` map values.
+time: 2026-10-02T00:20:03+02:00

@@ -421,15 +421,92 @@ pub mod __private {
         }
         Ok(out)
     }
+
+    /// Build a map with a custom `string` key from canonical `String` keys.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_string_map_key<'a, C>(
+        u: &mut ::arbitrary::Unstructured<'a>,
+    ) -> ::arbitrary::Result<C>
+    where
+        C: crate::map_codec::MapStorage + Default,
+        C::Key: crate::ProtoString,
+        C::Value: ::arbitrary::Arbitrary<'a>,
+    {
+        let mut out = C::default();
+        for entry in u.arbitrary_iter::<(::alloc::string::String, C::Value)>()? {
+            let (key, value) = entry?;
+            out.storage_insert(C::Key::from(key), value);
+        }
+        Ok(out)
+    }
+
+    /// Build a map with a custom `string` value from canonical `String` values.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_string_map_value<'a, C>(
+        u: &mut ::arbitrary::Unstructured<'a>,
+    ) -> ::arbitrary::Result<C>
+    where
+        C: crate::map_codec::MapStorage + Default,
+        C::Key: ::arbitrary::Arbitrary<'a>,
+        C::Value: crate::ProtoString,
+    {
+        let mut out = C::default();
+        for entry in u.arbitrary_iter::<(C::Key, ::alloc::string::String)>()? {
+            let (key, value) = entry?;
+            out.storage_insert(key, C::Value::from(value));
+        }
+        Ok(out)
+    }
+
+    /// Build a map with custom `string` keys and values from canonical strings.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_string_map<'a, C>(
+        u: &mut ::arbitrary::Unstructured<'a>,
+    ) -> ::arbitrary::Result<C>
+    where
+        C: crate::map_codec::MapStorage + Default,
+        C::Key: crate::ProtoString,
+        C::Value: crate::ProtoString,
+    {
+        let mut out = C::default();
+        for entry in u.arbitrary_iter::<(::alloc::string::String, ::alloc::string::String)>()? {
+            let (key, value) = entry?;
+            out.storage_insert(C::Key::from(key), C::Value::from(value));
+        }
+        Ok(out)
+    }
+
+    /// Build a map with a custom `string` key and custom `bytes` value.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_string_bytes_map<'a, C>(
+        u: &mut ::arbitrary::Unstructured<'a>,
+    ) -> ::arbitrary::Result<C>
+    where
+        C: crate::map_codec::MapStorage + Default,
+        C::Key: crate::ProtoString,
+        C::Value: crate::ProtoBytes,
+    {
+        let mut out = C::default();
+        for entry in u.arbitrary_iter::<(::alloc::string::String, ::alloc::vec::Vec<u8>)>()? {
+            let (key, value) = entry?;
+            out.storage_insert(
+                C::Key::from(key),
+                <C::Value as ::core::convert::From<_>>::from(value),
+            );
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(all(test, feature = "arbitrary"))]
 mod arbitrary_tests {
     use super::__private::{
         arbitrary_proto_bytes, arbitrary_proto_bytes_opt, arbitrary_proto_bytes_vec,
+        arbitrary_proto_string_bytes_map, arbitrary_proto_string_map,
+        arbitrary_proto_string_map_key, arbitrary_proto_string_map_value, HashMap,
     };
     use ::bytes::Bytes;
-    use alloc::vec::Vec;
+    use alloc::{string::String, vec::Vec};
     use arbitrary::{Arbitrary, Unstructured};
 
     /// Non-zero seed so the helper has data to consume — an all-zero buffer
@@ -488,11 +565,50 @@ mod arbitrary_tests {
     #[test]
     fn arbitrary_proto_string_matches_string() {
         use super::__private::arbitrary_proto_string;
-        use alloc::string::String;
 
         let s: String = arbitrary_proto_string(&mut Unstructured::new(&SEED)).unwrap();
         let v: String = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
         assert_eq!(s, v);
+    }
+
+    #[test]
+    fn arbitrary_proto_string_map_key_matches_native_map() {
+        let mapped: HashMap<String, u32> =
+            arbitrary_proto_string_map_key(&mut Unstructured::new(&SEED)).unwrap();
+        let native: HashMap<String, u32> =
+            Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(mapped, native);
+    }
+
+    #[test]
+    fn arbitrary_proto_string_map_value_matches_native_map() {
+        let mapped: HashMap<u32, String> =
+            arbitrary_proto_string_map_value(&mut Unstructured::new(&SEED)).unwrap();
+        let native: HashMap<u32, String> =
+            Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(mapped, native);
+    }
+
+    #[test]
+    fn arbitrary_proto_string_map_matches_native_map() {
+        let mapped: HashMap<String, String> =
+            arbitrary_proto_string_map(&mut Unstructured::new(&SEED)).unwrap();
+        let native: HashMap<String, String> =
+            Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(mapped, native);
+    }
+
+    #[test]
+    fn arbitrary_proto_string_bytes_map_matches_native_map() {
+        let mapped: HashMap<String, Bytes> =
+            arbitrary_proto_string_bytes_map(&mut Unstructured::new(&SEED)).unwrap();
+        let mapped: HashMap<String, Vec<u8>> = mapped
+            .into_iter()
+            .map(|(key, value)| (key, value.to_vec()))
+            .collect();
+        let native: HashMap<String, Vec<u8>> =
+            Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(mapped, native);
     }
 }
 

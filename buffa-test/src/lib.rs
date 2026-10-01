@@ -419,11 +419,6 @@ pub mod string_map {
         ::serde::Serialize,
         ::serde::Deserialize,
     )]
-    // A custom string used in a `map` under `generate_arbitrary` must impl
-    // `Arbitrary` (unlike singular/repeated string fields, which get a generic
-    // builder): the map arbitrary path has no per-key shim. Deriving it on the
-    // newtype is the one-line requirement.
-    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct MapStr(pub ::buffa::alloc::string::String);
 
     impl ::core::ops::Deref for MapStr {
