@@ -51,10 +51,14 @@ pub enum UnescapeError {
 /// Returns [`UnescapeError::BadEscape`] on the first malformed escape or
 /// structural problem encountered.
 pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
-    debug_assert!(
-        matches!(raw.as_bytes().first(), Some(b'"' | b'\'')),
-        "unescape input must start with a quote; got {raw:?}"
-    );
+    if !matches!(raw.as_bytes().first(), Some(b'"' | b'\'')) {
+        let reason = if raw.is_empty() {
+            "unterminated string"
+        } else {
+            "string literal must start with a quote"
+        };
+        return Err(UnescapeError::BadEscape(reason));
+    }
     let mut out = Vec::new();
     let mut s = raw.as_bytes();
     loop {
@@ -358,6 +362,14 @@ mod tests {
         for &(input, expected) in cases {
             let got = unescape(input).ok();
             assert_eq!(got.as_deref(), expected, "input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn unescape_rejects_unquoted_input() {
+        for input in ["", "hello", " hello"] {
+            assert!(unescape(input).is_err(), "input: {input:?}");
+            assert!(unescape_str(input).is_err(), "input: {input:?}");
         }
     }
 

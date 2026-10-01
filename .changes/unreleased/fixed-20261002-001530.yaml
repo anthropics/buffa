@@ -1,0 +1,3 @@
+kind: Fixed
+body: Reject unquoted textproto string input.
+time: 2026-10-02T00:15:30.668802+02:00
