@@ -225,7 +225,7 @@ jobs:
       # The table codec needs `offset_of!`, stable in 1.77; the workspace
       # check above compiles it out at 1.75. This is the oldest compiler that
       # builds the table interpreters and the generated table code.
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (sha-pinned)
         with:
           toolchain: '1.77'
 
