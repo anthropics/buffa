@@ -909,6 +909,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for shared_pool protos");
 
+    // `buffa.ext` options. protoc resolves the import from the
+    // `buffa-proto-options` crate's `protos/` directory, codegen runs over a
+    // schema that sets every option, and vtable reflection embeds the
+    // descriptors so that tests/ext_options.rs can read the options back.
+    buffa_build::Config::new()
+        .files(&["protos/ext_options.proto"])
+        .includes(&["protos/", "../buffa-proto-options/protos/"])
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for ext_options.proto");
+
     // Edition 2024 — requires protoc v30+ (stabilized edition 2024).
     // Older protoc rejects it with "later than the maximum supported edition".
     // Skip gracefully on older protoc so the crate still builds; tests are

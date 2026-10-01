@@ -598,10 +598,11 @@ tasks:
 
   # ── Checked-in generated code ─────────────────────────────────────────
   #
-  # Two sets of generated code are checked into the repo:
-  #   - buffa-descriptor/src/generated/  (bootstrap descriptor types)
-  #   - buffa-types/src/generated/    (well-known types)
-  # CI (check-generated-code) fails if either is stale.
+  # These sets of generated code are checked into the repo:
+  #   - buffa-descriptor/src/generated/     (bootstrap descriptor types)
+  #   - buffa-types/src/generated/          (well-known types)
+  #   - buffa-proto-options/src/generated/  (buffa's custom options)
+  # CI (check-generated-code) fails if any of them is stale.
 
   gen-bootstrap-types:
     desc: >-
@@ -617,8 +618,10 @@ tasks:
     desc: >-
       Re-fetch buffa-descriptor/protos/ from the protobuf release matching
       TOOLS_IMAGE. Run this when bumping the protobuf version, then follow
-      with `task gen-bootstrap-types` and commit both. Uses gh (authenticated
-      API) rather than raw curl to avoid GitHub's anonymous rate limit.
+      with `task gen-bootstrap-types` and `task gen-option-types`
+      (buffa-proto-options embeds descriptor.proto) and commit all three. Uses
+      gh (authenticated API) rather than raw curl to avoid GitHub's anonymous
+      rate limit.
     vars:
       PROTO_VER:
         sh: echo "{{.TOOLS_IMAGE}}" | sed 's/.*:v//'
@@ -660,6 +663,16 @@ tasks:
         google/protobuf/type.proto
         google/protobuf/wrappers.proto
       - cargo run -p buffa-codegen --bin gen_wkt_types -- /tmp/wkt.pb buffa-types/src/generated
+
+  gen-option-types:
+    desc: >-
+      Regenerate buffa-proto-options/src/generated/ (the option messages and
+      extensions of buffa/ext/options.proto). Run this after editing
+      options.proto or after any codegen change that affects output format.
+      descriptor.proto is read from buffa-descriptor/protos/ (pinned), so only
+      a protoc binary (v27+) is required.
+    cmds:
+      - scripts/gen-option-types.sh
 
   # ── Examples ──────────────────────────────────────────────────────────
 
@@ -794,9 +807,9 @@ tasks:
 
   check-nostd:
     desc: >-
-      Check that buffa, buffa-types, and buffa-descriptor compile in
-      no_std + alloc configuration — the same crates the CI check-nostd job
-      covers. The host checks disable the std-only features; the bare-metal
+      Check that buffa, buffa-types, buffa-descriptor, and buffa-proto-options
+      compile in no_std + alloc configuration — the same crates the CI
+      check-nostd job covers. The host checks disable the std-only features; the bare-metal
       ARM Cortex-M4 (thumbv7em) check verifies true no_std with no OS or libc.
       The bare-metal target is added on demand (rustup target add is
       idempotent), so this task needs no separate install-targets step.
@@ -810,19 +823,21 @@ tasks:
       - cargo check -p buffa-types --no-default-features --features jiff
       - cargo check -p buffa-descriptor --no-default-features
       - cargo check -p buffa-descriptor --no-default-features --features json,reflect,text,views
+      - cargo check -p buffa-proto-options --no-default-features
+      - cargo check -p buffa-proto-options --no-default-features --features json,text,views
   # ── Coverage ─────────────────────────────────────────────────────────
 
   coverage:
     desc: Generate a line-coverage summary for the workspace.
     vars:
-      IGNORE: "--ignore-filename-regex 'generated/|gen_descriptor_types|gen_wkt_types'"
+      IGNORE: "--ignore-filename-regex 'generated/|gen_descriptor_types|gen_wkt_types|gen_option_types'"
     cmds:
       - cargo llvm-cov --workspace --features buffa/json {{.IGNORE}} --include-build-script --summary-only
 
   coverage-html:
     desc: Generate an HTML coverage report and open it in the browser.
     vars:
-      IGNORE: "--ignore-filename-regex 'generated/|gen_descriptor_types|gen_wkt_types'"
+      IGNORE: "--ignore-filename-regex 'generated/|gen_descriptor_types|gen_wkt_types|gen_option_types'"
     cmds:
       - cargo llvm-cov --workspace --features buffa/json {{.IGNORE}} --include-build-script --open
 
