@@ -557,6 +557,7 @@ impl<T: DefaultInstance, P: ProtoBox<T>> Deref for MessageField<T, P> {
 }
 
 impl<T: Default + Clone, P: ProtoBox<T> + Clone> Clone for MessageField<T, P> {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),

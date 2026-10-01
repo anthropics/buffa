@@ -50,6 +50,10 @@ harness = false
 required-features = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "mesh", "column_batch", "lazy"]
 
 [[bench]]
+name = "message_field_clone"
+harness = false
+
+[[bench]]
 name = "reflect"
 harness = false
 required-features = ["api_response", "log_record", "analytics_event", "google_message1", "media_frame", "packed_tile", "mesh", "column_batch", "reflect", "lazy"]

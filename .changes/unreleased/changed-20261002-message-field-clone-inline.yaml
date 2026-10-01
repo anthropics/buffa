@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`MessageField::clone` is marked `#[inline]`** so its small generic body can inline into optimized callers. A focused Criterion target covers set and unset inline-backed fields.
+time: 2026-10-02T00:37:38+02:00
