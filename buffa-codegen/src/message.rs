@@ -775,6 +775,7 @@ fn generate_message_with_nesting(
     // Generate a manual Debug impl that excludes internal __buffa_ fields.
     // Fields marked `[debug_redact = true]` print DEBUG_REDACT_PLACEHOLDER
     // instead of their value, mirroring protobuf's DebugString redaction.
+    // Omitted when a `skip_debug` rule covers the message.
     let struct_name_str = name_ident.to_string();
     // Labels match what `#[derive(Debug)]` prints: raw-ident fields (`r#type`)
     // show as `type`, consistent with the view struct's Debug impl.

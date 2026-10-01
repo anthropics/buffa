@@ -631,8 +631,13 @@ pub fn generate_oneof_enum(
     // instead of their payload. The `Debug` derive is swapped for a manual
     // impl only when at least one variant is redacted, so unaffected oneofs
     // keep byte-identical output.
+    //
+    // A `skip_debug` rule on the owning message leaves the oneof's `Debug` to
+    // the consuming crate as well.
     let any_redacted = variants_info.iter().any(|v| v.debug_redact);
-    let (debug_derive, debug_impl) = if any_redacted {
+    let (debug_derive, debug_impl) = if ctx.skip_debug(proto_fqn) {
+        (quote! { #[derive(Clone, PartialEq)] }, quote! {})
+    } else if any_redacted {
         let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
         let arms: Vec<TokenStream> = variants_info
             .iter()

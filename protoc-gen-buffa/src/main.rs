@@ -225,6 +225,23 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     true,
                 ));
             }
+            // Repeatable. Omits the generated `Debug` for matching messages
+            // and for enums named exactly, so the crate can write its own.
+            // Same path grammar as `unknown_fields_in`. The option takes a
+            // path where its unsuffixed siblings take a boolean, so a boolean
+            // is rejected instead of becoming the rule `.true`.
+            "skip_debug" => {
+                let path = value.trim();
+                if matches!(path, "true" | "false") {
+                    return Err(format!(
+                        "skip_debug takes a proto path, not '{path}'; \
+                         use 'skip_debug=.' to match every message"
+                    ));
+                }
+                codegen
+                    .skip_debug
+                    .push(normalize_proto_path(path, "skip_debug")?);
+            }
             "text" => codegen.generate_text = parse_bool("text", value)?,
             "arbitrary" => codegen.generate_arbitrary = parse_bool("arbitrary", value)?,
             // `gate_impls=true` wraps generated impls in `#[cfg(feature = ...)]`
@@ -638,6 +655,15 @@ mod tests {
         ] {
             assert!(parse_config(params).is_err(), "{params}");
         }
+    }
+
+    #[test]
+    fn skip_debug_is_repeatable_and_normalized() {
+        let config = parse_config("skip_debug=demo.Uuid4,skip_debug=.demo.Level.").unwrap();
+        assert_eq!(config.codegen.skip_debug, [".demo.Uuid4", ".demo.Level"]);
+        assert!(parse_config("skip_debug=").is_err());
+        let err = parse_err("skip_debug=true");
+        assert!(err.contains("takes a proto path"), "{err}");
     }
 
     #[test]

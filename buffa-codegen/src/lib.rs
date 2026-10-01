@@ -45,7 +45,7 @@ pub(crate) mod reflect_owned;
 pub(crate) mod reflect_view;
 pub(crate) mod view;
 
-use crate::generated::descriptor::{DescriptorProto, FileDescriptorProto};
+use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDescriptorProto};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -1188,12 +1188,25 @@ pub struct CodeGenConfig {
     /// covered. Map values are always `Vec<u8>` regardless of `bytes_fields`
     /// and require no special handling.
     pub generate_arbitrary: bool,
-    /// Proto path prefixes for messages whose owned types should omit the
-    /// generated `Debug` implementation.
+    /// Proto paths of the messages and enums whose generated `Debug`
+    /// implementation is omitted, so that the consuming crate can write its
+    /// own.
     ///
-    /// Matching is proto-segment-aware: `".pkg.Msg"` matches that message
-    /// and messages nested inside it, while `"."` matches every message.
-    /// View types and oneof enums are unaffected.
+    /// For messages a rule is a proto-segment-aware prefix: `".pkg.Msg"`
+    /// matches that message and the messages nested inside it, `".pkg"`
+    /// matches every message in the package and its sub-packages, and `"."`
+    /// matches every message. The oneof enums of a matched message lose
+    /// their `Debug` with it. An enum loses its `Debug` only when a rule is
+    /// its exact name, such as `".pkg.Level"`. View types keep theirs.
+    ///
+    /// A matched enum does not compile until the crate implements `Debug`
+    /// for it, because `buffa::Enumeration` requires `Debug`. A matched
+    /// message needs an impl when an unmatched message or oneof holds it,
+    /// because their generated `Debug` formats it, and whenever reflection
+    /// is generated, because `ReflectElement` requires `Debug`.
+    ///
+    /// A rule that matches no generated message and names no generated enum
+    /// produces [`CodeGenWarning::SkipDebugRuleMatchedNothing`].
     pub skip_debug: Vec<String>,
     /// External type path mappings.
     ///
@@ -2190,6 +2203,18 @@ pub enum CodeGenWarning {
         /// The rule's path as configured.
         rule: String,
     },
+    /// A [`skip_debug`](CodeGenConfig::skip_debug) rule matched no generated
+    /// message and named no generated enum, so it changed nothing. Usually a
+    /// typo, a field or oneof path instead of a type path (a oneof is covered
+    /// by its message's rule), or a rule for a package mapped through
+    /// `extern_path`. Every generated `Debug` impl is still emitted, so a
+    /// hand-written impl for the intended type fails to compile as a
+    /// conflicting implementation.
+    #[non_exhaustive]
+    SkipDebugRuleMatchedNothing {
+        /// The rule's path as configured.
+        rule: String,
+    },
 }
 
 impl core::fmt::Display for CodeGenWarning {
@@ -2328,8 +2353,41 @@ impl core::fmt::Display for CodeGenWarning {
                      check the path against the fully-qualified proto message names"
                 )
             }
+            Self::SkipDebugRuleMatchedNothing { rule } => {
+                write!(
+                    f,
+                    "skip_debug rule '{rule}' matched no generated message or enum, \
+                     so a hand-written Debug impl will conflict with the generated one — \
+                     use the fully-qualified proto type name \
+                     (a oneof is covered by its message's rule)"
+                )
+            }
         }
     }
+}
+
+/// The files named in `files_to_generate`, each with its package as a
+/// leading-dot proto path (empty for a file without a package).
+fn generated_files<'a>(
+    file_descriptors: &'a [FileDescriptorProto],
+    files_to_generate: &'a [String],
+) -> impl Iterator<Item = (&'a FileDescriptorProto, String)> {
+    file_descriptors
+        .iter()
+        .filter(move |fd| {
+            fd.name
+                .as_deref()
+                .is_some_and(|n| files_to_generate.iter().any(|g| g == n))
+        })
+        .map(|fd| {
+            let package = fd.package.as_deref().unwrap_or("");
+            let package_fqn = if package.is_empty() {
+                String::new()
+            } else {
+                format!(".{package}")
+            };
+            (fd, package_fqn)
+        })
 }
 
 /// Whether `rule` (a leading-dot proto path prefix) matches at least one
@@ -2348,22 +2406,34 @@ fn rule_matches_generated_message(
     }
 
     rule == "."
-        || file_descriptors
+        || generated_files(file_descriptors, files_to_generate)
+            .any(|(fd, package_fqn)| any_message_matches(rule, &package_fqn, &fd.message_type))
+}
+
+/// Whether `rule` (a leading-dot proto path) is the fully-qualified name of
+/// an enum, top-level or nested in a message, declared in
+/// `files_to_generate`.
+fn rule_names_generated_enum(
+    rule: &str,
+    file_descriptors: &[FileDescriptorProto],
+    files_to_generate: &[String],
+) -> bool {
+    fn names_enum(rule: &str, parent_fqn: &str, enums: &[EnumDescriptorProto]) -> bool {
+        enums
             .iter()
-            .filter(|fd| {
-                fd.name
-                    .as_deref()
-                    .is_some_and(|n| files_to_generate.iter().any(|g| g == n))
-            })
-            .any(|fd| {
-                let package = fd.package.as_deref().unwrap_or("");
-                let parent_fqn = if package.is_empty() {
-                    String::new()
-                } else {
-                    format!(".{package}")
-                };
-                any_message_matches(rule, &parent_fqn, &fd.message_type)
-            })
+            .any(|e| format!("{parent_fqn}.{}", e.name.as_deref().unwrap_or("")) == rule)
+    }
+    fn names_nested_enum(rule: &str, parent_fqn: &str, messages: &[DescriptorProto]) -> bool {
+        messages.iter().any(|m| {
+            let fqn = format!("{parent_fqn}.{}", m.name.as_deref().unwrap_or(""));
+            names_enum(rule, &fqn, &m.enum_type) || names_nested_enum(rule, &fqn, &m.nested_type)
+        })
+    }
+
+    generated_files(file_descriptors, files_to_generate).any(|(fd, package_fqn)| {
+        names_enum(rule, &package_fqn, &fd.enum_type)
+            || names_nested_enum(rule, &package_fqn, &fd.message_type)
+    })
 }
 
 /// Generate Rust source files from a set of file descriptors.
@@ -3009,6 +3079,16 @@ pub fn generate_with_diagnostics(
             ctx.warn(CodeGenWarning::DenyUnknownJsonFieldsRuleMatchedNothing {
                 rule: rule.clone(),
             });
+        }
+    }
+
+    // Warn per inert `skip_debug` rule; `SkipDebugRuleMatchedNothing`
+    // documents the consequence.
+    for rule in &config.skip_debug {
+        if !rule_matches_generated_message(rule, file_descriptors, files_to_generate)
+            && !rule_names_generated_enum(rule, file_descriptors, files_to_generate)
+        {
+            ctx.warn(CodeGenWarning::SkipDebugRuleMatchedNothing { rule: rule.clone() });
         }
     }
 

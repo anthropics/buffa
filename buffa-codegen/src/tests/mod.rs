@@ -71,8 +71,8 @@ mod reflect_view;
 mod repeated_type;
 mod shared_corpus_context;
 mod shared_pool;
-mod skip_debug;
 mod size_arithmetic;
+mod skip_debug;
 mod view_codegen;
 
 /// Wrap paths as `EnumType(Open)` feature overrides — the shape used by the

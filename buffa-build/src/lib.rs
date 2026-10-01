@@ -205,23 +205,76 @@ impl Config {
         self
     }
 
-    /// Omit the generated `Debug` implementation for matching owned messages.
+    /// Omit the generated `Debug` implementation for the matching messages
+    /// and enums, so that your crate can write its own.
     ///
-    /// Each path is a fully-qualified proto path prefix, e.g.
-    /// `".demo.Uuid4"` for one message or `".demo"` for a package. A rule
-    /// naming a message also covers messages nested inside it, and `"."`
-    /// matches every message. A leading dot is added if missing and trailing
-    /// dots are trimmed.
+    /// Each path is a fully-qualified proto path. For messages it is a
+    /// prefix: `".demo.Uuid4"` names that message and the messages nested
+    /// inside it, `".demo"` every message in the package and its
+    /// sub-packages, and `"."` every message. A matched message's oneof
+    /// enums lose their `Debug` with it. An enum loses its `Debug` only when
+    /// a path is its exact name, such as `".demo.Level"`: a message or
+    /// package path leaves the enums under it as they are. A leading dot is
+    /// added if missing and trailing dots are trimmed. Repeated calls
+    /// accumulate.
     ///
-    /// View types and oneof enums keep their generated `Debug`
-    /// implementations. Repeated calls accumulate.
+    /// View types keep their generated `Debug`, so a view still prints every
+    /// field. To hide a field's value in all generated `Debug` output, use
+    /// the `[debug_redact = true]` field option instead. That option does
+    /// not reach a matched message or oneof: your impl decides what it
+    /// prints.
+    ///
+    /// Your crate then implements `Debug`:
+    ///
+    /// - for every matched enum, because [`buffa::Enumeration`] requires it;
+    /// - for a matched message that an unmatched message or oneof holds
+    ///   (their generated `Debug` formats it), that is generated with
+    ///   reflection, or that a custom `repeated_type` collection holds;
+    /// - for a matched message's oneof enum, if your `Debug` for the message
+    ///   prints it. For a oneof `kind` in `demo.Uuid4` the enum is
+    ///   `demo::uuid4::Kind`.
+    ///
+    /// A missing impl is a compile error. For an enum it is error E0277
+    /// (`Level` doesn't implement `Debug`) at the generated
+    /// `impl ::buffa::Enumeration for Level`. A path that matches no
+    /// generated message and names no generated enum prints a
+    /// `cargo:warning`.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // build.rs
+    /// buffa_build::Config::new()
+    ///     .files(&["proto/demo.proto"])
+    ///     .includes(&["proto/"])
+    ///     .skip_debug(&[".demo.Uuid4", ".demo.Level"])
+    ///     .compile()?;
+    ///
+    /// // src/lib.rs
+    /// pub mod demo {
+    ///     buffa::include_proto!("demo");
+    /// }
+    ///
+    /// impl core::fmt::Debug for demo::Uuid4 {
+    ///     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    ///         write!(f, "Uuid4({:016x}{:016x})", self.msb, self.lsb)
+    ///     }
+    /// }
+    ///
+    /// // Prints the value's proto name, as the derive it replaces does.
+    /// impl core::fmt::Debug for demo::Level {
+    ///     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    ///         f.write_str(buffa::Enumeration::proto_name(self))
+    ///     }
+    /// }
+    /// ```
     #[must_use]
     pub fn skip_debug(mut self, paths: &[impl AsRef<str>]) -> Self {
         for raw in paths.iter().map(AsRef::as_ref) {
             let normalized = normalize_override_path(raw);
             if normalized.is_empty() {
                 println!(
-                    "cargo:warning=buffa: skip_debug path '{raw}' \\
+                    "cargo:warning=buffa: skip_debug path '{raw}' \
                      normalizes to empty and will be ignored"
                 );
                 continue;
@@ -2184,10 +2237,8 @@ fn normalize_attr_path(mut path: String) -> String {
     path
 }
 
-/// Normalize an `override_feature_in` / `preserve_unknown_fields_in` /
-/// `deny_unknown_json_fields_in` / `skip_debug` path:
-/// trim whitespace, prepend the leading dot if absent, and strip trailing
-/// dots. Unlike
+/// Normalize a path-scoped rule's proto path: trim whitespace, prepend the
+/// leading dot if absent, and strip trailing dots. Unlike
 /// [`normalize_attr_path`], an entry that normalizes to empty (e.g. `"..."`)
 /// is returned empty rather than collapsing to the `"."` catch-all — the
 /// caller skips it, so `"."` stays the only global opt-in spelling.
@@ -2613,6 +2664,19 @@ mod tests {
                 ".my.pkg.Msg.body.small".to_string(),
                 ".my.pkg.Other".to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn skip_debug_normalizes_and_accumulates_paths() {
+        let config = Config::new()
+            .skip_debug(&["demo.Uuid4", ".demo.Level.", "..."])
+            .skip_debug(&[" .demo.Other ", "."])
+            .codegen_config;
+        // `"..."` normalizes to empty and is dropped.
+        assert_eq!(
+            config.skip_debug,
+            [".demo.Uuid4", ".demo.Level", ".demo.Other", "."]
         );
     }
 

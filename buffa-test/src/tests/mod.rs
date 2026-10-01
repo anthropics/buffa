@@ -108,6 +108,7 @@ mod repeated_type;
 mod rope_encode;
 mod scoped_unknown_fields;
 mod shared_pool;
+mod skip_debug;
 mod strict_json;
 mod string_map;
 mod string_type;

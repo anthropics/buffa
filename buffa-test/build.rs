@@ -540,6 +540,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for debug_redact.proto");
 
+    // `skip_debug` — the hand-written `Debug` impls in `src/lib.rs` compile
+    // only if the generated ones are omitted. Views enabled so the view of a
+    // matched message compiles too.
+    buffa_build::Config::new()
+        .files(&["protos/skip_debug.proto"])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .skip_debug(&[".skip_debug.Token", ".skip_debug.Level"])
+        .compile()
+        .expect("buffa_build failed for skip_debug.proto");
+
     // Regression: use_bytes_type() previously produced uncompilable decode
     // code (merge_bytes expects &mut Vec<u8>, struct field was bytes::Bytes).
     // basic.proto has bytes fields (Person.avatar singular; BytesContexts

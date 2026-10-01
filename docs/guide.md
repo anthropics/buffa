@@ -209,7 +209,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.open_enums_in(&[...])` | — | Shorthand for `override_feature_in(path, FeatureOverride::EnumType(EnumTypeOverride::Open))` per path: treat matching closed enums (or closed enum fields) as open in generated Rust (`EnumValue<E>`) |
 | `.generate_with_setters(bool)` | `true` | Emit `with_<name>()` builder-style setters for explicit-presence fields |
 | `.generate_arbitrary(bool)` | `false` | Emit `#[derive(arbitrary::Arbitrary)]` gated behind the `arbitrary` feature (for fuzzing) |
-| `.skip_debug(&[...])` | — | Omit the generated `Debug` impl for matching owned messages (proto-path prefixes); view types and oneof enums are unchanged |
+| `.skip_debug(&[...])` | — | Omit the generated `Debug` impl for matching messages (proto-path prefixes), with their oneof enums, and for enums named exactly, so your crate can write its own. A matched enum needs a hand-written impl to compile. See [`skip_debug` and hand-written `Debug`](#skip_debug-and-hand-written-debug) |
 | `.gate_impls_on_crate_features(bool)` | `false` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface |
 | `.json_feature_name(name)` etc. | `"json"`, `"views"`, `"text"`, `"reflect"` | Rename the crate feature a gated impl kind is conditioned on (one setter per kind: `json_feature_name`, `views_feature_name`, `text_feature_name`, `reflect_feature_name`); inert without `gate_impls_on_crate_features`. The renamed feature must be declared in the consuming crate's `[features]` table — an undeclared name leaves the `#[cfg]` permanently false and the impls silently absent |
 | `.strict_utf8_mapping(bool)` | `false` | Map `utf8_validation = NONE` string fields to `Vec<u8>` / `&[u8]` instead of `String` (see [Skipping UTF-8 validation](#skipping-utf-8-validation)) |
@@ -614,6 +614,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `unknown_fields_in=<path>` | Re-enable unknown-field preservation for matching messages and the messages nested in them. Repeatable; same proto-path prefix matching as `open_enums_in`; see [Path-scoped re-enable](#path-scoped-re-enable) |
 | `deny_unknown_json_fields=true` | Reject unknown keys when parsing JSON instead of ignoring them; without `json=true` it changes nothing and the plugin prints a warning. See [Unknown fields in JSON](#unknown-fields-in-json) |
 | `deny_unknown_json_fields_in=<path>` | Reject unknown JSON keys for matching messages and the messages nested in them; rules can only enable, and need `json=true` like the global option. Repeatable; same proto-path prefix matching as `unknown_fields_in`. See [Unknown fields in JSON](#unknown-fields-in-json) |
+| `skip_debug=<path>` | Omit the generated `Debug` impl for matching messages (with their oneof enums) and for enums named exactly, so the crate can write its own. A matched enum needs a hand-written impl to compile. Repeatable; message paths use the same proto-path prefix matching as `unknown_fields_in`. See [`skip_debug` and hand-written `Debug`](#skip_debug-and-hand-written-debug) |
 | `arbitrary=true` | Emit `#[derive(arbitrary::Arbitrary)]` for fuzzing |
 | `gate_impls=true` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface (default: emitted unconditionally) |
 | `json_feature=<name>` | Rename the crate feature a gated impl kind is conditioned on (also `views_feature=`, `text_feature=`, `reflect_feature=`); inert without `gate_impls=true` |
@@ -1028,6 +1029,22 @@ lists proto fields only. The reflective `DynamicMessage` `Debug` impl honors
 the option too, so descriptor-driven decode paths redact the same fields.
 This affects `Debug` formatting only — binary, JSON, and text-format
 serialization are unchanged.
+
+### `skip_debug` and hand-written `Debug`
+
+`skip_debug` omits the generated `Debug` impl so that your crate can write its own, for example to print a UUID message as one hex string. A rule is a fully-qualified proto path:
+
+- A message path (`.demo.Uuid4`) covers that message, its oneof enums and the messages nested in it. A package path (`.demo`) covers every message in the package and its sub-packages, and `.` covers every message.
+- An enum loses its `Debug` only when a rule is its exact name (`.demo.Level`). A message or package rule leaves the enums under it as they are.
+- View types keep their generated `Debug`, so a view still prints every field. `skip_debug` is for formatting; to hide a value, use `[debug_redact = true]`, which covers the owned message, the view and reflective output. The option does not reach a matched message or oneof, whose output is your impl's.
+
+Your crate then implements `Debug` where something needs it:
+
+- for every matched enum, because `buffa::Enumeration` requires `Debug`. Writing `buffa::Enumeration::proto_name(self)` prints what the derive printed.
+- for a matched message that an unmatched message or oneof holds, that is generated with reflection, or that a custom `repeated_type` collection holds.
+- for a matched message's oneof enum, if your impl for the message prints it. For a oneof `kind` in `demo.Uuid4` the enum is `demo::uuid4::Kind`.
+
+A rule that matches no generated message and names no generated enum produces a build warning. The usual causes are a typo and a path without its package: `Uuid4` is read as `.Uuid4`.
 
 ## Encoding and decoding
 

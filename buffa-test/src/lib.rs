@@ -16,6 +16,38 @@ pub mod debug_redact {
     buffa::include_proto!("debug_redact");
 }
 
+/// `skip_debug` — hand-written `Debug` impls for the types `build.rs` names
+/// in its rules.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod skip_debug {
+    buffa::include_proto!("skip_debug");
+
+    use core::fmt;
+
+    impl fmt::Debug for Token {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "Token#{}", self.id)
+        }
+    }
+
+    impl fmt::Debug for token::Holder {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::User(name) => write!(f, "user:{name}"),
+                Self::Service(id) => write!(f, "service:{id}"),
+            }
+        }
+    }
+
+    // `buffa::Enumeration` requires `Debug`, so the module does not compile
+    // without this impl.
+    impl fmt::Debug for Level {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str(buffa::Enumeration::proto_name(self))
+        }
+    }
+}
+
 /// `box_type` + a crate-local `CustomBox<T>` pointer for singular message
 /// fields. `CustomBox<T>` is a thin `Box<T>`-backed `ProtoBox<T>` impl — the
 /// point is to exercise the generic codegen path (`MessageField<T,
