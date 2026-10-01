@@ -1,0 +1,3 @@
+kind: Added
+body: Add ServiceIndex::index() for direct access to the service ordinal in DescriptorPool::services().
+time: 2026-10-02T00:28:47.822349+02:00

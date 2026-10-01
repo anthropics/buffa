@@ -3721,6 +3721,49 @@ fn extension_index_ordinals_match_slice_positions() {
     }
 }
 
+/// `ServiceIndex::index` is the descriptor's position in `pool.services()`.
+#[test]
+fn service_index_ordinals_match_slice_positions() {
+    use buffa_descriptor::generated::descriptor::{
+        FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto,
+    };
+
+    let mut pool = DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS");
+    let first = pool
+        .service_index("reflect.test.Demo")
+        .expect("fixture service is registered");
+    let first_count = pool.services().len();
+
+    pool.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("ordinal-service-append.proto".into()),
+            package: Some("ordinal.append".into()),
+            syntax: Some("proto3".into()),
+            service: vec![ServiceDescriptorProto {
+                name: Some("Later".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("an empty service links");
+
+    assert_eq!(pool.services().len(), first_count + 1);
+    assert_eq!(
+        pool.service(first).full_name(),
+        "reflect.test.Demo",
+        "adding a file preserves existing service ordinals"
+    );
+
+    for (position, desc) in pool.services().iter().enumerate() {
+        let idx = pool
+            .service_index(desc.full_name())
+            .expect("every linked service resolves by its own full name");
+        assert_eq!(idx.index(), position, "service {}", desc.full_name());
+    }
+}
+
 /// The ordinals are dense over `0..len`, which is what lets a caller size a
 /// side table once and index it directly instead of hashing or binary
 /// searching.

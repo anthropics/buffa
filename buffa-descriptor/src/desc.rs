@@ -555,6 +555,19 @@ impl EnumValueDescriptor {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ServiceIndex(pub(crate) u32);
 
+impl ServiceIndex {
+    /// The ordinal of this index within the pool that issued it.
+    ///
+    /// Dense in `0..pool.services().len()`, and equal to this descriptor's
+    /// position in [`DescriptorPool::services`](crate::DescriptorPool::services).
+    /// Stable as files are added, like [`MessageIndex::index`], and equally
+    /// meaningless against any other pool.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
 /// A linked service descriptor.
 ///
 /// Carries the service's RPC methods. Used by gRPC server reflection,
