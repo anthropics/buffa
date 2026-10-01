@@ -253,25 +253,10 @@ fn serialize_scalar<S: Serializer>(sc: ScalarType, v: &Value, s: S) -> Result<S:
             s.serialize_str(&n.to_string())
         }
         (ScalarType::Float, Value::F32(f)) => json_helpers::float::serialize(f, s),
-        (ScalarType::Double, Value::F64(f)) => serialize_double(*f, s),
+        (ScalarType::Double, Value::F64(f)) => json_helpers::double::serialize(f, s),
         (ScalarType::String, Value::String(t)) => s.serialize_str(t),
         (ScalarType::Bytes, Value::Bytes(b)) => s.serialize_str(&base64_encode(b)),
         _ => s.serialize_none(),
-    }
-}
-
-/// Double with the proto3 JSON special-value mapping: NaN, Infinity,
-/// -Infinity serialize as strings. `float` does not need its own copy — it
-/// goes through [`json_helpers::float`], the module the generated typed impls
-/// are annotated with, so the two paths print the same shortest decimal for
-/// the same `f32`.
-fn serialize_double<S: Serializer>(f: f64, s: S) -> Result<S::Ok, S::Error> {
-    if f.is_nan() {
-        s.serialize_str("NaN")
-    } else if f.is_infinite() {
-        s.serialize_str(if f > 0.0 { "Infinity" } else { "-Infinity" })
-    } else {
-        s.serialize_f64(f)
     }
 }
 
@@ -783,21 +768,18 @@ fn scalar_from_u64(sc: ScalarType, v: u64) -> Option<Value> {
     })
 }
 
-/// Integer and float scalars go through the same serde with-modules generated
-/// messages use (`json_helpers::{int32, uint32, int64, uint64, float}`), so the
-/// reflective decoder accepts and rejects exactly what the generated one does:
-/// quoted decimal and exponent forms parse exactly across the full range, and
-/// unquoted floats are rejected above the magnitude where serde_json's float
-/// parsing can no longer identify the token uniquely.
+/// Integer and `float` scalars go through the same serde with-modules
+/// generated messages use (`json_helpers::{int32, uint32, int64, uint64,
+/// float}`), so the reflective decoder accepts and rejects exactly what the
+/// generated one does.
+///
+/// For the integer types, quoted decimal and exponent forms parse exactly
+/// across the full range, and unquoted floats are rejected above the
+/// magnitude where serde_json's float parsing can no longer identify the
+/// token uniquely.
 fn scalar_from_f64<E: de::Error>(sc: ScalarType, v: f64) -> Result<Value, E> {
     let d = v.into_deserializer();
     Ok(match sc {
-        // The shared module owns the f32 range rule: it compares the narrowed
-        // `f32`, so a decimal that lands just above `f32::MAX` but rounds back
-        // into range parses — which is exactly what the canonical text of
-        // `f32::MAX` itself does (`3.4028235e+38`). The hand-rolled
-        // `|v| > f64::from(f32::MAX)` test rejected both that and the widened
-        // text this codec writes.
         ScalarType::Float => Value::F32(json_helpers::float::deserialize(d)?),
         ScalarType::Double => Value::F64(v),
         ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => {

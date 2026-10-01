@@ -1249,7 +1249,9 @@ pub mod float {
             }
 
             fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<f32, E> {
-                // Reject finite values that overflow f32 range.
+                // The range check is on the narrowed `f32`: a decimal just
+                // above `f32::MAX` that rounds back into range parses, as the
+                // canonical text of `f32::MAX` (`3.4028235e+38`) does.
                 let f = v as f32;
                 if v.is_finite() && !f.is_finite() {
                     return Err(E::invalid_value(
