@@ -1,7 +1,7 @@
 kind: Added
 body: >-
-  **`Any::type_name`, `Any::is_type_name`, and `Any::unpack_if_type_name` match
-  an embedded message by the non-empty type-name segment after the last `/`.**
-  This works with custom type URL prefixes. Existing URL-specific methods still
-  compare the full URL.
+  **Add type-name and typed pack/unpack helpers for `Any` (#499).** `type_name`,
+  `is_type_name`, and `unpack_if_type_name` match custom type URL prefixes.
+  `pack_message`, `try_pack_message`, `is_message`, and `unpack_message` use
+  `MessageName`; existing explicit-URL methods remain available.
 time: 2026-10-01T23:58:11+02:00

@@ -1827,28 +1827,29 @@ Pack and unpack messages into `Any`:
 
 ```rust,ignore
 use buffa_types::google::protobuf::Any;
-use buffa::Message;
 
-// Pack
-let any = Any::pack(&my_message, MyMessage::TYPE_URL);
+// Pack with the generated type URL
+let any = Any::pack_message(&my_message);
 
 // Check type
-if any.is_type(MyMessage::TYPE_URL) { /* ... */ }
+if any.is_message::<MyMessage>() { /* ... */ }
 
 // Unpack
-let msg: Option<MyMessage> = any.unpack_if::<MyMessage>(MyMessage::TYPE_URL)?;
+let msg: Option<MyMessage> = any.unpack_message()?;
 
 // Match the message name while accepting a custom URL prefix
 let custom_any = Any::pack(&my_message, "custom.example/v1/my.package.MyMessage");
-let matches = custom_any.is_type_name("my.package.MyMessage");
-let msg: Option<MyMessage> =
-    custom_any.unpack_if_type_name("my.package.MyMessage")?;
+let msg: Option<MyMessage> = custom_any.unpack_message()?;
 ```
 
-`is_type` and `unpack_if` compare the whole URL, prefix included. Use
-`is_type_name` and `unpack_if_type_name` to match the message name after the
-last `/`, regardless of the URL prefix. JSON and text serialization also look
-the message up in the `TypeRegistry` by that name. The `Any` keeps its own URL.
+Use `try_pack_message` when you want oversized messages to return an error
+instead of panicking.
+
+`is_type` and `unpack_if` compare the whole URL, prefix included. The typed
+helpers use the message name after the last `/`, regardless of the URL prefix.
+Use `is_type_name` and `unpack_if_type_name` when you want to provide a name
+directly. JSON and text serialization also look the message up in the
+`TypeRegistry` by that name. The `Any` keeps its own URL.
 
 ### Value and Struct
 
@@ -1971,9 +1972,9 @@ Message-typed extension values are encoded to wire bytes on `set`, so
 `set_extension()` panics if the value's encoded size exceeds the 2 GiB
 protobuf limit; `try_set_extension()` returns
 `Err(EncodeError::MessageTooLarge)` instead and leaves the extendee
-unchanged. (Scalar-typed extensions cannot fail.) `Any::pack` has the same
-shape: it panics on an over-limit message, and `Any::try_pack` is the
-error-returning twin.
+unchanged. (Scalar-typed extensions cannot fail.) `Any::pack` and
+`Any::pack_message` panic on an over-limit message; `Any::try_pack` and
+`Any::try_pack_message` return the error instead.
 
 ### Extendee identity check
 

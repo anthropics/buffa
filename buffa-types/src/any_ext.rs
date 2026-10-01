@@ -43,6 +43,37 @@ impl Any {
         })
     }
 
+    /// Pack a message into an [`Any`] using its generated type URL.
+    ///
+    /// This keeps the type URL tied to the message type. Use [`Any::pack`]
+    /// when you need to choose a custom type URL.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `msg`'s encoded size exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]) — see [`Any::try_pack_message`] for the
+    /// error-returning variant.
+    pub fn pack_message<T>(msg: &T) -> Self
+    where
+        T: buffa::Message + buffa::MessageName,
+    {
+        Self::pack(msg, <T as buffa::MessageName>::TYPE_URL)
+    }
+
+    /// Pack a message using its generated type URL, returning an error
+    /// instead of panicking if the message exceeds the 2 GiB protobuf limit.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`buffa::EncodeError::MessageTooLarge`] if the encoded size
+    /// exceeds the limit.
+    pub fn try_pack_message<T>(msg: &T) -> Result<Self, buffa::EncodeError>
+    where
+        T: buffa::Message + buffa::MessageName,
+    {
+        Self::try_pack(msg, <T as buffa::MessageName>::TYPE_URL)
+    }
+
     /// Unpack the contained message, decoding its bytes as `T`, **without
     /// checking the `type_url`**.
     ///
@@ -99,6 +130,23 @@ impl Any {
         T::decode(&mut self.value.as_ref()).map(Some)
     }
 
+    /// Unpack the contained message as `T` when its protobuf message name
+    /// matches `T`'s generated name.
+    ///
+    /// This accepts any type URL prefix. Returns `Ok(None)` when the URL has
+    /// no message name or carries a different name.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`buffa::DecodeError`] if the message name matches but the
+    /// bytes cannot be decoded as `T`.
+    pub fn unpack_message<T>(&self) -> Result<Option<T>, buffa::DecodeError>
+    where
+        T: buffa::Message + buffa::MessageName,
+    {
+        self.unpack_if_type_name(<T as buffa::MessageName>::FULL_NAME)
+    }
+
     /// Returns `true` if this [`Any`]'s `type_url` matches the given string.
     ///
     /// The comparison is on the whole URL, prefix included. The JSON and text
@@ -123,6 +171,14 @@ impl Any {
     /// type URL prefix. Returns `false` when the type URL has no message name.
     pub fn is_type_name(&self, type_name: &str) -> bool {
         self.type_name() == Some(type_name)
+    }
+
+    /// Returns `true` if this `Any` carries the protobuf message name for `T`.
+    ///
+    /// The type URL prefix is ignored. Returns `false` when the URL has no
+    /// message name.
+    pub fn is_message<T: buffa::MessageName>(&self) -> bool {
+        self.is_type_name(<T as buffa::MessageName>::FULL_NAME)
     }
 
     /// Returns the type URL stored in this [`Any`].
@@ -525,6 +581,13 @@ mod tests {
     #[derive(Clone, Default, PartialEq, Debug)]
     struct HugeMsg;
 
+    impl buffa::MessageName for HugeMsg {
+        const PACKAGE: &'static str = "test";
+        const NAME: &'static str = "HugeMsg";
+        const FULL_NAME: &'static str = "test.HugeMsg";
+        const TYPE_URL: &'static str = "type.googleapis.com/test.HugeMsg";
+    }
+
     impl buffa::DefaultInstance for HugeMsg {
         fn default_instance() -> &'static Self {
             static INST: buffa::__private::OnceBox<HugeMsg> = buffa::__private::OnceBox::new();
@@ -571,6 +634,42 @@ mod tests {
         };
         let url = "type.googleapis.com/google.protobuf.Timestamp";
         assert_eq!(Any::try_pack(&ts, url).unwrap(), Any::pack(&ts, url));
+    }
+
+    #[test]
+    fn pack_message_uses_the_generated_type_url() {
+        let ts = Timestamp {
+            seconds: 42,
+            ..Default::default()
+        };
+        let any = Any::pack_message(&ts);
+
+        assert_eq!(any.type_url(), <Timestamp as buffa::MessageName>::TYPE_URL);
+        assert_eq!(any.unpack_message::<Timestamp>().unwrap(), Some(ts));
+    }
+
+    #[test]
+    fn try_pack_message_matches_pack_message() {
+        let ts = Timestamp {
+            seconds: 42,
+            ..Default::default()
+        };
+
+        assert_eq!(Any::try_pack_message(&ts).unwrap(), Any::pack_message(&ts));
+    }
+
+    #[test]
+    fn try_pack_message_over_limit_errs() {
+        assert_eq!(
+            Any::try_pack_message(&HugeMsg),
+            Err(buffa::EncodeError::MessageTooLarge)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "2 GiB protobuf limit")]
+    fn pack_message_over_limit_panics() {
+        let _ = Any::pack_message(&HugeMsg);
     }
 
     #[test]
@@ -661,6 +760,46 @@ mod tests {
             .unpack_if_type_name("google.protobuf.Timestamp")
             .unwrap();
         assert_eq!(result, Some(ts));
+    }
+
+    #[test]
+    fn unpack_message_accepts_custom_prefix() {
+        let ts = Timestamp {
+            seconds: 42,
+            ..Default::default()
+        };
+        let any = Any::pack(&ts, "custom.example/v1/google.protobuf.Timestamp");
+
+        assert!(any.is_message::<Timestamp>());
+        assert_eq!(any.unpack_message::<Timestamp>().unwrap(), Some(ts));
+    }
+
+    #[test]
+    fn unpack_message_returns_none_for_other_types_and_malformed_urls() {
+        use crate::google::protobuf::Duration;
+
+        let any = Any::pack(
+            &Timestamp::default(),
+            "custom.example/v1/google.protobuf.Timestamp",
+        );
+        assert!(!any.is_message::<Duration>());
+        assert_eq!(any.unpack_message::<Duration>().unwrap(), None);
+
+        for type_url in ["google.protobuf.Timestamp", "custom.example/v1/"] {
+            let malformed = Any::pack(&Timestamp::default(), type_url);
+            assert_eq!(malformed.unpack_message::<Timestamp>().unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn unpack_message_reports_decode_errors_for_matching_names() {
+        let any = Any {
+            type_url: <Timestamp as buffa::MessageName>::TYPE_URL.into(),
+            value: bytes::Bytes::from_static(&[0x0f]),
+            ..Default::default()
+        };
+
+        assert!(any.unpack_message::<Timestamp>().is_err());
     }
 
     #[test]
