@@ -92,6 +92,7 @@ mod idiomatic_fields;
 mod idiomatic_imports;
 mod inline_field;
 mod json;
+mod json_private_key;
 mod keyword;
 mod lazy_views;
 mod map_type;

@@ -302,7 +302,7 @@ fn generate_message_with_nesting(
     // without one can never have a registry entry naming it as extendee.
     // Without this gate, the wrapper is pure overhead — `#[serde(flatten)]`
     // on derive-Deserialize buffers every unknown key through serde's
-    // `Content::Map` (String key + `serde_json::Value` DOM) before the
+    // `Content::Map` (a `String` key and a buffered value) before the
     // wrapper can discard it. With the gate, extension-range-free messages
     // keep the pre-extensions `#[serde(skip)]` behavior (zero-alloc
     // `IgnoredAny` skip for unknown keys).
@@ -401,8 +401,8 @@ fn generate_message_with_nesting(
 
     // Messages declaring `extensions N to M;` accept `"[...]"` JSON keys.
     // With only `#[derive(Deserialize)]`, serde's flatten already routes them
-    // to the wrapper's Deserialize — but that path buffers all unclaimed keys
-    // into a serde_json::Value first. The custom impl matches them inline.
+    // to the wrapper's Deserialize — but that path buffers every unclaimed
+    // key first. The custom impl matches them inline.
 
     // When serde is enabled and the message has oneofs, we generate a custom
     // Deserialize impl so that duplicate-oneof-field and null-value errors
@@ -1169,10 +1169,15 @@ fn generate_custom_deserialize(
             // `deny_unknown_json_fields` that is the difference between
             // rejecting it and silently accepting it, and in the lenient case
             // the fall-through is also cheaper — an `IgnoredAny` skip instead
-            // of buffering a `serde_json::Value`.
+            // of buffering the value.
+            //
+            // The value is buffered with `BufferedValue`, never with
+            // `serde_json::Value`'s own `Deserialize`: see
+            // `buffa::json_helpers::buffered`.
             let arm = quote! {
                 __k if __k.starts_with('[') && __k.ends_with(']') => {
-                    let __v: ::buffa::serde_json::Value = map.next_value()?;
+                    let ::buffa::json_helpers::buffered::BufferedValue(__v) =
+                        map.next_value()?;
                     match ::buffa::extension_registry::deserialize_extension_key(
                         #proto_fqn_lit, __k, __v,
                     ) {

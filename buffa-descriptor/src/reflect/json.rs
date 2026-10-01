@@ -104,8 +104,19 @@ fn serialize_message<S: Serializer>(
     if let Some(wkt) = WktKind::from_full_name(&md.full_name) {
         return wkt.serialize_message(msg, depth, s);
     }
-    let pool = msg.pool();
     let mut map = s.serialize_map(None)?;
+    serialize_fields(&mut map, msg, depth)?;
+    map.end()
+}
+
+/// Write `msg`'s set fields, extensions included, into an open JSON object.
+fn serialize_fields<M: SerializeMap>(
+    map: &mut M,
+    msg: &DynamicMessage,
+    depth: u32,
+) -> Result<(), M::Error> {
+    let md = msg.message_descriptor();
+    let pool = msg.pool();
     for fd in &md.fields {
         if !msg.has(fd) {
             continue;
@@ -127,7 +138,7 @@ fn serialize_message<S: Serializer>(
             .expect("has() ⇒ field is present");
         map.serialize_entry(ext.json_key(), &FieldRef::new(pool, fd, value, depth))?;
     }
-    map.end()
+    Ok(())
 }
 
 /// A sub-message whose own level is already charged; `depth` is the budget
@@ -254,23 +265,11 @@ fn serialize_scalar<S: Serializer>(sc: ScalarType, v: &Value, s: S) -> Result<S:
         (ScalarType::Uint64 | ScalarType::Fixed64, Value::U64(n)) => {
             s.serialize_str(&n.to_string())
         }
-        (ScalarType::Float, Value::F32(f)) => serialize_float(f64::from(*f), s),
-        (ScalarType::Double, Value::F64(f)) => serialize_float(*f, s),
+        (ScalarType::Float, Value::F32(f)) => json_helpers::float::serialize(f, s),
+        (ScalarType::Double, Value::F64(f)) => json_helpers::double::serialize(f, s),
         (ScalarType::String, Value::String(t)) => s.serialize_str(t),
         (ScalarType::Bytes, Value::Bytes(b)) => s.serialize_str(&base64_encode(b)),
         _ => s.serialize_none(),
-    }
-}
-
-/// Float/double with the proto3 JSON special-value mapping: NaN, Infinity,
-/// -Infinity serialize as strings.
-fn serialize_float<S: Serializer>(f: f64, s: S) -> Result<S::Ok, S::Error> {
-    if f.is_nan() {
-        s.serialize_str("NaN")
-    } else if f.is_infinite() {
-        s.serialize_str(if f > 0.0 { "Infinity" } else { "-Infinity" })
-    } else {
-        s.serialize_f64(f)
     }
 }
 
@@ -999,27 +998,19 @@ fn scalar_from_u64(sc: ScalarType, v: u64) -> Option<Value> {
     })
 }
 
-/// Integer scalars go through the same serde with-modules generated
-/// messages use (`json_helpers::{int32, uint32, int64, uint64}`), so the
-/// reflective decoder accepts and rejects exactly what the generated one
-/// does: quoted decimal and exponent forms parse exactly across the full
-/// range, and unquoted floats are rejected above the magnitude where
-/// serde_json's float parsing can no longer identify the token uniquely.
+/// Integer and `float` scalars go through the same serde with-modules
+/// generated messages use (`json_helpers::{int32, uint32, int64, uint64,
+/// float}`), so the reflective decoder accepts and rejects exactly what the
+/// generated one does.
+///
+/// For the integer types, quoted decimal and exponent forms parse exactly
+/// across the full range, and unquoted floats are rejected above the
+/// magnitude where serde_json's float parsing can no longer identify the
+/// token uniquely.
 fn scalar_from_f64<E: de::Error>(sc: ScalarType, v: f64) -> Result<Value, E> {
     let d = v.into_deserializer();
     Ok(match sc {
-        ScalarType::Float => {
-            // Reject values that overflow f32 — the spec requires erroring,
-            // not saturating to ±Infinity. Allow exact ±Infinity through
-            // (they came from "Infinity"/"-Infinity" string parse).
-            if v.is_finite() && v.abs() > f64::from(f32::MAX) {
-                return Err(E::invalid_value(
-                    de::Unexpected::Float(v),
-                    &"a value within f32 range",
-                ));
-            }
-            Value::F32(v as f32)
-        }
+        ScalarType::Float => Value::F32(json_helpers::float::deserialize(d)?),
         ScalarType::Double => Value::F64(v),
         ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => {
             Value::I32(json_helpers::int32::deserialize(d)?)

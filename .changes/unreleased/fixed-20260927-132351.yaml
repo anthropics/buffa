@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Reflective JSON keeps extensions set on a message packed in `google.protobuf.Any`.** `DynamicMessage` serialization writes a message's extensions as `"[full.name]"` keys, but the `Any` path spread only the declared fields of the payload, so an extension on the packed message was silently dropped. Parsing already accepted those keys inside `Any`, so a JSON round-trip through `Any` now keeps them.
+time: 2026-09-27T13:23:51Z

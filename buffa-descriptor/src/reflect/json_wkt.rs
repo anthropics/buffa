@@ -536,24 +536,14 @@ fn serialize_any<S: Serializer>(
             return map.end();
         }
     }
-    // Spread the inner fields. We can't use `serialize_message` because that
-    // opens a new object; instead, replay the field walk.
-    for fd in &inner_md.fields {
-        if !inner.msg.has(fd) {
-            continue;
-        }
-        let value = inner
-            .msg
-            .field_by_number(fd.number)
-            .expect("has() implies present");
-        map.serialize_entry(&fd.json_name, &FieldRef::new(pool, fd, value, inner.depth))?;
-    }
+    serialize_fields(&mut map, inner.msg, inner.depth)?;
     map.end()
 }
 
-/// Deserialize an `Any` from `{"@type": ..., ...}`. Buffers the object as a
-/// `serde_json::Map` because `@type` may come before or after the inner
-/// fields (`AnyUnorderedTypeTag`).
+/// Deserialize an `Any` from `{"@type": ..., ...}`. Buffers the object
+/// because `@type` may come before or after the inner fields
+/// (`AnyUnorderedTypeTag`), and buffers it with `BufferedObject`, never with
+/// `serde_json::Map`'s own `Deserialize`: see `buffa::json_helpers::buffered`.
 #[cfg(feature = "std")]
 fn deserialize_any<'de, D: Deserializer<'de>>(
     pool: Arc<DescriptorPool>,
@@ -563,8 +553,8 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     budget: &Cell<usize>,
 ) -> Result<DynamicMessage, D::Error> {
     use serde::de::Error as _;
-    let mut obj: serde_json::Map<String, serde_json::Value> =
-        serde_json::Map::deserialize(d)?;
+    let buffa::json_helpers::buffered::BufferedObject(mut obj) =
+        serde::Deserialize::deserialize(d)?;
     let mut any = DynamicMessage::new(Arc::clone(&pool), midx);
     if obj.is_empty() {
         return Ok(any);

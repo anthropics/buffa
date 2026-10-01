@@ -1202,3 +1202,59 @@ fn test_oneof_variant_named_self_escapes_to_self_underscore() {
         "raw `Self(` survived in generated code:\n{content}"
     );
 }
+
+#[test]
+fn test_oneof_named_self_escapes_its_enum_to_self_underscore() {
+    // The oneof's own name is PascalCased by the same rule as its variants,
+    // so `self_`, `_self` and `self` all yield the enum ident `Self`. The
+    // struct field is escaped to `self_` by `CodeGenContext::oneof_ident`;
+    // the enum name it points at has to be escaped the same way.
+    let mut file = proto3_file("self_oneof.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Identity".to_string()),
+        field: vec![
+            FieldDescriptorProto {
+                name: Some("anonymous".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_BOOL),
+                oneof_index: Some(0),
+                ..Default::default()
+            },
+            FieldDescriptorProto {
+                name: Some("manager".to_string()),
+                number: Some(2),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_STRING),
+                oneof_index: Some(0),
+                ..Default::default()
+            },
+        ],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("self_".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["self_oneof.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("oneof named `self_` must generate");
+    let content = &joined(&files);
+    assert!(
+        content.contains("pub enum Self_"),
+        "expected the oneof enum to be escaped to `Self_`; got:\n{content}"
+    );
+    assert!(
+        !content.contains("pub enum Self {"),
+        "raw `pub enum Self` survived in generated code:\n{content}"
+    );
+    assert!(
+        content.contains("Manager(::buffa::alloc::string::String)"),
+        "the oneof's variants must be unaffected; got:\n{content}"
+    );
+}

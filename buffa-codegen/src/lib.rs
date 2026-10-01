@@ -704,7 +704,8 @@ impl MapRepr {
 /// The owned smart pointer a singular message field's `buffa::MessageField`
 /// wraps in generated owned structs.
 ///
-/// The default is [`Box`](PointerRepr::Box). [`Custom`](PointerRepr::Custom)
+/// The default is [`Inline`](PointerRepr::Inline); it was `Box` before 0.9.
+/// [`Custom`](PointerRepr::Custom)
 /// substitutes any pointer that satisfies the `buffa::ProtoBox<T>` bound — for
 /// example a `smallbox`-style pointer that stores small messages inline.
 /// Because the pointer *wraps* the message type, its path is a **template**

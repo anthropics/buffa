@@ -111,7 +111,7 @@ codegen-units = 1
 # What a downstream crate gets from a plain `cargo build --release` (cargo's
 # release defaults, no `[profile.release]` keys of its own): cross-crate calls
 # that are not `#[inline]` stay out of line. `benches/encode_sink.rs` is run at
-# both profiles to show that fat LTO does not rescue the `BytesMut` sink.
+# both profiles to check that its results do not depend on fat LTO.
 [profile.bench-nolto]
 inherits = "release"
 

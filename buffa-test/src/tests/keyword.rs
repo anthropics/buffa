@@ -1,4 +1,4 @@
-//! Rust keywords as proto package/message/field/enum names.
+//! Rust keywords as proto package/message/field/oneof/enum names.
 
 use super::round_trip;
 
@@ -57,6 +57,24 @@ fn test_keyword_expression_with_oneof() {
         decoded.value,
         Some(keywords::__buffa::oneof::expression::Value::Literal(
             "42".into()
+        ))
+    );
+}
+
+#[test]
+fn test_keyword_oneof_named_self_round_trip() {
+    use crate::keywords;
+    let msg = keywords::Identity {
+        self_: Some(keywords::__buffa::oneof::identity::Self_::Manager(
+            "root".into(),
+        )),
+        ..Default::default()
+    };
+    let decoded = round_trip(&msg);
+    assert_eq!(
+        decoded.self_,
+        Some(keywords::__buffa::oneof::identity::Self_::Manager(
+            "root".into()
         ))
     );
 }

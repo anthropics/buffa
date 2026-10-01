@@ -416,11 +416,13 @@ fn test_no_serde_attrs_without_generate_json_flag() {
 }
 
 #[test]
-fn test_json_extension_range_uses_buffa_serde_json_reexport() {
+fn test_json_extension_range_buffers_through_buffa() {
     // A message with `extensions N to M;` and json + preserve_unknown_fields
-    // enabled gets a hand-written Deserialize impl that buffers `"[pkg.ext]"`
-    // keys into a `serde_json::Value` before calling
-    // `extension_registry::deserialize_extension_key`. That path must go
+    // enabled gets a hand-written Deserialize impl that buffers the value of
+    // a `"[pkg.ext]"` key before calling
+    // `extension_registry::deserialize_extension_key`. It must buffer with
+    // `BufferedValue` and not with `serde_json::Value` (see
+    // `buffa::json_helpers::buffered`). Any `serde_json` path must go
     // through the `::buffa::serde_json` re-export so consumers don't need
     // `serde_json` in their own dep graph.
     //
@@ -450,8 +452,12 @@ fn test_json_extension_range_uses_buffa_serde_json_reexport() {
     let files = generate(&[file], &["ext_json.proto".to_string()], &cfg).expect("should generate");
     let content = &joined(&files);
     assert!(
-        content.contains("::buffa::serde_json::Value"),
-        "extension JSON deserialize must route through ::buffa::serde_json re-export: {content}"
+        content.contains("::buffa::json_helpers::buffered::BufferedValue"),
+        "an extension value must be buffered with BufferedValue: {content}"
+    );
+    assert!(
+        !content.contains("serde_json::Value = map.next_value"),
+        "generated code must not buffer into serde_json::Value: {content}"
     );
     // Every `::serde_json::` occurrence must be preceded by `::buffa` — no
     // bare paths that would force a direct `serde_json` dep on the consumer.

@@ -32,6 +32,9 @@ ecow = { workspace = true, features = ["serde"] }
 compact_str = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
+# `src/tests/json_private_key.rs` needs `serde_json::Value` to parse the string under
+# its private `RawValue` key: see `buffa/src/json_helpers/buffered.rs`.
+serde_json = { workspace = true, features = ["raw_value"] }
 
 [build-dependencies]
 buffa-build = { workspace = true }
