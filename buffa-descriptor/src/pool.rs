@@ -847,7 +847,8 @@ impl DescriptorPool {
     /// range, a message or enum declares a reserved name twice, an open enum's
     /// first value is non-zero, an enum value reuses a reserved name or number
     /// or a duplicate number without `allow_alias`, a oneof index is invalid,
-    /// a message exceeds 65 535 fields, or a map entry is malformed.
+    /// a `proto3_optional` field is malformed, a message exceeds 65 535
+    /// fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -870,7 +871,8 @@ impl DescriptorPool {
     /// overlapping extension range, duplicate symbols or field identities,
     /// duplicate reserved names, an open enum whose first value is non-zero,
     /// reserved enum values, duplicate enum numbers without `allow_alias`,
-    /// invalid oneof indices, or malformed map entries).
+    /// invalid oneof indices, malformed `proto3_optional` fields, or malformed
+    /// map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
