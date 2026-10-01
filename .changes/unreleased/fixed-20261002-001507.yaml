@@ -1,0 +1,3 @@
+kind: Fixed
+body: Reflective JSON bytes fields now reject mixed alphabets and excess base64 padding.
+time: 2026-10-02T00:15:07.955637+02:00

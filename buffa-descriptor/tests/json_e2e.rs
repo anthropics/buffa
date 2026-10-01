@@ -83,6 +83,33 @@ fn json_scalar_round_trip() {
 }
 
 #[test]
+fn json_bytes_follow_shared_base64_decoder_rules() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+
+    for (encoded, expected) in [
+        ("+w==", vec![0xfb]),
+        ("-w==", vec![0xfb]),
+        ("+w", vec![0xfb]),
+        ("-w", vec![0xfb]),
+        ("Zh==", vec![b'f']),
+    ] {
+        let input = format!(r#"{{"fBytes":"{encoded}"}}"#);
+        let parsed = DynamicMessage::from_json(Arc::clone(&p), idx, &input)
+            .unwrap_or_else(|e| panic!("accepted base64 input {encoded}: {e}"));
+        assert_eq!(parsed.field_by_number(15), Some(&Value::Bytes(expected)));
+    }
+
+    for encoded in ["+_", "/-", "Zg==="] {
+        let input = format!(r#"{{"fBytes":"{encoded}"}}"#);
+        assert!(
+            DynamicMessage::from_json(Arc::clone(&p), idx, &input).is_err(),
+            "invalid base64 must be rejected: {encoded}"
+        );
+    }
+}
+
+#[test]
 fn json_integer_parsing_matches_generated_messages() {
     let p = pool();
     let idx = p.message_index("reflect.test.Scalars").unwrap();
