@@ -78,6 +78,27 @@ impl Any {
         T::decode(&mut self.value.as_ref()).map(Some)
     }
 
+    /// Unpack the contained message as `T`, but only if the protobuf message
+    /// name in the `type_url` matches `expected_type_name`.
+    ///
+    /// The message name is the non-empty path segment after the final `/`;
+    /// any prefix before it is ignored. Returns `Ok(None)` when the type URL
+    /// has no message name or the name does not match.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`buffa::DecodeError`] if the message name matches but the
+    /// bytes cannot be decoded as `T`.
+    pub fn unpack_if_type_name<T: buffa::Message>(
+        &self,
+        expected_type_name: &str,
+    ) -> Result<Option<T>, buffa::DecodeError> {
+        if !self.is_type_name(expected_type_name) {
+            return Ok(None);
+        }
+        T::decode(&mut self.value.as_ref()).map(Some)
+    }
+
     /// Returns `true` if this [`Any`]'s `type_url` matches the given string.
     ///
     /// The comparison is on the whole URL, prefix included. The JSON and text
@@ -85,6 +106,23 @@ impl Any {
     /// not.
     pub fn is_type(&self, type_url: &str) -> bool {
         self.type_url == type_url
+    }
+
+    /// Returns the protobuf message name carried by this `Any`'s type URL.
+    ///
+    /// The name is the non-empty path segment after the final `/`. Returns
+    /// `None` when the type URL has no `/` or ends in `/`.
+    pub fn type_name(&self) -> Option<&str> {
+        let (_, type_name) = self.type_url.rsplit_once('/')?;
+        (!type_name.is_empty()).then_some(type_name)
+    }
+
+    /// Returns `true` if this `Any` carries the given protobuf message name.
+    ///
+    /// This compares the message name after the final `/` and ignores the
+    /// type URL prefix. Returns `false` when the type URL has no message name.
+    pub fn is_type_name(&self, type_name: &str) -> bool {
+        self.type_name() == Some(type_name)
     }
 
     /// Returns the type URL stored in this [`Any`].
@@ -578,6 +616,80 @@ mod tests {
             .unpack_if("type.googleapis.com/google.protobuf.Duration")
             .unwrap();
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn type_name_uses_the_segment_after_the_last_slash() {
+        let any = Any::pack(
+            &Timestamp::default(),
+            "custom.example/v1/google.protobuf.Timestamp",
+        );
+        assert_eq!(any.type_name(), Some("google.protobuf.Timestamp"));
+    }
+
+    #[test]
+    fn type_name_is_none_without_a_non_empty_final_segment() {
+        for type_url in ["google.protobuf.Timestamp", "custom.example/v1/"] {
+            let any = Any::pack(&Timestamp::default(), type_url);
+            assert_eq!(any.type_name(), None, "{type_url}");
+        }
+    }
+
+    #[test]
+    fn is_type_name_ignores_the_type_url_prefix() {
+        let any = Any::pack(
+            &Timestamp::default(),
+            "custom.example/v1/google.protobuf.Timestamp",
+        );
+        assert!(any.is_type_name("google.protobuf.Timestamp"));
+        assert!(!any.is_type_name("google.protobuf.Duration"));
+        assert!(
+            !Any::pack(&Timestamp::default(), "google.protobuf.Timestamp")
+                .is_type_name("google.protobuf.Timestamp")
+        );
+    }
+
+    #[test]
+    fn unpack_if_type_name_decodes_with_a_custom_prefix() {
+        let ts = Timestamp {
+            seconds: 42,
+            ..Default::default()
+        };
+        let any = Any::pack(&ts, "custom.example/v1/google.protobuf.Timestamp");
+
+        let result: Option<Timestamp> = any
+            .unpack_if_type_name("google.protobuf.Timestamp")
+            .unwrap();
+        assert_eq!(result, Some(ts));
+    }
+
+    #[test]
+    fn unpack_if_type_name_returns_none_for_mismatch_or_missing_name() {
+        let any = Any::pack(
+            &Timestamp::default(),
+            "custom.example/v1/google.protobuf.Timestamp",
+        );
+        let mismatch: Option<Timestamp> =
+            any.unpack_if_type_name("google.protobuf.Duration").unwrap();
+        assert!(mismatch.is_none());
+
+        let missing_name = Any::pack(&Timestamp::default(), "google.protobuf.Timestamp");
+        let result: Option<Timestamp> = missing_name
+            .unpack_if_type_name("google.protobuf.Timestamp")
+            .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn unpack_if_type_name_reports_decode_errors_for_matching_names() {
+        let any = Any {
+            type_url: "custom.example/v1/google.protobuf.Timestamp".into(),
+            value: bytes::Bytes::from_static(&[0x0f]),
+            ..Default::default()
+        };
+        assert!(any
+            .unpack_if_type_name::<Timestamp>("google.protobuf.Timestamp")
+            .is_err());
     }
 
     #[test]

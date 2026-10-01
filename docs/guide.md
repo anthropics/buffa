@@ -1837,12 +1837,18 @@ if any.is_type(MyMessage::TYPE_URL) { /* ... */ }
 
 // Unpack
 let msg: Option<MyMessage> = any.unpack_if::<MyMessage>(MyMessage::TYPE_URL)?;
+
+// Match the message name while accepting a custom URL prefix
+let custom_any = Any::pack(&my_message, "custom.example/v1/my.package.MyMessage");
+let matches = custom_any.is_type_name("my.package.MyMessage");
+let msg: Option<MyMessage> =
+    custom_any.unpack_if_type_name("my.package.MyMessage")?;
 ```
 
-`is_type` and `unpack_if` compare the whole URL, prefix included. JSON and text
-serialization look the message up in the `TypeRegistry` instead, and a type
-registered under one prefix is found under any other, by the message name
-after the last `/`. The `Any` keeps its own URL.
+`is_type` and `unpack_if` compare the whole URL, prefix included. Use
+`is_type_name` and `unpack_if_type_name` to match the message name after the
+last `/`, regardless of the URL prefix. JSON and text serialization also look
+the message up in the `TypeRegistry` by that name. The `Any` keeps its own URL.
 
 ### Value and Struct
 
