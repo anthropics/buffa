@@ -1,18 +1,7 @@
-//! Behavior of the `#[buffa(arbitrary)]` forwarder.
+//! The `Arbitrary` impl emitted for `#[buffa(arbitrary)]`.
 //!
-//! The emitted impls are `#[cfg(feature = "arbitrary")]`-gated on the
-//! consuming crate's feature, and this test crate *is* the consuming crate —
-//! hence the file-level `cfg` and `cargo test -p buffa-remote-derive
-//! --features arbitrary`. That the impls are gated at all (and that an
-//! unflagged newtype gets none) is asserted at the token level in
-//! `src/forwarders.rs`, which runs on the default feature set.
-//!
-//! Every property here is a *parity* assertion against the canonical owned
-//! type the forwarder materializes: same value, and the same number of bytes
-//! taken out of the `Unstructured`. Parity is the point — a message field
-//! generated with a custom representation must consume a fuzz corpus exactly
-//! as the default representation would.
-#![cfg(feature = "arbitrary")]
+//! Each impl is compared with the canonical owned type it builds from: same
+//! value, same number of bytes consumed. The crate docs give the reason.
 
 use std::collections::HashMap;
 
@@ -23,20 +12,18 @@ use buffa_remote_derive::{
 };
 
 /// Every byte is odd, which is what `Unstructured::arbitrary_iter` reads as
-/// "keep going" — so the collection families produce non-empty values instead
-/// of stopping at zero elements. Each test asserts non-emptiness so a parity
-/// check cannot pass vacuously.
-const SEED: &[u8] = b"acegikmoqsuwyACEGIKMOQSUWYacegikmoqsuwyACEGIKMOQSUWY";
+/// "keep going", so the collection families produce non-empty values instead
+/// of stopping at zero elements. The collection tests assert non-emptiness so
+/// a comparison cannot pass vacuously.
+const INPUT: &[u8] = b"acegikmoqsuwyACEGIKMOQSUWYacegikmoqsuwyACEGIKMOQSUWY";
 
 /// Two readers over the same bytes: one for the newtype, one for the canonical
 /// type it must agree with.
 fn twin() -> (Unstructured<'static>, Unstructured<'static>) {
-    (Unstructured::new(SEED), Unstructured::new(SEED))
+    (Unstructured::new(INPUT), Unstructured::new(INPUT))
 }
 
-// `ecow::EcoString` has no `Arbitrary` impl of its own, which is the whole
-// point: the forwarder builds a `String` and converts, so the remote type is
-// never asked for one.
+// `ecow::EcoString` does not implement `Arbitrary`.
 #[derive(Clone, PartialEq, Default, Debug, DeriveProtoString)]
 #[buffa(remote = ecow::EcoString, arbitrary)]
 struct MyEcoString(pub ecow::EcoString);
@@ -81,25 +68,57 @@ impl<K: core::hash::Hash + Eq, V> FromIterator<(K, V)> for MyIndexMap<K, V> {
     }
 }
 
+// `cfg(test)` is set for an integration test, so the first newtype gets the
+// key and the second does not. Only the types are inspected; no value is
+// built, hence `dead_code`.
+#[derive(Clone, PartialEq, Default, Debug, DeriveProtoString)]
+#[buffa(remote = ecow::EcoString)]
+#[cfg_attr(test, buffa(arbitrary))]
+#[allow(dead_code)]
+struct KeyBehindTrueCfg(pub ecow::EcoString);
+
+#[derive(Clone, PartialEq, Default, Debug, DeriveProtoString)]
+#[buffa(remote = ecow::EcoString)]
+#[cfg_attr(not(test), buffa(arbitrary))]
+#[allow(dead_code)]
+struct KeyBehindFalseCfg(pub ecow::EcoString);
+
+/// `<Probe<T>>::IS_ARBITRARY` is `true` when `T: Arbitrary`: the inherent
+/// constant applies only where its bound holds, and the trait's is the
+/// fallback.
+#[allow(dead_code)]
+struct Probe<T>(core::marker::PhantomData<T>);
+
+trait NotArbitrary {
+    const IS_ARBITRARY: bool = false;
+}
+
+impl<T> NotArbitrary for Probe<T> {}
+
+#[allow(dead_code)]
+impl<T: for<'a> Arbitrary<'a>> Probe<T> {
+    const IS_ARBITRARY: bool = true;
+}
+
 #[test]
-fn string_forwarder_matches_canonical_string() {
+fn string_impl_matches_canonical_string() {
     let (mut mine, mut canonical) = twin();
-    let got = MyEcoString::arbitrary(&mut mine).expect("forwarder builds a value");
+    let got = MyEcoString::arbitrary(&mut mine).expect("the newtype builds a value");
     let want = String::arbitrary(&mut canonical).expect("String builds a value");
 
-    assert!(!want.is_empty(), "seed must produce a non-empty string");
+    assert!(!want.is_empty(), "input must produce a non-empty string");
     assert_eq!(got.as_ref(), want.as_str());
     assert_eq!(
         mine.len(),
         canonical.len(),
-        "forwarder must consume exactly as many bytes as `String`"
+        "the newtype must consume exactly as many bytes as `String`"
     );
 }
 
 #[test]
-fn named_field_newtype_forwards_too() {
+fn named_field_newtype_matches_canonical_string() {
     let (mut mine, mut canonical) = twin();
-    let got = NamedEcoString::arbitrary(&mut mine).expect("forwarder builds a value");
+    let got = NamedEcoString::arbitrary(&mut mine).expect("the newtype builds a value");
     let want = String::arbitrary(&mut canonical).expect("String builds a value");
 
     assert_eq!(got.inner.as_str(), want.as_str());
@@ -107,56 +126,56 @@ fn named_field_newtype_forwards_too() {
 }
 
 #[test]
-fn bytes_forwarder_matches_canonical_vec_u8() {
+fn bytes_impl_matches_canonical_vec_u8() {
     let (mut mine, mut canonical) = twin();
-    let got = MyBytes::arbitrary(&mut mine).expect("forwarder builds a value");
+    let got = MyBytes::arbitrary(&mut mine).expect("the newtype builds a value");
     let want = Vec::<u8>::arbitrary(&mut canonical).expect("Vec<u8> builds a value");
 
-    assert!(!want.is_empty(), "seed must produce a non-empty payload");
+    assert!(!want.is_empty(), "input must produce a non-empty payload");
     assert_eq!(got.as_ref(), want.as_slice());
     assert_eq!(
         mine.len(),
         canonical.len(),
-        "forwarder must consume exactly as many bytes as `Vec<u8>`"
+        "the newtype must consume exactly as many bytes as `Vec<u8>`"
     );
 }
 
 #[test]
-fn list_forwarder_matches_canonical_vec() {
+fn list_impl_matches_canonical_vec() {
     let (mut mine, mut canonical) = twin();
-    let got = MyList::<u32>::arbitrary(&mut mine).expect("forwarder builds a value");
+    let got = MyList::<u32>::arbitrary(&mut mine).expect("the newtype builds a value");
     let want = Vec::<u32>::arbitrary(&mut canonical).expect("Vec<u32> builds a value");
 
-    assert!(!want.is_empty(), "seed must produce a non-empty list");
+    assert!(!want.is_empty(), "input must produce a non-empty list");
     assert_eq!(&*got, want.as_slice());
     assert_eq!(
         mine.len(),
         canonical.len(),
-        "forwarder must consume exactly as many bytes as `Vec<T>`"
+        "the newtype must consume exactly as many bytes as `Vec<T>`"
     );
 }
 
 #[test]
-fn box_forwarder_matches_canonical_box() {
+fn box_impl_matches_canonical_box() {
     let (mut mine, mut canonical) = twin();
-    let got = MyBox::<u64>::arbitrary(&mut mine).expect("forwarder builds a value");
+    let got = MyBox::<u64>::arbitrary(&mut mine).expect("the newtype builds a value");
     let want = Box::<u64>::arbitrary(&mut canonical).expect("Box<u64> builds a value");
 
     assert_eq!(*got, *want);
     assert_eq!(
         mine.len(),
         canonical.len(),
-        "forwarder must consume exactly as many bytes as `Box<T>`"
+        "the newtype must consume exactly as many bytes as `Box<T>`"
     );
 }
 
 #[test]
-fn map_forwarder_matches_canonical_hash_map() {
+fn map_impl_matches_canonical_hash_map() {
     let (mut mine, mut canonical) = twin();
-    let got = MyIndexMap::<u32, u32>::arbitrary(&mut mine).expect("forwarder builds a value");
+    let got = MyIndexMap::<u32, u32>::arbitrary(&mut mine).expect("the newtype builds a value");
     let want = HashMap::<u32, u32>::arbitrary(&mut canonical).expect("HashMap builds a value");
 
-    assert!(!want.is_empty(), "seed must produce a non-empty map");
+    assert!(!want.is_empty(), "input must produce a non-empty map");
     let mut got_entries: Vec<(u32, u32)> = got.0.iter().map(|(k, v)| (*k, *v)).collect();
     let mut want_entries: Vec<(u32, u32)> = want.iter().map(|(k, v)| (*k, *v)).collect();
     got_entries.sort_unstable();
@@ -165,78 +184,78 @@ fn map_forwarder_matches_canonical_hash_map() {
     assert_eq!(
         mine.len(),
         canonical.len(),
-        "forwarder must consume exactly as many bytes as `HashMap<K, V>`"
+        "the newtype must consume exactly as many bytes as `HashMap<K, V>`"
     );
 }
 
-/// `arbitrary_take_rest` is forwarded, not left at the trait default (which
-/// would call `arbitrary` and stop short of the buffer's end). `String`
-/// overrides it, so the difference is observable.
+/// `arbitrary_take_rest` goes to `String`'s, which runs to the end of the
+/// input where the trait default stops short.
 #[test]
-fn take_rest_forwards_to_the_seed() {
-    let got = MyEcoString::arbitrary_take_rest(Unstructured::new(SEED)).expect("take_rest builds");
-    let want = String::arbitrary_take_rest(Unstructured::new(SEED)).expect("take_rest builds");
+fn string_take_rest_matches_canonical_string() {
+    let got = MyEcoString::arbitrary_take_rest(Unstructured::new(INPUT)).expect("take_rest builds");
+    let want = String::arbitrary_take_rest(Unstructured::new(INPUT)).expect("take_rest builds");
     assert_eq!(got.as_ref(), want.as_str());
 
     // Guards against the trait default silently standing in: `arbitrary` and
     // `arbitrary_take_rest` must not agree here, or the assertion above is
     // testing nothing.
-    let plain = String::arbitrary(&mut Unstructured::new(SEED)).expect("arbitrary builds");
-    assert_ne!(want, plain, "seed must distinguish the two entry points");
+    let plain = String::arbitrary(&mut Unstructured::new(INPUT)).expect("arbitrary builds");
+    assert_ne!(want, plain, "input must distinguish the two entry points");
 }
 
-/// The box family deliberately does *not* override `arbitrary_take_rest`.
-/// `arbitrary`'s `Box<T>` leaves it at the trait default, so forwarding to the
-/// *pointee's* would run to the end of the buffer where `Box<T>` stops short —
-/// for `String`, and for every derived message whose last field is a `String`,
-/// `Vec` or map. A boxed oneof variant stores the pointer bare in a derived
-/// enum (`buffa-codegen/src/lib.rs:760-763`), so that call is reachable.
+/// `MyBox<T>` consumes what `Box<T>` consumes under `arbitrary_take_rest`,
+/// for a pointee that overrides it.
 #[test]
 fn box_take_rest_matches_canonical_box() {
     let got =
-        MyBox::<String>::arbitrary_take_rest(Unstructured::new(SEED)).expect("take_rest builds");
+        MyBox::<String>::arbitrary_take_rest(Unstructured::new(INPUT)).expect("take_rest builds");
     let want =
-        Box::<String>::arbitrary_take_rest(Unstructured::new(SEED)).expect("take_rest builds");
+        Box::<String>::arbitrary_take_rest(Unstructured::new(INPUT)).expect("take_rest builds");
     assert_eq!(&*got, &*want);
 
     // The pointee has to be one that overrides `arbitrary_take_rest`, or the
     // assertion above holds vacuously: `String`'s runs to the end of the
     // buffer, while `Box<String>` stops where `String::arbitrary` stops.
-    let unboxed = String::arbitrary_take_rest(Unstructured::new(SEED)).expect("take_rest builds");
+    let unboxed = String::arbitrary_take_rest(Unstructured::new(INPUT)).expect("take_rest builds");
     assert_ne!(
         *want, unboxed,
         "pointee must distinguish the two entry points"
     );
 }
 
+/// No family overrides `size_hint`. `String` and `Vec<T>` report the trait
+/// default too; `Box<T>` reports the pointee's hint, which the box family
+/// leaves out so that a self-referential message is not walked again at
+/// every level.
 #[test]
-fn size_hint_forwards_to_the_seed() {
-    assert_eq!(
-        <MyEcoString as Arbitrary>::size_hint(0),
-        <String as Arbitrary>::size_hint(0)
-    );
-    assert_eq!(
-        <MyList<u32> as Arbitrary>::size_hint(0),
-        <Vec<u32> as Arbitrary>::size_hint(0)
-    );
-    assert_eq!(
-        <MyBox<u64> as Arbitrary>::size_hint(0),
-        <u64 as Arbitrary>::size_hint(0)
-    );
+fn size_hint_is_the_trait_default() {
+    assert_eq!(<MyEcoString as Arbitrary>::size_hint(0), (0, None));
+    assert_eq!(<MyList<u32> as Arbitrary>::size_hint(0), (0, None));
+    assert_eq!(<MyBox<u64> as Arbitrary>::size_hint(0), (0, None));
+    assert_eq!(<String as Arbitrary>::size_hint(0), (0, None));
+    assert_eq!(<Vec<u32> as Arbitrary>::size_hint(0), (0, None));
 }
 
-/// Exhausted input must land wherever the canonical type lands. `arbitrary`
-/// fills integers from an empty buffer rather than failing, so the forwarder
-/// must do the same and not reject the input on its own.
+/// Exhausted input lands where the canonical type lands. `arbitrary` fills
+/// integers from an empty buffer rather than failing, and the newtype does
+/// the same.
 #[test]
-fn empty_input_behaves_like_the_canonical_type() {
+fn box_impl_on_empty_input_matches_canonical_box() {
     let canonical = Box::<u64>::arbitrary(&mut Unstructured::new(&[]))
         .expect("`Box<u64>` fills from an exhausted buffer rather than failing");
     let mine = MyBox::<u64>::arbitrary(&mut Unstructured::new(&[]))
-        .expect("the forwarder must not add a length check the canonical type does not have");
+        .expect("the newtype adds no length check the canonical type does not have");
     assert_eq!(*mine, *canonical);
-    assert_eq!(
-        *canonical, 0,
-        "pins the behaviour this test is parity against"
-    );
+    assert_eq!(*canonical, 0, "`Box<u64>` from an empty buffer is 0");
+}
+
+#[test]
+fn a_cfg_attr_on_the_key_decides_whether_the_impl_exists() {
+    let implemented = [
+        <Probe<MyEcoString>>::IS_ARBITRARY,
+        <Probe<KeyBehindTrueCfg>>::IS_ARBITRARY,
+        <Probe<KeyBehindFalseCfg>>::IS_ARBITRARY,
+        <Probe<ecow::EcoString>>::IS_ARBITRARY,
+    ];
+    assert_eq!(implemented, [true, true, false, false]);
 }

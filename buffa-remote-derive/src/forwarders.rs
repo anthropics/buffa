@@ -1,71 +1,60 @@
-//! Optional forwarders for the trait families outside buffa's binary codec,
-//! emitted on request rather than always.
+//! Optional impls for the trait families outside buffa's binary codec.
 //!
-//! A family is opted into with a bare `#[buffa(<name>)]` key next to `remote`,
-//! and the impl it emits is `#[cfg(feature = "<name>")]`-gated on the
-//! *consuming* crate's feature of that name — see the crate docs for why the
-//! gate is mandatory and its name fixed. Only `arbitrary` exists so far; the
-//! serde and `ReflectList`/`ReflectMap` families are still hand-written.
+//! A family is selected with a bare `#[buffa(<name>)]` key and its impl is
+//! emitted unconditionally. The crate docs show how a consumer makes it
+//! conditional with `cfg_attr`. `arbitrary` is the only family; serde and
+//! `ReflectList`/`ReflectMap` impls are written by hand.
 
-use proc_macro2::TokenStream;
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use syn::{parse_quote, GenericParam, Lifetime, LifetimeParam, WherePredicate};
 
 use crate::remote_field::RemoteField;
 
-/// The bare `#[buffa(...)]` key that turns the [`arbitrary`] forwarder on.
-pub const ARBITRARY: &str = "arbitrary";
-
-/// Which optional forwarders a newtype opted into.
+/// Which optional impls a newtype asked for.
 #[derive(Default)]
 pub struct Flags {
+    /// The span of the `arbitrary` key, when the newtype carries
     /// `#[buffa(arbitrary)]` — see [`arbitrary`].
-    pub arbitrary: bool,
+    pub arbitrary: Option<Span>,
 }
 
-/// Whether the emitted impl overrides `arbitrary_take_rest`, chosen per family
-/// so the newtype consumes the same bytes as the representation it replaces.
+/// Whether the impl overrides `arbitrary_take_rest`, chosen per family so
+/// the newtype consumes input as the representation it replaces does.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum TakeRest {
-    /// Forward to the seed's. Correct when the seed *is* the default
-    /// representation and overrides `arbitrary_take_rest` — `String`,
-    /// `Vec<u8>`, `Vec<T>`, `Vec<(K, V)>` all do, so leaving the trait default
-    /// in place would stop short of the buffer's end where the default
-    /// representation runs to it.
+    /// Forward to the seed's. `String`, `Vec<u8>`, `Vec<T>` and `Vec<(K, V)>`
+    /// override `arbitrary_take_rest` to run to the end of the input, where
+    /// the trait default stops short.
     Seed,
-    /// Leave the trait default (`Self::arbitrary`). Correct when the default
-    /// representation does not override `arbitrary_take_rest`: `arbitrary`'s
-    /// `Box<T>` doesn't, so forwarding to the *pointee's* would consume more
-    /// bytes than `Box<T>` for every pointee that does override it — which is
-    /// every derived message whose last field is a `String`, `Vec` or map.
+    /// Leave the trait default, for the box family. `Box<T>` does not
+    /// override `arbitrary_take_rest`, so forwarding to the pointee's would
+    /// consume more input than `Box<T>` does for every pointee that
+    /// overrides it, which is every derived message whose last field is a
+    /// `String`, `Vec` or map.
     TraitDefault,
 }
 
 /// Emits `impl arbitrary::Arbitrary` for the newtype, or nothing when
 /// `#[buffa(arbitrary)]` is absent.
 ///
-/// The impl materializes `seed` — the canonical owned type buffa's own
-/// `__private::arbitrary_proto_*` builders materialize for this family — and
+/// The impl builds `seed`, the canonical owned type for the family, and
 /// converts it with `build`, an expression over the `__buffa_seed` binding.
-/// Going through the canonical type is what makes the forwarder usable at all
-/// (`ecow::EcoString` and friends have no `Arbitrary` impl to forward to) and
-/// what keeps byte consumption identical to the default representation the
-/// newtype replaces.
+/// The crate docs give the reason for going through the canonical type.
 ///
 /// `extra_predicates` join `seed: Arbitrary<'_>` and the struct's own `where`
-/// clause. A family whose `build` calls an impl the *user* writes
-/// (`MapStorage`'s `FromIterator`) names its bound there, so the forwarder
-/// applies exactly where that impl does rather than failing to compile.
+/// clause. A family whose `build` calls an impl the user writes
+/// (`MapStorage`'s `FromIterator`) names its bound there, so the impl applies
+/// exactly where that one does.
 ///
-/// `take_rest` says whether `arbitrary_take_rest` is overridden; see
-/// [`TakeRest`] for why it is per-family rather than always on.
-///
-/// `size_hint` forwards to the seed's instead of the trait's `(0, None)`
-/// default, mirroring `arbitrary`'s own `Box<str>`-to-`String` forwarder.
-/// `try_size_hint` is deliberately not emitted: it arrived in `arbitrary` 1.4
-/// and this code has to compile against any 1.x a consumer resolved. Nothing
-/// is lost — the recursion guard that matters for a `ProtoBox` around a
-/// recursive message lives in *that message's* derived `size_hint`.
+/// `size_hint` stays at the trait default `(0, None)` in every family. That
+/// is what `String` and the `Vec` seeds report. `Box<T>` reports the
+/// pointee's hint under a recursion guard, which from `arbitrary` 1.4 runs
+/// through `try_size_hint` and propagates `MaxRecursionReached`. The
+/// expansion compiles against every 1.x, so it cannot implement
+/// `try_size_hint`, and a plain forward to the pointee's `size_hint` swallows
+/// that error at each box and walks a recursive message's other fields again
+/// at every level.
 pub fn arbitrary(
     remote: &RemoteField,
     seed: &TokenStream,
@@ -73,12 +62,16 @@ pub fn arbitrary(
     take_rest: TakeRest,
     extra_predicates: &[WherePredicate],
 ) -> TokenStream {
-    if !remote.flags.arbitrary {
+    let Some(key_span) = remote.flags.arbitrary else {
         return quote! {};
-    }
+    };
     let RemoteField {
         ident, generics, ..
     } = remote;
+
+    // The crate name carries the key's span, so a missing `arbitrary`
+    // dependency is reported at the key and not at the derive.
+    let krate = Ident::new("arbitrary", key_span);
 
     // A fresh lifetime for `Arbitrary<'a>`, inserted ahead of the struct's own
     // parameters (lifetimes must precede types) and named so it cannot collide
@@ -94,7 +87,7 @@ pub fn arbitrary(
         // Bounding the seed rather than the element types covers both: for a
         // generic seed (`Vec<T>`, `Vec<(K, V)>`) it implies the element bounds,
         // and for a concrete one (`String`) it is satisfied outright.
-        predicates.push(parse_quote! { #seed: ::arbitrary::Arbitrary<#lifetime> });
+        predicates.push(parse_quote! { #seed: ::#krate::Arbitrary<#lifetime> });
         predicates.extend(extra_predicates.iter().cloned());
     }
     let (impl_generics, _, arb_where_clause) = arb_generics.split_for_impl();
@@ -104,9 +97,9 @@ pub fn arbitrary(
         TakeRest::Seed => quote! {
             #[inline]
             fn arbitrary_take_rest(
-                u: ::arbitrary::Unstructured<#lifetime>,
-            ) -> ::arbitrary::Result<Self> {
-                let __buffa_seed: #seed = ::arbitrary::Arbitrary::arbitrary_take_rest(u)?;
+                u: ::#krate::Unstructured<#lifetime>,
+            ) -> ::#krate::Result<Self> {
+                let __buffa_seed: #seed = ::#krate::Arbitrary::arbitrary_take_rest(u)?;
                 ::core::result::Result::Ok(#build)
             }
         },
@@ -114,24 +107,18 @@ pub fn arbitrary(
     };
 
     quote! {
-        #[cfg(feature = "arbitrary")]
-        impl #impl_generics ::arbitrary::Arbitrary<#lifetime> for #ident #ty_generics
+        impl #impl_generics ::#krate::Arbitrary<#lifetime> for #ident #ty_generics
         #arb_where_clause
         {
             #[inline]
             fn arbitrary(
-                u: &mut ::arbitrary::Unstructured<#lifetime>,
-            ) -> ::arbitrary::Result<Self> {
-                let __buffa_seed: #seed = ::arbitrary::Arbitrary::arbitrary(u)?;
+                u: &mut ::#krate::Unstructured<#lifetime>,
+            ) -> ::#krate::Result<Self> {
+                let __buffa_seed: #seed = ::#krate::Arbitrary::arbitrary(u)?;
                 ::core::result::Result::Ok(#build)
             }
 
             #take_rest_fn
-
-            #[inline]
-            fn size_hint(depth: usize) -> (usize, ::core::option::Option<usize>) {
-                <#seed as ::arbitrary::Arbitrary<#lifetime>>::size_hint(depth)
-            }
         }
     }
 }
@@ -141,7 +128,7 @@ mod tests {
     use syn::parse_quote;
 
     /// Expands every derive over the same newtype shapes the integration tests
-    /// use, with and without the flag. Returns `(without_flag, with_flag)`.
+    /// use. Returns `(family, without_key, with_key)` per derive.
     fn expansions() -> Vec<(&'static str, String, String)> {
         macro_rules! pair {
             ($name:literal, $derive:path, { $($decl:tt)* }) => {{
@@ -149,14 +136,14 @@ mod tests {
                     #[buffa(remote = Remote)]
                     $($decl)*
                 };
-                let flagged: syn::DeriveInput = parse_quote! {
+                let keyed: syn::DeriveInput = parse_quote! {
                     #[buffa(remote = Remote, arbitrary)]
                     $($decl)*
                 };
                 (
                     $name,
                     $derive(plain).expect("plain expansion").to_string(),
-                    $derive(flagged).expect("flagged expansion").to_string(),
+                    $derive(keyed).expect("keyed expansion").to_string(),
                 )
             }};
         }
@@ -179,48 +166,37 @@ mod tests {
         ]
     }
 
-    /// Without the flag, no derive may mention `Arbitrary` at all — the
-    /// forwarder is opt-in, and a newtype that did not ask for it must not
-    /// acquire a dependency on the `arbitrary` crate.
+    /// Without the key, an expansion does not mention `Arbitrary`, so a
+    /// newtype that did not ask for the impl does not depend on the
+    /// `arbitrary` crate.
     #[test]
-    fn flag_absent_emits_no_arbitrary() {
+    fn key_absent_emits_no_arbitrary() {
         for (name, plain, _) in expansions() {
             assert!(
                 !plain.contains("Arbitrary"),
-                "{name}: unflagged expansion mentions Arbitrary:\n{plain}"
+                "{name}: expansion without the key mentions Arbitrary:\n{plain}"
             );
         }
     }
 
-    /// With the flag, the impl must be there *and* be `cfg`-gated. An ungated
-    /// impl compiles for the derive's author and breaks every consumer whose
-    /// `arbitrary` feature is off, so the gate is the part worth asserting.
+    /// The expansion contains the impl and no `cfg` attribute, which is the
+    /// crate docs' contract.
     #[test]
-    fn flag_present_emits_cfg_gated_impl() {
-        for (name, _, flagged) in expansions() {
-            let gate = "# [cfg (feature = \"arbitrary\")] impl";
+    fn key_present_emits_an_unconditional_impl() {
+        for (name, _, keyed) in expansions() {
             assert!(
-                flagged.contains(gate),
-                "{name}: Arbitrary impl is not gated on `feature = \"arbitrary\"`:\n{flagged}"
+                keyed.contains(":: arbitrary :: Arbitrary < '__buffa_arb > for"),
+                "{name}: no Arbitrary impl emitted:\n{keyed}"
             );
             assert!(
-                flagged.contains(":: arbitrary :: Arbitrary < '__buffa_arb > for"),
-                "{name}: no Arbitrary impl emitted:\n{flagged}"
-            );
-            // One gate, one impl: the `cfg` count must match the `Arbitrary`
-            // impl count, so a second forwarder can never slip in ungated.
-            assert_eq!(
-                flagged.matches("# [cfg (feature = \"arbitrary\")]").count(),
-                1,
-                "{name}: expected exactly one gated item:\n{flagged}"
+                !keyed.contains("cfg"),
+                "{name}: the expansion carries a cfg:\n{keyed}"
             );
         }
     }
 
-    /// Each family must materialize the canonical type buffa's own
-    /// `arbitrary_proto_*` builders use, not the remote type: that is what
-    /// keeps byte consumption equal to the default representation and what
-    /// frees the remote type from needing its own `Arbitrary`.
+    /// The seed is each family's canonical owned type, and the expansion
+    /// does not name the remote type's `Arbitrary`.
     #[test]
     fn seed_is_the_canonical_type_not_the_remote() {
         let expected = [
@@ -242,69 +218,91 @@ mod tests {
                 "__buffa_seed : :: buffa :: alloc :: vec :: Vec < (K , V) >",
             ),
         ];
-        for (name, _, flagged) in expansions() {
+        for (name, _, keyed) in expansions() {
             let want = expected
                 .iter()
                 .find(|(n, _)| *n == name)
                 .expect("every family has an expected seed")
                 .1;
             assert!(
-                flagged.contains(want),
-                "{name}: expected seed `{want}`:\n{flagged}"
+                keyed.contains(want),
+                "{name}: expected seed `{want}`:\n{keyed}"
             );
             assert!(
-                !flagged.contains("Remote as :: arbitrary"),
-                "{name}: forwarder leans on the remote type's own Arbitrary:\n{flagged}"
+                !keyed.contains("Remote as :: arbitrary"),
+                "{name}: the impl uses the remote type's own Arbitrary:\n{keyed}"
             );
         }
     }
 
-    /// `arbitrary_take_rest` is overridden exactly where the representation
-    /// the newtype replaces overrides it. `String` and the `Vec`s do, so those
-    /// four forward to the seed; `arbitrary`'s `Box<T>` does not, so the box
-    /// family keeps the trait default and consumes what `Box<T>` consumes.
+    /// See [`super::TakeRest`]: only the box family keeps the trait default.
+    /// No family overrides `size_hint`.
     #[test]
-    fn take_rest_is_overridden_per_family() {
-        for (name, _, flagged) in expansions() {
+    fn only_the_box_family_keeps_the_default_take_rest() {
+        for (name, _, keyed) in expansions() {
             assert_eq!(
-                flagged.contains("fn arbitrary_take_rest"),
+                keyed.contains("fn arbitrary_take_rest"),
                 name != "box",
-                "{name}: wrong `arbitrary_take_rest` decision:\n{flagged}"
+                "{name}: wrong `arbitrary_take_rest` decision:\n{keyed}"
+            );
+            assert!(
+                !keyed.contains("fn size_hint"),
+                "{name}: the expansion overrides size_hint:\n{keyed}"
             );
         }
     }
 
-    /// The map forwarder builds through the `FromIterator` the *user* writes,
-    /// so its bound has to be on the impl — a map whose `FromIterator` is
-    /// narrower than the struct (`CustomMap<K, V>` with `impl<K: Ord, V>`)
-    /// otherwise fails to compile.
+    /// The map impl builds through the `FromIterator` the user writes, so its
+    /// bound has to be on the impl: a map whose `FromIterator` is narrower
+    /// than the struct (`CustomMap<K, V>` with `impl<K: Ord, V>`) otherwise
+    /// fails to compile.
     #[test]
-    fn map_forwarder_bounds_from_iterator() {
-        let (_, _, flagged) = expansions()
+    fn map_impl_is_bounded_on_from_iterator() {
+        let (_, _, keyed) = expansions()
             .into_iter()
             .find(|(n, _, _)| *n == "map")
             .expect("map family expands");
         assert!(
-            flagged.contains("Self : :: core :: iter :: FromIterator < (K , V) >"),
-            "map: FromIterator bound missing from the Arbitrary impl:\n{flagged}"
+            keyed.contains("Self : :: core :: iter :: FromIterator < (K , V) >"),
+            "map: FromIterator bound missing from the Arbitrary impl:\n{keyed}"
         );
     }
 
     #[test]
-    fn arbitrary_flag_rejects_a_value() {
+    fn arbitrary_key_rejects_a_value() {
         let input: syn::DeriveInput = parse_quote! {
             #[buffa(remote = Remote, arbitrary = Something)]
             struct S(Remote);
         };
-        let err = crate::string::derive(input).expect_err("a valued flag is an error");
+        let err = crate::string::derive(input).expect_err("a valued key is an error");
         assert!(
             err.to_string().contains("takes no value"),
             "unexpected error: {err}"
         );
     }
 
+    /// Two `cfg_attr`s that both hold reach the derive as two keys.
     #[test]
-    fn unsupported_key_error_lists_the_flag() {
+    fn a_repeated_arbitrary_key_emits_one_impl() {
+        let input: syn::DeriveInput = parse_quote! {
+            #[buffa(remote = Remote, arbitrary)]
+            #[buffa(arbitrary)]
+            struct S(Remote);
+        };
+        let keyed = crate::string::derive(input)
+            .expect("a repeated key is accepted")
+            .to_string();
+        assert_eq!(
+            keyed
+                .matches(":: arbitrary :: Arbitrary < '__buffa_arb > for")
+                .count(),
+            1,
+            "{keyed}"
+        );
+    }
+
+    #[test]
+    fn unsupported_key_error_lists_the_arbitrary_key() {
         let input: syn::DeriveInput = parse_quote! {
             #[buffa(remote = Remote, nonsense = Something)]
             struct S(Remote);

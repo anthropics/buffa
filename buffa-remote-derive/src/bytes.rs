@@ -41,8 +41,6 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     });
 
-    // The canonical seed is `Vec<u8>`, matching `buffa`'s own
-    // `__private::arbitrary_proto_bytes` builder byte for byte.
     let arbitrary_impl = forwarders::arbitrary(
         &remote,
         &quote! { ::buffa::alloc::vec::Vec<u8> },

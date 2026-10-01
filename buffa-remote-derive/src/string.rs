@@ -34,8 +34,6 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let ctor_from_str = remote.construct(quote! { #from_str(s) });
     let ctor_from_wire = remote.construct(quote! { #from_str(s) });
 
-    // The canonical seed is `String`, matching `buffa`'s own
-    // `__private::arbitrary_proto_string` builder byte for byte.
     let arbitrary_impl = forwarders::arbitrary(
         &remote,
         &quote! { ::buffa::alloc::string::String },

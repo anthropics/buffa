@@ -14,53 +14,17 @@
 //!
 //! # Scope: the binary codec, plus an opt-in `Arbitrary`
 //!
-//! **These derives cover the binary wire format, and — on request — the
-//! `arbitrary::Arbitrary` impl a fuzzed build needs.** A pluggable owned-type
-//! trait's own supertraits don't mention `serde::Serialize` / `Deserialize`,
-//! `arbitrary::Arbitrary`, or `buffa_descriptor`'s `ReflectList`/`ReflectMap`
-//! — those are pulled in separately, by whichever optional feature needs them
-//! (`json`, `arbitrary`, `reflect`), and the reference newtypes in
+//! **These derives cover the binary wire format and, with the
+//! [`arbitrary` key](#the-arbitrary-key), the `arbitrary::Arbitrary` impl a
+//! fuzzed build needs.** A pluggable owned-type trait's own supertraits don't
+//! mention `serde::Serialize` / `Deserialize`, `arbitrary::Arbitrary`, or
+//! `buffa_descriptor`'s `ReflectList`/`ReflectMap` — those are pulled in
+//! separately, by whichever optional feature needs them (`json`,
+//! `arbitrary`, `reflect`), and the reference newtypes in
 //! `examples/custom-types/src/types/` add them as ordinary extra
 //! `#[derive(..)]`s alongside the buffa-trait impl.
 //!
-//! ## `#[buffa(arbitrary)]`
-//!
-//! A bare `arbitrary` key next to `remote` makes any of the five derives emit
-//! the `Arbitrary` impl as well:
-//!
-//! ```rust
-//! #[derive(Clone, PartialEq, Default, Debug, buffa_remote_derive::ProtoString)]
-//! #[buffa(remote = ecow::EcoString, arbitrary)]
-//! pub struct MyEcoString(pub ecow::EcoString);
-//! ```
-//!
-//! The impl is wrapped in `#[cfg(feature = "arbitrary")]`, mirroring the
-//! `#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]` codegen puts on a
-//! generated message. The feature name is fixed there and fixed here for the
-//! same reason: `arbitrary` is an optional dependency by design, and the
-//! newtype has to implement the trait under exactly the condition the message
-//! using it derives it. Ungated, the impl would pull `arbitrary` into every
-//! build of the consuming crate.
-//!
-//! The generated impl does **not** ask the remote type for an `Arbitrary` of
-//! its own — `ecow::EcoString` and `flexstr::SharedStr` have none. It builds
-//! the canonical owned type first (`String`, `Vec<u8>`, `Vec<T>`,
-//! `Vec<(Key, Value)>`, or the pointee `T`) and converts through the
-//! `From`/`FromIterator`/`ProtoBox::new` surface the derive already generates,
-//! as buffa's own `arbitrary_proto_*` field builders do. Byte consumption
-//! therefore matches the default representation the newtype replaces, so a
-//! fuzz corpus carries across unchanged. `MapStorage` is the one family that
-//! needs something from you: the `FromIterator<(Key, Value)>` its map codec
-//! already requires is what assembles the map, and the impl is bounded on it.
-//!
-//! Which newtypes need it: codegen attaches its own
-//! `#[arbitrary(with = ...)]` builder to a non-default `string`/`bytes` field
-//! in singular, `optional`, and repeated positions, so those cost the newtype
-//! nothing — but such a type in a `map` gets no builder and does need its own
-//! impl, and a custom `repeated` collection, map container, or box pointer
-//! *is* the field type, so it always does.
-//!
-//! ## serde and reflection stay hand-written
+//! ## serde and reflection are hand-written
 //!
 //! Nothing serde- or reflection-related is generated, so a newtype used as a
 //! message field in a JSON-enabled or reflection/vtable build needs those
@@ -154,6 +118,70 @@
 //! workload. Hand-write `clear` to forward to the remote's own clearing
 //! method instead, in that case.
 //!
+//! # The `arbitrary` key
+//!
+//! A bare `arbitrary` key makes any of the five derives also emit an
+//! `arbitrary::Arbitrary` impl for the newtype:
+//!
+//! ```rust
+//! #[derive(Clone, PartialEq, Default, Debug, buffa_remote_derive::ProtoString)]
+//! #[buffa(remote = ecow::EcoString, arbitrary)]
+//! pub struct MyEcoString(pub ecow::EcoString);
+//! ```
+//!
+//! The impl is emitted unconditionally, so the crate that defines the
+//! newtype must depend on `arbitrary` (any 1.x release, under that name)
+//! whenever the key is present. Without the dependency the build fails to
+//! resolve the `arbitrary` crate, and the error points at the key. If the
+//! dependency is optional, as it is in a crate set up for
+//! `generate_arbitrary`, put the key in a second `#[buffa(..)]` attribute
+//! behind the same condition:
+//!
+//! ```toml
+//! [dependencies]
+//! arbitrary = { version = "1", optional = true }
+//!
+//! [features]
+//! arbitrary = ["dep:arbitrary", "buffa/arbitrary"]
+//! ```
+//!
+//! ```rust
+//! #[derive(Clone, PartialEq, Default, Debug, buffa_remote_derive::ProtoString)]
+//! #[buffa(remote = ecow::EcoString)]
+//! #[cfg_attr(feature = "arbitrary", buffa(arbitrary))]
+//! pub struct MyEcoString(pub ecow::EcoString);
+//! ```
+//!
+//! Generated messages derive `Arbitrary` under `feature = "arbitrary"`, so
+//! the condition has to hold whenever that feature is on in the crate that
+//! holds the messages. If the newtype lives in another crate, the messages'
+//! crate forwards the feature (`arbitrary = [.., "my-types/arbitrary"]`). A
+//! newtype that lacks the impl in such a build fails in generated code: the
+//! message's derive reports that the newtype does not implement `Arbitrary`,
+//! and that error does not mention the key.
+//!
+//! The remote type does not need an `Arbitrary` impl (`ecow::EcoString` and
+//! `flexstr::SharedStr` have none), and one it does have is not used. The
+//! impl builds the canonical owned type first (`String`, `Vec<u8>`,
+//! `Vec<T>`, `Vec<(Key, Value)>`, or the pointee `T`) and converts through
+//! the `From`/`FromIterator`/`ProtoBox::new` surface the derive already
+//! generates, as codegen does for a custom `string` or `bytes` field. Byte
+//! consumption therefore matches the default representation the newtype
+//! replaces, so a fuzz corpus carries across unchanged. For `MapStorage`,
+//! the `FromIterator<(Key, Value)>` impl its map codec already requires
+//! assembles the map, and the `Arbitrary` impl is bounded on it.
+//!
+//! Not every newtype needs the key. Under `generate_arbitrary`, codegen
+//! attaches its own builder to most custom `string` and `bytes` fields, and
+//! `MessageField` builds a custom box pointer itself:
+//!
+//! - `ProtoString`: needed only when the type is a `map` key or value.
+//! - `ProtoBytes`: not needed for generated messages.
+//! - `ProtoList`: needed.
+//! - `MapStorage`: needed, except for a map whose value is a non-default
+//!   `bytes` type (`bytes::Bytes` or a custom one).
+//! - `ProtoBox`: needed only when the pointer boxes a oneof variant.
+//!
 //! # `ProtoBox` and `MapStorage`: inherent methods, not trait methods
 //!
 //! [`ProtoBox`](macro@ProtoBox) and [`MapStorage`](macro@MapStorage) follow a
@@ -215,7 +243,7 @@
 //! `#[buffa(remote = ..., into_inner = MyType::unwrap)]` for `ProtoBox`, or
 //! any of `len`/`insert`/`clear`/`iter` for `MapStorage`. (The full key
 //! catalog is these plus `ProtoBytes`'s `as_shared`, covered earlier, and the
-//! bare `arbitrary` flag every derive accepts; there are no others.) The
+//! bare `arbitrary` key every derive accepts; there are no others.) The
 //! override path is
 //! called the same way the default is — as a free function taking the
 //! receiver as its first argument (`Type::method(&self.0, ...)`) — so it
@@ -253,7 +281,9 @@ mod string;
 /// `buffa::ProtoString` for a single-field newtype wrapping the type named by
 /// `#[buffa(remote = ...)]`.
 /// The generated `copy_from_str` forwards to the inner type's `From<&str>`.
-/// Add the bare `arbitrary` key for the feature-gated `Arbitrary` forwarder.
+/// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
+/// the `arbitrary` crate wherever the key is active; the crate docs' section
+/// on the key shows how to make it conditional.
 #[proc_macro_derive(ProtoString, attributes(buffa))]
 pub fn derive_proto_string(input: TokenStream) -> TokenStream {
     expand(input, string::derive)
@@ -265,7 +295,9 @@ pub fn derive_proto_string(input: TokenStream) -> TokenStream {
 /// `as_shared = path` key generates the encode-side
 /// `buffa::ProtoBytes::as_shared` override — see the crate docs for the
 /// callable's contract.
-/// The bare `arbitrary` key adds the feature-gated `Arbitrary` forwarder.
+/// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
+/// the `arbitrary` crate wherever the key is active; the crate docs' section
+/// on the key shows how to make it conditional.
 #[proc_macro_derive(ProtoBytes, attributes(buffa))]
 pub fn derive_proto_bytes(input: TokenStream) -> TokenStream {
     expand(input, bytes::derive)
@@ -277,7 +309,9 @@ pub fn derive_proto_bytes(input: TokenStream) -> TokenStream {
 /// `#[buffa(remote = ...)]`. Requires the remote type to implement
 /// `Extend<T>`, and the newtype itself to implement `Default` by hand (not
 /// `#[derive(Default)]`, which would wrongly force `T: Default`).
-/// The bare `arbitrary` key adds the feature-gated `Arbitrary` forwarder.
+/// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
+/// the `arbitrary` crate wherever the key is active; the crate docs' section
+/// on the key shows how to make it conditional.
 #[proc_macro_derive(ProtoList, attributes(buffa))]
 pub fn derive_proto_list(input: TokenStream) -> TokenStream {
     expand(input, list::derive)
@@ -289,7 +323,9 @@ pub fn derive_proto_list(input: TokenStream) -> TokenStream {
 /// `#[buffa(remote = ...)]`. Calls the remote type's `new`/`into_inner`
 /// methods by the conventional names unless overridden with
 /// `#[buffa(remote = ..., new = path, into_inner = path)]`.
-/// The bare `arbitrary` key adds the feature-gated `Arbitrary` forwarder.
+/// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
+/// the `arbitrary` crate wherever the key is active; the crate docs' section
+/// on the key shows how to make it conditional.
 #[proc_macro_derive(ProtoBox, attributes(buffa))]
 pub fn derive_proto_box(input: TokenStream) -> TokenStream {
     expand(input, box_ptr::derive)
@@ -302,7 +338,9 @@ pub fn derive_proto_box(input: TokenStream) -> TokenStream {
 /// overridden with `#[buffa(remote = ..., insert = path, ...)]`. The newtype
 /// itself must implement `Default` and `FromIterator<(Key, Value)>` by hand —
 /// see the crate docs' example.
-/// The bare `arbitrary` key adds the feature-gated `Arbitrary` forwarder.
+/// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
+/// the `arbitrary` crate wherever the key is active; the crate docs' section
+/// on the key shows how to make it conditional.
 #[proc_macro_derive(MapStorage, attributes(buffa))]
 pub fn derive_map_storage(input: TokenStream) -> TokenStream {
     expand(input, map::derive)

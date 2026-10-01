@@ -28,11 +28,8 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let clear_call = remote_field::overridable_call(&overrides, "clear", field_ty, "clear");
     let iter_call = remote_field::overridable_call(&overrides, "iter", field_ty, "iter");
 
-    // The canonical seed is `Vec<(Key, Value)>`, which `Arbitrary` builds from
-    // exactly the bytes `HashMap<Key, Value>` — the default `map`
-    // representation — would consume (both go through `Unstructured::
-    // arbitrary_iter`). The newtype's own `FromIterator`, which `MapStorage`
-    // asks the user to write, then assembles it.
+    // `Vec<(Key, Value)>` consumes the same bytes as `HashMap<Key, Value>`:
+    // both collect `Unstructured::arbitrary_iter`.
     let from_iter = quote! {
         <Self as ::core::iter::FromIterator<(#key_ty, #value_ty)>>::from_iter(__buffa_seed)
     };

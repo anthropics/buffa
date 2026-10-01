@@ -5,7 +5,7 @@ use quote::quote;
 use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Fields, GenericParam};
 
-use crate::forwarders::{self, Flags};
+use crate::forwarders::Flags;
 
 /// The single field a remote-derive newtype wraps, plus the struct's name and
 /// generics.
@@ -21,7 +21,7 @@ pub struct RemoteField {
     /// `Some(name)` for a named-field struct, `None` for a tuple struct —
     /// used to build a `Self { name: value }` vs. `Self(value)` constructor.
     pub field_name: Option<syn::Ident>,
-    /// The optional forwarder families named by bare `#[buffa(..)]` keys (see
+    /// The optional impls asked for with bare `#[buffa(..)]` keys (see
     /// [`crate::forwarders`]). Every derive honors them, so they are parsed
     /// here rather than per-derive.
     pub flags: Flags,
@@ -115,7 +115,7 @@ fn single_field(input: &DeriveInput) -> syn::Result<(syn::Type, TokenStream, Opt
 /// [`parse`] for why), and collects the other keys present alongside it: any of
 /// `allowed_overrides` as a `key = path` pair (e.g.
 /// `#[buffa(remote = ..., into_inner = MyType::unwrap)]`), and the bare
-/// forwarder flags every derive accepts (e.g. `#[buffa(remote = ..., arbitrary)]`).
+/// `arbitrary` key every derive accepts, in the same attribute or another.
 fn parse_attrs(
     input: &DeriveInput,
     allowed_overrides: &[&str],
@@ -132,14 +132,18 @@ fn parse_attrs(
                 let _: syn::Type = meta.value()?.parse()?;
                 has_remote = true;
                 Ok(())
-            } else if meta.path.is_ident(forwarders::ARBITRARY) {
+            } else if meta.path.is_ident("arbitrary") {
                 if meta.input.peek(syn::Token![=]) {
                     return Err(meta.error(
-                        "`arbitrary` selects the Arbitrary forwarder and takes no value; \
-                         write it as a bare `#[buffa(remote = ..., arbitrary)]`",
+                        "`arbitrary` takes no value; write it as a bare key, \
+                         `#[buffa(remote = ..., arbitrary)]`, or as \
+                         `#[cfg_attr(<condition>, buffa(arbitrary))]` to make the impl \
+                         conditional",
                     ));
                 }
-                flags.arbitrary = true;
+                // A repeat is accepted: two `cfg_attr`s that both hold look
+                // the same here as a key written twice.
+                flags.arbitrary.get_or_insert(meta.path.span());
                 Ok(())
             } else if let Some(key) = allowed_overrides
                 .iter()

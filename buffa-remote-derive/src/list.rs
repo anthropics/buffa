@@ -65,9 +65,6 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     }
     let list_where_clause = &list_generics.where_clause;
 
-    // The canonical seed is `Vec<T>` — the default `repeated` representation
-    // this newtype replaces — so a message field consumes the same bytes
-    // whichever representation it was generated with.
     let arbitrary_impl = forwarders::arbitrary(
         &remote,
         &quote! { ::buffa::alloc::vec::Vec<#element_ty> },
