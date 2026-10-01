@@ -1784,6 +1784,11 @@ if any.is_type(MyMessage::TYPE_URL) { /* ... */ }
 let msg: Option<MyMessage> = any.unpack_if::<MyMessage>(MyMessage::TYPE_URL)?;
 ```
 
+`is_type` and `unpack_if` compare the whole URL, prefix included. JSON and text
+serialization look the message up in the `TypeRegistry` instead, and a type
+registered under one prefix is found under any other, by the message name
+after the last `/`. The `Any` keeps its own URL.
+
 ### Value and Struct
 
 Ergonomic builders for dynamic JSON-like values:

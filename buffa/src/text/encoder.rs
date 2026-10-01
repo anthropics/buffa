@@ -218,12 +218,18 @@ impl<'a> TextEncoder<'a> {
         self.w.write_char('}')
     }
 
-    /// Write `[type_url] { fields }` for a registered `Any` type, or do
-    /// nothing and return `false` if the URL isn't registered.
+    /// Write `[type_url] { fields }` when the registry has an entry for
+    /// `type_url` or for its message full name; otherwise write nothing and
+    /// return `false`.
     ///
     /// `true` means the expanded form was written — the caller skips its
     /// vanilla `type_url: "..." value: "..."` fallback. `false` means
     /// nothing was written — the caller should fall through.
+    ///
+    /// The URL is written between the brackets as given, with no escaping,
+    /// so it is expanded only when it is made of ASCII letters, digits and
+    /// `-._~/:%`. Any other URL returns `false`, and the caller's quoted
+    /// `type_url` field carries it exactly.
     ///
     /// Consults the text-format `Any` map installed via
     /// [`set_type_registry`](crate::type_registry::set_type_registry).
@@ -236,6 +242,13 @@ impl<'a> TextEncoder<'a> {
         type_url: &str,
         value: &[u8],
     ) -> Result<bool, core::fmt::Error> {
+        // `type_url` is input data: a URL with any prefix resolves by its
+        // message name. A `]` would end the bracketed name early and let the
+        // rest of the URL be read as further fields, and whitespace or `#`
+        // would not survive the trip back through the decoder.
+        if !type_url.bytes().all(is_bracket_safe_url_byte) {
+            return Ok(false);
+        }
         let Some(entry) = crate::type_registry::global_text_any(type_url) else {
             return Ok(false);
         };
@@ -511,10 +524,26 @@ fn write_float(w: &mut dyn Write, v: f64) -> core::fmt::Result {
     }
 }
 
+/// Whether `b` can stand in a type URL written between brackets and be read
+/// back unchanged: an ASCII letter or digit, or one of `-._~/:%`.
+fn is_bracket_safe_url_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'/' | b':' | b'%')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use alloc::string::String;
+
+    #[test]
+    fn bracket_safe_url_bytes() {
+        let safe = "type.googleapis.com/pkg.Msg_1~-:%";
+        assert!(safe.bytes().all(is_bracket_safe_url_byte));
+        for unsafe_byte in *b"[]{}#\"' \t\n\\<>," {
+            assert!(!is_bracket_safe_url_byte(unsafe_byte), "{unsafe_byte:#04x}");
+        }
+        assert!(!"é".bytes().any(is_bracket_safe_url_byte));
+    }
 
     #[test]
     fn single_line_scalars() {

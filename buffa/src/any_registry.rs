@@ -27,6 +27,9 @@ use hashbrown::HashMap;
 /// [`TextAnyEntry`]: crate::type_registry::TextAnyEntry
 pub struct JsonAnyEntry {
     /// The full type URL (e.g. `"type.googleapis.com/google.protobuf.Duration"`).
+    ///
+    /// A URL with no `/` carries no message name, and is found only by an
+    /// exact match.
     pub type_url: &'static str,
 
     /// Serialize: binary `Any.value` bytes → JSON representation of the
@@ -63,7 +66,8 @@ pub type AnyTypeEntry = JsonAnyEntry;
 /// deserialize messages containing `Any` fields.
 pub struct AnyRegistry {
     entries: HashMap<String, JsonAnyEntry>,
-    by_type_name: HashMap<String, String>,
+    /// Message full name → the type URL most recently registered for it.
+    by_type_name: HashMap<&'static str, &'static str>,
 }
 
 impl AnyRegistry {
@@ -75,27 +79,40 @@ impl AnyRegistry {
         }
     }
 
-    /// Registers a type entry. Replaces any existing entry for the same type URL.
+    /// Registers a type entry.
+    ///
+    /// Replaces any existing entry for the same type URL. When the same
+    /// message full name is registered under several URLs, a
+    /// [`lookup`](Self::lookup) of a URL that is not itself registered uses
+    /// the most recently registered one.
+    ///
+    /// A lookup by name decodes the payload as this message. A payload under
+    /// another prefix that does not decode as it fails to serialize as JSON;
+    /// one that does decode is written with this message's fields.
     pub fn register(&mut self, entry: JsonAnyEntry) {
-        let type_url = entry.type_url.to_owned();
         if let Some(type_name) = crate::type_registry::any_type_name(entry.type_url) {
-            self.by_type_name
-                .insert(type_name.to_owned(), type_url.clone());
+            self.by_type_name.insert(type_name, entry.type_url);
         }
-        self.entries.insert(type_url, entry);
+        self.entries.insert(entry.type_url.to_owned(), entry);
     }
 
     /// Looks up a type entry by type URL.
     ///
-    /// Exact URLs take precedence. Otherwise the protobuf full name after the
-    /// final slash is used, matching `google.protobuf.Any` type-URL semantics.
+    /// A registered URL finds its own entry. Any other URL is matched by the
+    /// message full name after its last `/`, because `google.protobuf.Any`
+    /// identifies the message by that name and leaves the prefix to the
+    /// application. `custom.example/v1/pkg.Message` therefore finds a type
+    /// registered as `type.googleapis.com/pkg.Message`.
+    ///
+    /// The entry's `type_url` is the registered one. Keep the URL you looked
+    /// up as the `Any`'s `type_url`.
     pub fn lookup(&self, type_url: &str) -> Option<&JsonAnyEntry> {
         if let Some(entry) = self.entries.get(type_url) {
             return Some(entry);
         }
 
         let type_name = crate::type_registry::any_type_name(type_url)?;
-        let registered_url = self.by_type_name.get(type_name)?;
+        let registered_url = *self.by_type_name.get(type_name)?;
         self.entries.get(registered_url)
     }
 }
@@ -193,10 +210,29 @@ mod tests {
         assert!(registry
             .lookup("type.googleapis.com/test.Message")
             .is_some());
-        assert!(registry
-            .lookup("custom.example/v1/test.Message")
-            .is_some());
+        assert!(registry.lookup("custom.example/v1/test.Message").is_some());
         assert!(registry.lookup("type.googleapis.com/test.Other").is_none());
+    }
+
+    #[test]
+    fn lookup_falls_back_to_the_last_url_registered_for_a_name() {
+        let mut registry = AnyRegistry::new();
+        registry.register(entry!("first.example/test.Message", false));
+        registry.register(entry!("second.example/test.Message", true));
+
+        // A registered URL finds its own entry.
+        let first = registry.lookup("first.example/test.Message").unwrap();
+        assert_eq!(first.type_url, "first.example/test.Message");
+        let second = registry.lookup("second.example/test.Message").unwrap();
+        assert_eq!(second.type_url, "second.example/test.Message");
+
+        // Any other prefix finds the last entry registered for the name.
+        let other = registry.lookup("other.example/v1/test.Message").unwrap();
+        assert_eq!(other.type_url, "second.example/test.Message");
+
+        // A URL with no `/`, or with nothing after it, carries no name.
+        assert!(registry.lookup("test.Message").is_none());
+        assert!(registry.lookup("other.example/").is_none());
     }
 
     #[test]

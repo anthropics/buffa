@@ -635,25 +635,31 @@ impl<'a> TextDecoder<'a> {
     /// [`set_type_registry`]); the registered `text_merge` then consumes the
     /// `{ ... }` body and re-encodes to wire bytes suitable for `Any.value`.
     ///
-    /// Returns `(type_url, value_bytes)`, where `type_url` is the registered
-    /// URL with no brackets, whitespace or comments.
+    /// Returns `(type_url, value_bytes)`, where `type_url` is the URL between
+    /// the brackets with whitespace and comments removed. It is the value for
+    /// `Any.type_url`, and is borrowed from `name` unless whitespace or
+    /// comments were removed. Its prefix can differ from the registered
+    /// URL's, because the map matches an unregistered URL by the message full
+    /// name after its last `/`.
     ///
     /// # Errors
     ///
-    /// [`ParseErrorKind::UnknownField`] if the URL is not registered — this
-    /// matches `AnyFieldWithInvalidType` in the conformance suite, which
-    /// expects parse failure on an unknown URL.
+    /// [`ParseErrorKind::UnknownField`] if neither the URL nor its message
+    /// full name is registered — this matches `AnyFieldWithInvalidType` in
+    /// the conformance suite, which expects parse failure on an unknown URL.
     ///
     /// [`set_type_registry`]: crate::type_registry::set_type_registry
-    pub fn read_any_expansion(&mut self, name: &'a str) -> Result<(&'a str, Vec<u8>), ParseError> {
+    pub fn read_any_expansion(
+        &mut self,
+        name: &'a str,
+    ) -> Result<(Cow<'a, str>, Vec<u8>), ParseError> {
         // read_field_name only returns bracketed names for NameKind::TypeName;
         // a missing bracket here means the caller dispatched wrong.
         let url = normalize_bracket_name(name).ok_or_else(|| self.unknown_field())?;
-        let entry = crate::type_registry::global_text_any(url.as_ref())
-            .ok_or_else(|| self.unknown_field())?;
+        let entry =
+            crate::type_registry::global_text_any(&url).ok_or_else(|| self.unknown_field())?;
         let bytes = (entry.text_merge)(self)?;
-        // The registry is keyed by `type_url`, so this is the normalized URL.
-        Ok((entry.type_url, bytes))
+        Ok((url, bytes))
     }
 
     /// Parse an extension bracket body: the `[pkg.ext] { ... }` form.
