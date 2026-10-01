@@ -1,3 +1,8 @@
+//! `ignore_unknown_enum_values` under the `no_std` process-wide option.
+//!
+//! The option is set once per process, so this binary holds a single test.
+//! Run it with `--no-default-features --features json`.
+
 #![cfg(not(feature = "std"))]
 
 use buffa::json::{set_global_json_parse_options, JsonParseOptions};
@@ -44,9 +49,7 @@ impl Enumeration for Color {
 
 #[test]
 fn global_lenient_option_filters_open_enum_containers() {
-    set_global_json_parse_options(
-        &JsonParseOptions::new().ignore_unknown_enum_values(true),
-    );
+    set_global_json_parse_options(&JsonParseOptions::new().ignore_unknown_enum_values(true));
 
     let json = r#"["RED","UNKNOWN",99,true]"#;
     let repeated: Vec<EnumValue<Color>> =

@@ -749,9 +749,8 @@ fn try_deserialize_enum<T: serde::de::DeserializeOwned>(
     }
     #[cfg(not(feature = "std"))]
     {
-        // Without std, the inner EnumValue deserialize stays strict. That
-        // gives this outer helper the error signal it needs to drop an
-        // unknown entry when the process-wide lenient option is enabled.
+        // The inner `EnumValue` deserialize is always strict here; see the
+        // doc comment above.
         let ignore = crate::json::ignore_unknown_enum_values();
         match serde_json::from_value::<T>(raw) {
             Ok(v) => Ok(Some(v)),
