@@ -1,0 +1,33 @@
+// Sets every `buffa.ext` option once, on the element it applies to.
+//
+// `plain` and `COLOR_RED` set `deprecated` and no `buffa.ext` option: they are
+// the control for "options present, `buffa.ext` option absent".
+
+edition = "2023";
+
+package test.extoptions;
+
+import "buffa/ext/options.proto";
+
+option (buffa.ext.file) = {};
+
+message Annotated {
+  option (buffa.ext.message) = {};
+
+  double mass = 1 [(buffa.ext.field) = {}];
+  int32 plain = 2 [deprecated = true];
+
+  oneof kind {
+    option (buffa.ext.oneof) = {};
+
+    int32 count = 3;
+    string label = 4;
+  }
+}
+
+enum Color {
+  option (buffa.ext.enum) = {};
+
+  COLOR_UNSPECIFIED = 0 [(buffa.ext.enum_value) = {}];
+  COLOR_RED = 1 [deprecated = true];
+}

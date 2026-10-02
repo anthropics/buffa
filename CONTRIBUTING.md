@@ -120,19 +120,22 @@ docker run --rm -v /tmp/conf:/out -e CONFORMANCE_OUT=/out buffa-conformance
 task tools-image               # rebuild and push the multi-arch tools image
 task vendor-bootstrap-protos   # re-fetch buffa-descriptor/protos/ from the new release tag
 task gen-bootstrap-types       # regenerate checked-in descriptor types
+task gen-option-types             # regenerate buffa-proto-options, which embeds descriptor.proto
 ```
 
-Commit the refreshed `buffa-descriptor/protos/` and `buffa-descriptor/src/generated/` alongside the version bump.
+Commit the refreshed `buffa-descriptor/protos/`, `buffa-descriptor/src/generated/`, and `buffa-proto-options/src/generated/` alongside the version bump.
 
 ## Checked-In Generated Code
 
-Three sets of generated code are checked into the repo and **must be regenerated** whenever codegen output changes (e.g. changes to `imports.rs`, `message.rs`, `oneof.rs`, etc.):
+These sets of generated code are checked into the repo and **must be regenerated** whenever codegen output changes (e.g. changes to `imports.rs`, `message.rs`, `oneof.rs`, etc.):
 
 1. **Bootstrap descriptor types** (`buffa-descriptor/src/generated/`): Used by codegen itself to parse `.proto` descriptors. Regenerate with `task gen-bootstrap-types`. The source protos are vendored in `buffa-descriptor/protos/` (pinned; refresh with `task vendor-bootstrap-protos` when bumping the protobuf version), so output is independent of your local protoc's bundled includes — only a protoc binary ≥ v27 is needed. Only needs regeneration when a codegen change affects the descriptor types themselves — most changes don't.
 
 2. **Well-known types** (`buffa-types/src/generated/`): `Timestamp`, `Duration`, `Any`, `Struct`/`Value`, `FieldMask`, `Empty`, wrappers, plus `Api`/`Type`/`Enum`/`SourceContext`. Checked in (rather than generated at build time) so that consumers of `buffa-types` don't need `protoc` or the `buffa-build`/`buffa-codegen` toolchain. Regenerate with `task gen-wkt-types`. The WKT `.proto` sources are vendored in `buffa-types/protos/` (not read from the protoc installation) so the output is pinned. **This is the one most likely to need regeneration** — WKTs use views, unknown-field preservation, and the `arbitrary` derive, so almost any codegen output-format change touches them. If in doubt, run it and check `git status`.
 
-3. **Logging example** (`examples/logging/src/gen/`): Regenerate with `task gen-logging-example` (requires `buf` on PATH).
+3. **Custom option types** (`buffa-proto-options/src/generated/`): the messages and extensions of `buffa-proto-options/protos/buffa/ext/options.proto`. Checked in so that `buffa-codegen` can depend on `buffa-proto-options` without first generating it. Regenerate with `task gen-option-types` (requires protoc v27 or later on PATH or in `$PROTOC`; `descriptor.proto` is read from `buffa-descriptor/protos/`). Run it after an edit to `options.proto`, after a codegen output-format change, and after `task vendor-bootstrap-protos`. The types are generated with every impl kind (views, JSON, text, `arbitrary`, reflection), so most output changes reach them, and the reflection impls embed `descriptor.proto`.
+
+4. **Logging example** (`examples/logging/src/gen/`): Regenerate with `task gen-logging-example` (requires `buf` on PATH).
 
 The `bsr-quickstart` example's `examples/bsr-quickstart/src/gen/` is the exception: it holds output from the *published* BSR plugin, so codegen changes do not regenerate it. Once the `buf.build/anthropics/buffa` plugin for a new release is published, bump the plugin pin in its `buf.gen.yaml` and the `buffa` / `buffa-types` versions in its `Cargo.toml` together, then run `task gen-bsr-quickstart-example`.
 
@@ -156,7 +159,7 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs on every push to `main` and 
 - **lint-markdown** — markdownlint over all `*.md` (config: `.markdownlint.json`)
 - **msrv-check** — `cargo check --workspace` on Rust 1.75 (the declared `rust-version`), then the table codec's tests on Rust 1.77, the oldest compiler that builds it
 - **check-nostd** — no_std (host + bare-metal ARM) and 32-bit compilation checks
-- **check-generated-code** — regenerates bootstrap descriptor types and fails if the checked-in code is stale
+- **check-generated-code** — regenerates the bootstrap descriptor types, the well-known types, and the `buffa-proto-options` option types, and fails if any checked-in copy is stale
 - **conformance** — builds the tools and conformance Docker images, runs the full protobuf conformance suite
 
 ## Benchmarks

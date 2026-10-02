@@ -75,6 +75,16 @@ Self-hosted Rust types for `google/protobuf/descriptor.proto` and `google/protob
 
 The generated code is checked in (regenerate via `task gen-bootstrap-types`). The only runtime dependency is `buffa` — no quote/syn/prettyplease — so the crate is `no_std`-capable and dependency-light enough to depend on from the runtime without pulling in the codegen toolchain.
 
+### `buffa-proto-options` — Custom Options
+
+`buffa-proto-options/protos/buffa/ext/options.proto` declares buffa's custom options, which are where a schema carries per-element settings for buffa's code generation, and `buffa-proto-options` holds the Rust types generated from that file. There is one option for each kind of element that buffa generates Rust for: `(buffa.ext.file)`, `(buffa.ext.message)`, `(buffa.ext.field)`, `(buffa.ext.oneof)`, `(buffa.ext.enum)`, and `(buffa.ext.enum_value)`. Each option is a message (`buffa.ext.FieldOptions` for a field, and so on) and a setting is a field of that message, so an empty option message leaves the generated code unchanged.
+
+**Numbering.** buffa has reserved extension numbers 1381–1390 in the protobuf global extension registry. Every option uses 1381, which is legal because each one extends a different `descriptor.proto` message, and a new setting becomes a field of the option's message, so it does not take a registry number. A tool built against an older `options.proto` keeps a newer setting as an unknown field when it decodes and re-encodes a descriptor.
+
+**A crate of its own.** The only required dependency is `buffa`, because an extension constant names the message it extends by string. Anything that reads descriptors can therefore depend on the crate and read the options through the same typed constants: `buffa-codegen`, a downstream generator built on it, or a reflection consumer walking a `DescriptorPool`. The view, JSON, text, `arbitrary`, and reflection impls are generated, and each compiles only with its crate feature (`views`, `json`, `text`, `arbitrary`, `reflect`). The generated code is checked in (regenerate with `task gen-option-types`), so that `buffa-codegen` can depend on the crate without first generating it. The crate is named for what it holds, and the proto package stays the shorter `buffa.ext`, because a schema author writes the package in every annotation and only code that reads the options writes the crate name.
+
+The options keep protobuf's default runtime retention, so they are present both in the `CodeGeneratorRequest.proto_file` descriptors that the plugin reads and in the descriptor set that reflection embeds.
+
 ### `buffa-codegen` — Shared Code Generation Logic
 
 The code generation library, shared between `protoc-gen-buffa` and `buffa-build`. Takes protobuf descriptors (from protoc's `FileDescriptorProto`) and emits Rust source code.

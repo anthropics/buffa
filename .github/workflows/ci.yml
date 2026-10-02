@@ -367,6 +367,12 @@ jobs:
       - name: Check buffa-descriptor no_std + json/reflect/text/views
         run: cargo check -p buffa-descriptor --no-default-features --features json,reflect,text,views
 
+      - name: Check buffa-proto-options no_std
+        run: cargo check -p buffa-proto-options --no-default-features
+
+      - name: Check buffa-proto-options no_std + json/text/views
+        run: cargo check -p buffa-proto-options --no-default-features --features json,text,views
+
       - name: Check workspace 32-bit
         run: cargo check --workspace --target i686-unknown-linux-gnu
 
@@ -415,10 +421,15 @@ jobs:
       - name: Regenerate WKT types
         run: cargo run -p buffa-codegen --bin gen_wkt_types -- /tmp/wkt.pb buffa-types/src/generated
 
+      - name: Regenerate buffa-proto-options option types
+        # descriptor.proto comes from buffa-descriptor/protos/ (pinned), so
+        # this is independent of the installed protoc's bundled includes.
+        run: scripts/gen-option-types.sh
+
       - name: Check for differences
         run: |
-          if ! git diff --exit-code buffa-descriptor/src/generated/ buffa-types/src/generated/; then
-            echo "::error::Checked-in generated code is stale. Run 'task gen-wkt-types' and/or regenerate bootstrap types, then commit."
+          if ! git diff --exit-code buffa-descriptor/src/generated/ buffa-types/src/generated/ buffa-proto-options/src/generated/; then
+            echo "::error::Checked-in generated code is stale. Run 'task gen-wkt-types', 'task gen-option-types' and/or regenerate bootstrap types, then commit."
             exit 1
           fi
 

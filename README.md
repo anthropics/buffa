@@ -165,6 +165,7 @@ let decoded: MyMessage = serde_json::from_str(&json).unwrap();
 | `buffa` | Core runtime: `Message` trait, wire format codec, `no_std` support |
 | `buffa-types` | Well-known types: Timestamp, Duration, Any, Struct, Api, Type, wrappers, etc. |
 | `buffa-descriptor` | Protobuf descriptor types (`FileDescriptorProto`, `DescriptorProto`, ...) |
+| `buffa-proto-options` | buffa's custom options (`buffa/ext/options.proto`) and their Rust types |
 | `buffa-codegen` | Code generation from protobuf descriptors |
 | `buffa-build` | `build.rs` helper for invoking codegen via `protoc` |
 | `buffa-remote-derive` | Derive macros implementing the pluggable owned-type traits for newtypes over foreign types |
