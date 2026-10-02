@@ -196,11 +196,14 @@ fn field_entry(
             ))
         })
     };
-    let type_path = |what: &str| -> Result<String, CodeGenError> {
-        let type_name = field
+    let type_name = || {
+        field
             .type_name
             .as_deref()
-            .ok_or(CodeGenError::MissingField("field.type_name"))?;
+            .ok_or(CodeGenError::MissingField("field.type_name"))
+    };
+    let type_path = |what: &str| -> Result<String, CodeGenError> {
+        let type_name = type_name()?;
         ctx.rust_type_relative(type_name, current_package, nesting)
             .ok_or_else(|| CodeGenError::Other(format!("{what} type '{type_name}' not found")))
     };
@@ -208,10 +211,7 @@ fn field_entry(
     // The table is not among the imports that `idiomatic_imports` shortens
     // paths with, so its path is built from the unshortened one.
     let unshortened_path = || -> Result<String, CodeGenError> {
-        let type_name = field
-            .type_name
-            .as_deref()
-            .ok_or(CodeGenError::MissingField("field.type_name"))?;
+        let type_name = type_name()?;
         let split = ctx
             .rust_type_relative_split(type_name, current_package, nesting)
             .ok_or_else(|| CodeGenError::Other(format!("message type '{type_name}' not found")))?;
@@ -225,23 +225,30 @@ fn field_entry(
     match f.ty {
         Type::TYPE_MESSAGE => {
             let child = type_path("message")?;
-            let child_table = table_path(&unshortened_path()?)?;
             let child_ty = rust_path_to_tokens(&child);
+            // A child without a table here is reached through its `Message`
+            // impl.
+            let child_table = if ctx.uses_table_codec(type_name()?) {
+                Some(table_path(&unshortened_path()?)?)
+            } else {
+                None
+            };
             let (slot, aux_item) = if f.card == Card::Repeated {
+                let vt = match &child_table {
+                    Some(table) => quote! { ::buffa::table::RepVt::new::<#child_ty>(&#table) },
+                    None => quote! { ::buffa::table::RepVt::new_via_message::<#child_ty>() },
+                };
                 (
                     quote! { ::buffa::alloc::vec::Vec<#child_ty> },
-                    quote! {
-                        ::buffa::table::Aux::Rep(&::buffa::table::RepVt::new::<#child_ty>(&#child_table))
-                    },
+                    quote! { ::buffa::table::Aux::Rep(&#vt) },
                 )
             } else {
                 let slot = classify_field(scope, msg, field, resolver)?.rust_type;
-                (
-                    slot.clone(),
-                    quote! {
-                        ::buffa::table::Aux::Msg(&::buffa::table::MsgVt::new::<#slot>(&#child_table))
-                    },
-                )
+                let vt = match &child_table {
+                    Some(table) => quote! { ::buffa::table::MsgVt::new::<#slot>(&#table) },
+                    None => quote! { ::buffa::table::MsgVt::new_via_message::<#slot>() },
+                };
+                (slot, quote! { ::buffa::table::Aux::Msg(&#vt) })
             };
             let aux = aux_u16()?;
             Ok((
