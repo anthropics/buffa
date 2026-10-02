@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` infers message and enum field kinds from `type_name` when `type` is unset.** This matches `FieldDescriptorProto` and protobuf's descriptor linker instead of treating the field as the default `double` scalar. This affects hand-built or synthesized descriptor sets that omit `type`; `protoc` output is unchanged.
+time: 2026-10-02T20:59:00+02:00
