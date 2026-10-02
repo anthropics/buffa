@@ -1909,14 +1909,11 @@ lookup uses the message name after the last `/`. So a type registered under
 one prefix is found under any other. The lookup does not rewrite `type_url`:
 the `Any` keeps the URL it was given.
 
-`Any` has two JSON forms. The *expanded form* carries the message's own JSON
-beside the type URL: `{"@type": "...", "field": ...}`, or
-`{"@type": "...", "value": ...}` for a well-known type with its own JSON
-mapping. Writing and parsing it needs the message's JSON entry in the
-`TypeRegistry`. For a type with no JSON entry, buffa writes
-`{"@type": "...", "value": "<base64>"}`, the encoded message as base64 under
-`value`. That form is specific to buffa: other protobuf implementations report
-an error for a type they cannot resolve.
+For a type with no JSON entry in the registry, buffa writes
+`{"@type": "...", "value": "<base64>"}`: the encoded message as base64 under
+`value`. That form is specific to buffa; other protobuf implementations report
+an error for a type they cannot resolve. A well-known type with its own JSON
+mapping also has a `value` key in its expanded form, holding the mapped JSON.
 
 Parsing a type with no JSON entry accepts the base64 form only. A missing or
 `null` `value` is an empty payload, and a string `value` that is valid base64
@@ -1927,12 +1924,7 @@ or `no type registry is installed`. This holds whether or not the surrounding
 message ignores unknown JSON keys, and no parse option turns it off, so one
 `Any` of an unregistered type in expanded form fails the whole parse: an entry
 of a type you did not register in `google.rpc.Status.details`, for example.
-
-Register every message type the input can carry in an `Any`: call each
-package's generated `__buffa::register_types` and
-`buffa_types::register_wkt_types` on a `TypeRegistry`, then
-`buffa::type_registry::set_type_registry`. The setup is shown under
-[JSON: `"[pkg.ext]"` keys](#json-pkgext-keys).
+Register every message type the input can carry in an `Any`.
 
 ### Value and Struct
 
