@@ -348,11 +348,19 @@ fn main() {
     // impl) used for every `repeated` field, via the `*`-templated knob. The
     // crate compiling is most of the test — the merge (`push`/`reserve`),
     // encode (`.iter()`), clear, and view→owned (`collect`) paths must all emit
-    // the generic `ProtoList` surface for the custom collection.
+    // the generic `ProtoList` surface for the custom collection, and under
+    // `generate_arbitrary` the builders for a custom string or `Bytes` element
+    // must return it.
     buffa_build::Config::new()
         .files(&["protos/repeated_type.proto"])
         .includes(&["protos/"])
         .repeated_type_custom("crate::repeated_type::CustomList<*>")
+        .string_type_custom_in("crate::reprs::EcoStr", &[".repeated_type.Lists.labels"])
+        .bytes_type_in(
+            buffa_build::BytesRepr::Bytes,
+            &[".repeated_type.Lists.blobs"],
+        )
+        .generate_arbitrary(true)
         .compile()
         .expect("buffa_build failed for repeated_type.proto");
 

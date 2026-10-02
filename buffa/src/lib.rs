@@ -363,13 +363,19 @@ pub mod __private {
         Ok(opt.map(S::from))
     }
 
-    /// Build a `Vec<S>` for a repeated `string` field.
+    /// Build the collection of a repeated `string` field: `Vec<S>`, or a
+    /// custom [`ProtoList<S>`](crate::ProtoList). The `Deref` bound names the
+    /// element type, so `S` is inferred from the field type.
     #[cfg(feature = "arbitrary")]
-    pub fn arbitrary_proto_string_vec<S: crate::ProtoString>(
+    pub fn arbitrary_proto_string_vec<S, L>(
         u: &mut ::arbitrary::Unstructured<'_>,
-    ) -> ::arbitrary::Result<::alloc::vec::Vec<S>> {
+    ) -> ::arbitrary::Result<L>
+    where
+        S: crate::ProtoString,
+        L: ::core::ops::Deref<Target = [S]> + ::core::convert::From<::alloc::vec::Vec<S>>,
+    {
         let vv: ::alloc::vec::Vec<::alloc::string::String> = ::arbitrary::Arbitrary::arbitrary(u)?;
-        Ok(vv.into_iter().map(S::from).collect())
+        Ok(L::from(vv.into_iter().map(S::from).collect()))
     }
 
     /// Build a [`ProtoBytes`](crate::ProtoBytes) from `Arbitrary` bytes.
@@ -391,13 +397,19 @@ pub mod __private {
         Ok(opt.map(B::from))
     }
 
-    /// Build a `Vec<B>` for a repeated `bytes` field.
+    /// Build the collection of a repeated `bytes` field: `Vec<B>`, or a
+    /// custom [`ProtoList<B>`](crate::ProtoList). The `Deref` bound names the
+    /// element type, so `B` is inferred from the field type.
     #[cfg(feature = "arbitrary")]
-    pub fn arbitrary_proto_bytes_vec<B: crate::ProtoBytes>(
+    pub fn arbitrary_proto_bytes_vec<B, L>(
         u: &mut ::arbitrary::Unstructured<'_>,
-    ) -> ::arbitrary::Result<::alloc::vec::Vec<B>> {
+    ) -> ::arbitrary::Result<L>
+    where
+        B: crate::ProtoBytes,
+        L: ::core::ops::Deref<Target = [B]> + ::core::convert::From<::alloc::vec::Vec<B>>,
+    {
         let vv: ::alloc::vec::Vec<::alloc::vec::Vec<u8>> = ::arbitrary::Arbitrary::arbitrary(u)?;
-        Ok(vv.into_iter().map(B::from).collect())
+        Ok(L::from(vv.into_iter().map(B::from).collect()))
     }
 
     // `map` fields: one builder per combination of slots that need converting.
@@ -561,6 +573,40 @@ mod arbitrary_tests {
         for (b, v) in bs.iter().zip(&vs) {
             assert_eq!(b.as_ref(), v.as_slice());
         }
+    }
+
+    /// A custom repeated collection with no `Arbitrary` impl.
+    #[derive(Debug, PartialEq)]
+    struct List<T>(Vec<T>);
+
+    impl<T> core::ops::Deref for List<T> {
+        type Target = [T];
+        fn deref(&self) -> &[T] {
+            &self.0
+        }
+    }
+
+    impl<T> From<Vec<T>> for List<T> {
+        fn from(v: Vec<T>) -> Self {
+            List(v)
+        }
+    }
+
+    // The repeated builders return whatever collection the field uses; the
+    // element type is inferred from the collection.
+    #[test]
+    fn arbitrary_proto_vec_builders_fill_a_custom_collection() {
+        use super::__private::arbitrary_proto_string_vec;
+
+        let bs: List<Bytes> = arbitrary_proto_bytes_vec(&mut Unstructured::new(&SEED)).unwrap();
+        let vs: Vec<Vec<u8>> = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert!(!vs.is_empty(), "the seed must produce elements");
+        assert_eq!(bs.iter().map(|b| b.to_vec()).collect::<Vec<_>>(), vs);
+
+        let ss: List<String> = arbitrary_proto_string_vec(&mut Unstructured::new(&SEED)).unwrap();
+        let vs: Vec<String> = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert!(!vs.is_empty(), "the seed must produce elements");
+        assert_eq!(ss, List(vs));
     }
 
     // The generic `arbitrary_proto_string` builder is the identity for `String`;

@@ -1746,7 +1746,9 @@ pub fn decode_bytes_to<B: ProtoBytes>(buf: &mut impl Buf) -> Result<B, DecodeErr
 ///   is never used at runtime — so a custom collection used through such a
 ///   framework must be serde-capable regardless.
 /// - **`arbitrary`:** under the `arbitrary` feature a collection must implement
-///   `arbitrary::Arbitrary` (trivially derivable on a newtype).
+///   `arbitrary::Arbitrary` (trivially derivable on a newtype). Not needed on
+///   a field whose element is a custom string type or a non-default bytes
+///   type: generated code builds that field through `From<Vec<T>>`.
 ///
 /// # Examples
 ///

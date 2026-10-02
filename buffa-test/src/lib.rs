@@ -216,7 +216,10 @@ pub mod repeated_type {
     /// A `Vec`-backed collection implementing `buffa::ProtoList<T>`. `Default`
     /// is hand-written (not derived) so it does not require `T: Default`, which
     /// the supertrait bound would otherwise force on every element type.
+    /// `Arbitrary` is derived for the fields whose element type has its own
+    /// impl; `labels` and `blobs` are built through `From<Vec<T>>` instead.
     #[derive(Clone, PartialEq, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct CustomList<T>(pub ::buffa::alloc::vec::Vec<T>);
 
     impl<T> ::core::default::Default for CustomList<T> {

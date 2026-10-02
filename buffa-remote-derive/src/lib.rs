@@ -177,7 +177,8 @@
 //!
 //! - `ProtoString`: not needed for generated messages.
 //! - `ProtoBytes`: not needed for generated messages.
-//! - `ProtoList`: needed.
+//! - `ProtoList`: needed, except for a `repeated` field whose element is a
+//!   custom string type or a non-default `bytes` type.
 //! - `MapStorage`: needed, except for a map with a custom string key, a
 //!   custom string value, or a non-default `bytes` value (`bytes::Bytes` or a
 //!   custom one).
