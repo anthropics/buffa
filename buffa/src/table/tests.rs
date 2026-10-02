@@ -519,6 +519,92 @@ fn a_closed_enum_value_it_does_not_know_becomes_an_unknown_field() {
 }
 
 #[test]
+fn a_packed_repeated_open_enum_appends_values_to_existing_storage() {
+    let mut wire = vec![0x42, 0x40];
+    for _ in 0..32 {
+        wire.extend_from_slice(&[0x80, 0x01]);
+    }
+
+    let mut msg = Wide {
+        rep_enum_open: vec![EnumValue::from(42)],
+        ..Wide::default()
+    };
+    msg.merge_from_slice(&wire).unwrap();
+
+    assert_eq!(msg.rep_enum_open.len(), 33);
+    assert_eq!(msg.rep_enum_open[0].to_i32(), 42);
+    assert!(msg.rep_enum_open[1..]
+        .iter()
+        .all(|value| value.to_i32() == 128));
+}
+
+#[test]
+fn an_empty_packed_repeated_enum_payload_does_not_reserve() {
+    let msg = Wide::decode_from_slice(&[0x42, 0x00]).unwrap();
+
+    assert!(msg.rep_enum_open.is_empty());
+    assert_eq!(msg.rep_enum_open.capacity(), 0);
+}
+
+#[test]
+fn a_packed_repeated_closed_enum_preserves_unknown_values() {
+    let mut wire = vec![0x5a, 0x41];
+    wire.push(0x00);
+    for _ in 0..32 {
+        wire.extend_from_slice(&[0x80, 0x01]);
+    }
+
+    let msg = Outer::decode_from_slice(&wire).unwrap();
+
+    assert_eq!(msg.packed_closed, [Color::Red]);
+    assert_eq!(msg.unknown.len(), 32);
+}
+
+#[test]
+fn an_all_unknown_packed_closed_enum_does_not_reserve() {
+    let mut wire = vec![0x5a, 0x40];
+    for _ in 0..32 {
+        wire.extend_from_slice(&[0x80, 0x01]);
+    }
+
+    let msg = Outer::decode_from_slice(&wire).unwrap();
+
+    assert!(msg.packed_closed.is_empty());
+    assert_eq!(msg.unknown.len(), 32);
+    assert_eq!(msg.packed_closed.capacity(), 0);
+}
+
+#[test]
+fn a_malformed_packed_open_enum_does_not_reserve_from_later_bytes() {
+    let mut wire = vec![0x42, 0x4b];
+    wire.extend_from_slice(&[0x80; 11]);
+    wire.extend_from_slice(&[0x00; 64]);
+
+    let mut msg = Wide::default();
+    assert_eq!(msg.merge_from_slice(&wire), Err(DecodeError::VarintTooLong));
+    assert!(msg.rep_enum_open.is_empty());
+    assert_eq!(msg.rep_enum_open.capacity(), 0);
+}
+
+#[test]
+fn a_malformed_packed_open_enum_tail_keeps_existing_spare_capacity() {
+    let mut wire = vec![0x42, 0x70];
+    wire.push(0x00);
+    wire.extend_from_slice(&[0x80; 11]);
+    wire.extend_from_slice(&[0x00; 100]);
+
+    let mut msg = Wide {
+        rep_enum_open: Vec::with_capacity(2),
+        ..Wide::default()
+    };
+    msg.rep_enum_open.push(EnumValue::from(42));
+    let capacity = msg.rep_enum_open.capacity();
+    assert_eq!(msg.merge_from_slice(&wire), Err(DecodeError::VarintTooLong));
+    assert_eq!(msg.rep_enum_open.len(), 2);
+    assert_eq!(msg.rep_enum_open.capacity(), capacity);
+}
+
+#[test]
 fn a_closed_enum_value_is_dropped_by_a_message_that_drops_unknown_fields() {
     // rep_enum_closed (20) = [1, 7, 2] unpacked; optional closed (9) = 7.
     let wire = [
