@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **ProtoJSON `google.protobuf.Duration` parsing** now accepts fractional-only values such as `.5s` and `-.1s`, matching the protobuf JSON parser used by other implementations.
+time: 2026-10-02T20:50:00.000000000+02:00

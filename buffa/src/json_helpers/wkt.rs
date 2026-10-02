@@ -203,14 +203,14 @@ pub fn fmt_duration(secs: i64, nanos: i32) -> Result<String, &'static str> {
 /// range.
 pub fn parse_duration(s: &str) -> Result<(i64, i32), &'static str> {
     let body = s.strip_suffix('s').ok_or("missing 's' suffix")?;
-    let negative = body.starts_with('-');
-    let body = if negative {
-        body.strip_prefix('-').ok_or("malformed sign")?
+    let (negative, body) = if let Some(body) = body.strip_prefix('-') {
+        (true, body)
+    } else if let Some(body) = body.strip_prefix('+') {
+        (false, body)
     } else {
-        body
+        (false, body)
     };
-    // Reject residual sign after stripping: "--5s" would otherwise parse as
-    // -5 via i64::parse and the double negation would yield +5 silently.
+    // Reject a second sign after stripping the optional leading sign.
     if body.starts_with(['-', '+']) {
         return Err("malformed sign");
     }
@@ -218,7 +218,16 @@ pub fn parse_duration(s: &str) -> Result<(i64, i32), &'static str> {
         Some(dot) => (&body[..dot], &body[dot + 1..]),
         None => (body, ""),
     };
-    let abs_secs: i64 = sec_str.parse().map_err(|_| "bad seconds")?;
+    let abs_secs: i64 = if sec_str.is_empty() {
+        // ProtoJSON permits a fractional value without a whole-second part,
+        // e.g. ".5s". Require at least one fractional digit so "." is invalid.
+        if nano_str.is_empty() {
+            return Err("bad seconds");
+        }
+        0
+    } else {
+        sec_str.parse().map_err(|_| "bad seconds")?
+    };
     let abs_nanos: i32 = if nano_str.is_empty() {
         0
     } else {
@@ -495,6 +504,19 @@ mod tests {
             assert_eq!(fmt_duration(secs, nanos).unwrap(), expected);
             assert_eq!(parse_duration(expected).unwrap(), (secs, nanos));
         }
+    }
+
+    #[test]
+    fn duration_accepts_fraction_without_integer_part() {
+        let cases = [
+            (".5s", (0, 500_000_000)),
+            ("+.1s", (0, 100_000_000)),
+            ("-.000000001s", (0, -1)),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(parse_duration(input), Ok(expected), "{input}");
+        }
+        assert!(parse_duration(".s").is_err());
     }
 
     #[test]
