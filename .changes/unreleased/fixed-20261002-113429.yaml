@@ -1,0 +1,3 @@
+kind: Fixed
+body: Preserve the underlying YAML carrier error in the standard error source chain.
+time: 2026-10-02T11:34:29.104247+02:00

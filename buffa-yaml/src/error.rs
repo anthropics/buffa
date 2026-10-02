@@ -6,6 +6,7 @@
 #[derive(Debug, thiserror::Error)]
 #[error("{inner}")]
 pub struct Error {
+    #[source]
     inner: serde_norway::Error,
 }
 
