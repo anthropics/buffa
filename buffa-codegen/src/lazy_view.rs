@@ -74,7 +74,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
     } = scope;
     let preserve_unknown_fields = scope.preserve_unknown_fields();
 
-    let oneof_idents = crate::oneof::resolve_oneof_idents(msg);
+    let oneof_idents = crate::oneof::resolve_oneof_idents(msg, proto_fqn)?;
     let lazy_ident = format_ident!("{}LazyView", rust_name);
 
     let view_depth = nesting + 2;
