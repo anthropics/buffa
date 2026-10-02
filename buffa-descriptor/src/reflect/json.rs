@@ -10,9 +10,13 @@
 //! WKT codecs are **reflective** — they read the WKT's fields by number
 //! through the [`DynamicMessage`] surface and transform, rather than bridging
 //! through `buffa-types`. This keeps `buffa-descriptor` free of a `buffa-types`
-//! dependency edge at the cost of reimplementing the WKT JSON formatting
-//! (Timestamp RFC3339, Duration `"3.5s"`, FieldMask camelCase, base64,
-//! `Any`'s `@type` expansion).
+//! dependency edge at the cost of reimplementing the WKT JSON structure here
+//! (`Any`'s `@type` expansion, `Struct` / `Value` / `ListValue`, the
+//! wrappers). The Timestamp, Duration and FieldMask text formats are shared
+//! with `buffa-types` through `buffa::json_helpers::wkt`.
+//!
+//! `bytes` values encode and decode through `buffa::json_helpers::bytes`, the
+//! codec generated messages use.
 //!
 //! Known limitation: `google.protobuf.Any` requires the inner type to be
 //! registered in the same pool — the spec permits failing on unregistered
@@ -268,7 +272,7 @@ fn serialize_scalar<S: Serializer>(sc: ScalarType, v: &Value, s: S) -> Result<S:
         (ScalarType::Float, Value::F32(f)) => json_helpers::float::serialize(f, s),
         (ScalarType::Double, Value::F64(f)) => json_helpers::double::serialize(f, s),
         (ScalarType::String, Value::String(t)) => s.serialize_str(t),
-        (ScalarType::Bytes, Value::Bytes(b)) => s.serialize_str(&base64_encode(b)),
+        (ScalarType::Bytes, Value::Bytes(b)) => json_helpers::bytes::serialize(b, s),
         _ => s.serialize_none(),
     }
 }
@@ -1224,33 +1228,6 @@ fn parse_map_key(sc: ScalarType, s: &str) -> Result<MapKey, String> {
     })
 }
 
-// ── Base64 ──────────────────────────────────────────────────────────────────
-
-const B64_STD: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-fn base64_encode(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
-        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
-        let n = (b0 << 16) | (b1 << 8) | b2;
-        out.push(B64_STD[(n >> 18 & 0x3F) as usize] as char);
-        out.push(B64_STD[(n >> 12 & 0x3F) as usize] as char);
-        if chunk.len() > 1 {
-            out.push(B64_STD[(n >> 6 & 0x3F) as usize] as char);
-        } else {
-            out.push('=');
-        }
-        if chunk.len() > 2 {
-            out.push(B64_STD[(n & 0x3F) as usize] as char);
-        } else {
-            out.push('=');
-        }
-    }
-    out
-}
-
 // ── Well-known types ────────────────────────────────────────────────────────
 
 include!("json_wkt.rs");
@@ -1261,7 +1238,7 @@ const _: fn(&MessageDescriptor) = |_| {};
 
 #[cfg(test)]
 mod tests {
-    use super::{base64_encode, field_mask_to_camel, field_mask_to_snake};
+    use super::{field_mask_to_camel, field_mask_to_snake};
 
     #[test]
     fn field_mask_leading_underscore_roundtrip() {
@@ -1273,13 +1250,5 @@ mod tests {
             assert_eq!(field_mask_to_camel(snake).unwrap(), camel);
             assert_eq!(field_mask_to_snake(camel).unwrap(), snake);
         }
-    }
-
-    #[test]
-    fn base64_encode_uses_standard_alphabet_and_padding() {
-        assert_eq!(base64_encode(&[0xfb]), "+w==");
-        assert_eq!(base64_encode(&[0xff]), "/w==");
-        assert_eq!(base64_encode(&[1]), "AQ==");
-        assert_eq!(base64_encode(&[1, 2, 3]), "AQID");
     }
 }

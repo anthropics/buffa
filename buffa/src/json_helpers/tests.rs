@@ -460,6 +460,27 @@ fn bytes_url_safe_padded_with_trailing_bits() {
     assert_eq!(val.0, vec![0xFB]);
 }
 
+/// `decode_base64` leaves the output buffer's size to the `base64` crate,
+/// and the input length comes from untrusted JSON. A multiply-first estimate
+/// (`len * 3 / 4`) overflows a 32-bit `usize` above ~1.33 GiB of input: it
+/// panics under overflow checks and under-sizes the buffer otherwise. The
+/// panic fails this test and the undersized estimate fails the bound. The
+/// lengths are relative to `usize::MAX`, so a 64-bit host trips as well.
+///
+/// The estimate depends on the engine type alone: `decoded_len_estimate`
+/// uses a `GeneralPurpose` engine, which is the type of both lenient engines.
+#[test]
+fn base64_decode_buffer_estimate_cannot_overflow_at_any_length() {
+    for len in [0, 1, 4, usize::MAX / 2, usize::MAX - 1, usize::MAX] {
+        let needed = len / 4 * 3 + len % 4 * 3 / 4;
+        let estimate = base64::decoded_len_estimate(len);
+        assert!(
+            estimate >= needed,
+            "estimate {estimate} below the {needed} bytes that {len} characters decode to"
+        );
+    }
+}
+
 // ── error paths ──────────────────────────────────────────────────────────
 
 #[test]
