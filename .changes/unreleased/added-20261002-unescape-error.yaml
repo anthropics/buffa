@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`text::UnescapeError` now implements the standard `Display` and `Error` traits.** Errors returned by `text::unescape` and `text::unescape_str` can now be propagated through standard error wrappers without a manual adapter.
+time: 2026-10-02T13:07:00+02:00
