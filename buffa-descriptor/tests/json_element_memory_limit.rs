@@ -5,7 +5,8 @@
 //! it lands in, so without a bound about 1.5 MB of JSON builds 32 MiB. These
 //! tests check that every site that accumulates from input —
 //! repeated fields, map entries, `Struct` members, `ListValue` elements,
-//! `FieldMask` paths — is charged, that one budget covers a whole parse
+//! `FieldMask` paths, and the `serde_json::Value` tree an `Any` payload is
+//! buffered into — is charged, that one budget covers a whole parse
 //! rather than resetting per nested message or `Any` layer, and that the
 //! charges match the reflective binary decoder's.
 //!
@@ -265,9 +266,10 @@ fn nested_messages_draw_on_one_shared_budget() {
     assert_over_budget(&err);
 }
 
-/// `Any` decodes its payload into a second `DynamicMessage` at parse time.
-/// That parse continues the outer budget, so N nested layers cannot each
-/// spend the full allowance.
+/// `Any` buffers its JSON object — so `@type` can follow the fields — and
+/// then decodes the payload into a second `DynamicMessage`. Both draw on the
+/// outer budget: the buffer as it is built (#493) and the decode as it
+/// replays. N nested layers cannot each spend the full allowance.
 #[test]
 fn any_payloads_continue_the_outer_budget() {
     let p = pool(OPTIONS_FDS_BYTES);
@@ -279,12 +281,16 @@ fn any_payloads_continue_the_outer_budget() {
     );
     let json = format!(r#"{{"payload":{inner}}}"#);
 
-    parse_with_limit(&p, "reflect.opt.Envelope", &json, 8 * ELEMENT)
-        .expect("8 elements inside the Any fit");
+    // Buffering the payload object charges one `Value` slot per member
+    // (`@type`, `nestedType`) and one per `nestedType` element: 2 + 8 = 10.
+    // The buffer outweighs the 8 the replayed messages cost, so now that it
+    // too is charged it is the binding bound.
+    parse_with_limit(&p, "reflect.opt.Envelope", &json, 10 * ELEMENT)
+        .expect("the buffered Any payload fits in 10 slots");
 
     // The error is identifiable from inside the `Any` too.
-    let err = parse_with_limit(&p, "reflect.opt.Envelope", &json, 8 * ELEMENT - 1)
-        .expect_err("the Any payload spends the outer budget");
+    let err = parse_with_limit(&p, "reflect.opt.Envelope", &json, 10 * ELEMENT - 1)
+        .expect_err("one slot short, the Any payload is refused");
     assert_over_budget(&err);
     // The text is the documented one, which the binary codec's error displays.
     assert!(err.to_string().starts_with("element memory limit exceeded"));
@@ -309,9 +315,11 @@ fn the_budget_error_is_identifiable_through_nested_any_layers() {
         r#"{{"payload":{{"@type":"type.googleapis.com/reflect.opt.Envelope","payload":{descriptor}}}}}"#
     );
 
-    parse_with_limit(&p, "reflect.opt.Envelope", &json, 2 * ELEMENT).expect("2 elements fit");
-    let err = parse_with_limit(&p, "reflect.opt.Envelope", &json, ELEMENT)
-        .expect_err("2 elements do not fit in 1 slot");
+    // The outer payload buffers the whole nested object: its two members, the
+    // inner payload's two members and the 2 `nestedType` elements — 6 slots.
+    parse_with_limit(&p, "reflect.opt.Envelope", &json, 6 * ELEMENT).expect("6 buffered slots fit");
+    let err = parse_with_limit(&p, "reflect.opt.Envelope", &json, 6 * ELEMENT - 1)
+        .expect_err("one slot short across the two Any layers");
     assert_over_budget(&err);
 
     let quoted = concat!(
@@ -329,6 +337,27 @@ fn the_budget_error_is_identifiable_through_nested_any_layers() {
             .starts_with("Any inner deserialize failed: "),
         "{err}"
     );
+}
+
+/// Before #493 an `Any` payload's buffer was bounded by the input length
+/// alone: the parse charged only what the payload *replayed* into the target
+/// message, so a payload of singular fields — which the replay charges nothing
+/// for — could buffer freely. Now the buffer itself is charged, one slot per
+/// member, and is refused when its slots exceed the budget even though the
+/// replay would cost nothing.
+#[test]
+fn an_any_buffer_is_charged_even_when_the_replay_is_not() {
+    let p = pool(OPTIONS_FDS_BYTES);
+    // `name` is a singular field, so the replayed `DescriptorProto` charges no
+    // element memory. The buffer holds two members: `@type` and `name`.
+    let json =
+        r#"{"payload":{"@type":"type.googleapis.com/google.protobuf.DescriptorProto","name":"X"}}"#;
+
+    parse_with_limit(&p, "reflect.opt.Envelope", json, 2 * ELEMENT)
+        .expect("the two-member buffer fits in 2 slots");
+    let err = parse_with_limit(&p, "reflect.opt.Envelope", json, ELEMENT)
+        .expect_err("the buffer's second member has no slot, though the replay costs nothing");
+    assert_over_budget(&err);
 }
 
 /// A `ListValue` element is itself a `Value` and can hold another list. The
