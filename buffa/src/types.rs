@@ -1339,9 +1339,9 @@ pub fn string_encoded_len(value: &str) -> usize {
 ///   with-module and need no `serde` impl.
 /// - **A `map` key needs `Hash + Eq`** (default / `HashMap` container) or `Ord`
 ///   (`map_type(BTreeMap)`); the bound is enforced at the generated field type.
-/// - **No `Arbitrary` impl required for custom strings.** Under the `arbitrary`
-///   feature, singular, optional, repeated, and map fields use generic builders
-///   that create canonical `String` values and convert them through `From`.
+/// - **No `Arbitrary` impl required.** Under `generate_arbitrary`, codegen
+///   attaches a generic builder to a custom string field, and to a `map` field
+///   with a custom string key or value.
 #[rustversion::attr(
     since(1.78),
     diagnostic::on_unimplemented(

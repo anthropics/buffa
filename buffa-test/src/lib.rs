@@ -400,13 +400,20 @@ pub mod map_type {
 /// `HashMap` key bound and every JSON dispatch path. The type is crate-local
 /// because vtable reflection emits `impl ReflectMapKey` / `impl ReflectElement`
 /// for it (a foreign type would be an orphan-rule error — exactly as for a
-/// custom `repeated` element). The seven fields cover every custom-string-key/value
-/// JSON dispatch path; exercised by `src/tests/string_map.rs`.
+/// custom `repeated` element). The fields cover every custom-string-key/value
+/// JSON dispatch path and every generated `Arbitrary` map builder that converts
+/// a string slot; exercised by `tests/string_map.rs` and
+/// `src/tests/string_map.rs`.
 #[allow(clippy::derivable_impls, non_camel_case_types)]
 pub mod string_map {
     /// `String`-backed newtype satisfying `buffa::ProtoString`, plus the
     /// `Hash + Eq + Ord` a map key needs and `Serialize`/`Deserialize` the JSON
     /// paths need.
+    ///
+    /// It has no `Arbitrary` impl. The fixture is compiled with
+    /// `generate_arbitrary`, so under the `arbitrary` feature the crate builds
+    /// only if every map field with a `MapStr` slot got a builder that makes
+    /// the `MapStr` from a `String`.
     #[derive(
         Clone,
         PartialEq,

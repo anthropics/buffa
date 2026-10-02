@@ -1168,36 +1168,7 @@ fn inline_string_field_selective_and_override() {
 
 #[test]
 fn inline_string_custom_emits_generic_arbitrary_builder() {
-    use buffa_codegen::StringRepr;
-    let mut config = no_views();
-    config.generate_arbitrary = true;
-    config
-        .string_fields
-        .push((".".into(), StringRepr::Custom("::ecow::EcoString".into())));
-    let content = generate_proto(
-        r#"
-        syntax = "proto3";
-        package test;
-        message Msg { string name = 1; }
-        "#,
-        &config,
-    );
-    assert!(
-        content.contains("::ecow::EcoString"),
-        "string field should use the custom type: {content}"
-    );
-    // A non-default string repr attaches the type-agnostic generic builder,
-    // regardless of whether the type has a native Arbitrary impl.
-    assert!(
-        content.contains("arbitrary(with = ::buffa::__private::arbitrary_proto_string"),
-        "custom string field must use the generic arbitrary_proto_string builder: {content}"
-    );
-}
-
-#[test]
-fn inline_custom_string_map_fields_use_generic_arbitrary_builders() {
     use buffa_codegen::{BytesRepr, StringRepr};
-
     let mut config = no_views();
     config.generate_arbitrary = true;
     config
@@ -1209,26 +1180,139 @@ fn inline_custom_string_map_fields_use_generic_arbitrary_builders() {
         syntax = "proto3";
         package test;
         message Msg {
-            map<string, int32> string_key = 1;
-            map<int32, string> string_value = 2;
-            map<string, string> both_strings = 3;
-            map<string, bytes> string_key_bytes_value = 4;
+            string name = 1;
+            optional string nick = 2;
+            repeated string tags = 3;
+            bytes blob = 4;
         }
         "#,
         &config,
     );
+    assert!(
+        content.contains("::ecow::EcoString"),
+        "string field should use the custom type: {content}"
+    );
+    // A non-default repr attaches the builder for the field's shape, whether
+    // or not the type has a native Arbitrary impl.
+    assert_eq!(
+        ["name", "nick", "tags", "blob"].map(|field| arbitrary_builder_of(&content, field)),
+        [
+            Some("arbitrary_proto_string"),
+            Some("arbitrary_proto_string_opt"),
+            Some("arbitrary_proto_string_vec"),
+            Some("arbitrary_proto_bytes"),
+        ]
+    );
+}
 
-    for helper in [
-        "arbitrary_proto_string_map_key",
-        "arbitrary_proto_string_map_value",
-        "arbitrary_proto_string_map",
-        "arbitrary_proto_string_bytes_map",
-    ] {
-        assert!(
-            content.contains(helper),
-            "custom string map fields must use {helper}: {content}"
-        );
+/// The `::buffa::__private` function named by the `arbitrary(with = ...)`
+/// attribute on `field`, or `None` when the field has no such attribute.
+fn arbitrary_builder_of<'a>(content: &'a str, field: &str) -> Option<&'a str> {
+    let decl = content
+        .find(&format!("pub {field}:"))
+        .unwrap_or_else(|| panic!("no field `{field}` in: {content}"));
+    // The field's attributes follow the previous `pub` item: the preceding
+    // field, or the struct itself.
+    let before = &content[..decl];
+    let attrs = &before[before.rfind("pub ").unwrap_or(0)..];
+    let prefix = "arbitrary(with = ::buffa::__private::";
+    let rest = &attrs[attrs.find(prefix)? + prefix.len()..];
+    Some(&rest[..rest.find(')').expect("unterminated arbitrary attribute")])
+}
+
+const ARBITRARY_MAP_PROTO: &str = r#"
+    syntax = "proto3";
+    package test;
+    message Msg {
+        map<string, int32> string_key = 1;
+        map<int32, string> string_value = 2;
+        map<string, string> both_strings = 3;
+        map<string, bytes> string_key_bytes_value = 4;
+        map<int32, bytes> bytes_value = 5;
+        map<int32, int32> no_string_or_bytes = 6;
     }
+"#;
+
+/// Asserts the builder of each field of [`ARBITRARY_MAP_PROTO`], in field
+/// order.
+#[track_caller]
+fn assert_arbitrary_map_builders(config: &CodeGenConfig, expected: [Option<&str>; 6]) {
+    let content = generate_proto(ARBITRARY_MAP_PROTO, config);
+    let fields = [
+        "string_key",
+        "string_value",
+        "both_strings",
+        "string_key_bytes_value",
+        "bytes_value",
+        "no_string_or_bytes",
+    ];
+    assert_eq!(
+        fields.map(|field| arbitrary_builder_of(&content, field)),
+        expected,
+        "builders of {fields:?}"
+    );
+}
+
+#[test]
+fn arbitrary_map_builder_matches_the_slots_that_convert() {
+    use buffa_codegen::{BytesRepr, StringRepr};
+
+    let custom_string = (
+        ".".to_owned(),
+        StringRepr::Custom("::ecow::EcoString".into()),
+    );
+    let bytes = (".".to_owned(), BytesRepr::Bytes);
+
+    // Custom string and `bytes::Bytes`: every slot that is `string` or `bytes`
+    // converts.
+    let mut config = no_views();
+    config.generate_arbitrary = true;
+    config.string_fields.push(custom_string.clone());
+    config.bytes_fields.push(bytes.clone());
+    assert_arbitrary_map_builders(
+        &config,
+        [
+            Some("arbitrary_proto_string_map_key"),
+            Some("arbitrary_proto_string_map_value"),
+            Some("arbitrary_proto_string_map"),
+            Some("arbitrary_proto_string_bytes_map"),
+            Some("arbitrary_proto_bytes_map"),
+            None,
+        ],
+    );
+
+    // Custom string, default `Vec<u8>`: a `bytes` value uses its own impl.
+    let mut config = no_views();
+    config.generate_arbitrary = true;
+    config.string_fields.push(custom_string);
+    assert_arbitrary_map_builders(
+        &config,
+        [
+            Some("arbitrary_proto_string_map_key"),
+            Some("arbitrary_proto_string_map_value"),
+            Some("arbitrary_proto_string_map"),
+            Some("arbitrary_proto_string_map_key"),
+            None,
+            None,
+        ],
+    );
+
+    // Default `String`, `bytes::Bytes`: a `string` key uses its own impl, so a
+    // `map<string, bytes>` takes the builder that converts only the value.
+    let mut config = no_views();
+    config.generate_arbitrary = true;
+    config.bytes_fields.push(bytes);
+    assert_arbitrary_map_builders(
+        &config,
+        [
+            None,
+            None,
+            None,
+            Some("arbitrary_proto_bytes_map"),
+            Some("arbitrary_proto_bytes_map"),
+            None,
+        ],
+    );
 }
 
 #[test]
