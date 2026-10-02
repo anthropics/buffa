@@ -114,6 +114,8 @@ mod skip_debug;
 mod strict_json;
 mod string_map;
 mod string_type;
+#[cfg(has_table_codec)]
+mod table_codec;
 mod textproto;
 mod type_prefix;
 mod unbox_oneof;
