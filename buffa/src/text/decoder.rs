@@ -287,7 +287,7 @@ impl<'a> TextDecoder<'a> {
 
     /// Read an `f32` value.
     ///
-    /// Accepts any numeric form plus the case-insensitive literals `nan`,
+    /// Accepts decimal numeric forms plus the case-insensitive literals `nan`,
     /// `inf`, `infinity`, each optionally with a leading `-` (whitespace or
     /// comments may separate the sign from the literal). Overflow
     /// saturates to ±∞ (matching C++ text-format behaviour).
@@ -297,7 +297,7 @@ impl<'a> TextDecoder<'a> {
     /// [`ParseErrorKind::InvalidNumber`] if the token is neither a number nor
     /// a recognised float literal.
     pub fn read_f32(&mut self) -> Result<f32, ParseError> {
-        self.read_f64().map(|v| v as f32)
+        self.read_float(f32::NAN, f32::INFINITY)
     }
 
     /// Read an `f64` value. See [`read_f32`](Self::read_f32).
@@ -306,6 +306,13 @@ impl<'a> TextDecoder<'a> {
     ///
     /// As [`read_f32`](Self::read_f32).
     pub fn read_f64(&mut self) -> Result<f64, ParseError> {
+        self.read_float(f64::NAN, f64::INFINITY)
+    }
+
+    fn read_float<T>(&mut self, nan: T, infinity: T) -> Result<T, ParseError>
+    where
+        T: core::str::FromStr + core::ops::Neg<Output = T> + Copy,
+    {
         let tok = self.tok.read()?;
         if tok.kind != TokenKind::Scalar {
             return Err(self.err_at(&tok, ParseErrorKind::UnexpectedToken { expected: "number" }));
@@ -317,42 +324,37 @@ impl<'a> TextDecoder<'a> {
                 // the literal, so reuse its trivia handling for the raw span.
                 let (neg, lit) = match tok.raw.strip_prefix('-') {
                     Some(r) => {
-                        // `consume_ws` only stops after an ASCII whitespace
-                        // byte or a comment's `\n`, neither of which can sit
-                        // inside a multi-byte sequence, so the offset is a
-                        // char boundary even when a comment holds non-ASCII.
+                        // `consume_ws` only stops at ASCII whitespace or a comment's
+                        // newline, neither of which can split a UTF-8 character.
                         let trivia_len = r.len() - consume_ws(r.as_bytes()).len();
                         debug_assert!(r.is_char_boundary(trivia_len));
                         (true, &r[trivia_len..])
                     }
                     None => (false, tok.raw),
                 };
-                let v = if lit.eq_ignore_ascii_case("nan") {
-                    f64::NAN
+                let value = if lit.eq_ignore_ascii_case("nan") {
+                    nan
                 } else if lit.eq_ignore_ascii_case("inf") || lit.eq_ignore_ascii_case("infinity") {
-                    f64::INFINITY
+                    infinity
                 } else {
                     return Err(self.err_at(&tok, ParseErrorKind::InvalidNumber));
                 };
-                Ok(if neg { -v } else { v })
+                Ok(if neg { -value } else { value })
             }
             ScalarKind::Number => {
                 let num = lex_number(tok.raw.as_bytes())
                     .ok_or_else(|| self.err_at(&tok, ParseErrorKind::InvalidNumber))?;
                 match num.kind {
                     NumKind::Dec | NumKind::Float => {
-                        // Rust's f64 parse saturates to ±∞ on overflow and to
-                        // ±0.0 on underflow (since 1.55), both of which are
-                        // the behaviours the textproto spec requires. The sign
-                        // is preserved: `"-0"` and `"-1e-400"` parse to -0.0.
+                        // Parse directly to the requested precision. Parsing through f64 first
+                        // can double-round decimal values near an f32 midpoint.
                         number_for_parse(tok.raw, &num)
-                            .parse::<f64>()
+                            .parse::<T>()
                             .map_err(|_| self.err_at(&tok, ParseErrorKind::InvalidNumber))
                     }
                     NumKind::Hex | NumKind::Oct => {
                         // The textproto spec's FLOAT production is base-10
-                        // only; `0x1` and `01` are not float literals. The
-                        // conformance suite explicitly tests rejection.
+                        // only; conformance tests require rejecting hex and octal.
                         Err(self.err_at(&tok, ParseErrorKind::InvalidNumber))
                     }
                 }
@@ -1001,12 +1003,28 @@ mod tests {
 
     #[test]
     fn read_f32_negative_zero() {
-        // f32 goes via read_f64 then `as f32`; the cast preserves the sign.
         let mut d = TextDecoder::new("f: -0");
         d.read_field_name().unwrap();
         let v = d.read_f32().unwrap();
         assert!(v == 0.0 && v.is_sign_negative());
         assert_eq!(v.to_bits(), (-0.0f32).to_bits());
+    }
+
+    #[test]
+    fn read_f32_rounds_directly_to_target_precision() {
+        // These values are just beyond the midpoint above/below 1.0f32. Parsing
+        // through f64 rounds to the midpoint first, then ties to the even 1.0f32.
+        let cases = [
+            ("1.0000000596046447753906250000000000000001", 0x3f80_0001u32),
+            ("-1.0000000596046447753906250000000000000001", 0xbf80_0001u32),
+        ];
+        for (input, expected) in cases {
+            let full = alloc::format!("f: {input}");
+            let mut d = TextDecoder::new(&full);
+            d.read_field_name().unwrap();
+            let got = d.read_f32().unwrap();
+            assert_eq!(got.to_bits(), expected, "input: {input}");
+        }
     }
 
     #[test]
