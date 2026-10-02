@@ -2418,10 +2418,10 @@ impl DescriptorPool {
         let explicit_ty = ty.is_some();
         let ty = ty.unwrap_or_default();
         if let Some(scalar) = ScalarType::from_proto(ty) {
-            // A `type_name` is an error only beside an explicit scalar `type`,
-            // and an empty one counts as absent. protoc and protobuf-go infer
-            // the kind of a field with no `type` from its `type_name`; this
-            // pool does not, and links such a field as the default scalar.
+            // A non-empty `type_name` beside an explicit scalar `type` is
+            // invalid. When `type` itself is absent, however, protobuf
+            // infers message vs enum from the named symbol, so continue to
+            // named-type resolution below.
             if explicit_ty {
                 if let Some(type_name) = type_name.filter(|tn| !tn.is_empty()) {
                     return Err(PoolError::UnexpectedTypeName {
@@ -2429,8 +2429,11 @@ impl DescriptorPool {
                         type_name: type_name.to_string(),
                     });
                 }
+                return Ok(SingularKind::Scalar(scalar));
             }
-            return Ok(SingularKind::Scalar(scalar));
+            if type_name.filter(|tn| !tn.is_empty()).is_none() {
+                return Ok(SingularKind::Scalar(scalar));
+            }
         }
         // ENUM, MESSAGE, GROUP — resolve type_name.
         let tn = type_name.ok_or_else(|| PoolError::MissingTypeName {
@@ -2439,12 +2442,13 @@ impl DescriptorPool {
         let lookup = tn.strip_prefix('.').unwrap_or(tn);
         match self.by_name.get(lookup) {
             Some(Definition::Message(midx))
-                if matches!(ty, ProtoType::TYPE_MESSAGE | ProtoType::TYPE_GROUP) =>
+                if !explicit_ty
+                    || matches!(ty, ProtoType::TYPE_MESSAGE | ProtoType::TYPE_GROUP) =>
             {
                 self.check_visible(scope, self.message_file[midx.0 as usize], tn, field_fqn)?;
                 Ok(SingularKind::Message(*midx))
             }
-            Some(Definition::Enum(eidx)) if ty == ProtoType::TYPE_ENUM => {
+            Some(Definition::Enum(eidx)) if !explicit_ty || ty == ProtoType::TYPE_ENUM => {
                 self.check_visible(scope, self.enum_file[eidx.0 as usize], tn, field_fqn)?;
                 Ok(SingularKind::Enum(*eidx))
             }

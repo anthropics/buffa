@@ -690,26 +690,68 @@ fn scalar_fields_with_an_empty_type_name_are_accepted() {
 }
 
 #[test]
-fn type_name_check_applies_only_to_an_explicit_scalar_type() {
+fn type_name_infers_missing_message_and_enum_types() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
-    use buffa_descriptor::generated::descriptor::FieldDescriptorProto;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, EnumDescriptorProto, EnumValueDescriptorProto, FieldDescriptorProto,
+        FileDescriptorProto, FileDescriptorSet,
+    };
 
-    // `type` unset, `type_name` naming a message that exists in the pool.
-    // protoc and protobuf-go infer the kind from the symbol. The pool does
-    // not: the unset `type` reads as the enum's default, `TYPE_DOUBLE`. That
-    // is a known divergence; this test pins only that the scalar `type_name`
-    // check does not turn such a field into a link error. With inference the
-    // kind here becomes a message.
-    let kind = linked_kind_of_single_field(FieldDescriptorProto {
-        name: Some("value".into()),
-        number: Some(1),
+    let inferred_field = |name: &str, number: i32, type_name: &str| FieldDescriptorProto {
+        name: Some(name.into()),
+        number: Some(number),
         label: Some(Label::LABEL_OPTIONAL),
-        type_name: Some(".reflect.test.Scalars".into()),
+        type_name: Some(type_name.into()),
         ..Default::default()
-    });
+    };
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    p.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("inferred-field-type.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("Target".into()),
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Holder".into()),
+                    field: vec![
+                        inferred_field("target", 1, ".valid.test.Target"),
+                        inferred_field("kind", 2, ".valid.test.Kind"),
+                    ],
+                    ..Default::default()
+                },
+            ],
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Kind".into()),
+                value: vec![EnumValueDescriptorProto {
+                    name: Some("KIND_UNSPECIFIED".into()),
+                    number: Some(0),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .unwrap();
+
+    let holder = p.message_by_name("valid.test.Holder").unwrap();
     assert_eq!(
-        kind,
-        FieldKind::Singular(SingularKind::Scalar(ScalarType::Double))
+        holder.field(1).unwrap().kind(),
+        FieldKind::Singular(SingularKind::Message(
+            p.message_index("valid.test.Target").unwrap()
+        ))
+    );
+    assert_eq!(
+        holder.field(2).unwrap().kind(),
+        FieldKind::Singular(SingularKind::Enum(
+            p.enum_index("valid.test.Kind").unwrap()
+        ))
     );
 }
 
