@@ -1561,10 +1561,15 @@ pub(crate) struct FieldInfo {
     struct_field_type: TokenStream,
     is_repeated: bool,
     is_map: bool,
-    /// Whether this field has explicit presence and uses `Option<T>` wrapping.
-    /// True for proto3 `optional` scalars and proto2 `optional` (non-required)
-    /// scalars. Not true for message fields (which use `MessageField<T>`),
-    /// repeated fields, or proto2 `required` fields.
+    /// Whether the field's resolved presence is explicit: proto3 `optional`
+    /// scalars and proto2 `optional` (non-required) scalars, which use
+    /// `Option<T>`. Not true for message fields (which use `MessageField<T>`)
+    /// or proto2 `required` fields.
+    ///
+    /// Also true for a `repeated` field of a file whose resolved
+    /// `field_presence` is explicit (proto2, and the editions default),
+    /// although its type is `Vec<T>`. `is_repeated` distinguishes the two, and
+    /// `inner_opt_type` is set only for an `Option<T>` field.
     is_optional: bool,
     /// The owned Rust type used for this field when it is proto type `bytes`
     /// (singular, optional, or repeated; map values use `map_value_bytes_repr`).
@@ -1908,10 +1913,11 @@ fn arbitrary_builder(info: &FieldInfo) -> Option<&'static str> {
     } else {
         return None;
     };
-    Some(if info.is_optional {
-        optional
-    } else if info.is_repeated {
+    // `is_repeated` first: see `FieldInfo::is_optional`.
+    Some(if info.is_repeated {
         repeated
+    } else if info.is_optional {
+        optional
     } else {
         singular
     })

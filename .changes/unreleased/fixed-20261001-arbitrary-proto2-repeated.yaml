@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Under `generate_arbitrary`, a `repeated string` or `repeated bytes` field with a non-default type did not compile in a proto2 file, or an editions file with explicit presence (the default)** (#500). Codegen attached the builder for an `optional` field, which returns `Option<T>` for the `Vec<T>` field. Proto3 files were unaffected.
+time: 2026-10-01T19:36:30-07:00

@@ -1316,6 +1316,43 @@ fn arbitrary_map_builder_matches_the_slots_that_convert() {
 }
 
 #[test]
+fn arbitrary_builder_for_a_proto2_repeated_field_is_the_vec_builder() {
+    use buffa_codegen::{BytesRepr, StringRepr};
+
+    let mut config = no_views();
+    config.generate_arbitrary = true;
+    config
+        .string_fields
+        .push((".".into(), StringRepr::Custom("::ecow::EcoString".into())));
+    config.bytes_fields.push((".".into(), BytesRepr::Bytes));
+    // In a proto2 file a `repeated` field inherits the file's explicit
+    // `field_presence`, which sets `FieldInfo::is_optional`; its field type
+    // is still `Vec<T>`.
+    let content = generate_proto(
+        r#"
+        syntax = "proto2";
+        package test;
+        message Msg {
+            repeated string names = 1;
+            repeated bytes blobs = 2;
+            optional string name = 3;
+            optional bytes blob = 4;
+        }
+        "#,
+        &config,
+    );
+    assert_eq!(
+        ["names", "blobs", "name", "blob"].map(|field| arbitrary_builder_of(&content, field)),
+        [
+            Some("arbitrary_proto_string_vec"),
+            Some("arbitrary_proto_bytes_vec"),
+            Some("arbitrary_proto_string_opt"),
+            Some("arbitrary_proto_bytes_opt"),
+        ]
+    );
+}
+
+#[test]
 fn inline_string_default_is_unchanged() {
     // With no string_fields rule, output must still use String + merge_string.
     let content = generate_proto(

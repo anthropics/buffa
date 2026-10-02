@@ -809,7 +809,8 @@ fn main() {
 
     // proto2 `[default = "..."]` + string_type: a required string field is a
     // bare type, so its Default impl and clear() must build the literal via the
-    // configured repr's From<String>, not String::from.
+    // configured repr's From<String>, not String::from. `generate_arbitrary`
+    // type-checks the builders chosen for the repeated and optional strings.
     let string_p2_out =
         std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("string_proto2_variant");
     std::fs::create_dir_all(&string_p2_out).expect("create string_proto2_variant dir");
@@ -817,6 +818,7 @@ fn main() {
         .files(&["protos/string_proto2.proto"])
         .includes(&["protos/"])
         .string_type_custom("::buffa_smolstr::SmolStr")
+        .generate_arbitrary(true)
         .out_dir(string_p2_out)
         .compile()
         .expect("buffa_build failed for string_proto2.proto with string_type");
