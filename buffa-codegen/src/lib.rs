@@ -4028,6 +4028,7 @@ fn validate_shared_root_name(
 ///
 /// Checks, in one walk of the message tree:
 ///
+/// - **Required type names**: every message and enum has a name.
 /// - **Reserved field names**: no field starts with `__buffa_` (would clash
 ///   with generated `__buffa_unknown_fields` / `__buffa_cached_size`).
 /// - **Module-name conflicts**: no two sibling messages snake_case to the
@@ -4055,7 +4056,10 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
     // enums live inside their owner message's module and cannot collide
     // with the package-root sentinel, so only file-level is checked.
     for enum_type in &file.enum_type {
-        let name = enum_type.name.as_deref().unwrap_or("");
+        let name = enum_type
+            .name
+            .as_deref()
+            .ok_or(CodeGenError::MissingField("enum.name"))?;
         if name == sentinel {
             return Err(CodeGenError::ReservedModuleName {
                 name: sentinel.to_string(),
@@ -4073,12 +4077,22 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
         let mut seen: HashMap<String, &str> = HashMap::new();
 
         for msg in messages {
-            let name = msg.name.as_deref().unwrap_or("");
+            let name = msg
+                .name
+                .as_deref()
+                .ok_or(CodeGenError::MissingField("message.name"))?;
             let fqn = if scope.is_empty() {
                 name.to_string()
             } else {
                 format!("{scope}.{name}")
             };
+
+            for enum_type in &msg.enum_type {
+                enum_type
+                    .name
+                    .as_deref()
+                    .ok_or(CodeGenError::MissingField("enum.name"))?;
+            }
 
             for field in &msg.field {
                 if let Some(fname) = &field.name {

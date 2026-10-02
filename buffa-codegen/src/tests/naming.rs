@@ -4,6 +4,58 @@
 use super::*;
 
 #[test]
+fn test_missing_message_names_rejected() {
+    let mut top_level = proto3_file("test.proto");
+    top_level.message_type.push(DescriptorProto::default());
+
+    let mut nested = proto3_file("test.proto");
+    nested.message_type.push(DescriptorProto {
+        name: Some("Parent".to_string()),
+        nested_type: vec![DescriptorProto::default()],
+        ..Default::default()
+    });
+
+    for file in [top_level, nested] {
+        let err = generate(
+            &[file],
+            &["test.proto".to_string()],
+            &CodeGenConfig::default(),
+        )
+        .expect_err("missing message name must be rejected");
+        assert!(
+            matches!(err, CodeGenError::MissingField("message.name")),
+            "expected MissingField(message.name), got: {err}"
+        );
+    }
+}
+
+#[test]
+fn test_missing_enum_names_rejected() {
+    let mut top_level = proto3_file("test.proto");
+    top_level.enum_type.push(EnumDescriptorProto::default());
+
+    let mut nested = proto3_file("test.proto");
+    nested.message_type.push(DescriptorProto {
+        name: Some("Parent".to_string()),
+        enum_type: vec![EnumDescriptorProto::default()],
+        ..Default::default()
+    });
+
+    for file in [top_level, nested] {
+        let err = generate(
+            &[file],
+            &["test.proto".to_string()],
+            &CodeGenConfig::default(),
+        )
+        .expect_err("missing enum name must be rejected");
+        assert!(
+            matches!(err, CodeGenError::MissingField("enum.name")),
+            "expected MissingField(enum.name), got: {err}"
+        );
+    }
+}
+
+#[test]
 fn test_reserved_field_name_rejected() {
     let field = make_field(
         "__buffa_cached_size",
