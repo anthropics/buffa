@@ -84,15 +84,12 @@
 //! [`ProtoBytes`](macro@ProtoBytes) and [`ProtoList`](macro@ProtoList) follow
 //! the same shape for `bytes` and `repeated` fields respectively.
 //! `ProtoBytes`'s generated `from_wire` always copies the payload via
-//! `to_vec()` before handing it to the remote type's `From<Vec<u8>>` — there
-//! is no generic way to ask an arbitrary remote type to take ownership of a
-//! borrowed/`Bytes`-backed payload without copying, so this derive can't
-//! reach the zero-copy decode path the built-in `bytes::Bytes` representation
-//! gets. A hand-written `from_wire` doesn't escape the copy either:
-//! `WirePayload::into_bytes` is zero-copy only for an owned multi-chunk
-//! payload, and the common single-chunk source arrives borrowed and is
-//! copied there too. When that copy matters, use the built-in `bytes::Bytes`
-//! representation for the field rather than a custom type.
+//! `to_vec()` before handing it to the remote type's `From<Vec<u8>>`, so the
+//! derive does not use `ProtoBytes::PREFERS_OWNED_BYTES`. A hand-written `ProtoBytes`
+//! implementation can opt in when its `from_wire` can consume
+//! `WirePayload::into_bytes()` without copying; for a `Bytes`-backed input this
+//! can share the source allocation. Keep the default for inline types that
+//! copy from `WirePayload::as_slice()`.
 //!
 //! The encode side has the mirror-image limitation with an escape hatch: by
 //! default the generated `ProtoBytes` impl inherits the trait's `as_shared`
@@ -295,6 +292,8 @@ pub fn derive_proto_string(input: TokenStream) -> TokenStream {
 /// `as_shared = path` key generates the encode-side
 /// `buffa::ProtoBytes::as_shared` override — see the crate docs for the
 /// callable's contract.
+/// The generated impl keeps `ProtoBytes::PREFERS_OWNED_BYTES` at its default
+/// `false`; write the trait impl by hand to opt into owned wire payloads.
 /// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
 /// the `arbitrary` crate wherever the key is active; the crate docs' section
 /// on the key shows how to make it conditional.
