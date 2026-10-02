@@ -2245,6 +2245,17 @@ pub enum CodeGenWarning {
         /// by proto name.
         assignments: Vec<(String, String)>,
     },
+    /// Rust keyword escaping made two members of a message struct produce the
+    /// same identifier, so the affected field or oneof names were adjusted.
+    /// Wire, JSON, and text-format names are unaffected.
+    #[non_exhaustive]
+    RustIdentifierCollisionAdjusted {
+        /// Fully-qualified proto name of the affected message.
+        message_name: String,
+        /// `(proto_name, final_rust_name)` for each adjusted member, sorted by
+        /// proto name.
+        assignments: Vec<(String, String)>,
+    },
     /// A field in a kept file references a type from a package that is neither
     /// being generated nor covered by an [`extern_path`](CodeGenConfig::extern_paths)
     /// mapping. The generated code will emit a dangling type path that fails to
@@ -2487,6 +2498,21 @@ impl core::fmt::Display for CodeGenWarning {
                     f,
                     "message `{message_name}`: idiomatic snake_case field names collide; \
                      adjusted: {} (wire/JSON/text names are unaffected)",
+                    parts.join(", ")
+                )
+            }
+            Self::RustIdentifierCollisionAdjusted {
+                message_name,
+                assignments,
+            } => {
+                let parts: Vec<String> = assignments
+                    .iter()
+                    .map(|(proto, rust)| format!("`{proto}` → `{rust}`"))
+                    .collect();
+                write!(
+                    f,
+                    "message `{message_name}`: Rust keyword escaping makes member names \
+                     collide; adjusted: {} (wire/JSON/text names are unaffected)",
                     parts.join(", ")
                 )
             }
