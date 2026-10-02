@@ -3,6 +3,71 @@
 
 use super::*;
 
+fn oneof_name_file(names: &[&str], synthetic_index: Option<usize>) -> FileDescriptorProto {
+    let mut file = proto3_file("oneof_names.proto");
+    file.package = Some("my.pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: names
+            .iter()
+            .enumerate()
+            .map(|(index, _)| {
+                let mut field = make_field(
+                    &format!("choice_{index}"),
+                    index as i32 + 1,
+                    Label::LABEL_OPTIONAL,
+                    Type::TYPE_STRING,
+                );
+                field.oneof_index = Some(index as i32);
+                if synthetic_index == Some(index) {
+                    field.proto3_optional = Some(true);
+                }
+                field
+            })
+            .collect(),
+        oneof_decl: names
+            .iter()
+            .map(|name| OneofDescriptorProto {
+                name: Some((*name).to_string()),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    });
+    file
+}
+
+fn assert_oneof_name_conflict(first: &str, second: &str, rust_name: &str) {
+    assert_oneof_name_conflict_in_file(
+        oneof_name_file(&[first, second], None),
+        "my.pkg.Msg",
+        first,
+        second,
+        rust_name,
+        &CodeGenConfig::default(),
+    );
+}
+
+fn assert_oneof_name_conflict_in_file(
+    file: FileDescriptorProto,
+    message_name: &str,
+    first: &str,
+    second: &str,
+    rust_name: &str,
+    config: &CodeGenConfig,
+) {
+    let err = generate(&[file], &["oneof_names.proto".to_string()], config)
+        .expect_err("colliding sibling oneof names must be rejected");
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "oneof enum name conflict in message '{message_name}': oneofs '{first}' and \
+             '{second}' both map to Rust enum '{rust_name}'"
+        )
+    );
+    assert!(matches!(err, CodeGenError::OneofEnumNameConflict { .. }));
+}
+
 #[test]
 fn test_reserved_field_name_rejected() {
     let field = make_field(
@@ -1257,4 +1322,61 @@ fn test_oneof_named_self_escapes_its_enum_to_self_underscore() {
         content.contains("Manager(::buffa::alloc::string::String)"),
         "the oneof's variants must be unaffected; got:\n{content}"
     );
+}
+
+#[test]
+fn test_sibling_oneofs_with_same_pascal_case_are_rejected() {
+    assert_oneof_name_conflict("foo_bar", "foo__bar", "FooBar");
+}
+
+#[test]
+fn test_sibling_oneofs_with_same_keyword_escaped_name_are_rejected() {
+    assert_oneof_name_conflict("self", "self_", "Self_");
+}
+
+#[test]
+fn test_sibling_oneofs_with_different_names_are_accepted() {
+    let files = generate(
+        &[oneof_name_file(&["first", "second"], None)],
+        &["oneof_names.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("distinct sibling oneof names must generate");
+    let content = joined(&files);
+    assert!(content.contains("pub enum First"), "{content}");
+    assert!(content.contains("pub enum Second"), "{content}");
+}
+
+#[test]
+fn test_nested_oneof_conflict_reports_full_name_without_views() {
+    let mut file = oneof_name_file(&["foo_bar", "foo__bar"], None);
+    let inner = file.message_type.pop().expect("inner message");
+    file.message_type.push(DescriptorProto {
+        name: Some("Outer".to_string()),
+        nested_type: vec![inner],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        generate_views: false,
+        ..Default::default()
+    };
+    assert_oneof_name_conflict_in_file(
+        file,
+        "my.pkg.Outer.Msg",
+        "foo_bar",
+        "foo__bar",
+        "FooBar",
+        &config,
+    );
+}
+
+#[test]
+fn test_synthetic_oneof_name_collision_is_ignored() {
+    let files = generate(
+        &[oneof_name_file(&["foo_bar", "foo__bar"], Some(1))],
+        &["oneof_names.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("synthetic proto3 optional oneofs do not emit enums");
+    assert!(!files.is_empty());
 }

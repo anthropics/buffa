@@ -2765,29 +2765,6 @@ pub fn generate(
     Ok(generate_with_diagnostics(file_descriptors, files_to_generate, config)?.0)
 }
 
-/// Like [`generate`], but also returns the non-fatal [`CodeGenWarning`]s
-/// collected during generation (e.g. enums whose idiomatic CamelCase aliases
-/// were suppressed by a naming conflict).
-///
-/// Surface each warning via its [`Display`](core::fmt::Display) impl — e.g. as a
-/// `cargo:warning=...` from a `build.rs`, or on stderr from a standalone
-/// generator — or match on it for programmatic handling. [`generate`] discards
-/// them, so existing callers are unaffected.
-///
-/// Warnings are returned only on success. On error, any warnings already
-/// collected are dropped along with the partial output — the [`CodeGenError`]
-/// is the actionable signal.
-///
-/// # Errors
-///
-/// Returns [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has
-/// no matching descriptor, [`CodeGenError::InvalidTypeNamePrefix`] if
-/// [`CodeGenConfig::type_name_prefix`] is not empty or PascalCase,
-/// [`CodeGenError::Other`] if `generate_reflection_vtable`
-/// is set without `generate_reflection` or if an active feature-gate name in
-/// [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
-/// and other [`CodeGenError`] variants for malformed descriptors (e.g. a
-/// missing required field) encountered while generating.
 /// Whether a custom `repeated` element type holds proto `string` or `bytes` —
 /// selects `ValueRef::String`/`ValueRef::Bytes` and the JSON delegate module.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -3204,6 +3181,31 @@ fn warn_excluded_refs_msg(
     }
 }
 
+/// Like [`generate`], but also returns the non-fatal [`CodeGenWarning`]s
+/// collected during generation (e.g. enums whose idiomatic CamelCase aliases
+/// were suppressed by a naming conflict).
+///
+/// Surface each warning via its [`Display`](core::fmt::Display) impl — e.g. as a
+/// `cargo:warning=...` from a `build.rs`, or on stderr from a standalone
+/// generator — or match on it for programmatic handling. [`generate`] discards
+/// them, so existing callers are unaffected.
+///
+/// Warnings are returned only on success. On error, any warnings already
+/// collected are dropped along with the partial output — the [`CodeGenError`]
+/// is the actionable signal.
+///
+/// # Errors
+///
+/// Returns [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has
+/// no matching descriptor, [`CodeGenError::InvalidTypeNamePrefix`] if
+/// [`CodeGenConfig::type_name_prefix`] is not empty or PascalCase,
+/// [`CodeGenError::Other`] if `generate_reflection_vtable`
+/// is set without `generate_reflection` or if an active feature-gate name in
+/// [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
+/// [`CodeGenError::OneofEnumNameConflict`] if sibling oneofs map to the same
+/// Rust enum identifier (rename either oneof to resolve it), and other
+/// [`CodeGenError`] variants for malformed descriptors (e.g. a missing
+/// required field) encountered while generating.
 pub fn generate_with_diagnostics(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
@@ -5148,6 +5150,17 @@ pub enum CodeGenError {
         name_a: String,
         name_b: String,
         module_name: String,
+    },
+    /// Two sibling oneofs produce the same Rust enum identifier.
+    #[error(
+        "oneof enum name conflict in message '{message_name}': oneofs \
+         '{first_oneof}' and '{second_oneof}' both map to Rust enum '{rust_name}'"
+    )]
+    OneofEnumNameConflict {
+        message_name: String,
+        first_oneof: String,
+        second_oneof: String,
+        rust_name: String,
     },
     /// A proto package segment, message name, or file-level enum name
     /// would emit a Rust item matching the reserved sentinel `__buffa`.

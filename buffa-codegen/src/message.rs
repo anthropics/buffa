@@ -255,7 +255,7 @@ fn generate_message_with_nesting(
     };
 
     // Compute oneof enum identifiers for all non-synthetic oneofs up front.
-    let oneof_idents = crate::oneof::resolve_oneof_idents(msg);
+    let oneof_idents = crate::oneof::resolve_oneof_idents(msg, proto_fqn)?;
 
     // Path prefix from this struct's emission scope to its oneof enums at
     // `__buffa::oneof::<msg_path>::`. The owned struct sits at `nesting`
