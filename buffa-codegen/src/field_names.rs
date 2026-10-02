@@ -79,6 +79,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::generated::descriptor::{DescriptorProto, FileDescriptorProto};
+use crate::idents::make_field_ident;
 use crate::impl_message::is_real_oneof_member;
 use crate::CodeGenWarning;
 
@@ -145,6 +146,221 @@ pub(crate) struct FieldNamePlan {
     pub warnings: Vec<CodeGenWarning>,
 }
 
+/// Names adjusted because Rust keyword escaping made two struct members share
+/// one identifier. This pass runs in both field-naming modes.
+#[derive(Debug, Default)]
+pub(crate) struct KeywordEscapePlan {
+    pub field_renames: HashMap<(String, i32), String>,
+    pub oneof_renames: HashMap<String, String>,
+    pub warnings: Vec<CodeGenWarning>,
+}
+
+struct NamespaceMember {
+    proto_name: String,
+    rust_name: String,
+    field_number: Option<i32>,
+}
+
+struct MessageNamespace {
+    file_name: String,
+    fqn: String,
+    members: Vec<NamespaceMember>,
+}
+
+/// Resolve collisions introduced by [`make_field_ident`] after the optional
+/// idiomatic-name collision plan has run. For example, `self` and `self_` are
+/// distinct proto names but both emit as the Rust identifier `self_`.
+pub(crate) fn plan_keyword_escape_collisions(
+    files: &[FileDescriptorProto],
+    idiomatic_field_names: bool,
+    field_renames: &HashMap<(String, i32), String>,
+    oneof_keep_verbatim: &HashSet<String>,
+    generated_files: Option<&HashSet<String>>,
+) -> KeywordEscapePlan {
+    let mut namespaces = Vec::new();
+    for_each_message_with_file(files, |file_name, fqn, msg| {
+        let mut members = Vec::new();
+        let mut real_oneofs = HashSet::new();
+        for field in &msg.field {
+            let Some(name) = field.name.as_deref() else {
+                continue;
+            };
+            if is_real_oneof_member(field) {
+                if let Some(index) = field.oneof_index {
+                    real_oneofs.insert(index);
+                }
+                continue;
+            }
+            let number = field.number.unwrap_or(0);
+            let rust_name = field_renames
+                .get(&(name.to_string(), number))
+                .cloned()
+                .unwrap_or_else(|| {
+                    if idiomatic_field_names {
+                        idiomatic_snake_case(name)
+                    } else {
+                        name.to_string()
+                    }
+                });
+            members.push(NamespaceMember {
+                proto_name: name.to_string(),
+                rust_name,
+                field_number: Some(number),
+            });
+        }
+        for (index, oneof) in msg.oneof_decl.iter().enumerate() {
+            let Some(name) = oneof.name.as_deref() else {
+                continue;
+            };
+            if !real_oneofs.contains(&i32::try_from(index).unwrap_or(i32::MAX)) {
+                continue;
+            }
+            let rust_name = if oneof_keep_verbatim.contains(name) {
+                name.to_string()
+            } else if idiomatic_field_names {
+                idiomatic_snake_case(name)
+            } else {
+                name.to_string()
+            };
+            members.push(NamespaceMember {
+                proto_name: name.to_string(),
+                rust_name,
+                field_number: None,
+            });
+        }
+        namespaces.push(MessageNamespace {
+            file_name: file_name.to_string(),
+            fqn: fqn.to_string(),
+            members,
+        });
+    });
+
+    // Reserve every current emitted identifier across the full generation
+    // request. The name maps are shared across messages, so this also keeps an
+    // adjustment inherited by another message from colliding there.
+    let mut used_idents: HashSet<String> = namespaces
+        .iter()
+        .flat_map(|namespace| &namespace.members)
+        .map(|member| make_field_ident(&member.rust_name).to_string())
+        .collect();
+
+    let mut plan = KeywordEscapePlan::default();
+    for namespace in &namespaces {
+        let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+        for (index, member) in namespace.members.iter().enumerate() {
+            groups
+                .entry(make_field_ident(&member.rust_name).to_string())
+                .or_default()
+                .push(index);
+        }
+        let mut collisions: Vec<(String, Vec<usize>)> = groups
+            .into_iter()
+            .filter(|(_, group)| group.len() > 1)
+            .collect();
+        collisions.sort_by(|a, b| a.0.cmp(&b.0));
+
+        for (ident, group) in collisions {
+            if !group
+                .iter()
+                .any(|&index| namespace.members[index].rust_name != ident)
+                || !group
+                    .iter()
+                    .any(|&index| namespace.members[index].rust_name == ident)
+            {
+                continue;
+            }
+            // Keep the member whose spelling already is a Rust identifier.
+            // The colliding alternative is the one changed by keyword escape
+            // (for example `self`), so this preserves authored `self_` names.
+            let keeper = group
+                .iter()
+                .copied()
+                .filter(|&index| namespace.members[index].rust_name == ident)
+                .min_by(|&a, &b| member_order(&namespace.members[a], &namespace.members[b]))
+                .expect("a keyword-escaped collision keeps its unescaped member");
+
+            let mut losers: Vec<usize> =
+                group.into_iter().filter(|&index| index != keeper).collect();
+            losers.sort_by(|&a, &b| member_order(&namespace.members[a], &namespace.members[b]));
+
+            for index in losers {
+                let member = &namespace.members[index];
+                let alias = if let Some(number) = member.field_number {
+                    let key = (member.proto_name.clone(), number);
+                    if let Some(existing) = plan.field_renames.get(&key) {
+                        existing.clone()
+                    } else {
+                        let base = format!("{}_f{number}", member.rust_name);
+                        let alias = unique_alias(&base, &mut used_idents);
+                        plan.field_renames.insert(key, alias.clone());
+                        alias
+                    }
+                } else if let Some(existing) = plan.oneof_renames.get(&member.proto_name) {
+                    existing.clone()
+                } else {
+                    let base = format!("{}_oneof", member.rust_name);
+                    let alias = unique_alias(&base, &mut used_idents);
+                    plan.oneof_renames
+                        .insert(member.proto_name.clone(), alias.clone());
+                    alias
+                };
+                used_idents.insert(make_field_ident(&alias).to_string());
+            }
+        }
+    }
+
+    // Emit a warning for every message whose names change, including messages
+    // that inherit an adjustment through the shared `(name, number)` maps.
+    for namespace in namespaces {
+        if generated_files.is_some_and(|generated| !generated.contains(&namespace.file_name)) {
+            continue;
+        }
+        let mut assignments: Vec<(String, String)> = namespace
+            .members
+            .iter()
+            .filter_map(|member| {
+                let adjusted = if let Some(number) = member.field_number {
+                    plan.field_renames.get(&(member.proto_name.clone(), number))
+                } else {
+                    plan.oneof_renames.get(&member.proto_name)
+                }?;
+                (adjusted != &member.rust_name)
+                    .then(|| (member.proto_name.clone(), adjusted.clone()))
+            })
+            .collect();
+        assignments.sort();
+        if !assignments.is_empty() {
+            assignments.dedup();
+            plan.warnings
+                .push(CodeGenWarning::RustIdentifierCollisionAdjusted {
+                    message_name: namespace.fqn,
+                    assignments,
+                });
+        }
+    }
+
+    plan
+}
+
+fn member_order(a: &NamespaceMember, b: &NamespaceMember) -> std::cmp::Ordering {
+    a.proto_name
+        .cmp(&b.proto_name)
+        .then_with(|| a.field_number.cmp(&b.field_number))
+}
+
+/// Find a stable unused source name, preserving the preferred suffix when it
+/// is available.
+fn unique_alias(base: &str, used_idents: &mut HashSet<String>) -> String {
+    let mut candidate = base.to_string();
+    let mut suffix = 2;
+    while used_idents.contains(&make_field_ident(&candidate).to_string()) {
+        candidate = format!("{base}_{suffix}");
+        suffix += 1;
+    }
+    used_idents.insert(make_field_ident(&candidate).to_string());
+    candidate
+}
+
 /// Rank of an exception entry, for the cross-message conservative merge.
 /// Higher rank wins: verbatim fallback (2) > suffix (1); plain conversion has
 /// no entry at all (rank 0).
@@ -178,7 +394,19 @@ pub(crate) fn plan_field_names(files: &[FileDescriptorProto]) -> FieldNamePlan {
 /// Apply `f` to every non-map-entry message in `files`, nested included,
 /// with its dotted FQN (no leading dot).
 fn for_each_message(files: &[FileDescriptorProto], mut f: impl FnMut(&str, &DescriptorProto)) {
-    fn recurse(fqn: &str, msg: &DescriptorProto, f: &mut impl FnMut(&str, &DescriptorProto)) {
+    for_each_message_with_file(files, |_, fqn, msg| f(fqn, msg));
+}
+
+fn for_each_message_with_file(
+    files: &[FileDescriptorProto],
+    mut f: impl FnMut(&str, &str, &DescriptorProto),
+) {
+    fn recurse(
+        file_name: &str,
+        fqn: &str,
+        msg: &DescriptorProto,
+        f: &mut impl FnMut(&str, &str, &DescriptorProto),
+    ) {
         if msg
             .options
             .as_option()
@@ -189,11 +417,12 @@ fn for_each_message(files: &[FileDescriptorProto], mut f: impl FnMut(&str, &Desc
         }
         for nested in &msg.nested_type {
             let nested_fqn = format!("{fqn}.{}", nested.name.as_deref().unwrap_or_default());
-            recurse(&nested_fqn, nested, f);
+            recurse(file_name, &nested_fqn, nested, f);
         }
-        f(fqn, msg);
+        f(file_name, fqn, msg);
     }
     for file in files {
+        let file_name = file.name.as_deref().unwrap_or_default();
         let package = file.package.as_deref().unwrap_or("");
         for msg in &file.message_type {
             let fqn = if package.is_empty() {
@@ -201,7 +430,7 @@ fn for_each_message(files: &[FileDescriptorProto], mut f: impl FnMut(&str, &Desc
             } else {
                 format!("{package}.{}", msg.name.as_deref().unwrap_or_default())
             };
-            recurse(&fqn, msg, &mut f);
+            recurse(file_name, &fqn, msg, &mut f);
         }
     }
 }
