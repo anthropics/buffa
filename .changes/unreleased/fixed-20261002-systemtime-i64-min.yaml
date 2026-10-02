@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Converting pre-epoch `SystemTime` values now preserves the full negative `i64` seconds range.** The old conversion clamped the magnitude to `i64::MAX`, shifting values at the lower boundary forward by a second. Values earlier than `i64::MIN` now saturate at (`i64::MIN`, 0).
+time: 2026-10-02T12:00:00Z
