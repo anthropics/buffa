@@ -1,0 +1,4 @@
+kind: Fixed
+body: >-
+  **`Tokenizer::line_col` handles byte offsets inside UTF-8 characters without panicking.**
+time: 2026-10-02T11:03:08.224537+02:00
