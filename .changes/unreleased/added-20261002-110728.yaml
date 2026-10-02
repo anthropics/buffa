@@ -1,0 +1,3 @@
+kind: Added
+body: Allow custom ProtoBytes types to request owned wire payloads.
+time: 2026-10-02T11:07:28.665514+02:00
