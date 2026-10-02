@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`buffa-codegen` returns `MissingField` for message and enum descriptors without names instead of panicking.** Only hand-built or synthesized descriptor sets can omit these required fields; descriptors produced by protoc are unchanged.
+time: 2026-10-02T20:59:00+02:00
