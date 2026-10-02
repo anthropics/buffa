@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Text format parses `float` decimals directly as `f32`.** This avoids double rounding near representable midpoints.
+time: 2026-10-02T19:55:54.204+00:00
