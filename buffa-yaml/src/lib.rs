@@ -512,4 +512,15 @@ mod tests {
         assert!(loc.line >= 1, "line is 1-based: {loc:?}");
         assert!(loc.column >= 1, "column is 1-based: {loc:?}");
     }
+
+    #[test]
+    fn error_exposes_carrier_as_source() {
+        use buffa_test::json_types::Scalar;
+        let bad_yaml = "int32Val: [\n  - broken";
+        let err = from_str::<Scalar>(bad_yaml).expect_err("should fail");
+        assert!(
+            std::error::Error::source(&err).is_some(),
+            "YAML error should expose its carrier error"
+        );
+    }
 }
