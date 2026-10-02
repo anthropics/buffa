@@ -385,9 +385,10 @@ fn invalid_utf8_is_rejected() {
 }
 
 #[test]
-fn messages_the_table_cannot_handle_still_work() {
-    // A oneof and a map are unrolled, and the messages that hold them are
-    // tables that reach them through their `Message` impl.
+fn a_message_with_a_oneof_and_a_holder_of_a_message_with_a_map_round_trip() {
+    // A message with a oneof is a table. A message with a map is unrolled, and
+    // the messages that hold it are tables that reach it through their
+    // `Message` impl.
     let with_oneof = crate::tct::WithOneof {
         choice: Some(crate::tct::with_oneof::Choice::B("x".into())),
         c: 4,
@@ -399,7 +400,7 @@ fn messages_the_table_cannot_handle_still_work() {
 
     let mixed = crate::tct::Mixed {
         inner: buffa::MessageField::some(t::inner(1, "a", &[1])),
-        holds: buffa::MessageField::some(crate::tct::HoldsOneof {
+        holds: buffa::MessageField::some(crate::tct::HoldsMap {
             o: buffa::MessageField::some(with_oneof),
             x: 2,
             ..Default::default()
@@ -409,6 +410,17 @@ fn messages_the_table_cannot_handle_still_work() {
     let decoded =
         <crate::tct::Mixed as Message>::decode_from_slice(&mixed.encode_to_vec()).unwrap();
     assert_eq!(decoded, mixed);
+}
+
+#[test]
+fn messages_with_a_map_stay_unrolled_and_work() {
+    let with_map = crate::tct::WithMap {
+        m: [("k".to_string(), 3)].into_iter().collect(),
+        ..Default::default()
+    };
+    let decoded =
+        <crate::tct::WithMap as Message>::decode_from_slice(&with_map.encode_to_vec()).unwrap();
+    assert_eq!(decoded, with_map);
 }
 
 // ---------------------------------------------------------------------------
@@ -615,7 +627,7 @@ macro_rules! shape_samples {
                 };
                 Mixed {
                     inner: MessageField::some(inner()),
-                    holds: MessageField::some(crate::$m::HoldsOneof {
+                    holds: MessageField::some(crate::$m::HoldsMap {
                         o: MessageField::some(WithOneof {
                             choice: Some(crate::$m::with_oneof::Choice::I(Box::new(inner()))),
                             c: 4,
@@ -762,9 +774,9 @@ fn messages_named_like_what_generated_code_uses_agree() {
 
 #[test]
 fn unrolled_messages_inside_a_table_tree_agree() {
-    // `Mixed.inner` is a table in `tct`, and so are `Mixed` and `HoldsOneof`,
-    // which hold `WithOneof` and `WithMap`, which are not, and `WithOneof`
-    // holds a table message in a oneof variant.
+    // `Mixed.inner` is a table in `tct`, and so are `Mixed` and `HoldsMap`,
+    // which hold `WithMap`, which is not, and `WithOneof` holds a table
+    // message in a oneof variant.
     let wire = assert_same_codec(&shapes_u::mixed(), &shapes_t::mixed());
     assert_same_chained::<crate::tcu::Mixed, crate::tct::Mixed>(&wire);
     let wire = assert_same_codec(
@@ -924,18 +936,36 @@ fn the_messages_the_table_can_handle_use_it() {
         crate::tct::__BUFFA_TABLE_Entry,
         crate::tct::__BUFFA_TABLE_Aux,
         crate::tct::__BUFFA_TABLE_Keywords,
-        crate::tct::__BUFFA_TABLE_HoldsOneof,
+        crate::tct::__BUFFA_TABLE_HoldsMap,
         crate::tct::__BUFFA_TABLE_Mixed,
+        crate::tct::__BUFFA_TABLE_WithOneof,
         crate::tc2t::__BUFFA_TABLE_Req,
         crate::tc2t::__BUFFA_TABLE_AllRequired,
         crate::tc2t::__BUFFA_TABLE_AllRepeated,
+        crate::tc2t::__BUFFA_TABLE_ClosedOneof,
         crate::tc3t::__BUFFA_TABLE_E,
         crate::tc3t::__BUFFA_TABLE_Child,
         crate::widet::__BUFFA_TABLE_Wide,
         crate::widet::__BUFFA_TABLE_W254,
         crate::widet::__BUFFA_TABLE_W255,
         crate::widet::__BUFFA_TABLE_W256,
+        crate::widet::__BUFFA_TABLE_WideOneof,
         crate::tcx::__BUFFA_TABLE_RpcNested,
+        crate::tc4t::__BUFFA_TABLE_Kinds,
+        crate::tc4t::__BUFFA_TABLE_Interleaved,
+        crate::tc4t::__BUFFA_TABLE_Tree,
+        crate::tc4t::__BUFFA_TABLE_Pair,
+        crate::tc4t::__BUFFA_TABLE_Twins,
+        crate::tc4t::__BUFFA_TABLE_Sparse,
+        crate::tc4t::__BUFFA_TABLE_Outer,
+        crate::tc4t::outer::__BUFFA_TABLE_Sub,
+        crate::tc4x::__BUFFA_TABLE_RpcKinds,
+        crate::tc4x::__BUFFA_TABLE_RpcTwins,
+        crate::tc5t::__BUFFA_TABLE_Leaf,
+        crate::tc5t::__BUFFA_TABLE_Held,
+        crate::tc5t::__BUFFA_TABLE_Names,
+        crate::tc6t::__BUFFA_TABLE_Inner,
+        crate::tc6t::__BUFFA_TABLE_Closed,
         crate::xat::__BUFFA_TABLE_Leaf,
         crate::xat::__BUFFA_TABLE_Wrap,
         crate::xbt::__BUFFA_TABLE_Holder,
@@ -947,6 +977,7 @@ fn the_messages_the_table_can_handle_use_it() {
         crate::brt::__BUFFA_TABLE_Leaf,
         crate::brt::__BUFFA_TABLE_Cold,
         crate::brt::__BUFFA_TABLE_Wkt,
+        crate::brt::__BUFFA_TABLE_Pick,
         crate::xe::__BUFFA_TABLE_Leaf,
         crate::xft::__BUFFA_TABLE_Holder,
     );
@@ -955,57 +986,68 @@ fn the_messages_the_table_can_handle_use_it() {
 #[test]
 fn messages_held_across_packages_agree_in_every_layout() {
     use buffa::MessageField;
-    macro_rules! sample {
+    // The same values in each layout: one holder for each member of its oneof
+    // (whose members are messages of the other package, one of them unrolled
+    // in the table layouts), and one with none.
+    macro_rules! samples {
         ($xa:ident, $xb:ident) => {{
+            use $xb::holder::Pick;
             let leaf = |x| $xa::Leaf {
                 x,
                 s: "s".into(),
                 ..Default::default()
             };
-            $xb::Holder {
+            let wrap = || $xa::Wrap {
+                leaf: MessageField::some(leaf(4)),
+                leaves: vec![leaf(5)],
+                ..Default::default()
+            };
+            let sub = || $xb::holder::Sub {
+                l: MessageField::some(leaf(6)),
+                ..Default::default()
+            };
+            // Unrolled in the table layouts.
+            let cold = |c| $xa::Cold {
+                c,
+                s: "cold".into(),
+                ..Default::default()
+            };
+            [
+                None,
+                Some(Pick::N(7)),
+                Some(Pick::Pl(Box::new(leaf(8)))),
+                Some(Pick::Pw(Box::new(wrap()))),
+                Some(Pick::Ps(Box::new(sub()))),
+                Some(Pick::Pc(Box::new(cold(9)))),
+            ]
+            .into_iter()
+            .map(|pick| $xb::Holder {
                 leaf: MessageField::some(leaf(1)),
                 leaves: vec![leaf(2), leaf(3)],
-                wrap: MessageField::some($xa::Wrap {
-                    leaf: MessageField::some(leaf(4)),
-                    leaves: vec![leaf(5)],
-                    ..Default::default()
-                }),
-                sub: MessageField::some($xb::holder::Sub {
-                    l: MessageField::some(leaf(6)),
-                    ..Default::default()
-                }),
+                wrap: MessageField::some(wrap()),
+                sub: MessageField::some(sub()),
                 // Unrolled in the table layouts.
-                cold: MessageField::some($xa::Cold {
-                    c: 7,
-                    s: "cold".into(),
-                    ..Default::default()
-                }),
-                colds: vec![
-                    $xa::Cold::default(),
-                    $xa::Cold {
-                        c: 8,
-                        ..Default::default()
-                    },
-                ],
+                cold: MessageField::some(cold(7)),
+                colds: vec![$xa::Cold::default(), cold(8)],
+                pick,
                 ..Default::default()
-            }
+            })
+            .collect::<Vec<_>>()
         }};
     }
     use crate::xti::{xati, xbti};
     use crate::{xat, xau, xbt, xbu};
-    let unrolled = sample!(xau, xbu);
-    let table = sample!(xat, xbt);
-    let idiomatic = sample!(xati, xbti);
-    let wire = assert_same_codec(&unrolled, &table);
-    assert_eq!(idiomatic.encode_to_vec(), wire);
-    assert_eq!(
-        xbti::Holder::decode_from_slice(&wire)
-            .unwrap()
-            .encode_to_vec(),
-        wire
-    );
-    assert_same_chained::<xbu::Holder, xbt::Holder>(&wire);
-    assert_same_on_corrupt_input::<xbu::Holder, xbt::Holder>(&wire, true);
+    let unrolled = samples!(xau, xbu);
+    let table = samples!(xat, xbt);
+    let idiomatic = samples!(xati, xbti);
+    for ((u, t), i) in unrolled.iter().zip(&table).zip(&idiomatic) {
+        let wire = assert_same_codec(u, t);
+        assert_eq!(i.encode_to_vec(), wire);
+        let decoded = xbti::Holder::decode_from_slice(&wire).unwrap();
+        assert_eq!(&decoded, i);
+        assert_same_chained::<xbu::Holder, xbt::Holder>(&wire);
+        assert_same_on_corrupt_input::<xbu::Holder, xbt::Holder>(&wire, true);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1016,7 +1058,8 @@ fn messages_held_across_packages_agree_in_every_layout() {
 macro_rules! bridge_samples {
     ($name:ident, $m:ident) => {
         mod $name {
-            use crate::$m::{Cold, Hot, Leaf, Wkt};
+            use crate::$m::pick::Choice;
+            use crate::$m::{Cold, Hot, Leaf, Pick, Wkt};
             use buffa::MessageField;
             use buffa_types::google::protobuf::{
                 Any, Duration, Empty, FieldMask, Int32Value, StringValue, Struct, Timestamp, Value,
@@ -1060,6 +1103,33 @@ macro_rules! bridge_samples {
                     tail: 7,
                     ..Default::default()
                 }
+            }
+
+            /// One `Pick` for each member of its oneof, and one with none.
+            pub fn picks() -> Vec<Pick> {
+                let mut st = Struct::new();
+                st.insert("k", 1.5);
+                [
+                    None,
+                    Some(Choice::N(7)),
+                    Some(Choice::Leaf(Box::new(leaf(1, "l", &[2])))),
+                    Some(Choice::Hot(Box::new(hot(2, true)))),
+                    Some(Choice::Cold(Box::new(cold()))),
+                    Some(Choice::Ts(Box::new(Timestamp::from_unix(1_700_000_000, 5)))),
+                    Some(Choice::Any(Box::new(Any::pack(
+                        &Timestamp::from_unix(1, 2),
+                        "type.googleapis.com/google.protobuf.Timestamp",
+                    )))),
+                    Some(Choice::Val(Box::new(Value::from("v")))),
+                    Some(Choice::S("s".into())),
+                ]
+                .into_iter()
+                .map(|choice| Pick {
+                    choice,
+                    tail: MessageField::some(leaf(9, "tail", &[])),
+                    ..Default::default()
+                })
+                .collect()
             }
 
             pub fn wkt() -> Wkt {
@@ -1202,6 +1272,62 @@ fn a_table_message_copies_the_payload_of_an_any_it_holds() {
 }
 
 #[test]
+fn oneof_members_without_a_table_agree() {
+    // `Hot` is unrolled in `brt`, and the well-known types have no table, so
+    // those members are reached through their `Message` impl; `Leaf` and
+    // `Cold` have tables.
+    let (unrolled, table) = (bru_s::picks(), brt_s::picks());
+    assert_eq!(unrolled.len(), 9);
+    for (u, t) in unrolled.iter().zip(&table) {
+        let wire = assert_same_codec(u, t);
+        assert_same_chained::<crate::bru::Pick, crate::brt::Pick>(&wire);
+        assert_same_on_corrupt_input::<crate::bru::Pick, crate::brt::Pick>(&wire, true);
+    }
+}
+
+#[test]
+fn oneof_members_without_a_table_merge_and_fail_alike() {
+    let opts = buffa::DecodeOptions::new();
+    let wires: [&[u8]; 8] = [
+        // `hot` twice, which merges: {a = 1}, then {leaf = {x = 5}}.
+        &[0x1a, 0x02, 0x08, 0x01, 0x1a, 0x04, 0x12, 0x02, 0x08, 0x05],
+        // `ts` twice: {seconds = 1}, then {nanos = 2}.
+        &[0x2a, 0x02, 0x08, 0x01, 0x2a, 0x02, 0x10, 0x02],
+        // Another member replaces the one that is set, in both orders.
+        &[0x12, 0x02, 0x08, 0x03, 0x1a, 0x02, 0x08, 0x01],
+        &[0x1a, 0x02, 0x08, 0x01, 0x12, 0x02, 0x08, 0x03],
+        // A member that fails to decode after a complete one.
+        &[0x1a, 0x02, 0x08, 0x01, 0x1a, 0x05, 0x08],
+        &[0x2a, 0x02, 0x08, 0x01, 0x2a, 0x03, 0x08],
+        // Bad UTF-8 in a message member.
+        &[0x1a, 0x03, 0x12, 0x01, 0xff],
+        &[0x3a, 0x02, 0xc3, 0x28],
+    ];
+    macro_rules! starts {
+        ($m:ident, $s:ident) => {
+            [
+                crate::$m::Pick::default(),
+                $s::picks()[3].clone(),
+                $s::picks()[5].clone(),
+                $s::picks()[6].clone(),
+            ]
+        };
+    }
+    let (start_u, start_t) = (starts!(bru, bru_s), starts!(brt, brt_s));
+    for wire in wires {
+        assert_same_decode::<crate::bru::Pick, crate::brt::Pick>(wire, false);
+        for (u, t) in start_u.iter().zip(&start_t) {
+            assert_same_merge(&opts, u, t, wire);
+        }
+    }
+    let merged = <crate::brt::Pick as Message>::decode_from_slice(wires[0]).unwrap();
+    let Some(crate::brt::pick::Choice::Hot(hot)) = merged.choice else {
+        panic!("expected a Hot, got {:?}", merged.choice);
+    };
+    assert_eq!((hot.a, hot.leaf.as_option().unwrap().x), (1, 5));
+}
+
+#[test]
 fn messages_from_another_crate_agree() {
     macro_rules! sample {
         ($m:ident) => {{
@@ -1211,17 +1337,29 @@ fn messages_from_another_crate_agree() {
                 kids: vec![crate::xe::Leaf::default()],
                 ..Default::default()
             };
-            crate::$m::Holder {
+            // One holder for each member of its oneof, whose message member
+            // is from another crate, and one with none.
+            [
+                None,
+                Some(crate::$m::holder::Pick::N(5)),
+                Some(crate::$m::holder::Pick::Pl(Box::new(leaf(6, "pl")))),
+            ]
+            .into_iter()
+            .map(|pick| crate::$m::Holder {
                 leaf: buffa::MessageField::some(leaf(1, "a")),
                 leaves: vec![leaf(2, "b"), leaf(3, "")],
                 tail: 4,
+                pick,
                 ..Default::default()
-            }
+            })
+            .collect::<Vec<_>>()
         }};
     }
-    let wire = assert_same_codec(&sample!(xfu), &sample!(xft));
-    assert_same_chained::<crate::xfu::Holder, crate::xft::Holder>(&wire);
-    assert_same_on_corrupt_input::<crate::xfu::Holder, crate::xft::Holder>(&wire, true);
+    for (u, t) in sample!(xfu).iter().zip(&sample!(xft)) {
+        let wire = assert_same_codec(u, t);
+        assert_same_chained::<crate::xfu::Holder, crate::xft::Holder>(&wire);
+        assert_same_on_corrupt_input::<crate::xfu::Holder, crate::xft::Holder>(&wire, true);
+    }
 }
 
 /// The wire form of `Cold` with `hot` set to a `Hot` with `back` set to a
@@ -1358,7 +1496,9 @@ fn a_child_without_a_table_is_encoded_into_every_kind_of_sink() {
 
 #[test]
 fn a_holder_of_a_bytes_typed_message_is_unrolled_and_decodes_without_copying() {
-    use crate::tbz::{Blob, HoldsBlob, HoldsBlobs};
+    use crate::tbz::{
+        holds_blob_in_oneof, Blob, HoldsBlob, HoldsBlobInOneof, HoldsBlobs, HoldsPick,
+    };
     use buffa::bytes::Bytes;
     use buffa::MessageField;
     // The plan ran on this schema, so `Plain` has a table, and `HoldsBlob`
@@ -1368,6 +1508,9 @@ fn a_holder_of_a_bytes_typed_message_is_unrolled_and_decodes_without_copying() {
     assert!(generated.contains("static __BUFFA_TABLE_HoldsPlain"));
     assert!(!generated.contains("__BUFFA_TABLE_Blob"));
     assert!(!generated.contains("__BUFFA_TABLE_HoldsBlob"));
+    // Also the one that holds it in a oneof member, and its own holder.
+    assert!(!generated.contains("__BUFFA_TABLE_HoldsBlobInOneof"));
+    assert!(!generated.contains("__BUFFA_TABLE_HoldsPick"));
 
     let blob = |fill: u8| Blob {
         data: Bytes::from(vec![fill; 64]),
@@ -1396,4 +1539,1078 @@ fn a_holder_of_a_bytes_typed_message_is_unrolled_and_decodes_without_copying() {
         .blobs
         .iter()
         .all(|b| aliases(&b.data) && aliases(&b.chunks[0])));
+
+    // The oneof member decodes without copying too.
+    let msg = HoldsPick {
+        inner: MessageField::some(HoldsBlobInOneof {
+            pick: Some(holds_blob_in_oneof::Pick::Blob(Box::new(blob(7)))),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let src = Bytes::from(msg.encode_to_vec());
+    let range = src.as_ptr() as usize..src.as_ptr() as usize + src.len();
+    let aliases = |b: &Bytes| range.contains(&(b.as_ptr() as usize));
+    let decoded = HoldsPick::decode(&mut src.clone()).unwrap();
+    assert_eq!(decoded, msg);
+    let Some(holds_blob_in_oneof::Pick::Blob(held)) = &decoded.inner.as_option().unwrap().pick
+    else {
+        panic!("expected a Blob");
+    };
+    assert!(aliases(&held.data) && aliases(&held.chunks[0]));
+}
+
+// ---------------------------------------------------------------------------
+// Oneofs
+// ---------------------------------------------------------------------------
+
+macro_rules! oneof_samples {
+    ($name:ident, $m:ident) => {
+        mod $name {
+            use crate::$m::{
+                interleaved as il, kinds::V, outer as ou, sparse as sp, tree as tr, Color,
+                Interleaved, Kinds, Leaf, Outer, Pair, Sparse, Tree,
+            };
+            use buffa::{EnumValue, MessageField};
+
+            pub fn leaf(id: i32, label: &str) -> Leaf {
+                Leaf {
+                    id,
+                    label: label.into(),
+                    ..Default::default()
+                }
+            }
+
+            /// A message for every member, with a value that is not the
+            /// default and one that is, and a message with none.
+            pub fn kinds() -> Vec<Kinds> {
+                [
+                    V::I32(-5),
+                    V::I32(0),
+                    V::I64(i64::MIN),
+                    V::I64(0),
+                    V::U32(u32::MAX),
+                    V::U32(0),
+                    V::U64(u64::MAX),
+                    V::U64(0),
+                    V::S32(-3),
+                    V::S32(0),
+                    V::S64(i64::MIN),
+                    V::S64(0),
+                    V::F32(7),
+                    V::F32(0),
+                    V::F64(u64::MAX),
+                    V::F64(0),
+                    V::Sf32(-1),
+                    V::Sf32(0),
+                    V::Sf64(i64::MIN),
+                    V::Sf64(0),
+                    V::Fl(1.5),
+                    V::Fl(0.0),
+                    V::Db(-2.25),
+                    V::Db(0.0),
+                    V::B(true),
+                    V::B(false),
+                    V::S("héllo".into()),
+                    V::S(String::new()),
+                    V::By(vec![0, 1, 255]),
+                    V::By(vec![]),
+                    V::E(EnumValue::from(Color::GREEN)),
+                    V::E(EnumValue::from(Color::COLOR_UNSPECIFIED)),
+                    V::E(EnumValue::from(9)),
+                    V::M(Box::new(leaf(4, "m"))),
+                    V::M(Box::default()),
+                ]
+                .into_iter()
+                .map(|v| Kinds {
+                    v: Some(v),
+                    ..Default::default()
+                })
+                .chain([Kinds::default()])
+                .collect()
+            }
+
+            /// Every combination of what the two oneofs hold, around ordinary
+            /// fields of numbers below, between and above theirs.
+            pub fn interleaved() -> Vec<Interleaved> {
+                let mut out = Vec::new();
+                for first in [
+                    None,
+                    Some(il::First::F1(0)),
+                    Some(il::First::F1(7)),
+                    Some(il::First::F2("f".into())),
+                ] {
+                    for second in [
+                        None,
+                        Some(il::Second::S1(Box::new(leaf(1, "a")))),
+                        Some(il::Second::S2(vec![1, 2])),
+                    ] {
+                        out.push(Interleaved {
+                            a: 1,
+                            first: first.clone(),
+                            b: 2,
+                            second,
+                            tail: "t".into(),
+                            r: vec![1, 2],
+                            opt: Some(0),
+                            ..Default::default()
+                        });
+                    }
+                }
+                out
+            }
+
+            pub fn tree() -> Tree {
+                let node = |node| Tree {
+                    node: Some(node),
+                    ..Default::default()
+                };
+                node(tr::Node::Left(Box::new(node(tr::Node::Pair(Box::new(
+                    Pair {
+                        a: MessageField::some(node(tr::Node::Leaf(3))),
+                        b: MessageField::some(node(tr::Node::Name("n".into()))),
+                        ..Default::default()
+                    },
+                ))))))
+            }
+
+            pub fn sparse() -> Vec<Sparse> {
+                [
+                    Some(sp::O::Lo(0)),
+                    Some(sp::O::Far(-1)),
+                    Some(sp::O::End("e".into())),
+                    None,
+                ]
+                .into_iter()
+                .map(|o| Sparse {
+                    o,
+                    mid: 5,
+                    ..Default::default()
+                })
+                .collect()
+            }
+
+            pub fn outer() -> Vec<Outer> {
+                let sub = |pick| ou::Sub {
+                    pick,
+                    ..Default::default()
+                };
+                let picks = || {
+                    [
+                        Some(ou::sub::Pick::Type(1)),
+                        Some(ou::sub::Pick::Match("m".into())),
+                        Some(ou::sub::Pick::Self_(0)),
+                        None,
+                    ]
+                };
+                let mut out = Vec::new();
+                for pick in picks() {
+                    for o in [
+                        None,
+                        Some(ou::O::X(Box::new(sub(pick.clone())))),
+                        Some(ou::O::Nested(Box::default())),
+                        Some(ou::O::Leaf(Box::new(leaf(2, "l")))),
+                    ] {
+                        out.push(Outer {
+                            sub: MessageField::some(sub(pick.clone())),
+                            o,
+                            subs: vec![sub(None), sub(pick.clone())],
+                            ..Default::default()
+                        });
+                    }
+                }
+                out
+            }
+        }
+    };
+}
+
+oneof_samples!(oneofs_u, tc4u);
+oneof_samples!(oneofs_t, tc4t);
+
+#[test]
+fn a_oneof_member_of_every_type_agrees() {
+    let (unrolled, table) = (oneofs_u::kinds(), oneofs_t::kinds());
+    assert_eq!(unrolled.len(), table.len());
+    for (u, t) in unrolled.iter().zip(&table) {
+        let wire = assert_same_codec(u, t);
+        assert_same_chained::<crate::tc4u::Kinds, crate::tc4t::Kinds>(&wire);
+        assert_same_on_corrupt_input::<crate::tc4u::Kinds, crate::tc4t::Kinds>(&wire, true);
+    }
+}
+
+#[test]
+fn a_member_that_is_set_is_written_even_with_its_default_value() {
+    for (i, kinds) in oneofs_t::kinds().iter().enumerate() {
+        let wire = kinds.encode_to_vec();
+        assert_eq!(wire.is_empty(), kinds.v.is_none(), "sample {i}");
+    }
+    let zero = crate::tc4t::Kinds {
+        v: Some(crate::tc4t::kinds::V::I32(0)),
+        ..Default::default()
+    };
+    assert_eq!(zero.encode_to_vec(), [0x08, 0x00]);
+}
+
+#[test]
+fn a_oneof_is_written_where_its_lowest_member_is_whichever_member_is_set() {
+    let (unrolled, table) = (oneofs_u::interleaved(), oneofs_t::interleaved());
+    for (u, t) in unrolled.iter().zip(&table) {
+        let wire = assert_same_codec(u, t);
+        assert_same_chained::<crate::tc4u::Interleaved, crate::tc4t::Interleaved>(&wire);
+        assert_same_on_corrupt_input::<crate::tc4u::Interleaved, crate::tc4t::Interleaved>(
+            &wire, true,
+        );
+    }
+    // `first` (2, 5) is written at 2, before `b` (3), and `second` (4, 7)
+    // at 4, before `tail` (6), whichever of their members is set.
+    let msg = &table[table.len() - 1];
+    assert_eq!(
+        msg.encode_to_vec(),
+        [
+            0x08, 0x01, // a = 1
+            0x2a, 0x01, b'f', // first: f2 = "f", at 2 in the order
+            0x18, 0x02, // b = 2
+            0x3a, 0x02, 0x01, 0x02, // second: s2, at 4 in the order
+            0x32, 0x01, b't', // tail
+            0x42, 0x02, 0x01, 0x02, // r, packed
+            0x48, 0x00, // opt = 0
+        ]
+    );
+}
+
+#[test]
+fn recursion_through_a_oneof_agrees() {
+    let wire = assert_same_codec(&oneofs_u::tree(), &oneofs_t::tree());
+    assert_same_chained::<crate::tc4u::Tree, crate::tc4t::Tree>(&wire);
+    assert_same_on_corrupt_input::<crate::tc4u::Tree, crate::tc4t::Tree>(&wire, true);
+}
+
+#[test]
+fn oneof_members_outside_the_dense_lookup_agree() {
+    for (u, t) in oneofs_u::sparse().iter().zip(&oneofs_t::sparse()) {
+        let wire = assert_same_codec(u, t);
+        assert_same_on_corrupt_input::<crate::tc4u::Sparse, crate::tc4t::Sparse>(&wire, false);
+    }
+}
+
+#[test]
+fn oneofs_in_nested_messages_and_keyword_named_members_agree() {
+    let (unrolled, table) = (oneofs_u::outer(), oneofs_t::outer());
+    assert!(!table.is_empty());
+    for (u, t) in unrolled.iter().zip(&table) {
+        let wire = assert_same_codec(u, t);
+        assert_same_on_corrupt_input::<crate::tc4u::Outer, crate::tc4t::Outer>(&wire, true);
+    }
+}
+
+/// The `Kinds` that the table codec decodes `wire` to, which must decode.
+fn kinds_from(wire: &[u8]) -> crate::tc4t::Kinds {
+    <crate::tc4t::Kinds as Message>::decode_from_slice(wire).unwrap()
+}
+
+/// The places in [`oneof_wires`] of the inputs that a test reads back.
+const LAST_MEMBER_WINS: usize = 0;
+const MESSAGE_MERGES_INTO_ITSELF: usize = 2;
+const MESSAGE_REPLACED_BY_NEW_ONE: usize = 3;
+const OPEN_ENUM_KEEPS_ANY_NUMBER: usize = 6;
+
+/// Inputs that exercise how a decode picks and replaces the member.
+fn oneof_wires() -> Vec<Vec<u8>> {
+    let cat = |parts: &[Vec<u8>]| parts.concat();
+    let leaf = |id: u64, label: &[u8]| {
+        let mut payload = varint_field(1, id);
+        payload.extend(length_delimited_field(2, label));
+        payload
+    };
+    vec![
+        // The last member wins, whatever order the numbers come in.
+        cat(&[
+            varint_field(1, 5),
+            length_delimited_field(14, b"hi"),
+            varint_field(3, 9),
+        ]),
+        cat(&[
+            length_delimited_field(14, b"hi"),
+            varint_field(1, 5),
+            varint_field(1, 6),
+        ]),
+        // A message member merges into itself, and a member of another number
+        // replaces it and starts a new one from nothing.
+        cat(&[
+            length_delimited_field(17, &varint_field(1, 4)),
+            length_delimited_field(17, &length_delimited_field(2, b"x")),
+        ]),
+        cat(&[
+            length_delimited_field(17, &leaf(4, b"x")),
+            varint_field(1, 1),
+            length_delimited_field(17, &varint_field(1, 2)),
+        ]),
+        cat(&[
+            length_delimited_field(17, &leaf(4, b"x")),
+            length_delimited_field(17, &[]),
+        ]),
+        // Unknown fields between members.
+        cat(&[varint_field(99, 1), varint_field(1, 5), varint_field(98, 2)]),
+        // An open enum keeps a number it does not name, and a default one is set.
+        varint_field(16, 9),
+        varint_field(16, 0),
+        // A string that is not UTF-8, and one that is empty.
+        length_delimited_field(14, &[0xff]),
+        cat(&[varint_field(1, 5), length_delimited_field(14, &[0xff])]),
+        length_delimited_field(14, &[]),
+        // A wrong wire type for each kind of member.
+        length_delimited_field(1, b"x"),
+        varint_field(14, 1),
+        varint_field(15, 1),
+        varint_field(17, 1),
+        cat(&[varint_field(1, 5), length_delimited_field(3, &[1])]),
+        // A varint that is too long, and a sub-message that runs past its
+        // buffer.
+        vec![
+            0x08, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01,
+        ],
+        vec![0x8a, 0x01, 0x05, 0x08],
+    ]
+}
+
+#[test]
+fn decoding_picks_and_replaces_the_member_the_way_the_unrolled_codec_does() {
+    for wire in oneof_wires() {
+        assert_same_decode::<crate::tc4u::Kinds, crate::tc4t::Kinds>(&wire, true);
+        assert_same_chained::<crate::tc4u::Kinds, crate::tc4t::Kinds>(&wire);
+    }
+    // And what those come to, for the ones that decode.
+    use crate::tc4t::kinds::V;
+    assert_eq!(
+        kinds_from(&oneof_wires()[LAST_MEMBER_WINS]).v,
+        Some(V::U32(9)),
+        "the last member wins"
+    );
+    let merged = kinds_from(&oneof_wires()[MESSAGE_MERGES_INTO_ITSELF]).v;
+    let Some(V::M(m)) = merged else {
+        panic!("{merged:?}")
+    };
+    assert_eq!((m.id, m.label.as_str()), (4, "x"));
+    let replaced = kinds_from(&oneof_wires()[MESSAGE_REPLACED_BY_NEW_ONE]).v;
+    let Some(V::M(m)) = replaced else {
+        panic!("{replaced:?}")
+    };
+    assert_eq!(
+        (m.id, m.label.as_str()),
+        (2, ""),
+        "a new message starts empty"
+    );
+    assert_eq!(
+        kinds_from(&oneof_wires()[OPEN_ENUM_KEEPS_ANY_NUMBER]).v,
+        Some(V::E(buffa::EnumValue::from(9)))
+    );
+}
+
+/// A tag: field `number` with wire type `wire_type`.
+fn tag(number: u32, wire_type: u32) -> Vec<u8> {
+    let mut tag = Vec::new();
+    let mut v = u64::from(number << 3 | wire_type);
+    while v >= 0x80 {
+        tag.push(v as u8 | 0x80);
+        v >>= 7;
+    }
+    tag.push(v as u8);
+    tag
+}
+
+/// Merge `wire` into a copy of each start value, one per codec, with `opts`,
+/// and require the same result and the same message afterwards, whether the
+/// merge succeeded or failed part of the way.
+#[track_caller]
+fn assert_same_merge<U, T>(opts: &buffa::DecodeOptions, unrolled: &U, table: &T, wire: &[u8])
+where
+    U: Message + Debug + Clone,
+    T: Message + Debug + Clone,
+{
+    let (mut u, mut t) = (unrolled.clone(), table.clone());
+    let (ru, rt) = (
+        opts.merge_from_slice(&mut u, wire),
+        opts.merge_from_slice(&mut t, wire),
+    );
+    let context = format!("merging {wire:02x?} into {unrolled:?}");
+    assert_eq!(ru, rt, "results differ {context}");
+    // A table with a type name prefix names its messages differently.
+    assert_eq!(
+        format!("{u:?}"),
+        format!("{t:?}").replace("Rpc", ""),
+        "messages differ afterwards {context} ({ru:?})"
+    );
+    assert_eq!(
+        u.encode_to_vec(),
+        t.encode_to_vec(),
+        "encodings differ afterwards {context}"
+    );
+}
+
+/// The wire types of the members of `Kinds`, by field number.
+fn kinds_wire_type(number: u32) -> u32 {
+    match number {
+        7 | 9 | 11 => 5,
+        8 | 10 | 12 => 1,
+        14 | 15 | 17 => 2,
+        _ => 0,
+    }
+}
+
+/// Inputs that fail in a member of every kind, in each of the ways it can: a
+/// tag with nothing after it, a value that is cut short, a wire type the
+/// member does not have, and a string that is not UTF-8.
+fn failing_kinds_wires() -> Vec<Vec<u8>> {
+    let mut wires = Vec::new();
+    for number in 1..=17 {
+        let wt = kinds_wire_type(number);
+        wires.push(tag(number, wt));
+        wires.push([tag(number, wt), vec![0x80]].concat());
+        wires.push([tag(number, wt), vec![0x05, 0x01]].concat());
+        for other in [0, 1, 2, 5] {
+            if other != wt {
+                wires.push([tag(number, other), vec![0; 10]].concat());
+            }
+        }
+    }
+    wires.push([tag(14, 2), vec![0x01, 0xff]].concat());
+    // The message member: a length that is not a message's, one that is too
+    // large, and content that does not decode, after a field that does.
+    wires.push([tag(17, 2), vec![0x80, 0x80, 0x80, 0x80, 0x08]].concat());
+    wires.push([tag(17, 2), vec![0x03, 0x08, 0x05, 0x10]].concat());
+    wires.push([tag(17, 2), vec![0x04, 0x08, 0x05, 0x12, 0x03, b'x']].concat());
+    wires
+}
+
+#[test]
+fn a_member_that_fails_to_decode_leaves_the_message_as_unrolled_code_does() {
+    let opts = buffa::DecodeOptions::new();
+    let (unrolled, table) = (oneofs_u::kinds(), oneofs_t::kinds());
+    let valid_first = varint_field(3, 9);
+    for wire in failing_kinds_wires() {
+        for prefix in [&[][..], &valid_first[..]] {
+            let wire = [prefix, &wire[..]].concat();
+            for (u, t) in unrolled.iter().zip(&table) {
+                assert_same_merge(&opts, u, t, &wire);
+            }
+        }
+    }
+    // The truncated message member into a string, the case a message member
+    // that is installed before it decodes gets wrong.
+    let text = crate::tc4u::Kinds {
+        v: Some(crate::tc4u::kinds::V::S("abc".into())),
+        ..Default::default()
+    };
+    let mut merged = text.clone();
+    assert!(merged.merge_from_slice(&[0x8a, 0x01]).is_err());
+    assert_eq!(merged, text, "unrolled code keeps the string");
+    let mut merged = crate::tc4t::Kinds::decode_from_slice(&text.encode_to_vec()).unwrap();
+    assert!(merged.merge_from_slice(&[0x8a, 0x01]).is_err());
+    assert_eq!(merged.v, Some(crate::tc4t::kinds::V::S("abc".into())));
+}
+
+#[test]
+fn a_message_member_that_fails_in_a_message_with_two_oneofs_agrees() {
+    let opts = buffa::DecodeOptions::new();
+    let wires: Vec<Vec<u8>> = vec![
+        tag(4, 2),
+        [tag(4, 2), vec![0x05, 0x08]].concat(),
+        [tag(4, 2), vec![0x03, 0x08, 0x05, 0x10]].concat(),
+        [tag(7, 2), vec![0x05, 0x01]].concat(),
+        [tag(2, 0), vec![0x80]].concat(),
+        [varint_field(2, 1), tag(5, 2), vec![0x05, b'a']].concat(),
+        [tag(9, 0), vec![0x80]].concat(),
+    ];
+    for wire in wires {
+        for (u, t) in oneofs_u::interleaved().iter().zip(&oneofs_t::interleaved()) {
+            assert_same_merge(&opts, u, t, &wire);
+        }
+    }
+}
+
+#[test]
+fn the_message_limits_leave_the_message_as_unrolled_code_does() {
+    // Too deep, from a message that has a member set and from one that does
+    // not, at the limit and one either side of it.
+    let deep = |depth: usize| {
+        let mut wire = varint_field(1, 1);
+        for _ in 0..depth {
+            wire = length_delimited_field(2, &wire);
+        }
+        wire
+    };
+    let start_u = |left: bool| crate::tc4u::Tree {
+        node: left.then(|| crate::tc4u::tree::Node::Name("abc".into())),
+        ..Default::default()
+    };
+    let start_t = |left: bool| crate::tc4t::Tree {
+        node: left.then(|| crate::tc4t::tree::Node::Name("abc".into())),
+        ..Default::default()
+    };
+    for limit in [1, 3, 10] {
+        let opts = buffa::DecodeOptions::new().with_recursion_limit(limit);
+        for depth in (limit as usize - 1)..=(limit as usize + 2) {
+            for left in [false, true] {
+                assert_same_merge(&opts, &start_u(left), &start_t(left), &deep(depth));
+            }
+        }
+    }
+    let opts = buffa::DecodeOptions::new().with_recursion_limit(3);
+    let mut tree = start_t(true);
+    assert_eq!(
+        opts.merge_from_slice(&mut tree, &deep(6)),
+        Err(DecodeError::RecursionLimitExceeded)
+    );
+    // And a message member that is larger than a message can be, or larger
+    // than the size limit.
+    let too_large = [tag(2, 2), vec![0x80, 0x80, 0x80, 0x80, 0x08]].concat();
+    let small = buffa::DecodeOptions::new().with_max_message_size(4);
+    for opts in [buffa::DecodeOptions::new(), small] {
+        for wire in [&too_large, &deep(3)] {
+            for left in [false, true] {
+                assert_same_merge(&opts, &start_u(left), &start_t(left), wire);
+            }
+        }
+    }
+    let mut tree = start_t(true);
+    assert_eq!(
+        tree.merge_from_slice(&too_large),
+        Err(DecodeError::MessageTooLarge)
+    );
+    assert_eq!(
+        tree.node,
+        Some(crate::tc4t::tree::Node::Name("abc".into())),
+        "the oneof keeps the member that was set"
+    );
+}
+
+#[test]
+fn a_thousand_levels_of_recursion_through_a_oneof_is_the_same_error() {
+    let mut wire = varint_field(1, 1);
+    for _ in 0..1000 {
+        wire = length_delimited_field(2, &wire);
+    }
+    assert_same_decode::<crate::tc4u::Tree, crate::tc4t::Tree>(&wire, true);
+    assert_eq!(
+        <crate::tc4t::Tree as Message>::decode_from_slice(&wire),
+        Err(DecodeError::RecursionLimitExceeded)
+    );
+    // The same through the other message and the member that holds it.
+    let pair = |inner: &[u8]| length_delimited_field(3, &length_delimited_field(1, inner));
+    let mut wire = varint_field(1, 1);
+    for _ in 0..1000 {
+        wire = pair(&wire);
+    }
+    assert_same_decode::<crate::tc4u::Tree, crate::tc4t::Tree>(&wire, true);
+    assert_eq!(
+        <crate::tc4t::Tree as Message>::decode_from_slice(&wire),
+        Err(DecodeError::RecursionLimitExceeded)
+    );
+}
+
+#[test]
+fn merging_into_a_message_that_holds_a_member_agrees() {
+    let opts = buffa::DecodeOptions::new();
+    let start = || {
+        (
+            crate::tc4u::Kinds {
+                v: Some(crate::tc4u::kinds::V::M(Box::new(oneofs_u::leaf(1, "a")))),
+                ..Default::default()
+            },
+            crate::tc4t::Kinds {
+                v: Some(crate::tc4t::kinds::V::M(Box::new(oneofs_t::leaf(1, "a")))),
+                ..Default::default()
+            },
+        )
+    };
+    for wire in oneof_wires() {
+        let (unrolled, table) = start();
+        assert_same_merge(&opts, &unrolled, &table, &wire);
+    }
+}
+
+#[test]
+fn a_closed_enum_member_the_enum_does_not_know_goes_to_the_unknown_fields() {
+    use crate::tc2t::closed_oneof::Pick;
+    // n = 5, then shade = 7 (Color has no 7), then a known shade, then n again.
+    let unknown = [varint_field(2, 5), varint_field(1, 7)].concat();
+    let decoded = <crate::tc2t::ClosedOneof as Message>::decode_from_slice(&unknown).unwrap();
+    assert_eq!(
+        decoded.pick,
+        Some(Pick::N(5)),
+        "the unknown value is not a member"
+    );
+    assert_eq!(
+        decoded.encode_to_vec(),
+        [varint_field(2, 5), varint_field(1, 7)].concat()
+    );
+    let known = [unknown.clone(), varint_field(1, 2)].concat();
+    assert_eq!(
+        <crate::tc2t::ClosedOneof as Message>::decode_from_slice(&known)
+            .unwrap()
+            .pick,
+        Some(Pick::Shade(crate::tc2t::Color::GREEN))
+    );
+    for wire in [
+        unknown,
+        known,
+        varint_field(1, 7),
+        [varint_field(1, 2), varint_field(3, 1)].concat(),
+        [
+            length_delimited_field(4, &varint_field(1, 3)),
+            length_delimited_field(4, &varint_field(1, 4)),
+            varint_field(5, 6),
+        ]
+        .concat(),
+        [varint_field(2, 5), length_delimited_field(3, &[0xff])].concat(),
+    ] {
+        assert_same_decode::<crate::tc2u::ClosedOneof, crate::tc2t::ClosedOneof>(&wire, true);
+        assert_same_chained::<crate::tc2u::ClosedOneof, crate::tc2t::ClosedOneof>(&wire);
+    }
+    let sample = |shade| crate::tc2t::ClosedOneof {
+        pick: Some(Pick::Shade(shade)),
+        tail: Some(1),
+        ..Default::default()
+    };
+    let wire = sample(crate::tc2t::Color::BLUE).encode_to_vec();
+    assert_same_on_corrupt_input::<crate::tc2u::ClosedOneof, crate::tc2t::ClosedOneof>(&wire, true);
+}
+
+#[test]
+fn a_table_with_a_prefix_and_inline_oneof_members_agrees() {
+    // `tc4x` has prefixed type names and no unknown fields, and stores the
+    // message members of `Kinds`, `Interleaved`, `Sparse` and `Outer` inline.
+    fn same<U: Message + Debug, X: Message + Debug>(wire: &[u8]) {
+        assert_eq!(outcome::<U>(wire), outcome::<X>(wire), "{wire:02x?}");
+    }
+    for kinds in oneofs_u::kinds() {
+        same::<crate::tc4u::Kinds, crate::tc4x::RpcKinds>(&kinds.encode_to_vec());
+    }
+    for msg in oneofs_u::interleaved() {
+        same::<crate::tc4u::Interleaved, crate::tc4x::RpcInterleaved>(&msg.encode_to_vec());
+    }
+    for msg in oneofs_u::sparse() {
+        same::<crate::tc4u::Sparse, crate::tc4x::RpcSparse>(&msg.encode_to_vec());
+    }
+    for msg in oneofs_u::outer() {
+        same::<crate::tc4u::Outer, crate::tc4x::RpcOuter>(&msg.encode_to_vec());
+    }
+    same::<crate::tc4u::Tree, crate::tc4x::RpcTree>(&oneofs_u::tree().encode_to_vec());
+    // A message member decoded twice merges into the inline value.
+    let wire = oneof_wires()[MESSAGE_MERGES_INTO_ITSELF].clone();
+    same::<crate::tc4u::Kinds, crate::tc4x::RpcKinds>(&wire);
+    let decoded = <crate::tc4x::RpcKinds as Message>::decode_from_slice(&wire).unwrap();
+    assert_eq!(decoded.encode_to_vec(), kinds_from(&wire).encode_to_vec());
+}
+
+#[test]
+fn a_member_that_fails_to_decode_in_an_inline_layout_leaves_the_message_as_unrolled_code_does() {
+    // `tc4x` stores the message member of `Kinds` inline, where a failed
+    // merge into a new default member must leave the old member in place too.
+    let opts = buffa::DecodeOptions::new();
+    let valid_first = varint_field(3, 9);
+    for u in oneofs_u::kinds() {
+        let x = <crate::tc4x::RpcKinds as Message>::decode_from_slice(&u.encode_to_vec()).unwrap();
+        for wire in failing_kinds_wires() {
+            for prefix in [&[][..], &valid_first[..]] {
+                assert_same_merge(&opts, &u, &x, &[prefix, &wire[..]].concat());
+            }
+        }
+    }
+}
+
+/// A `Twins` for each member and one with none, in the module `$m`.
+macro_rules! twins_samples {
+    ($m:ident) => {{
+        use crate::$m::{twins::Pick, Color, Leaf, Twins};
+        use buffa::EnumValue;
+        let leaf = |id, label: &str| {
+            Box::new(Leaf {
+                id,
+                label: label.into(),
+                ..Default::default()
+            })
+        };
+        [
+            None,
+            Some(Pick::A(leaf(1, "a"))),
+            Some(Pick::B(leaf(2, "b"))),
+            Some(Pick::B(Box::default())),
+            Some(Pick::C(EnumValue::from(Color::RED))),
+            Some(Pick::D(EnumValue::from(Color::GREEN))),
+            Some(Pick::D(EnumValue::from(9))),
+            Some(Pick::N(4)),
+        ]
+        .into_iter()
+        .map(|pick| Twins {
+            pick,
+            ..Default::default()
+        })
+        .collect::<Vec<_>>()
+    }};
+}
+
+#[test]
+fn members_that_share_a_message_or_enum_type_agree() {
+    let opts = buffa::DecodeOptions::new();
+    let (unrolled, table) = (twins_samples!(tc4u), twins_samples!(tc4t));
+    let leaf = |id: u64| varint_field(1, id);
+    let wires = [
+        // `a`, then `b`, replaces it, and `b` again merges into itself.
+        [
+            length_delimited_field(1, &leaf(1)),
+            length_delimited_field(2, &leaf(2)),
+            length_delimited_field(2, &length_delimited_field(2, b"x")),
+        ]
+        .concat(),
+        [varint_field(3, 1), varint_field(4, 2), varint_field(3, 9)].concat(),
+        // Cut short members of each of the shared types.
+        [
+            length_delimited_field(1, &leaf(1)),
+            tag(2, 2),
+            vec![0x05, 0x08],
+        ]
+        .concat(),
+        [varint_field(3, 1), tag(4, 0), vec![0x80]].concat(),
+    ];
+    for (u, t) in unrolled.iter().zip(&table) {
+        let wire = assert_same_codec(u, t);
+        assert_same_chained::<crate::tc4u::Twins, crate::tc4t::Twins>(&wire);
+        assert_same_on_corrupt_input::<crate::tc4u::Twins, crate::tc4t::Twins>(&wire, true);
+        // `tc4x` stores the members inline, in a table with prefixed names.
+        let x = <crate::tc4x::RpcTwins as Message>::decode_from_slice(&wire).unwrap();
+        assert_eq!(x.encode_to_vec(), wire);
+        for wire in &wires {
+            assert_same_merge(&opts, u, t, wire);
+            assert_same_merge(&opts, u, &x, wire);
+        }
+    }
+    for wire in &wires {
+        assert_same_decode::<crate::tc4u::Twins, crate::tc4t::Twins>(wire, false);
+    }
+}
+
+/// A `WideOneof` for each member of its oneof and one with none, in the module
+/// `$m`.
+macro_rules! wide_oneof_samples {
+    ($m:ident) => {{
+        use crate::$m::{wide_oneof::Pick, Leaf, WideColor, WideOneof};
+        use buffa::EnumValue;
+        [
+            None,
+            Some(Pick::A(7)),
+            Some(Pick::B("wide".into())),
+            Some(Pick::C(Box::new(Leaf {
+                x: 3,
+                ..Default::default()
+            }))),
+            Some(Pick::D(EnumValue::from(WideColor::WIDE_RED))),
+        ]
+        .into_iter()
+        .map(|pick| WideOneof {
+            f1: 1,
+            f254: 9,
+            pick,
+            ..Default::default()
+        })
+        .collect::<Vec<_>>()
+    }};
+}
+
+#[test]
+fn a_oneof_in_a_message_too_wide_for_a_dense_lookup_agrees() {
+    let opts = buffa::DecodeOptions::new();
+    let (unrolled, table) = (wide_oneof_samples!(wideu), wide_oneof_samples!(widet));
+    for (u, t) in unrolled.iter().zip(&table) {
+        let wire = assert_same_codec(u, t);
+        assert_same_chained::<crate::wideu::WideOneof, crate::widet::WideOneof>(&wire);
+        assert_same_on_corrupt_input::<crate::wideu::WideOneof, crate::widet::WideOneof>(
+            &wire, true,
+        );
+        // Each member replaces the one that is set, and one that is cut short
+        // leaves it.
+        for wire in [
+            [varint_field(255, 1), length_delimited_field(256, b"s")].concat(),
+            [
+                length_delimited_field(257, &varint_field(1, 2)),
+                length_delimited_field(257, &varint_field(1, 3)),
+            ]
+            .concat(),
+            [varint_field(258, 1), tag(257, 2), vec![0x05, 0x08]].concat(),
+            [varint_field(1, 5), tag(256, 2), vec![0x02, b'a']].concat(),
+        ] {
+            assert_same_merge(&opts, u, t, &wire);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Oneofs: a custom pointer, names, and a closed enum without unknown fields
+// ---------------------------------------------------------------------------
+
+macro_rules! pointer_samples {
+    ($name:ident, $m:ident) => {
+        mod $name {
+            use crate::box_type::CustomBox;
+            use crate::$m::{
+                held::Pick,
+                names::{MyChoice, Type},
+                Held, Leaf, Names,
+            };
+            use buffa::MessageField;
+
+            pub fn leaf(id: i32, label: &str) -> Leaf {
+                Leaf {
+                    id,
+                    label: label.into(),
+                    ..Default::default()
+                }
+            }
+
+            fn boxed<T>(value: T) -> CustomBox<T> {
+                CustomBox(Box::new(value))
+            }
+
+            pub fn held() -> Vec<Held> {
+                let held = |pick| Held {
+                    pick,
+                    single: MessageField::some(leaf(9, "single")),
+                    ..Default::default()
+                };
+                let bare = |pick| Held {
+                    pick,
+                    ..Default::default()
+                };
+                let nested = bare(Some(Pick::Again(boxed(bare(Some(Pick::Leaf(boxed(
+                    leaf(2, "deep"),
+                ))))))));
+                vec![
+                    held(None),
+                    held(Some(Pick::N(0))),
+                    held(Some(Pick::S("s".into()))),
+                    held(Some(Pick::Leaf(boxed(Leaf::default())))),
+                    held(Some(Pick::Leaf(boxed(leaf(1, "a"))))),
+                    held(Some(Pick::Again(boxed(nested)))),
+                ]
+            }
+
+            /// Every combination of members of the three oneofs of `Names`,
+            /// including none.
+            pub fn names() -> Vec<Names> {
+                let types = || {
+                    [
+                        None,
+                        Some(Type::Third(3)),
+                        Some(Type::First("f".into())),
+                        Some(Type::Second(boxed(leaf(2, "second")))),
+                    ]
+                };
+                let matches = || {
+                    [
+                        None,
+                        Some(crate::$m::names::Match::MatchNum(0)),
+                        Some(crate::$m::names::Match::MatchText("t".into())),
+                    ]
+                };
+                let choices = || {
+                    [
+                        None,
+                        Some(MyChoice::FooBar(8)),
+                        Some(MyChoice::BazQux("b".into())),
+                        Some(MyChoice::TheLeaf(boxed(leaf(6, "the")))),
+                    ]
+                };
+                let mut out = Vec::new();
+                for r#type in types() {
+                    for r#match in matches() {
+                        for my_choice in choices() {
+                            out.push(Names {
+                                r#type: r#type.clone(),
+                                r#match: r#match.clone(),
+                                my_choice,
+                                ..Default::default()
+                            });
+                        }
+                    }
+                }
+                out
+            }
+        }
+    };
+}
+
+pointer_samples!(pointers_u, tc5u);
+pointer_samples!(pointers_t, tc5t);
+
+#[test]
+fn a_custom_pointer_for_oneof_message_members_agrees() {
+    let (unrolled, table) = (pointers_u::held(), pointers_t::held());
+    for (u, t) in unrolled.iter().zip(&table) {
+        let wire = assert_same_codec(u, t);
+        assert_same_chained::<crate::tc5u::Held, crate::tc5t::Held>(&wire);
+        assert_same_on_corrupt_input::<crate::tc5u::Held, crate::tc5t::Held>(&wire, true);
+    }
+    let leaf =
+        |id: u64, label: &[u8]| [varint_field(1, id), length_delimited_field(2, label)].concat();
+    let opts = buffa::DecodeOptions::new();
+    let wires = [
+        // A member merges into itself, and another replaces it.
+        [
+            length_delimited_field(2, &leaf(4, b"")),
+            length_delimited_field(2, &length_delimited_field(2, b"x")),
+        ]
+        .concat(),
+        [
+            length_delimited_field(2, &leaf(4, b"x")),
+            varint_field(1, 1),
+            length_delimited_field(2, &varint_field(1, 2)),
+        ]
+        .concat(),
+        [
+            varint_field(1, 1),
+            length_delimited_field(3, &length_delimited_field(2, &leaf(3, b"y"))),
+            length_delimited_field(3, &varint_field(1, 8)),
+        ]
+        .concat(),
+        // And what fails, part of the way through and after a member is set.
+        tag(2, 2),
+        [tag(2, 2), vec![0x05, 0x08]].concat(),
+        [tag(3, 2), vec![0x04, 0x1a, 0x02, 0x08, 0x01]].concat(),
+        [varint_field(1, 1), tag(2, 2), vec![0x03, 0x08, 0x05, 0x10]].concat(),
+    ];
+    for wire in &wires {
+        assert_same_decode::<crate::tc5u::Held, crate::tc5t::Held>(wire, true);
+        for (u, t) in unrolled.iter().zip(&table) {
+            assert_same_merge(&opts, u, t, wire);
+        }
+    }
+}
+
+#[test]
+fn oneofs_named_like_keywords_with_members_out_of_number_order_agree() {
+    let (unrolled, table) = (pointers_u::names(), pointers_t::names());
+    assert_eq!(table.len(), 48);
+    for (u, t) in unrolled.iter().zip(&table) {
+        let wire = assert_same_codec(u, t);
+        assert_same_chained::<crate::tc5u::Names, crate::tc5t::Names>(&wire);
+    }
+    // Each oneof is written where its lowest member number is, whichever of
+    // its members is set: `type` at 1, `match` at 4, `myChoice` at 6, so
+    // `third` (3) comes first, and then `matchNum` (5) and `fooBar` (8).
+    let msg = table
+        .iter()
+        .find(|m| {
+            use crate::tc5t::names::{Match, MyChoice, Type};
+            matches!(m.r#type, Some(Type::Third(3)))
+                && matches!(m.r#match, Some(Match::MatchNum(0)))
+                && matches!(m.my_choice, Some(MyChoice::FooBar(8)))
+        })
+        .unwrap();
+    let in_order = [varint_field(3, 3), varint_field(5, 0), varint_field(8, 8)];
+    assert_eq!(msg.encode_to_vec(), in_order.concat());
+    // Decoding does not depend on that order.
+    let reversed = [
+        in_order[2].clone(),
+        in_order[1].clone(),
+        in_order[0].clone(),
+    ]
+    .concat();
+    assert_eq!(
+        <crate::tc5t::Names as Message>::decode_from_slice(&reversed).unwrap(),
+        *msg
+    );
+    assert_same_decode::<crate::tc5u::Names, crate::tc5t::Names>(&reversed, false);
+    // The last member of a oneof to arrive wins, from any of its numbers.
+    for wire in [
+        [varint_field(3, 3), length_delimited_field(1, b"f")].concat(),
+        [length_delimited_field(1, b"f"), varint_field(3, 3)].concat(),
+        [
+            length_delimited_field(2, &varint_field(1, 2)),
+            varint_field(3, 3),
+            length_delimited_field(2, &length_delimited_field(2, b"l")),
+        ]
+        .concat(),
+        [
+            varint_field(8, 8),
+            length_delimited_field(7, b"b"),
+            varint_field(4, 1),
+        ]
+        .concat(),
+    ] {
+        assert_same_decode::<crate::tc5u::Names, crate::tc5t::Names>(&wire, false);
+        assert_same_chained::<crate::tc5u::Names, crate::tc5t::Names>(&wire);
+    }
+    let wire = msg.encode_to_vec();
+    assert_same_on_corrupt_input::<crate::tc5u::Names, crate::tc5t::Names>(&wire, false);
+}
+
+#[test]
+fn a_closed_enum_member_the_enum_lacks_is_dropped_when_nothing_keeps_unknown_fields() {
+    use crate::tc6t::{closed::Pick, Color};
+    // n = 5, then shade = 7 (Color has no 7): the member stays, and the number
+    // is not kept.
+    let wire = [varint_field(2, 5), varint_field(1, 7)].concat();
+    let decoded = <crate::tc6t::Closed as Message>::decode_from_slice(&wire).unwrap();
+    assert_eq!(decoded.pick, Some(Pick::N(5)));
+    assert_eq!(decoded.encode_to_vec(), varint_field(2, 5));
+    // With nothing set, it stays unset.
+    let decoded = <crate::tc6t::Closed as Message>::decode_from_slice(&varint_field(1, 7)).unwrap();
+    assert_eq!(decoded, crate::tc6t::Closed::default());
+    // A number it has replaces the member.
+    let wire = [varint_field(2, 5), varint_field(1, 2)].concat();
+    assert_eq!(
+        <crate::tc6t::Closed as Message>::decode_from_slice(&wire)
+            .unwrap()
+            .pick,
+        Some(Pick::Shade(Color::GREEN))
+    );
+    let inner = |id: u64| length_delimited_field(4, &varint_field(1, id));
+    let opts = buffa::DecodeOptions::new();
+    let starts = |pick: Option<crate::tc6u::closed::Pick>, t: Option<Pick>| {
+        (
+            crate::tc6u::Closed {
+                pick,
+                ..Default::default()
+            },
+            crate::tc6t::Closed {
+                pick: t,
+                ..Default::default()
+            },
+        )
+    };
+    let states = [
+        starts(None, None),
+        starts(
+            Some(crate::tc6u::closed::Pick::Shade(crate::tc6u::Color::BLUE)),
+            Some(Pick::Shade(Color::BLUE)),
+        ),
+        starts(
+            Some(crate::tc6u::closed::Pick::S("abc".into())),
+            Some(Pick::S("abc".into())),
+        ),
+    ];
+    for wire in [
+        varint_field(1, 7),
+        varint_field(1, 0),
+        varint_field(1, u64::MAX),
+        [varint_field(1, 3), varint_field(1, 9)].concat(),
+        [varint_field(1, 9), varint_field(1, 3)].concat(),
+        [varint_field(2, 1), varint_field(1, 4), varint_field(5, 6)].concat(),
+        [inner(1), varint_field(1, 7), inner(2)].concat(),
+        [tag(1, 0), vec![0x80]].concat(),
+        [tag(1, 2), vec![0x00]].concat(),
+    ] {
+        assert_same_decode::<crate::tc6u::Closed, crate::tc6t::Closed>(&wire, true);
+        assert_same_chained::<crate::tc6u::Closed, crate::tc6t::Closed>(&wire);
+        for (u, t) in &states {
+            assert_same_merge(&opts, u, t, &wire);
+        }
+    }
+    let sample = crate::tc6t::Closed {
+        pick: Some(Pick::Shade(Color::BLUE)),
+        tail: Some(1),
+    };
+    let wire = sample.encode_to_vec();
+    assert_same_on_corrupt_input::<crate::tc6u::Closed, crate::tc6t::Closed>(&wire, true);
 }

@@ -34,14 +34,17 @@ pub(super) unsafe fn compute_size(
     crate::saturate_size(size)
 }
 
+/// Defines `$fname`, the size of one field by kind, for the kinds listed. Two
+/// lists are used, all kinds for `size_kind` and the payload kinds of a oneof
+/// member for `size_payload`.
 macro_rules! size_dispatch {
-    ($($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
+    ($fname:ident; $($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
         /// # Safety
         ///
         /// `slot` points to the field `e` describes, in a live message of the
         /// type `table` describes.
         #[inline]
-        unsafe fn size_kind(
+        unsafe fn $fname(
             table: &MessageTable,
             e: &Entry,
             slot: *const u8,
@@ -52,6 +55,10 @@ macro_rules! size_dispatch {
             unsafe {
                 match e.kind {
                     $(Kind::$name => size_dispatch!(@arm $fam $ty $card table e tl slot cache),)*
+                    // A list of the payload kinds leaves the other kinds out, and
+                    // `Table::new` rules them out of a payload.
+                    #[allow(unreachable_patterns)]
+                    _ => unreachable!("`Table::new` checked the kinds of the entries"),
                 }
             }
         }
@@ -71,9 +78,43 @@ macro_rules! size_dispatch {
     (@arm Msg $ty:ident $card:ident $table:ident $e:ident $tl:ident $slot:ident $cache:ident) => {
         size_msg::<$card>($table, $e, $tl, $slot, $cache)
     };
+    (@arm Oneof $ty:ident LEADER $table:ident $e:ident $tl:ident $slot:ident $cache:ident) => {
+        size_oneof($table, $e, $slot, $cache)
+    };
+    // The members that follow the leader are sized with it.
+    (@arm Oneof $ty:ident ONEOF $table:ident $e:ident $tl:ident $slot:ident $cache:ident) => {
+        0
+    };
 }
 
-kind_table!(size_dispatch);
+kind_table!(size_dispatch, size_kind);
+payload_kind_table!(size_dispatch, size_payload);
+
+/// The size of the oneof that its leader `e` describes.
+///
+/// # Safety
+///
+/// `e` is a [`Kind::OneofLeader`] entry, and `slot` points to the `Option` of
+/// the oneof enum that its group describes, in a live message of the type
+/// `table` describes.
+#[inline(never)]
+unsafe fn size_oneof(
+    table: &MessageTable,
+    e: &Entry,
+    slot: *const u8,
+    cache: &mut SizeCache,
+) -> u64 {
+    let m = table.member(e);
+    // SAFETY: `slot` is a live `Option<E>` for the `E` the group was built for.
+    let (number, payload) = unsafe { (table.group(m).get)(slot) };
+    if number == 0 {
+        return 0;
+    }
+    let payload_entry = table.payload_entry(m.group, number);
+    // SAFETY: `payload` points to a value of the payload kind of member
+    // `number`, per the oneof enum's `OneofEnum` implementation.
+    unsafe { size_payload(table, &payload_entry, payload, cache) }
+}
 
 /// # Safety
 ///

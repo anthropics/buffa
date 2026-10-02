@@ -81,14 +81,16 @@ fn put_tag<K: EncodeSink>(e: &Entry, buf: &mut K) {
     }
 }
 
+/// Defines `$fname`, the write of one field by kind, for the kinds listed, as
+/// `size_dispatch!` does.
 macro_rules! write_dispatch {
-    ($($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
+    ($fname:ident; $($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
         /// # Safety
         ///
         /// `slot` points to the field `e` describes, in a live message of the
         /// type `table` describes.
         #[inline]
-        unsafe fn write_kind<K: EncodeSink>(
+        unsafe fn $fname<K: EncodeSink>(
             table: &MessageTable,
             e: &Entry,
             slot: *const u8,
@@ -99,6 +101,8 @@ macro_rules! write_dispatch {
             unsafe {
                 match e.kind {
                     $(Kind::$name => write_dispatch!(@arm $fam $ty $card table e slot cache buf),)*
+                    #[allow(unreachable_patterns)]
+                    _ => unreachable!("`Table::new` checked the kinds of the entries"),
                 }
             }
         }
@@ -118,9 +122,44 @@ macro_rules! write_dispatch {
     (@arm Msg $ty:ident $card:ident $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
         write_msg::<$card, K>($table, $e, $slot, $cache, $buf)
     };
+    (@arm Oneof $ty:ident LEADER $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
+        write_oneof::<K>($table, $e, $slot, $cache, $buf)
+    };
+    // The members that follow the leader are written with it.
+    (@arm Oneof $ty:ident ONEOF $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
+        ()
+    };
 }
 
-kind_table!(write_dispatch);
+kind_table!(write_dispatch, write_kind);
+payload_kind_table!(write_dispatch, write_payload);
+
+/// Write the oneof that its leader `e` describes.
+///
+/// # Safety
+///
+/// `e` is a [`Kind::OneofLeader`] entry, and `slot` points to the `Option` of
+/// the oneof enum that its group describes, in a live message of the type
+/// `table` describes.
+#[inline(never)]
+unsafe fn write_oneof<K: EncodeSink>(
+    table: &MessageTable,
+    e: &Entry,
+    slot: *const u8,
+    cache: &mut SizeCache,
+    buf: &mut K,
+) {
+    let m = table.member(e);
+    // SAFETY: `slot` is a live `Option<E>` for the `E` the group was built for.
+    let (number, payload) = unsafe { (table.group(m).get)(slot) };
+    if number == 0 {
+        return;
+    }
+    let payload_entry = table.payload_entry(m.group, number);
+    // SAFETY: `payload` points to a value of the payload kind of member
+    // `number`, per the oneof enum's `OneofEnum` implementation.
+    unsafe { write_payload(table, &payload_entry, payload, cache, buf) };
+}
 
 /// # Safety
 ///

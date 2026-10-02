@@ -55,3 +55,20 @@ message Wkt {
   repeated google.protobuf.Value values = 12;
   Cold cold = 13;
 }
+
+// A oneof whose members are table messages, a message that `brt` leaves
+// unrolled, and well-known types, which a table message reaches through its
+// `Message` impl.
+message Pick {
+  oneof choice {
+    int32 n = 1;
+    Leaf leaf = 2;
+    Hot hot = 3;
+    Cold cold = 4;
+    google.protobuf.Timestamp ts = 5;
+    google.protobuf.Any any = 6;
+    google.protobuf.Value val = 7;
+    string s = 8;
+  }
+  Leaf tail = 9;
+}
