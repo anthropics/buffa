@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Malformed enum JSON values remain errors when unknown enum values are ignored.** Lenient parsing still skips unknown enum names and in-range unknown numbers for closed-enum containers, but it rejects wrong JSON types and out-of-range numbers.
+time: 2026-10-02T19:12:10.007+00:00
