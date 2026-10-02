@@ -43,16 +43,23 @@ impl Any {
         })
     }
 
-    /// Pack a message into an [`Any`] using its generated type URL.
+    /// Pack a message into an [`Any`] under the message's own type URL,
+    /// [`MessageName::TYPE_URL`](buffa::MessageName::TYPE_URL).
     ///
-    /// This keeps the type URL tied to the message type. Use [`Any::pack`]
-    /// when you need to choose a custom type URL.
+    /// [`unpack_message`](Self::unpack_message) finds the result only if
+    /// `TYPE_URL` ends in `/` followed by
+    /// [`FULL_NAME`](buffa::MessageName::FULL_NAME), as it does in every
+    /// generated impl. Use [`pack`](Self::pack) to store a URL with a
+    /// different prefix, or to pack a hand-written
+    /// [`Message`](buffa::Message) that does not implement
+    /// [`MessageName`](buffa::MessageName).
     ///
     /// # Panics
     ///
-    /// Panics if `msg`'s encoded size exceeds the 2 GiB protobuf limit
-    /// ([`buffa::MAX_MESSAGE_BYTES`]) — see [`Any::try_pack_message`] for the
-    /// error-returning variant.
+    /// Panics if the encoded size of `msg` exceeds the 2 GiB protobuf limit
+    /// ([`buffa::MAX_MESSAGE_BYTES`]) — see
+    /// [`try_pack_message`](Self::try_pack_message) for the error-returning
+    /// variant.
     pub fn pack_message<T>(msg: &T) -> Self
     where
         T: buffa::Message + buffa::MessageName,
@@ -60,8 +67,11 @@ impl Any {
         Self::pack(msg, <T as buffa::MessageName>::TYPE_URL)
     }
 
-    /// Pack a message using its generated type URL, returning an error
-    /// instead of panicking if the message exceeds the 2 GiB protobuf limit.
+    /// Pack a message into an [`Any`] under the message's own type URL, as
+    /// [`pack_message`](Self::pack_message) does.
+    ///
+    /// Returns an error for a message over the 2 GiB protobuf limit, where
+    /// [`pack_message`](Self::pack_message) panics.
     ///
     /// # Errors
     ///
@@ -78,8 +88,10 @@ impl Any {
     /// checking the `type_url`**.
     ///
     /// This method always attempts to decode the payload as `T` regardless
-    /// of whether `type_url` actually identifies `T`. Use [`Any::unpack_if`]
-    /// when you need to verify the stored type before decoding.
+    /// of whether `type_url` actually identifies `T`. Use
+    /// [`unpack_message`](Self::unpack_message) or
+    /// [`unpack_if`](Self::unpack_if) to check the stored type before
+    /// decoding.
     ///
     /// # Errors
     ///
@@ -88,12 +100,12 @@ impl Any {
         T::decode(&mut self.value.as_ref())
     }
 
-    /// Unpack the contained message as `T`, but only if the `type_url`
-    /// matches `expected_type_url`.
+    /// Unpack the contained message as `T`, but only if `type_url` is
+    /// exactly `expected_type_url`, prefix included.
     ///
-    /// Returns `Ok(None)` when the type URL does not match. The comparison
-    /// is on the whole URL, prefix included. The JSON and text registries
-    /// match by message name under any prefix; this method does not.
+    /// Most callers want [`unpack_message`](Self::unpack_message), which
+    /// accepts any prefix; use this method when the prefix itself carries
+    /// meaning. Returns `Ok(None)` when the type URL does not match.
     ///
     /// # Errors
     ///
@@ -109,32 +121,25 @@ impl Any {
         T::decode(&mut self.value.as_ref()).map(Some)
     }
 
-    /// Unpack the contained message as `T`, but only if the protobuf message
-    /// name in the `type_url` matches `expected_type_name`.
+    /// Unpack the contained message as `T`, but only if the type URL
+    /// identifies `T` under any prefix ([`is_message`](Self::is_message)).
     ///
-    /// The message name is the non-empty path segment after the final `/`;
-    /// any prefix before it is ignored. Returns `Ok(None)` when the type URL
-    /// has no message name or the name does not match.
+    /// Returns `Ok(None)` when the message name does not match.
     ///
-    /// # Errors
+    /// `T` is an owned message. For a view, check `is_message::<FooView>()`
+    /// and decode `any.value` with
+    /// [`MessageView::decode_view`](buffa::MessageView::decode_view).
     ///
-    /// Returns a [`buffa::DecodeError`] if the message name matches but the
-    /// bytes cannot be decoded as `T`.
-    pub fn unpack_if_type_name<T: buffa::Message>(
-        &self,
-        expected_type_name: &str,
-    ) -> Result<Option<T>, buffa::DecodeError> {
-        if !self.is_type_name(expected_type_name) {
-            return Ok(None);
-        }
-        T::decode(&mut self.value.as_ref()).map(Some)
-    }
-
-    /// Unpack the contained message as `T` when its protobuf message name
-    /// matches `T`'s generated name.
+    /// # Examples
     ///
-    /// This accepts any type URL prefix. Returns `Ok(None)` when the URL has
-    /// no message name or carries a different name.
+    /// ```
+    /// use buffa_types::google::protobuf::{Any, Duration, Timestamp};
+    ///
+    /// let any = Any::pack_message(&Duration::from_secs(5));
+    /// assert_eq!(any.unpack_message::<Duration>()?, Some(Duration::from_secs(5)));
+    /// assert_eq!(any.unpack_message::<Timestamp>()?, None);
+    /// # Ok::<(), buffa::DecodeError>(())
+    /// ```
     ///
     /// # Errors
     ///
@@ -144,41 +149,75 @@ impl Any {
     where
         T: buffa::Message + buffa::MessageName,
     {
-        self.unpack_if_type_name(<T as buffa::MessageName>::FULL_NAME)
+        if !self.is_message::<T>() {
+            return Ok(None);
+        }
+        T::decode(&mut self.value.as_ref()).map(Some)
     }
 
-    /// Returns `true` if this [`Any`]'s `type_url` matches the given string.
+    /// Returns `true` if the `type_url` of this [`Any`] is exactly `type_url`,
+    /// prefix included.
     ///
-    /// The comparison is on the whole URL, prefix included. The JSON and text
-    /// registries match by message name under any prefix; this method does
-    /// not.
+    /// Most callers want [`is_message`](Self::is_message), which accepts any
+    /// prefix; use this method when the prefix itself carries meaning.
     pub fn is_type(&self, type_url: &str) -> bool {
         self.type_url == type_url
     }
 
-    /// Returns the protobuf message name carried by this `Any`'s type URL.
+    /// Returns the type name in the type URL of this [`Any`]: the text after
+    /// the last `/`.
     ///
-    /// The name is the non-empty path segment after the final `/`. Returns
-    /// `None` when the type URL has no `/` or ends in `/`.
+    /// For an [`Any`] packed by [`pack_message`](Self::pack_message), the
+    /// type name is the message's
+    /// [`MessageName::FULL_NAME`](buffa::MessageName::FULL_NAME). The text is
+    /// not checked to be a valid message name. The JSON and text registries
+    /// find a message by this name when its exact URL is not registered.
+    ///
+    /// Returns `None` when the URL has no `/`, or when the text after the
+    /// last `/` is empty.
+    ///
+    /// To test for one generated type, use [`is_message`](Self::is_message).
+    /// For a name that is known only at run time, compare the result:
+    /// `any.type_name() == Some(name)`.
+    ///
+    /// # Examples
+    ///
+    /// Dispatch on the packed type:
+    ///
+    /// ```
+    /// use buffa::MessageName;
+    /// use buffa_types::google::protobuf::{Any, Duration, Timestamp};
+    ///
+    /// fn describe(any: &Any) -> &'static str {
+    ///     match any.type_name() {
+    ///         Some(Timestamp::FULL_NAME) => "a timestamp",
+    ///         Some(Duration::FULL_NAME) => "a duration",
+    ///         Some(_) => "another message",
+    ///         None => "not a type URL",
+    ///     }
+    /// }
+    ///
+    /// let any = Any::pack(&Duration::default(), "example.com/v1/google.protobuf.Duration");
+    /// assert_eq!(any.type_name(), Some("google.protobuf.Duration"));
+    /// assert_eq!(describe(&any), "a duration");
+    ///
+    /// let no_slash = Any::pack(&Duration::default(), "google.protobuf.Duration");
+    /// assert_eq!(no_slash.type_name(), None);
+    /// assert_eq!(describe(&no_slash), "not a type URL");
+    /// ```
     pub fn type_name(&self) -> Option<&str> {
         let (_, type_name) = self.type_url.rsplit_once('/')?;
         (!type_name.is_empty()).then_some(type_name)
     }
 
-    /// Returns `true` if this `Any` carries the given protobuf message name.
+    /// Returns `true` if the type URL of this [`Any`] identifies `T` under
+    /// any prefix: the name after the last `/` is the
+    /// [`MessageName::FULL_NAME`](buffa::MessageName::FULL_NAME) of `T`.
     ///
-    /// This compares the message name after the final `/` and ignores the
-    /// type URL prefix. Returns `false` when the type URL has no message name.
-    pub fn is_type_name(&self, type_name: &str) -> bool {
-        self.type_name() == Some(type_name)
-    }
-
-    /// Returns `true` if this `Any` carries the protobuf message name for `T`.
-    ///
-    /// The type URL prefix is ignored. Returns `false` when the URL has no
-    /// message name.
+    /// The prefix is not compared. Returns `false` when
+    /// [`type_name`](Self::type_name) is `None`.
     pub fn is_message<T: buffa::MessageName>(&self) -> bool {
-        self.is_type_name(<T as buffa::MessageName>::FULL_NAME)
+        self.type_name() == Some(<T as buffa::MessageName>::FULL_NAME)
     }
 
     /// Returns the type URL stored in this [`Any`].
@@ -728,38 +767,41 @@ mod tests {
 
     #[test]
     fn type_name_is_none_without_a_non_empty_final_segment() {
-        for type_url in ["google.protobuf.Timestamp", "custom.example/v1/"] {
+        for type_url in ["", "/", "google.protobuf.Timestamp", "custom.example/v1/"] {
             let any = Any::pack(&Timestamp::default(), type_url);
-            assert_eq!(any.type_name(), None, "{type_url}");
+            assert_eq!(any.type_name(), None, "{type_url:?}");
         }
     }
 
     #[test]
-    fn is_type_name_ignores_the_type_url_prefix() {
-        let any = Any::pack(
-            &Timestamp::default(),
-            "custom.example/v1/google.protobuf.Timestamp",
-        );
-        assert!(any.is_type_name("google.protobuf.Timestamp"));
-        assert!(!any.is_type_name("google.protobuf.Duration"));
-        assert!(
-            !Any::pack(&Timestamp::default(), "google.protobuf.Timestamp")
-                .is_type_name("google.protobuf.Timestamp")
-        );
+    fn type_name_accepts_an_empty_prefix() {
+        let any = Any::pack(&Timestamp::default(), "/google.protobuf.Timestamp");
+        assert_eq!(any.type_name(), Some("google.protobuf.Timestamp"));
+        assert!(any.is_message::<Timestamp>());
     }
 
     #[test]
-    fn unpack_if_type_name_decodes_with_a_custom_prefix() {
+    fn is_message_compares_the_whole_name_not_a_suffix() {
+        let any = Any::pack(&Timestamp::default(), "x/my.google.protobuf.Timestamp");
+        assert_eq!(any.type_name(), Some("my.google.protobuf.Timestamp"));
+        assert!(!any.is_message::<Timestamp>());
+        assert_eq!(any.unpack_message::<Timestamp>().unwrap(), None);
+    }
+
+    #[test]
+    fn is_message_accepts_a_view_type() {
+        use crate::google::protobuf::TimestampView;
+        use buffa::MessageView;
+
         let ts = Timestamp {
             seconds: 42,
             ..Default::default()
         };
-        let any = Any::pack(&ts, "custom.example/v1/google.protobuf.Timestamp");
+        let any = Any::pack_message(&ts);
 
-        let result: Option<Timestamp> = any
-            .unpack_if_type_name("google.protobuf.Timestamp")
-            .unwrap();
-        assert_eq!(result, Some(ts));
+        assert!(any.is_message::<TimestampView<'_>>());
+        let view = TimestampView::decode_view(&any.value).unwrap();
+        assert_eq!(view.seconds, 42);
     }
 
     #[test]
@@ -787,48 +829,24 @@ mod tests {
 
         for type_url in ["google.protobuf.Timestamp", "custom.example/v1/"] {
             let malformed = Any::pack(&Timestamp::default(), type_url);
-            assert_eq!(malformed.unpack_message::<Timestamp>().unwrap(), None);
+            assert!(!malformed.is_message::<Timestamp>(), "{type_url}");
+            assert_eq!(
+                malformed.unpack_message::<Timestamp>().unwrap(),
+                None,
+                "{type_url}"
+            );
         }
     }
 
     #[test]
     fn unpack_message_reports_decode_errors_for_matching_names() {
         let any = Any {
-            type_url: <Timestamp as buffa::MessageName>::TYPE_URL.into(),
+            type_url: "custom.example/v1/google.protobuf.Timestamp".into(),
             value: bytes::Bytes::from_static(&[0x0f]),
             ..Default::default()
         };
 
         assert!(any.unpack_message::<Timestamp>().is_err());
-    }
-
-    #[test]
-    fn unpack_if_type_name_returns_none_for_mismatch_or_missing_name() {
-        let any = Any::pack(
-            &Timestamp::default(),
-            "custom.example/v1/google.protobuf.Timestamp",
-        );
-        let mismatch: Option<Timestamp> =
-            any.unpack_if_type_name("google.protobuf.Duration").unwrap();
-        assert!(mismatch.is_none());
-
-        let missing_name = Any::pack(&Timestamp::default(), "google.protobuf.Timestamp");
-        let result: Option<Timestamp> = missing_name
-            .unpack_if_type_name("google.protobuf.Timestamp")
-            .unwrap();
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn unpack_if_type_name_reports_decode_errors_for_matching_names() {
-        let any = Any {
-            type_url: "custom.example/v1/google.protobuf.Timestamp".into(),
-            value: bytes::Bytes::from_static(&[0x0f]),
-            ..Default::default()
-        };
-        assert!(any
-            .unpack_if_type_name::<Timestamp>("google.protobuf.Timestamp")
-            .is_err());
     }
 
     #[test]
@@ -1386,6 +1404,44 @@ mod tests {
             clear_any_registry();
             clear_text_registry();
             result
+        }
+
+        #[test]
+        fn is_message_agrees_with_the_registry_lookup_by_name() {
+            use buffa::any_registry::AnyRegistry;
+            use buffa::type_registry::JsonAnyEntry;
+
+            // A local registry holding only the canonical URL: a lookup of
+            // any other URL succeeds exactly when it falls back to the name.
+            let mut reg = AnyRegistry::new();
+            reg.register(JsonAnyEntry {
+                type_url: "type.googleapis.com/google.protobuf.Timestamp",
+                to_json: user_type_to_json,
+                from_json: user_type_from_json,
+                is_wkt: false,
+            });
+
+            for type_url in [
+                "type.googleapis.com/google.protobuf.Timestamp",
+                "custom.example/v1/google.protobuf.Timestamp",
+                "/google.protobuf.Timestamp",
+                "google.protobuf.Timestamp",
+                "x/my.google.protobuf.Timestamp",
+                "x/google.protobuf.Duration",
+                "custom.example/v1/",
+                "/",
+                "",
+            ] {
+                let any = Any {
+                    type_url: type_url.into(),
+                    ..Default::default()
+                };
+                assert_eq!(
+                    any.is_message::<Timestamp>(),
+                    reg.lookup(type_url).is_some(),
+                    "{type_url:?}"
+                );
+            }
         }
 
         #[test]
