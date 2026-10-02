@@ -285,9 +285,9 @@ mod text_tests {
 //
 // Proto3 JSON for `Any` uses the global `AnyRegistry` to serialize the
 // embedded message with its fields inline (regular messages) or wrapped in a
-// `"value"` key (WKTs). Falls back to base64-encoded `value` when the
-// registry is absent, or neither the type URL nor its message full name is
-// registered.
+// `"value"` key (WKTs). When the registry is absent, or neither the type URL
+// nor its message full name is registered, the payload is written as base64
+// under `"value"`.
 
 #[cfg(feature = "json")]
 struct Base64Bytes<'a>(&'a [u8]);
@@ -390,9 +390,9 @@ impl<'de> serde::Deserialize<'de> for Any {
             ));
         }
 
-        let lookup = buffa::any_registry::with_any_registry(|reg| {
-            reg.and_then(|r| r.lookup(&type_url))
-                .map(|e| (e.from_json, e.is_wkt))
+        let (registry_installed, lookup) = buffa::any_registry::with_any_registry(|reg| {
+            let entry = reg.and_then(|r| r.lookup(&type_url));
+            (reg.is_some(), entry.map(|e| (e.from_json, e.is_wkt)))
         });
 
         let value = match lookup {
@@ -405,15 +405,51 @@ impl<'de> serde::Deserialize<'de> for Any {
                 from_json(json_obj).map_err(serde::de::Error::custom)?
             }
             None => {
-                // Fallback: base64 decode the "value" field.
-                match obj.remove("value") {
+                // The type has no JSON entry, so the message's own JSON cannot
+                // be read. What parses is the encoded message as base64 under
+                // "value", which is what `Serialize` writes for such a type; a
+                // missing or null "value" is an empty payload. Any other key
+                // is a field of the message and an error, whatever the
+                // surrounding message does with unknown keys.
+                let opaque = |problem: core::fmt::Arguments<'_>, alternative: &str| -> D::Error {
+                    if registry_installed {
+                        serde::de::Error::custom(format_args!(
+                            "Any: type {type_url:?} has no JSON entry in the type registry, so its {problem}; register the message (generated `register_types` or `TypeRegistry::register_json_any`){alternative}"
+                        ))
+                    } else {
+                        serde::de::Error::custom(format_args!(
+                            "Any: no type registry is installed to resolve type {type_url:?}, so its {problem}; install one that registers the message with `set_type_registry`{alternative}"
+                        ))
+                    }
+                };
+                const OR_BASE64: &str = ", or send the message encoded as base64 under \"value\"";
+                const FOR_JSON_FORM: &str = " to parse its JSON form";
+
+                let payload = obj.remove("value");
+                if let Some(key) = obj.keys().next() {
+                    return Err(opaque(
+                        format_args!("field {key:?} cannot be parsed"),
+                        OR_BASE64,
+                    ));
+                }
+                match payload {
                     Some(serde_json::Value::String(s)) => buffa::json_helpers::bytes::deserialize(
                         serde::de::value::StringDeserializer::<D::Error>::new(s),
-                    )?,
+                    )
+                    .map_err(|e| {
+                        // The decoder's message ends in a full stop.
+                        let e = alloc::string::ToString::to_string(&e);
+                        let e = e.trim_end_matches('.');
+                        opaque(
+                            format_args!("\"value\" must be a base64 string: {e}"),
+                            FOR_JSON_FORM,
+                        )
+                    })?,
                     None | Some(serde_json::Value::Null) => alloc::vec::Vec::new(),
                     Some(_) => {
-                        return Err(serde::de::Error::custom(
-                            "Any: \"value\" for an unregistered type must be a base64 string",
+                        return Err(opaque(
+                            format_args!("\"value\" must be a base64 string"),
+                            FOR_JSON_FORM,
                         ));
                     }
                 }
@@ -909,15 +945,19 @@ mod tests {
         fn a_string_under_the_private_key_is_not_parsed() {
             with_registry(|| {
                 // Parsing the string fails the recursion limit. As data it
-                // is an object under `f`, which the fallback for a type
-                // that is not registered ignores.
+                // is an object under `f`, which a type with no JSON entry
+                // rejects by key, without reading the value.
                 let deep = alloc::format!("{}0{}", "[".repeat(200), "]".repeat(200));
                 let json = serde_json::json!({
                     "@type": "type.googleapis.com/no.such.Type",
                     "f": { RAW_VALUE_KEY: deep },
                 });
-                let decoded = serde_json::from_str::<Any>(&json.to_string());
-                assert!(decoded.is_ok(), "{decoded:?}");
+                let err = serde_json::from_str::<Any>(&json.to_string()).unwrap_err();
+                assert!(
+                    err.to_string()
+                        .contains("has no JSON entry in the type registry"),
+                    "{err}"
+                );
             });
         }
 
@@ -985,43 +1025,125 @@ mod tests {
             });
         }
 
+        const UNKNOWN_NO_REGISTRY: &str =
+            r#"no type registry is installed to resolve type "type.googleapis.com/unknown.Type""#;
+        const UNKNOWN_NO_ENTRY: &str =
+            r#"type "type.googleapis.com/unknown.Type" has no JSON entry in the type registry"#;
+
+        /// Runs `check` with no registry and with one that lacks
+        /// `unknown.Type`, passing the cause the error names in each state.
+        fn in_both_registry_states(check: impl Fn(&str)) {
+            without_registry(|| check(UNKNOWN_NO_REGISTRY));
+            with_registry(|| check(UNKNOWN_NO_ENTRY));
+        }
+
         #[test]
         fn fallback_base64_rejects_non_string_payloads() {
-            let check = || {
+            in_both_registry_states(|cause| {
                 for value in ["123", "{}", "[]", "true", "false"] {
                     let json = alloc::format!(
                         r#"{{"@type":"type.googleapis.com/unknown.Type","value":{value}}}"#
                     );
-                    let err = serde_json::from_str::<Any>(&json).unwrap_err();
+                    let err = serde_json::from_str::<Any>(&json).unwrap_err().to_string();
                     assert!(
-                        err.to_string().contains("must be a base64 string"),
+                        err.contains(cause) && err.contains("must be a base64 string;"),
                         "{json}: {err}"
                     );
                 }
-            };
-            without_registry(check);
-            with_registry(check);
+            });
         }
 
         #[test]
         fn fallback_base64_accepts_empty_and_valid_payloads() {
-            let check = || {
-                for (field, expected) in [
-                    ("", &[][..]),
-                    (r#", "value": null"#, &[][..]),
-                    (r#", "value": """#, &[][..]),
-                    (r#", "value": "CJYB""#, &[0x08, 0x96, 0x01][..]),
+            in_both_registry_states(|cause| {
+                for (json, expected) in [
+                    (r#"{"@type":"type.googleapis.com/unknown.Type"}"#, &[][..]),
+                    (
+                        r#"{"@type":"type.googleapis.com/unknown.Type","value":null}"#,
+                        &[][..],
+                    ),
+                    (
+                        r#"{"@type":"type.googleapis.com/unknown.Type","value":""}"#,
+                        &[][..],
+                    ),
+                    (
+                        r#"{"@type":"type.googleapis.com/unknown.Type","value":"CJYB"}"#,
+                        &[0x08, 0x96, 0x01][..],
+                    ),
+                    (
+                        r#"{"value":"CJYB","@type":"type.googleapis.com/unknown.Type"}"#,
+                        &[0x08, 0x96, 0x01][..],
+                    ),
+                    // A repeated key keeps its last value.
+                    (
+                        r#"{"@type":"type.googleapis.com/unknown.Type","value":123,"value":"CJYB"}"#,
+                        &[0x08, 0x96, 0x01][..],
+                    ),
                 ] {
-                    let json =
-                        alloc::format!(r#"{{"@type":"type.googleapis.com/unknown.Type"{field}}}"#);
-                    let any: Any = serde_json::from_str(&json).unwrap();
+                    let any: Any = serde_json::from_str(json).unwrap();
                     assert_eq!(any.value.as_ref(), expected, "{json}");
                 }
+                // The base64 decoder's own error follows the cause.
                 let json = r#"{"@type":"type.googleapis.com/unknown.Type","value":"!!!"}"#;
-                assert!(serde_json::from_str::<Any>(json).is_err());
-            };
-            without_registry(check);
-            with_registry(check);
+                let err = serde_json::from_str::<Any>(json).unwrap_err().to_string();
+                assert!(
+                    err.contains(cause) && err.contains("must be a base64 string: "),
+                    "{err}"
+                );
+                assert!(!err.contains(".;"), "{err}");
+            });
+        }
+
+        #[test]
+        fn an_unregistered_type_rejects_every_key_but_value() {
+            in_both_registry_states(|cause| {
+                for json in [
+                    // The expanded form of a message.
+                    r#"{"@type":"type.googleapis.com/unknown.Type","name":"x"}"#,
+                    r#"{"name":"x","@type":"type.googleapis.com/unknown.Type"}"#,
+                    r#"{"@type":"type.googleapis.com/unknown.Type","name":null}"#,
+                    // A field beside a payload that parses on its own.
+                    r#"{"@type":"type.googleapis.com/unknown.Type","value":"CJYB","name":"x"}"#,
+                    r#"{"@type":"type.googleapis.com/unknown.Type","value":null,"name":"x"}"#,
+                ] {
+                    let err = serde_json::from_str::<Any>(json).unwrap_err().to_string();
+                    assert!(
+                        err.contains(cause) && err.contains(r#"field "name" cannot be parsed"#),
+                        "{json}: {err}"
+                    );
+                }
+            });
+        }
+
+        #[test]
+        fn a_wkt_in_json_form_without_a_registry_names_the_registry() {
+            without_registry(|| {
+                let json = alloc::format!(r#"{{"@type":"{}","value":"1.5s"}}"#, Duration::TYPE_URL);
+                let err = serde_json::from_str::<Any>(&json).unwrap_err().to_string();
+                assert!(
+                    err.starts_with("Any: no type registry is installed")
+                        && err.contains(r#""value" must be a base64 string: "#)
+                        && err.contains("`set_type_registry`"),
+                    "{err}"
+                );
+            });
+        }
+
+        #[test]
+        fn a_type_with_only_a_text_entry_has_no_json_entry() {
+            use crate::google::protobuf::SourceContext;
+            with_registry(|| {
+                let json = alloc::format!(
+                    r#"{{"@type":"{}","fileName":"a.proto"}}"#,
+                    SourceContext::TYPE_URL
+                );
+                let err = serde_json::from_str::<Any>(&json).unwrap_err().to_string();
+                assert!(
+                    err.contains("has no JSON entry in the type registry")
+                        && err.contains("`register_types`"),
+                    "{err}"
+                );
+            });
         }
 
         #[test]
