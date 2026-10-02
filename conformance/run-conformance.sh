@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # The conformance_test_runner always runs two suites per invocation:
 #   1. Binary + JSON (expect thousands of successes)
@@ -87,3 +87,11 @@ BUFFA_VIA_VTABLE=1 run_suite vtable \
     --failure_list /known_failures_view_vtable.txt \
     --maximum_edition 2024 \
     /usr/local/bin/buffa-conformance
+
+# Via-table mode: the std run against a binary generated with CodecStrategy::Table.
+run_suite table \
+    conformance_test_runner \
+    --failure_list /known_failures_table.txt \
+    --text_format_failure_list /known_failures_text.txt \
+    --maximum_edition 2024 \
+    /usr/local/bin/buffa-conformance-table
