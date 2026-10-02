@@ -390,7 +390,7 @@ Compatibility is tested against protoc v21.12, v22.5, v25.5, v27.3, v29.5, and v
 
 ## Minimum supported Rust version
 
-The current MSRV is **1.75**.
+The current MSRV is **1.75**. The opt-in `CodecStrategy::Table` generates code that needs Rust 1.77 (see [Smaller generated code](docs/guide.md#smaller-generated-code-codec_strategy)); `buffa-build` returns an error on an older compiler when it is requested.
 
 buffa is a foundational codec crate, so its `rust-version` is set to the lowest toolchain the released code actually compiles on, not to a calendar target. CI verifies the workspace builds at the MSRV and at stable on every change. With cargo's MSRV-aware resolver (`resolver = "3"`, Rust 1.84+), a downstream project on an older toolchain will automatically resolve to the newest buffa release whose `rust-version` fits — so an accurate declaration matters more than a conservative one.
 

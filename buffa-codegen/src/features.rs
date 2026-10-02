@@ -16,7 +16,7 @@ pub use buffa_descriptor::features::*;
 
 use crate::context::CodeGenContext;
 use crate::generated::descriptor::field_descriptor_proto::Type;
-use crate::generated::descriptor::FieldDescriptorProto;
+use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto};
 
 /// Compute a field's resolved features, including enum closedness lookup.
 ///
@@ -62,4 +62,22 @@ pub fn resolve_field(
         }
     }
     resolved
+}
+
+/// The features the generator resolves a message's fields under: those of the
+/// file for a top-level message, whose own message-level features do not apply
+/// to it, and the parent's with the message's own for a nested one.
+///
+/// The table codec's plan calls this too, so that it judges a message's fields
+/// under the same features as the code that emits them.
+pub(crate) fn message_scope_features(
+    parent: &ResolvedFeatures,
+    msg: &DescriptorProto,
+    top_level: bool,
+) -> ResolvedFeatures {
+    if top_level {
+        *parent
+    } else {
+        resolve_child(parent, message_features(msg))
+    }
 }
