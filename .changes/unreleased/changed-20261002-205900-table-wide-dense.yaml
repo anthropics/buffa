@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **Table-codec messages with 255 or more fields keep the dense lookup for low field numbers.** Fields below 64 now use the same direct lookup as smaller messages instead of falling back to binary search. Encoded bytes and decode semantics are unchanged.
+time: 2026-10-02T20:59:00+02:00

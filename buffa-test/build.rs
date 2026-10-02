@@ -90,8 +90,7 @@ fn read_proto(file: &str) -> String {
 }
 
 /// A message with 300 fields, of which 280 are messages, so that a table needs
-/// more than 255 entries (which turns off its dense array) and more than 255
-/// field descriptors.
+/// more than 255 entries and more than 255 field descriptors.
 fn wide_proto() -> String {
     let mut proto = String::from(
         "syntax = \"proto3\";\npackage wide;\nmessage Leaf { int32 x = 1; }\nmessage Wide {\n",

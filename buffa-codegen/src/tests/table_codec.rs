@@ -479,6 +479,25 @@ fn field_numbers_index_the_dense_array_and_missing_ones_are_zero() {
 }
 
 #[test]
+fn wide_messages_keep_dense_lookup_for_low_field_numbers() {
+    let mut file = schema();
+    file.message_type[0].field = (1..=300)
+        .map(|n| scalar(&format!("f{n}"), n, Type::TYPE_INT32))
+        .collect();
+    let (files, _) = generate_with_diagnostics(
+        &[file],
+        &["t.proto".to_string()],
+        &table_config(CodecStrategy::Table),
+    )
+    .unwrap();
+    let code = squashed(&joined(&files));
+    let plain = code.split("static__BUFFA_TABLE_Plain").nth(1).unwrap();
+    let table = plain.split("impl::buffa::Message").next().unwrap();
+    assert!(table.contains("dense=&[0u8,1u8,2u8,3u8"), "{table}");
+    assert!(table.contains(",63u8]"), "{table}");
+}
+
+#[test]
 fn the_warning_texts_say_what_to_do() {
     let rule = CodeGenWarning::CodecStrategyRuleMatchedNothing {
         rule: ".x".to_string(),
