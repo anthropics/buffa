@@ -1,0 +1,3 @@
+kind: Changed
+body: The table codec now reserves packed repeated enum capacity from the payload length.
+time: 2026-10-03T00:32:50.399909+02:00

@@ -174,6 +174,7 @@ pub struct EnumVt {
     /// The argument points to a live slot of the shape the descriptor was
     /// built for.
     pub(super) set: unsafe fn(*mut u8, i32) -> bool,
+    pub(super) set_packed: unsafe fn(*mut u8, i32, &[u8]) -> bool,
     /// The value at `idx` (ignored for singular shapes), or `None` if unset.
     ///
     /// # Safety
@@ -212,6 +213,17 @@ pub unsafe trait EnumShape {
     /// `slot` points to a live [`Slot`](Self::Slot).
     unsafe fn set(slot: *mut u8, raw: i32) -> bool;
 
+    /// Store a packed value the same way as [`set`](Self::set), using the
+    /// remaining payload as a capacity hint.
+    ///
+    /// # Safety
+    ///
+    /// `slot` points to a live [`Slot`](Self::Slot).
+    unsafe fn set_packed(slot: *mut u8, raw: i32, _remaining_payload: &[u8]) -> bool {
+        // SAFETY: this method has the same slot contract as `set`.
+        unsafe { Self::set(slot, raw) }
+    }
+
     /// The value at `idx` (ignored for singular shapes), or `None` if unset.
     ///
     /// # Safety
@@ -236,14 +248,18 @@ impl EnumVt {
         Self {
             card: S::CARD,
             set: S::set,
+            set_packed: S::set_packed,
             get: S::get,
             len: S::len,
         }
     }
 }
 
+const MAX_OPEN_ENUM_RESERVE_BYTES: usize = 64 * 1024;
+const MAX_CLOSED_ENUM_RESERVE_VALUES: usize = 16;
+
 macro_rules! enum_shape {
-    ($(#[$m:meta])* $name:ident, $card:ident, $slot:ty, $set:expr, $get:expr, $len:expr) => {
+    ($(#[$m:meta])* $name:ident, $card:ident, $slot:ty, $set:expr, $set_packed:expr, $get:expr, $len:expr) => {
         $(#[$m])*
         pub struct $name<E>(PhantomData<E>);
 
@@ -261,6 +277,13 @@ macro_rules! enum_shape {
             }
 
             #[inline]
+            unsafe fn set_packed(slot: *mut u8, raw: i32, remaining_payload: &[u8]) -> bool {
+                // SAFETY: as above.
+                let s = unsafe { &mut *slot.cast::<$slot>() };
+                ($set_packed)(s, raw, remaining_payload)
+            }
+
+            #[inline]
             unsafe fn get(slot: *const u8, idx: usize) -> Option<i32> {
                 // SAFETY: as above.
                 let s = unsafe { &*slot.cast::<$slot>() };
@@ -273,6 +296,7 @@ macro_rules! enum_shape {
                 let s = unsafe { &*slot.cast::<$slot>() };
                 ($len)(s)
             }
+
         }
     };
 }
@@ -281,6 +305,7 @@ enum_shape!(
     /// An open enum with implicit presence: `EnumValue<E>`.
     ImplicitOpen, IMPLICIT, EnumValue<E>,
     |s: &mut EnumValue<E>, raw| { *s = EnumValue::from(raw); true },
+    |s: &mut EnumValue<E>, raw, _| { *s = EnumValue::from(raw); true },
     |s: &EnumValue<E>, _| Some(s.to_i32()),
     |_: &EnumValue<E>| 0
 );
@@ -288,6 +313,7 @@ enum_shape!(
     /// A closed enum with implicit presence: `E`.
     ImplicitClosed, IMPLICIT, E,
     |s: &mut E, raw| match E::from_i32(raw) { Some(v) => { *s = v; true } None => false },
+    |s: &mut E, raw, _| match E::from_i32(raw) { Some(v) => { *s = v; true } None => false },
     |s: &E, _| Some(s.to_i32()),
     |_: &E| 0
 );
@@ -295,6 +321,7 @@ enum_shape!(
     /// An open enum with explicit presence: `Option<EnumValue<E>>`.
     OptionalOpen, OPTIONAL, Option<EnumValue<E>>,
     |s: &mut Option<EnumValue<E>>, raw| { *s = Some(EnumValue::from(raw)); true },
+    |s: &mut Option<EnumValue<E>>, raw, _| { *s = Some(EnumValue::from(raw)); true },
     |s: &Option<EnumValue<E>>, _| s.as_ref().map(EnumValue::to_i32),
     |_: &Option<EnumValue<E>>| 0
 );
@@ -302,6 +329,7 @@ enum_shape!(
     /// A closed enum with explicit presence: `Option<E>`.
     OptionalClosed, OPTIONAL, Option<E>,
     |s: &mut Option<E>, raw| match E::from_i32(raw) { Some(v) => { *s = Some(v); true } None => false },
+    |s: &mut Option<E>, raw, _| match E::from_i32(raw) { Some(v) => { *s = Some(v); true } None => false },
     |s: &Option<E>, _| s.as_ref().map(Enumeration::to_i32),
     |_: &Option<E>| 0
 );
@@ -309,6 +337,18 @@ enum_shape!(
     /// A repeated open enum: `Vec<EnumValue<E>>`.
     RepeatedOpen, REPEATED, Vec<EnumValue<E>>,
     |s: &mut Vec<EnumValue<E>>, raw| { s.push(EnumValue::from(raw)); true },
+    |s: &mut Vec<EnumValue<E>>, raw, remaining: &[u8]| {
+        let requested = remaining
+            .len()
+            .saturating_add(1)
+            .min(MAX_OPEN_ENUM_RESERVE_BYTES / core::mem::size_of::<EnumValue<E>>().max(1));
+        let available = s.capacity().saturating_sub(s.len());
+        if available == 0 && requested > 0 {
+            s.reserve_exact(requested);
+        }
+        s.push(EnumValue::from(raw));
+        true
+    },
     |s: &Vec<EnumValue<E>>, i| s.get(i).map(EnumValue::to_i32),
     |s: &Vec<EnumValue<E>>| s.len()
 );
@@ -316,6 +356,22 @@ enum_shape!(
     /// A repeated closed enum: `Vec<E>`.
     RepeatedClosed, REPEATED, Vec<E>,
     |s: &mut Vec<E>, raw| match E::from_i32(raw) { Some(v) => { s.push(v); true } None => false },
+    |s: &mut Vec<E>, raw, remaining: &[u8]| match E::from_i32(raw) {
+        Some(v) => {
+            let requested = remaining
+                .len()
+                .saturating_add(1)
+                .min(MAX_CLOSED_ENUM_RESERVE_VALUES)
+                .min(MAX_OPEN_ENUM_RESERVE_BYTES / core::mem::size_of::<E>().max(1));
+            let available = s.capacity().saturating_sub(s.len());
+            if available == 0 && requested > 0 {
+                s.reserve_exact(requested);
+            }
+            s.push(v);
+            true
+        }
+        None => false,
+    },
     |s: &Vec<E>, i| s.get(i).map(Enumeration::to_i32),
     |s: &Vec<E>| s.len()
 );

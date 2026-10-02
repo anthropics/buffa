@@ -390,6 +390,14 @@ unsafe fn merge_enum<const C: u8>(
                     let mut payload = take_len_delimited(buf)?;
                     while !payload.is_empty() {
                         let raw = types::decode_int32_packed(&mut payload)?;
+                        let stored = (vt.set_packed)(slot, raw, payload);
+                        enum_store_result(table, e, base, raw, stored, ctx)?;
+                        if stored {
+                            break;
+                        }
+                    }
+                    while !payload.is_empty() {
+                        let raw = types::decode_int32_packed(&mut payload)?;
                         enum_store(table, e, base, vt, slot, raw, ctx)?;
                     }
                     Ok(())
@@ -427,7 +435,20 @@ unsafe fn enum_store(
     ctx: DecodeContext<'_>,
 ) -> Result<(), DecodeError> {
     // SAFETY: `slot` matches the shape `vt` was built for.
-    if unsafe { (vt.set)(slot, raw) } || table.unknown == NO_UNKNOWN {
+    let stored = unsafe { (vt.set)(slot, raw) };
+    enum_store_result(table, e, base, raw, stored, ctx)
+}
+
+#[inline]
+fn enum_store_result(
+    table: &MessageTable,
+    e: &Entry,
+    base: *mut u8,
+    raw: i32,
+    stored: bool,
+    ctx: DecodeContext<'_>,
+) -> Result<(), DecodeError> {
+    if stored || table.unknown == NO_UNKNOWN {
         return Ok(());
     }
     ctx.register_unknown_field()?;
