@@ -1,0 +1,3 @@
+kind: Added
+body: '**Field mask coverage and normalization helpers.** `FieldMask::covers` checks exact paths and descendants using dot-separated boundaries. `FieldMask::normalize` sorts paths and removes duplicates and redundant descendants in place, preserving unknown fields. Both helpers work without `std` and do not require message descriptors.'
+time: 2026-10-02T09:40:25.939765-04:00

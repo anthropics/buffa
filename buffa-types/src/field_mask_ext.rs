@@ -30,6 +30,53 @@ impl FieldMask {
         self.paths.iter().any(|p| p == path)
     }
 
+    /// Returns `true` if this mask selects `path` or one of its ancestors.
+    ///
+    /// For example, `user` covers `user.name`, but does not cover `username`.
+    /// Comparison is case-sensitive and uses dots as component boundaries.
+    /// Paths are not validated against a message descriptor, and `*` has no
+    /// special meaning. An empty mask covers no paths.
+    /// Runs in O(n) path comparisons where n is the number of mask paths.
+    ///
+    /// ```
+    /// use buffa_types::FieldMask;
+    ///
+    /// let mask = FieldMask::from_paths(["user", "settings.theme"]);
+    /// assert!(mask.covers("user.name"));
+    /// assert!(!mask.covers("username"));
+    /// assert!(!mask.covers("settings"));
+    /// ```
+    pub fn covers(&self, path: &str) -> bool {
+        self.paths
+            .iter()
+            .any(|parent| path_is_covered(path, parent))
+    }
+
+    /// Sorts paths by their dot-separated components and removes duplicates
+    /// and paths already covered by a parent path.
+    ///
+    /// This preserves the mask's coverage and leaves unknown protobuf fields
+    /// untouched. It does not validate paths against a message descriptor or
+    /// interpret wildcards. Runs in O(n log n) path comparisons and operates
+    /// in place without allocating new path strings.
+    ///
+    /// ```
+    /// use buffa_types::FieldMask;
+    ///
+    /// let mut mask = FieldMask::from_paths(["user.name", "settings.theme", "user", "user"]);
+    /// mask.normalize();
+    /// assert_eq!(mask.paths, ["settings.theme", "user"]);
+    /// assert!(mask.covers("user.name"));
+    /// ```
+    pub fn normalize(&mut self) {
+        // Component ordering keeps every parent's descendants adjacent even
+        // when a caller supplies paths outside the usual proto identifier syntax.
+        self.paths
+            .sort_unstable_by(|a, b| a.split('.').cmp(b.split('.')));
+        self.paths
+            .dedup_by(|path, parent| path_is_covered(path, parent));
+    }
+
     /// Returns the number of paths in the field mask.
     #[inline]
     pub fn len(&self) -> usize {
@@ -47,6 +94,11 @@ impl FieldMask {
     pub fn iter(&self) -> core::slice::Iter<'_, String> {
         self.paths.iter()
     }
+}
+
+fn path_is_covered(path: &str, parent: &str) -> bool {
+    path.strip_prefix(parent)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
 }
 
 impl<'a> IntoIterator for &'a FieldMask {
@@ -208,6 +260,118 @@ mod tests {
     fn contains_is_case_sensitive() {
         let mask = FieldMask::from_paths(["user.Name"]);
         assert!(!mask.contains("user.name"));
+    }
+
+    #[test]
+    fn covers_exact_paths_and_descendants_only() {
+        let mask = FieldMask::from_paths(["user", "settings.theme", "User.Name"]);
+        for path in [
+            "user",
+            "user.name",
+            "user.name.first",
+            "settings.theme.color",
+            "User.Name",
+        ] {
+            assert!(mask.covers(path), "{path}");
+        }
+        for path in [
+            "username",
+            "user_name",
+            "settings",
+            "settings.themes",
+            "User.name",
+            "",
+        ] {
+            assert!(!mask.covers(path), "{path}");
+        }
+        assert!(!FieldMask::default().covers("user"));
+        assert!(!FieldMask::from_paths(["*"]).covers("user"));
+    }
+
+    #[test]
+    fn normalize_removes_duplicates_and_redundant_descendants() {
+        let mut mask = FieldMask::from_paths([
+            "user.name.first",
+            "settings.theme",
+            "user.name",
+            "user",
+            "user",
+            "settings.theme.color",
+            "settings.locale",
+            "username",
+            "user_name",
+        ]);
+        mask.normalize();
+        assert_eq!(
+            mask.paths,
+            [
+                "settings.locale",
+                "settings.theme",
+                "user",
+                "user_name",
+                "username"
+            ]
+        );
+        let once = mask.clone();
+        mask.normalize();
+        assert_eq!(mask, once);
+    }
+
+    #[test]
+    fn normalize_handles_empty_masks_and_component_ordering() {
+        let mut empty = FieldMask::default();
+        empty.normalize();
+        assert!(empty.is_empty());
+
+        // A bytewise sort would put `a-b` between `a` and `a.b`, hiding
+        // the parent from adjacent deduplication. Paths are not validated.
+        let mut mask = FieldMask::from_paths(["a.b", "a-b", "a", "é.child", "é"]);
+        mask.normalize();
+        assert_eq!(mask.paths, ["a", "a-b", "é"]);
+    }
+
+    #[test]
+    fn normalize_preserves_unknown_fields() {
+        use buffa::Message;
+
+        // Unknown field 2, varint 42, alongside two paths covered by `a`.
+        let mut mask =
+            FieldMask::decode(&mut &[0x0a, 3, b'a', b'.', b'b', 0x10, 42, 0x0a, 1, b'a'][..])
+                .unwrap();
+        let unknown = mask.__buffa_unknown_fields.clone();
+        mask.normalize();
+        assert_eq!(mask.paths, ["a"]);
+        assert_eq!(mask.__buffa_unknown_fields, unknown);
+        assert_eq!(
+            FieldMask::decode(&mut mask.encode_to_vec().as_slice()).unwrap(),
+            mask
+        );
+    }
+
+    #[test]
+    fn normalize_preserves_coverage_for_every_subset() {
+        let paths = ["a", "a.b", "a.b.c", "a.bc", "a_b", "b", "b.c"];
+        for subset in 0..(1 << paths.len()) {
+            let original = FieldMask::from_paths(
+                paths
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| subset & (1 << i) != 0)
+                    .map(|(_, path)| *path),
+            );
+            let mut normalized = original.clone();
+            normalized.normalize();
+            for query in paths
+                .into_iter()
+                .chain(["a.b.c.d", "a.bcd", "b.c.d", "c", ""])
+            {
+                assert_eq!(
+                    normalized.covers(query),
+                    original.covers(query),
+                    "subset {subset}, query {query}"
+                );
+            }
+        }
     }
 
     #[cfg(feature = "json")]
