@@ -136,7 +136,7 @@ fn main() {
 
 ### Custom Type Implementations
 
-For types that need a custom Rust representation while remaining wire-compatible with a `.proto` definition, implement the `Message` trait by hand and use `extern_path` to map the proto type to your custom implementation. **This is rare** — in most cases, using the generated types and adding inherent methods or trait implementations alongside them is the right approach (this is how `buffa-types` handles well-known types: generated structs, hand-written `*_ext.rs` for `std::time` conversions, `Any::pack`/`unpack`, and custom JSON serde).
+For types that need a custom Rust representation while remaining wire-compatible with a `.proto` definition, implement the `Message` trait by hand and use `extern_path` to map the proto type to your custom implementation. **This is rare** — in most cases, using the generated types and adding inherent methods or trait implementations alongside them is the right approach (this is how `buffa-types` handles well-known types: generated structs, hand-written `*_ext.rs` for `std::time` conversions, `Any::pack_message`/`unpack_message`, and custom JSON serde).
 
 ## Core Design Decisions
 

@@ -1869,22 +1869,45 @@ Pack and unpack messages into `Any`:
 
 ```rust,ignore
 use buffa_types::google::protobuf::Any;
-use buffa::Message;
 
-// Pack
-let any = Any::pack(&my_message, MyMessage::TYPE_URL);
+// Pack with the generated type URL
+let any = Any::pack_message(&my_message);
 
 // Check type
-if any.is_type(MyMessage::TYPE_URL) { /* ... */ }
+if any.is_message::<MyMessage>() { /* ... */ }
 
-// Unpack
-let msg: Option<MyMessage> = any.unpack_if::<MyMessage>(MyMessage::TYPE_URL)?;
+// Unpack: `None` when the `Any` holds another type
+let msg: Option<MyMessage> = any.unpack_message::<MyMessage>()?;
+
+// A custom URL prefix: the typed helpers compare only the message name
+let custom_any = Any::pack(&my_message, "custom.example/v1/my.package.MyMessage");
+let msg: Option<MyMessage> = custom_any.unpack_message::<MyMessage>()?;
 ```
 
-`is_type` and `unpack_if` compare the whole URL, prefix included. JSON and text
-serialization look the message up in the `TypeRegistry` instead, and a type
-registered under one prefix is found under any other, by the message name
-after the last `/`. The `Any` keeps its own URL.
+`Any::pack` and `Any::pack_message` panic on a message over the 2 GiB protobuf
+limit; `Any::try_pack` and `Any::try_pack_message` return
+`Err(EncodeError::MessageTooLarge)` instead.
+
+`is_message` and `unpack_message` compare the fully-qualified message name
+after the last `/` of the URL with `MessageName::FULL_NAME`, so they accept any
+prefix. `type_name()` returns that name; for a name known only at run time,
+write `any.type_name() == Some(name)`. `is_type` and `unpack_if` take a URL and
+compare the whole of it, prefix included.
+
+JSON and text format write an `Any` with the fields of the packed message
+expanded: `{"@type": "type.googleapis.com/my.package.MyMessage", "name": "x"}`
+in JSON, and `[type.googleapis.com/my.package.MyMessage] { name: "x" }` in
+text. Expanding needs the message type, so both formats look the URL up in the
+`TypeRegistry`. Register each generated package with its
+`__buffa::register_types` function and the well-known types with
+`buffa_types::register_wkt_types`. Then install the registry with
+`set_type_registry`. The setup code is under
+[Extensions](#extensions-custom-options).
+
+The lookup checks the exact URL first. If that URL is not registered, the
+lookup uses the message name after the last `/`. So a type registered under
+one prefix is found under any other. The lookup does not rewrite `type_url`:
+the `Any` keeps the URL it was given.
 
 `Any` has two JSON forms. The *expanded form* carries the message's own JSON
 beside the type URL: `{"@type": "...", "field": ...}`, or
@@ -2032,9 +2055,7 @@ Message-typed extension values are encoded to wire bytes on `set`, so
 `set_extension()` panics if the value's encoded size exceeds the 2 GiB
 protobuf limit; `try_set_extension()` returns
 `Err(EncodeError::MessageTooLarge)` instead and leaves the extendee
-unchanged. (Scalar-typed extensions cannot fail.) `Any::pack` has the same
-shape: it panics on an over-limit message, and `Any::try_pack` is the
-error-returning twin.
+unchanged. (Scalar-typed extensions cannot fail.)
 
 ### Extendee identity check
 

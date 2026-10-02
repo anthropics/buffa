@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`Any::pack_message`, `try_pack_message`, `unpack_message`, `is_message` and `type_name`** (#499). The first four pack and match an `Any` by message type in place of a type URL string. `pack_message` and `try_pack_message` store `MessageName::TYPE_URL`. `is_message::<T>()` and `unpack_message::<T>()` compare the name after the last `/` of the URL with `MessageName::FULL_NAME`, so they accept an `Any` packed under any URL prefix; the JSON and text registries match by the same name after trying the exact URL first. `type_name()` returns that name. `is_type` and `unpack_if` still compare the whole URL.
+time: 2026-10-01T23:58:11+02:00
