@@ -35,8 +35,23 @@ message HoldsPick {
   HoldsBlobInOneof inner = 1;
 }
 
+// Holds a `Blob` as a map value, so it is unrolled, and so is `HoldsMapHolder`.
+message HoldsBlobInMap {
+  map<string, Blob> blobs = 1;
+  int32 tail = 2;
+}
+
+message HoldsMapHolder {
+  HoldsBlobInMap inner = 1;
+}
+
 message Plain {
   int32 x = 1;
+}
+
+// A map of messages that have no `bytes` field: a table.
+message HoldsPlainInMap {
+  map<string, Plain> plains = 1;
 }
 
 message HoldsPlain {

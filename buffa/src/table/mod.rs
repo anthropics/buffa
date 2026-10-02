@@ -9,6 +9,14 @@
 //! cardinality). The `Message` methods forward to the interpreters here,
 //! which every message shares.
 //!
+//! A map field is one entry of kind [`Kind::Map`] whose [`MapVt`] describes
+//! the key and the value and how to iterate and insert into the collection.
+//! The key and value are then sized, written and decoded by the same
+//! interpreters as any other field. No size, write or decode logic is
+//! instantiated per key or value type; only iterating and inserting into the
+//! collection are instantiated per collection type, in the crate that owns
+//! the message and at its optimisation level.
+//!
 //! This module is support code for generated code, is not meant to be called
 //! directly, and may change in any release, so generated code must be
 //! regenerated with the `buffa-codegen` that matches the `buffa` it builds
@@ -42,8 +50,8 @@
 //!   chunk. Only a caller that drives `merge_field` itself is affected, such
 //!   as the default `Message::merge_group`, so a message that is the type of a
 //!   group field must not use the table strategy.
-//! - [`clear`](crate::Message::clear) resets to `Default`, which releases
-//!   allocations that unrolled code keeps.
+//! - [`clear`](crate::Message::clear) resets to `Default`, which releases the
+//!   allocations of strings, vectors and maps that unrolled code keeps.
 //! - A child reached through its [`Message`](crate::Message) impl (see
 //!   [`MsgVt::new_via_message`]) has the same wire format and accepts the same
 //!   input, but it is staged in a scratch buffer and copied when it is written
@@ -67,7 +75,9 @@
 //! this crate for speed and its own generated code for size. Encoding into
 //! any other sink, such as a [`Rope`](crate::Rope) or a `BufMut` passed
 //! straight to `Message::write_to`, and the generic wrappers around
-//! decoding are instantiated in the crate that calls them.
+//! decoding are instantiated in the crate that calls them. Iterating and
+//! inserting into a map's collection is also compiled there, so raising this
+//! crate's optimisation level does not speed it up.
 
 use core::marker::PhantomData;
 
@@ -76,10 +86,11 @@ use crate::bytes::Buf;
 use crate::encoding::{Tag, WireType};
 use crate::{DecodeContext, DecodeError, EncodeSink, SizeCache, UnknownFields};
 
+pub use map::MapVt;
 pub use oneof::{Member, OneofEnum, OneofVt};
 pub use shape::{
-    EnumShape, EnumVt, ImplicitClosed, ImplicitOpen, MsgSlot, MsgVt, OptionalClosed, OptionalOpen,
-    RepVt, RepeatedClosed, RepeatedOpen,
+    DirectMsgVt, EnumShape, EnumVt, ImplicitClosed, ImplicitOpen, MsgSlot, MsgVt, OptionalClosed,
+    OptionalOpen, RepVt, RepeatedClosed, RepeatedOpen,
 };
 
 use scalar::{
@@ -227,6 +238,7 @@ macro_rules! kind_table {
             MsgRepeated: Msg Msg REPEATED;
             OneofLeader: Oneof Oneof LEADER;
             OneofFollower: Oneof Oneof ONEOF;
+            Map: Map Map IMPLICIT;
         }
     };
 }
@@ -261,7 +273,10 @@ macro_rules! payload_kind_table {
 
 macro_rules! define_kind {
     ($($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
-        /// The type and cardinality of a field: one interpreter arm each.
+        /// The type and cardinality of a field. The dispatch functions have an
+        /// arm for each kind, except that the one for `Map` is unreachable:
+        /// the loops test for a map first, for a reason that
+        /// `buffa/src/table/map.rs` gives.
         #[derive(Clone, Copy, PartialEq, Eq, Debug)]
         #[repr(u8)]
         pub enum Kind {
@@ -280,6 +295,14 @@ macro_rules! define_kind {
             const fn aux_kind(self) -> Option<AuxKind> {
                 match self {
                     $(Kind::$name => define_kind!(@aux $fam $card),)*
+                }
+            }
+
+            /// The cardinality of the kind: one of `IMPLICIT`, `REQUIRED`,
+            /// `OPTIONAL`, `REPEATED` and `PACKED`.
+            const fn card(self) -> u8 {
+                match self {
+                    $(Kind::$name => define_kind!(@card $card),)*
                 }
             }
 
@@ -302,6 +325,7 @@ macro_rules! define_kind {
             $(
                 #[doc = concat!("The type-level name of [`Kind::", stringify!($name), "`](super::Kind::", stringify!($name), ").")]
                 pub struct $name;
+                impl KindMarker for $name { const KIND: Kind = Kind::$name; }
                 define_kind!(@slot $name $fam $ty $card);
             )*
         }
@@ -326,16 +350,24 @@ macro_rules! define_kind {
     // A oneof member's field is the `Option` of the oneof's enum, which its
     // aux descriptors check.
     (@slot $name:ident Oneof $ty:ident $card:ident) => {};
+    // A map is checked against its aux descriptor, which is built for the map's
+    // type.
+    (@slot $name:ident Map $ty:ident $card:ident) => {};
     (@wire Scalar $ty:ident PACKED) => { WireType::LengthDelimited as u32 };
     (@wire Scalar $ty:ident $card:ident) => { <$ty as Sc>::WIRE as u32 };
     (@wire Str $ty:ident $card:ident) => { WireType::LengthDelimited as u32 };
     (@wire Bytes $ty:ident $card:ident) => { WireType::LengthDelimited as u32 };
     (@wire Msg $ty:ident $card:ident) => { WireType::LengthDelimited as u32 };
+    (@wire Map $ty:ident $card:ident) => { WireType::LengthDelimited as u32 };
     (@wire Enum $ty:ident PACKED) => { WireType::LengthDelimited as u32 };
     (@wire Enum $ty:ident $card:ident) => { WireType::Varint as u32 };
     (@wire Oneof $ty:ident $card:ident) => {
         panic!("a oneof member's wire type is its payload kind's, so build its entry with `Entry::oneof_member`")
     };
+    // The members of a oneof have no cardinality of their own.
+    (@card ONEOF) => { IMPLICIT };
+    (@card LEADER) => { IMPLICIT };
+    (@card $card:ident) => { $card };
     (@shape IMPLICIT) => { IMPLICIT };
     (@shape REQUIRED) => { IMPLICIT };
     (@shape OPTIONAL) => { OPTIONAL };
@@ -348,6 +380,7 @@ macro_rules! define_kind {
     (@aux Bytes $card:ident) => { None };
     (@aux Enum $card:ident) => { Some(AuxKind::Enum) };
     (@aux Oneof $card:ident) => { Some(AuxKind::Member) };
+    (@aux Map $card:ident) => { Some(AuxKind::Map) };
     (@aux Msg REPEATED) => { Some(AuxKind::Rep) };
     (@aux Msg $card:ident) => { Some(AuxKind::Msg) };
 }
@@ -355,9 +388,15 @@ macro_rules! define_kind {
 /// The type of the field that an entry of a [`kinds`] type describes, for the
 /// scalar, string and bytes kinds. Enum and message kinds have none, because
 /// their field type depends on the enum or message.
-pub trait KindSlot {
+pub trait KindSlot: KindMarker {
     /// The type of the field.
     type Slot;
+}
+
+/// The [`Kind`] that a type of the [`kinds`] module names.
+pub trait KindMarker {
+    /// The kind.
+    const KIND: Kind;
 }
 
 kind_table!(define_kind);
@@ -379,6 +418,7 @@ payload_kind_table!(define_payload_check);
 mod bridge;
 mod decode;
 mod encode;
+mod map;
 mod oneof;
 mod scalar;
 mod shape;
@@ -392,6 +432,7 @@ enum AuxKind {
     Enum,
     Group,
     Member,
+    Map,
 }
 
 /// Per-field data that a kind needs beyond the field's offset.
@@ -407,6 +448,8 @@ pub enum Aux {
     Group(&'static OneofVt),
     /// One member of a oneof ([`Kind::OneofLeader`] or [`Kind::OneofFollower`]).
     Member(Member),
+    /// The descriptor of a map field ([`Kind::Map`]).
+    Map(&'static MapVt),
 }
 
 impl Aux {
@@ -417,6 +460,7 @@ impl Aux {
             Aux::Enum(_) => AuxKind::Enum,
             Aux::Group(_) => AuxKind::Group,
             Aux::Member(_) => AuxKind::Member,
+            Aux::Map(_) => AuxKind::Map,
         }
     }
 }
@@ -552,6 +596,14 @@ impl MessageTable {
     }
 
     #[inline]
+    fn map_vt(&self, e: &Entry) -> &'static MapVt {
+        match &self.aux[usize::from(e.aux)] {
+            Aux::Map(vt) => vt,
+            _ => unreachable!("`Table::new` checked that map entries index `MapVt`s"),
+        }
+    }
+
+    #[inline]
     fn enum_vt(&self, e: &Entry) -> &'static EnumVt {
         match &self.aux[usize::from(e.aux)] {
             Aux::Enum(vt) => vt,
@@ -652,7 +704,9 @@ impl<M> Table<M> {
     ///   [`OneofEnum`] implementation gives, for the member's number, a pointer
     ///   to a value of the member's payload kind, under the same rules as the
     ///   kinds above (for `MsgSingular`, a [`MsgVt::direct`] or
-    ///   [`MsgVt::direct_via_message`] descriptor of the message).
+    ///   [`MsgVt::direct_via_message`] descriptor of the message);
+    /// - `Map`: exactly the collection type the entry's [`MapVt`] was built
+    ///   for.
     ///
     /// `unknown`, if present, must be the offset of a field of type
     /// `UnknownFields`. The `__table_entry!` macro checks the field types
@@ -1003,9 +1057,10 @@ macro_rules! __table {
 /// let _ = buffa::__table_entry!(Point, x, StrImplicit, 1);
 /// ```
 ///
-/// The scalar, string and bytes kinds have a fixed field type. The enum and
-/// message kinds take the type explicitly, as `aux = <index>, slot = <type>`,
-/// where the type is the one their aux descriptor was built for. A oneof
+/// The scalar, string and bytes kinds have a fixed field type. The enum,
+/// message and map kinds take the type explicitly, as
+/// `aux = <index>, slot = <type>`, where the type is the one their aux
+/// descriptor was built for (for a map, the collection). A oneof
 /// member is written `oneof(<payload kind>, <leader>)`, where `<leader>` says
 /// whether it is the oneof's lowest-numbered member, with the `Option` of the
 /// oneof's enum as its slot type and the index of its [`Member`] as `aux`.
@@ -1057,4 +1112,10 @@ macro_rules! __table_entry {
 #[rustversion::since(1.77)]
 mod tests {
     include!("tests.rs");
+}
+
+#[cfg(test)]
+#[rustversion::since(1.77)]
+mod map_tests {
+    include!("map_tests.rs");
 }

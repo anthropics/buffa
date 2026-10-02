@@ -112,14 +112,14 @@ message WithOneof {
   int32 c = 3;
 }
 
-// A map, which the table cannot handle, so a message that has one stays
-// unrolled when the table is requested. A message that holds one is a table
-// message that reaches it through its `Message` impl.
+// Two maps, one of messages: a table message. table_codec_maps.proto has maps
+// of every type.
 message WithMap {
   map<string, int32> m = 1;
   map<string, Inner> inners = 2;
 }
 
+// Holds a message with a oneof and a message with maps.
 message HoldsMap {
   WithOneof o = 1;
   int32 x = 2;
