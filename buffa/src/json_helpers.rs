@@ -630,14 +630,10 @@ pub mod proto_enum {
 
 /// Try to decode a `serde_json::Value` as a closed enum via [`Enumeration`].
 ///
-/// When `ignore_unknown_enum_values` is active, returns `Ok(None)` for any
-/// value that fails to decode, so the caller can drop the entry from its
-/// container (or leave the optional unset). Strict mode propagates the
-/// error. The lenient catch-all (any error → `None`, not just
-/// unknown-variant) matches [`try_deserialize_enum`]'s behaviour for open
-/// enums — if you are tightening this to only swallow unknown-variant
-/// errors, tighten the open-enum path in the same change so the two stay
-/// consistent.
+/// When `ignore_unknown_enum_values` is active, returns `Ok(None)` for an
+/// unknown enum name or an in-range unknown numeric value. Other invalid
+/// inputs remain errors, so callers can drop unknown values without hiding
+/// malformed JSON. Strict mode propagates every error.
 ///
 /// Why not [`try_deserialize_enum::<E>`]? It routes through
 /// `serde_json::from_value::<E>()`, which requires `E: DeserializeOwned` —
@@ -663,8 +659,29 @@ fn try_deserialize_closed_enum<E: crate::Enumeration + Default>(
     let result = decode_closed_enum_strict::<E>(raw);
     match result {
         Ok(e) => Ok(Some(e)),
-        Err(_) if crate::json::ignore_unknown_enum_values() => Ok(None),
+        Err(_)
+            if crate::json::ignore_unknown_enum_values()
+                && is_ignorable_closed_enum_input(raw) =>
+        {
+            Ok(None)
+        }
         Err(e) => Err(e),
+    }
+}
+
+/// Unknown closed-enum names and in-range numeric values may be filtered in
+/// lenient mode. Wrong JSON types, floats, and integers outside the enum's
+/// `i32` range are malformed inputs and must remain errors.
+fn is_ignorable_closed_enum_input(raw: &serde_json::Value) -> bool {
+    use serde_json::Value;
+
+    match raw {
+        Value::String(_) => true,
+        Value::Number(number) if !number.is_f64() => {
+            number.as_i64().is_some_and(|value| i32::try_from(value).is_ok())
+                || number.as_u64().is_some_and(|value| i32::try_from(value).is_ok())
+        }
+        _ => false,
     }
 }
 
@@ -724,9 +741,10 @@ fn decode_closed_enum_strict<E: crate::Enumeration + Default>(
 
 /// Try to deserialize a `serde_json::Value` as `T` under strict enum parsing.
 ///
-/// When `ignore_unknown_enum_values` is active, returns `Ok(None)` for
-/// unknown values instead of propagating the error. This supports the
-/// repeated-enum and map-enum filtering behaviour (skip unknown entries).
+/// When `ignore_unknown_enum_values` is active, unknown enum names are
+/// silently skipped instead of producing an error. Wrong JSON types and
+/// out-of-range numbers still produce errors. This supports the repeated-enum
+/// and map-enum filtering behaviour (skip unknown entries).
 ///
 /// In `std` builds, filtering temporarily forces strict mode so an unknown
 /// enum name remains distinguishable from the default value. In `no_std`
@@ -737,6 +755,7 @@ fn decode_closed_enum_strict<E: crate::Enumeration + Default>(
 fn try_deserialize_enum<T: serde::de::DeserializeOwned>(
     raw: serde_json::Value,
 ) -> Result<Option<T>, serde_json::Error> {
+    let is_unknown_name = matches!(&raw, serde_json::Value::String(_));
     #[cfg(feature = "std")]
     {
         let ignore = crate::json::ignore_unknown_enum_values();
@@ -751,7 +770,7 @@ fn try_deserialize_enum<T: serde::de::DeserializeOwned>(
             crate::json::with_json_parse_options(&strict, || serde_json::from_value::<T>(raw));
         match result {
             Ok(v) => Ok(Some(v)),
-            Err(_) if ignore => Ok(None),
+            Err(_) if ignore && is_unknown_name => Ok(None),
             Err(e) => Err(e),
         }
     }
@@ -762,7 +781,7 @@ fn try_deserialize_enum<T: serde::de::DeserializeOwned>(
         let ignore = crate::json::ignore_unknown_enum_values();
         match serde_json::from_value::<T>(raw) {
             Ok(v) => Ok(Some(v)),
-            Err(_) if ignore => Ok(None),
+            Err(_) if ignore && is_unknown_name => Ok(None),
             Err(e) => Err(e),
         }
     }

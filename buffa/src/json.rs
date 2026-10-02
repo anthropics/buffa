@@ -78,7 +78,10 @@
 //! extension it is a parse error whether or not the option is set.
 //!
 //! An unknown number in an open-enum field is kept as
-//! `EnumValue::Unknown(n)` whether or not the option is set.
+//! `EnumValue::Unknown(n)` whether or not the option is set. For closed-enum
+//! optional, repeated, and map fields, an unknown number within the `i32`
+/// range follows the same default, unset, or skip behavior as an unknown name.
+/// Wrong JSON types and numbers outside `i32` remain errors.
 
 /// Options controlling protobuf JSON parsing behavior.
 ///
@@ -92,9 +95,11 @@
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct JsonParseOptions {
-    /// When `true`, an unknown enum string value is replaced with the default
-    /// value, left unset, or skipped, depending on the field's shape, instead
-    /// of producing an error. See the [module docs](self) for each shape.
+    /// When `true`, unknown enum names are replaced with the default value,
+    /// left unset, or skipped, depending on the field's shape. In-range
+    /// unknown numbers are also ignored for closed-enum container fields.
+    /// Malformed JSON types and out-of-range numbers remain errors. See the
+    /// [module docs](self) for each shape.
     pub ignore_unknown_enum_values: bool,
     /// When `true`, `"[pkg.ext]"` JSON keys that are not in the extension
     /// registry produce a parse error instead of being silently dropped.
