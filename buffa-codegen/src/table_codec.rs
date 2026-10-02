@@ -142,13 +142,13 @@ pub(crate) fn generate_table_impl(
 }
 
 /// `dense[n]` is one plus the index of the field numbered `n`, or `0`, for
-/// the numbers up to the highest field number below 64. Empty, so that the
-/// table searches instead, for a message with 255 fields or more, because
-/// `Table::new` accepts a dense array only when every index fits below 255.
+/// the numbers up to the highest field number below 64.
+///
+/// Entries are sorted by field number, and protobuf field numbers start at
+/// one, so a field numbered below 64 is necessarily among the first 63
+/// entries. Its one-based index therefore fits in `u8` regardless of the
+/// total number of fields.
 fn dense_lookup(fields: &[TableField<'_>]) -> Vec<u8> {
-    if fields.len() >= 255 {
-        return Vec::new();
-    }
     let top = fields
         .iter()
         .map(|f| f.number)
@@ -158,7 +158,7 @@ fn dense_lookup(fields: &[TableField<'_>]) -> Vec<u8> {
     let mut dense = vec![0u8; top + 1];
     for (i, f) in fields.iter().enumerate() {
         if let Some(slot) = dense.get_mut(f.number as usize) {
-            // At most 254 fields, so this fits.
+            // A field numbered below 64 is among the first 63 sorted entries.
             *slot = (i + 1) as u8;
         }
     }
