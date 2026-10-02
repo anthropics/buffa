@@ -1,0 +1,4 @@
+kind: Security
+body: |-
+    **A reflective JSON `Any` payload is charged against the element memory limit while it is buffered** (#493), not only when it is replayed. `DynamicMessageSeed::with_element_memory_limit` (#466) bounds what a reflective parse builds, but a `google.protobuf.Any` must be read in full before its `@type` is known, so its body is buffered as a `serde_json::Value` tree and was previously bounded only by the input length. A new charging `DeserializeSeed` variant of `buffa::json_helpers::buffered` threads the budget into the buffer so an oversized payload now fails before it is fully buffered; the budget is refunded on replay, so an input that fit before still fits and the payload is not counted twice. Generated-message JSON still has no element limit (that is #330).
+time: 2026-10-01T22:37:42-04:00

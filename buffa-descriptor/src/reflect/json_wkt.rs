@@ -553,8 +553,24 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     budget: &Cell<usize>,
 ) -> Result<DynamicMessage, D::Error> {
     use serde::de::Error as _;
-    let buffa::json_helpers::buffered::BufferedObject(mut obj) =
-        serde::Deserialize::deserialize(d)?;
+    // #493: charge the buffered `serde_json::Value` tree against the element
+    // memory limit while it is built, so an oversized `Any` payload fails
+    // before it is fully buffered rather than being bounded by the input
+    // length alone. The buffer draws on a scratch copy of the remaining
+    // budget; the real `budget` is charged by the replay below (as it always
+    // was), so the payload is not counted twice — refund-on-replay, the first
+    // strategy the issue names. The scratch starts from what is left, so an
+    // `Any` reached after other large fields gets less room, like every other
+    // element on this one shared budget.
+    let scratch = Cell::new(budget.get());
+    let mut obj = buffa::json_helpers::buffered::ChargingObject(
+        buffa::json_helpers::buffered::Budget {
+            remaining: &scratch,
+            per_value: core::mem::size_of::<Value>(),
+            limit_msg: ELEMENT_MEMORY_LIMIT_EXCEEDED,
+        },
+    )
+    .deserialize(d)?;
     let mut any = DynamicMessage::new(Arc::clone(&pool), midx);
     if obj.is_empty() {
         return Ok(any);

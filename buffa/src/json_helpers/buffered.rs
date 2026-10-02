@@ -74,9 +74,10 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cell::Cell;
 use core::fmt;
 
-use serde::de::{Deserialize, Deserializer, Error, MapAccess, SeqAccess, Visitor};
+use serde::de::{Deserialize, DeserializeSeed, Deserializer, Error, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Number, Value};
 
 /// A [`serde_json::Value`], deserialized with every object key read as data.
@@ -304,11 +305,175 @@ impl<'de> Visitor<'de> for ValueVisitor {
     }
 }
 
+/// A running byte budget for the charging buffers [`ChargingValue`] and
+/// [`ChargingObject`].
+///
+/// Each JSON value admitted into an array or object charges `per_value` bytes
+/// from `remaining`; a charge that would exceed it fails deserialization with
+/// `limit_msg` as the error text, so the caller recognises its own limit
+/// error. `remaining` is shared — the same cell threads through every nested
+/// value — so one budget bounds the whole buffered tree and an oversized
+/// payload fails *before* it is fully buffered, rather than only after the
+/// `serde_json::Value` tree has been allocated in full.
+///
+/// A failed charge leaves `remaining` unchanged.
+#[derive(Clone, Copy)]
+pub struct Budget<'a> {
+    /// Bytes still available to the buffer; decremented as values are admitted.
+    pub remaining: &'a Cell<usize>,
+    /// Bytes charged for each value admitted into an array or object.
+    pub per_value: usize,
+    /// Error text produced when a charge would exceed `remaining`.
+    pub limit_msg: &'static str,
+}
+
+impl Budget<'_> {
+    fn charge<E: Error>(&self) -> Result<(), E> {
+        let left = self.remaining.get();
+        if self.per_value > left {
+            return Err(E::custom(self.limit_msg));
+        }
+        self.remaining.set(left - self.per_value);
+        Ok(())
+    }
+}
+
+/// A [`DeserializeSeed`] that buffers a [`serde_json::Value`] exactly as
+/// [`BufferedValue`] does — reading every object key as data, at every depth —
+/// while charging a [`Budget`] per array element and object member as it
+/// builds. Use it, rather than [`BufferedValue`], when the input is untrusted
+/// and its buffered size must be bounded.
+#[derive(Clone, Copy)]
+pub struct ChargingValue<'a>(pub Budget<'a>);
+
+/// A [`DeserializeSeed`] that buffers a JSON object exactly as
+/// [`BufferedObject`] does, charging a [`Budget`] per member. The charging
+/// counterpart of [`BufferedObject`].
+#[derive(Clone, Copy)]
+pub struct ChargingObject<'a>(pub Budget<'a>);
+
+impl<'de> DeserializeSeed<'de> for ChargingValue<'_> {
+    type Value = Value;
+
+    fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Value, D::Error> {
+        d.deserialize_any(ChargingValueVisitor(self.0))
+    }
+}
+
+impl<'de> DeserializeSeed<'de> for ChargingObject<'_> {
+    type Value = Map<String, Value>;
+
+    fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+        d.deserialize_map(ChargingObjectVisitor(self.0))
+    }
+}
+
+/// Read an object, charging `budget` per member and buffering each value
+/// through [`ChargingValue`] so nested elements charge the same budget.
+///
+/// A member is charged once its value has been admitted: its own contents were
+/// charged as they were built, so the overshoot is at most one member.
+fn read_charging_object<'de, A: MapAccess<'de>>(
+    mut map: A,
+    budget: Budget<'_>,
+) -> Result<Map<String, Value>, A::Error> {
+    let mut out = Map::new();
+    while let Some(key) = map.next_key::<String>()? {
+        let value = map.next_value_seed(ChargingValue(budget))?;
+        budget.charge()?;
+        out.insert(key, value);
+    }
+    Ok(out)
+}
+
+struct ChargingObjectVisitor<'a>(Budget<'a>);
+
+impl<'de> Visitor<'de> for ChargingObjectVisitor<'_> {
+    type Value = Map<String, Value>;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a map")
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E> {
+        Ok(Map::new())
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+        read_charging_object(map, self.0)
+    }
+}
+
+struct ChargingValueVisitor<'a>(Budget<'a>);
+
+impl<'de> Visitor<'de> for ChargingValueVisitor<'_> {
+    type Value = Value;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("any valid JSON value")
+    }
+
+    // Scalars have no children and are charged by the container that admits
+    // them, so they build exactly as `ValueVisitor` does — forwarded to it so
+    // the two cannot drift on NaN, wide integers or the private keys.
+    fn visit_bool<E: Error>(self, v: bool) -> Result<Value, E> {
+        ValueVisitor.visit_bool(v)
+    }
+    fn visit_i64<E: Error>(self, v: i64) -> Result<Value, E> {
+        ValueVisitor.visit_i64(v)
+    }
+    fn visit_i128<E: Error>(self, v: i128) -> Result<Value, E> {
+        ValueVisitor.visit_i128(v)
+    }
+    fn visit_u64<E: Error>(self, v: u64) -> Result<Value, E> {
+        ValueVisitor.visit_u64(v)
+    }
+    fn visit_u128<E: Error>(self, v: u128) -> Result<Value, E> {
+        ValueVisitor.visit_u128(v)
+    }
+    fn visit_f64<E: Error>(self, v: f64) -> Result<Value, E> {
+        ValueVisitor.visit_f64(v)
+    }
+    fn visit_str<E: Error>(self, v: &str) -> Result<Value, E> {
+        ValueVisitor.visit_str(v)
+    }
+    fn visit_string<E: Error>(self, v: String) -> Result<Value, E> {
+        ValueVisitor.visit_string(v)
+    }
+    fn visit_none<E: Error>(self) -> Result<Value, E> {
+        ValueVisitor.visit_none()
+    }
+    fn visit_unit<E: Error>(self) -> Result<Value, E> {
+        ValueVisitor.visit_unit()
+    }
+
+    // Composite values recurse through the charging seed so the whole subtree
+    // draws on the one budget.
+    fn visit_some<D: Deserializer<'de>>(self, d: D) -> Result<Value, D::Error> {
+        ChargingValue(self.0).deserialize(d)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Value, A::Error> {
+        let budget = self.0;
+        let mut out = Vec::new();
+        while let Some(element) = seq.next_element_seed(ChargingValue(budget))? {
+            budget.charge()?;
+            out.push(element);
+        }
+        Ok(Value::Array(out))
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Value, A::Error> {
+        read_charging_object(map, self.0).map(Value::Object)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use alloc::format;
     use alloc::string::ToString;
+    use serde::de::DeserializeSeed;
     use serde_json::json;
 
     const RAW_VALUE_KEY: &str = "$serde_json::private::RawValue";
@@ -524,5 +689,72 @@ mod tests {
             BufferedValue::deserialize(wide).map(|v| v.0).ok(),
             Value::deserialize(U128Deserializer::<Error>::new(u128::MAX)).ok(),
         );
+    }
+
+    const CHARGED_OUT: &str = "charged out";
+
+    /// Buffer `text` through [`ChargingValue`], charging `per_value` per
+    /// admitted value against a budget of `limit`.
+    fn charge(text: &str, per_value: usize, limit: usize) -> serde_json::Result<Value> {
+        let remaining = Cell::new(limit);
+        let budget = Budget {
+            remaining: &remaining,
+            per_value,
+            limit_msg: CHARGED_OUT,
+        };
+        ChargingValue(budget).deserialize(&mut serde_json::Deserializer::from_str(text))
+    }
+
+    #[test]
+    fn a_charging_buffer_builds_what_a_plain_buffer_does() {
+        for text in [
+            "null",
+            "true",
+            "-1",
+            "1.5",
+            r#""x""#,
+            "[1,[2,[3,{}]]]",
+            r#"{"a":1,"b":{"c":[true,false]},"a":2}"#,
+            r#"{"$serde_json::private::RawValue":"[1]"}"#,
+            r#"{"$serde_json::private::Number":"1"}"#,
+        ] {
+            let got = charge(text, 1, usize::MAX).map_err(|e| e.to_string());
+            let expected = serde_json::from_str::<BufferedValue>(text)
+                .map(|BufferedValue(v)| v)
+                .map_err(|e| e.to_string());
+            assert_eq!(got, expected, "{text}");
+        }
+    }
+
+    /// The reason the buffer exists at all survives the charging variant: the
+    /// private `raw_value` key is read as data, not re-parsed.
+    #[test]
+    fn a_charging_buffer_reads_the_raw_value_key_as_data() {
+        let text = json!({ RAW_VALUE_KEY: "[1]" }).to_string();
+        let value = charge(&text, 1, usize::MAX).unwrap();
+        assert_eq!(value[RAW_VALUE_KEY], Value::String("[1]".to_string()));
+    }
+
+    /// An oversized payload is refused, and a payload that fits is not.
+    #[test]
+    fn a_charging_buffer_is_bounded_by_its_budget() {
+        // Four admitted values: the members `a` and `b`, and the two elements
+        // of `b`'s array.
+        let text = r#"{"a":1,"b":[1,2]}"#;
+        assert_eq!(charge(text, 1, 4).unwrap(), json!({"a":1,"b":[1,2]}));
+
+        let err = charge(text, 1, 3).unwrap_err();
+        assert!(err.to_string().starts_with(CHARGED_OUT), "{err}");
+
+        // The budget is left untouched by the charge that failed: 3 admitted,
+        // then the fourth is refused with the whole remaining budget intact.
+        let remaining = Cell::new(3);
+        let budget = Budget {
+            remaining: &remaining,
+            per_value: 1,
+            limit_msg: CHARGED_OUT,
+        };
+        let _ = ChargingValue(budget).deserialize(&mut serde_json::Deserializer::from_str(text));
+        assert_eq!(remaining.get(), 0);
     }
 }
