@@ -139,9 +139,9 @@ impl From<std::time::SystemTime> for Timestamp {
     ///
     /// # Saturation
     ///
-    /// Times more than ~292 billion years from the epoch (beyond `i64::MAX`
-    /// seconds) are saturated to `i64::MAX` seconds rather than wrapping,
-    /// which would produce a semantically incorrect negative timestamp.
+    /// Values whose whole-second count exceeds the signed `i64` range clamp
+    /// the seconds field to the nearest endpoint. A pre-epoch value below
+    /// `i64::MIN` saturates to (`i64::MIN`, `0`).
     fn from(t: std::time::SystemTime) -> Self {
         match t.duration_since(std::time::UNIX_EPOCH) {
             Ok(d) => Self {
@@ -150,42 +150,33 @@ impl From<std::time::SystemTime> for Timestamp {
                 nanos: d.subsec_nanos() as i32,
                 ..Default::default()
             },
-            Err(e) => {
-                // `e.duration()` is how far `t` is *before* the epoch.
-                // We need: seconds = floor(t - epoch), nanos = (t - epoch) - seconds.
-                //
-                // Example: t is 1.5s before epoch → duration = 1.5s
-                //   floor = -2 (the largest integer ≤ -1.5)
-                //   nanos = -1.5 - (-2) = 0.5s = 500_000_000 ns
-                //
-                // In terms of the subtraction duration `dur = e.duration()`:
-                //   If dur.subsec_nanos() == 0:
-                //     seconds = -(dur.as_secs() as i64), nanos = 0
-                //   Else:
-                //     seconds = -(dur.as_secs() as i64 + 1)
-                //     nanos = 1_000_000_000 - dur.subsec_nanos()
-                //
-                // Saturate at i64::MAX to avoid wrapping for extreme pre-epoch times.
-                let dur = e.duration();
-                if dur.subsec_nanos() == 0 {
-                    let secs = dur.as_secs().min(i64::MAX as u64) as i64;
-                    Self {
-                        seconds: -secs,
-                        nanos: 0,
-                        ..Default::default()
-                    }
-                } else {
-                    // saturating_add avoids overflow when dur.as_secs() == u64::MAX,
-                    // then clamp to i64::MAX before converting.
-                    let neg_secs = dur.as_secs().saturating_add(1).min(i64::MAX as u64) as i64;
-                    Self {
-                        seconds: -neg_secs,
-                        nanos: (1_000_000_000u32 - dur.subsec_nanos()) as i32,
-                        ..Default::default()
-                    }
-                }
-            }
+            Err(e) => from_pre_epoch_duration(e.duration()),
         }
+    }
+}
+
+#[cfg(feature = "std")]
+fn from_pre_epoch_duration(dur: std::time::Duration) -> Timestamp {
+    // A pre-epoch duration with a fractional second has a floor-seconds
+    // component one lower than its whole-second magnitude. Use i128 so the
+    // exact i64::MIN boundary can be represented before clamping.
+    let fractional_nanos = dur.subsec_nanos();
+    let carry = if fractional_nanos == 0 { 0 } else { 1 };
+    let seconds = -(i128::from(dur.as_secs()) + carry);
+    let nanos = if fractional_nanos == 0 {
+        0
+    } else {
+        (1_000_000_000u32 - fractional_nanos) as i32
+    };
+    let (seconds, nanos) = if seconds < i128::from(i64::MIN) {
+        (i64::MIN, 0)
+    } else {
+        (seconds as i64, nanos)
+    };
+    Timestamp {
+        seconds,
+        nanos,
+        ..Default::default()
     }
 }
 
@@ -353,6 +344,27 @@ mod tests {
         let st: std::time::SystemTime = ts.clone().try_into().unwrap();
         let ts2: Timestamp = st.into();
         assert_eq!(ts, ts2);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn pre_epoch_conversion_preserves_i64_min_boundary() {
+        let min_magnitude = i64::MIN.unsigned_abs();
+        assert_eq!(
+            from_pre_epoch_duration(std::time::Duration::from_secs(min_magnitude)),
+            Timestamp::from_unix(i64::MIN, 0)
+        );
+        assert_eq!(
+            from_pre_epoch_duration(std::time::Duration::new(
+                min_magnitude - 1,
+                999_999_999,
+            )),
+            Timestamp::from_unix(i64::MIN, 1)
+        );
+        assert_eq!(
+            from_pre_epoch_duration(std::time::Duration::new(min_magnitude, 1)),
+            Timestamp::from_unix(i64::MIN, 0)
+        );
     }
 
     #[cfg(feature = "std")]
