@@ -437,7 +437,18 @@ impl<'a> TextEncoder<'a> {
     pub fn write_f32(&mut self, v: f32) -> core::fmt::Result {
         self.prepare(Last::Value)?;
         self.w.write_str(": ")?;
-        write_float(self.w, v as f64)
+        if v.is_finite() {
+            let digits = alloc::format!("{v}");
+            // `read_f32` parses through `f64`, so keep the shorter f32 digits
+            // only when that double rounding still lands on `v`.
+            if digits
+                .parse::<f64>()
+                .is_ok_and(|p| (p as f32).to_bits() == v.to_bits())
+            {
+                return self.w.write_str(&digits);
+            }
+        }
+        write_float(self.w, f64::from(v))
     }
 
     /// Write an `f64` value. NaN → `nan`, infinities → `inf`/`-inf`.
@@ -614,6 +625,26 @@ mod tests {
             let mut enc = TextEncoder::new(&mut s);
             enc.write_field_name("f").unwrap();
             enc.write_f64(v).unwrap();
+            assert_eq!(s, want, "value: {v}");
+        }
+    }
+
+    #[test]
+    fn f32_uses_its_own_shortest_digits() {
+        #[rustfmt::skip]
+        let cases: &[(f32, &str)] = &[
+            (0.1,               "f: 0.1"),
+            (-2.2,              "f: -2.2"),
+            (1.5,               "f: 1.5"),
+            (-0.0,              "f: -0"),
+            (f32::NAN,          "f: nan"),
+            (f32::NEG_INFINITY, "f: -inf"),
+        ];
+        for &(v, want) in cases {
+            let mut s = String::new();
+            let mut enc = TextEncoder::new(&mut s);
+            enc.write_field_name("f").unwrap();
+            enc.write_f32(v).unwrap();
             assert_eq!(s, want, "value: {v}");
         }
     }

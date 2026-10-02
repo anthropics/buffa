@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Text format prints a `float` field with `f32` digits.** `TextEncoder::write_f32` widened the value to `f64` before formatting, so a `float` field holding `0.1` was written as `0.10000000149011612`. It is now written as `0.1`, the same digits JSON output already uses for that field. The longer form is kept only for a value whose short digits would not parse back to the same `f32`, and parsing is unchanged.
+time: 2026-10-02T10:34:34.000000+01:00
