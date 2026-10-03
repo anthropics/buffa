@@ -41,8 +41,12 @@ pub(crate) fn validated_field_number(field: &FieldDescriptorProto) -> Result<u32
     Ok(n as u32)
 }
 
-/// Returns `true` when a non-repeated, non-message field has *explicit*
-/// field presence and must be encoded as `Option<T>`.
+/// Returns `true` when a non-message field has *explicit* field presence. A
+/// singular field for which this holds is encoded as `Option<T>`.
+///
+/// The label is not tested: a `repeated` field inherits its file's resolved
+/// `field_presence`, so in a proto2 or editions file this returns `true` for
+/// it too, and the field is a `Vec<T>` all the same.
 ///
 /// - **Proto3**: only fields marked with the `optional` keyword
 ///   (`proto3_optional = true` in the descriptor, backed by a synthetic oneof).

@@ -1339,11 +1339,9 @@ pub fn string_encoded_len(value: &str) -> usize {
 ///   with-module and need no `serde` impl.
 /// - **A `map` key needs `Hash + Eq`** (default / `HashMap` container) or `Ord`
 ///   (`map_type(BTreeMap)`); the bound is enforced at the generated field type.
-/// - **No `Arbitrary` impl required, except in a `map`.** Under the `arbitrary`
-///   feature, singular / optional / `repeated` fields get a generic builder, so
-///   a custom type needs no native `arbitrary::Arbitrary` impl. The `map`
-///   arbitrary path currently has no per-key shim, so a custom string used as a
-///   `map` key or value must derive `Arbitrary` itself.
+/// - **No `Arbitrary` impl required.** Under `generate_arbitrary`, codegen
+///   attaches a generic builder to a custom string field, and to a `map` field
+///   with a custom string key or value.
 #[rustversion::attr(
     since(1.78),
     diagnostic::on_unimplemented(
@@ -1748,7 +1746,9 @@ pub fn decode_bytes_to<B: ProtoBytes>(buf: &mut impl Buf) -> Result<B, DecodeErr
 ///   is never used at runtime — so a custom collection used through such a
 ///   framework must be serde-capable regardless.
 /// - **`arbitrary`:** under the `arbitrary` feature a collection must implement
-///   `arbitrary::Arbitrary` (trivially derivable on a newtype).
+///   `arbitrary::Arbitrary` (trivially derivable on a newtype). Not needed on
+///   a field whose element is a custom string type or a non-default bytes
+///   type: generated code builds that field through `From<Vec<T>>`.
 ///
 /// # Examples
 ///

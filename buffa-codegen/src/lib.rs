@@ -1273,9 +1273,7 @@ pub struct CodeGenConfig {
     /// non-default type, codegen emits `#[arbitrary(with = ...)]` using
     /// helpers in `::buffa::__private`, so the substituted type needs no
     /// `Arbitrary` impl. This covers singular, optional, repeated and oneof
-    /// fields, and `map<K, bytes>` values. A custom `string` type used as a
-    /// `map` key or value has no helper and must implement
-    /// `arbitrary::Arbitrary`.
+    /// fields, and the key and value of a `map` field.
     pub generate_arbitrary: bool,
     /// Proto paths of the messages and enums whose generated `Debug`
     /// implementation is omitted, so that the consuming crate can write its
