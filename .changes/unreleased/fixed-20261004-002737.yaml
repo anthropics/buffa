@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**DescriptorPool keeps repeated messages as lists when their names match local map entries.** Map detection uses the resolved message name, so an unrelated `Other.ItemsEntry` no longer inherits the key and value types of a local `items` map. Reflective binary and JSON codecs now use the correct list representation for these fields.'
+time: 2026-10-04T00:27:37.656725+02:00

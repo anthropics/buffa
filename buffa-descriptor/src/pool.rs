@@ -2252,7 +2252,9 @@ impl DescriptorPool {
         // be map fields — the lookup is skipped entirely.
         let (kind, enum_type) = if is_repeated {
             if let SingularKind::Message(midx) = element {
-                if let Some(entry) = containing_msg.and_then(|m| self.find_map_entry(m, f)) {
+                if let Some(entry) =
+                    containing_msg.and_then(|m| self.find_map_entry(msg_fqn, m, f, midx))
+                {
                     let (key_ty, value_kind) = self.resolve_map_entry(entry, &field_fqn, scope)?;
                     let enum_type = entry
                         .field
@@ -2262,7 +2264,6 @@ impl DescriptorPool {
                     // Map entry messages are synthetic — they're not real
                     // pool members for reflection purposes, but we leave
                     // them registered (consumers can ignore them).
-                    let _ = midx;
                     (
                         FieldKind::Map {
                             key: key_ty,
@@ -2477,8 +2478,10 @@ impl DescriptorPool {
     /// Find the nested map-entry message for a repeated message field.
     fn find_map_entry<'a>(
         &self,
+        msg_fqn: &str,
         containing: &'a DescriptorProto,
         f: &FieldDescriptorProto,
+        element: MessageIndex,
     ) -> Option<&'a DescriptorProto> {
         if f.label.unwrap_or_default() != Label::LABEL_REPEATED {
             return None;
@@ -2488,11 +2491,14 @@ impl DescriptorPool {
         if f.r#type.is_some_and(|ty| ty != ProtoType::TYPE_MESSAGE) {
             return None;
         }
-        let tn = f.type_name.as_deref()?;
         // Map entry messages are nested inside the containing message and
-        // have name `<FieldName>Entry`. The type_name's last segment is the
-        // entry message name.
-        let entry_name = tn.rsplit('.').next()?;
+        // have name `<FieldName>Entry`. Match the resolved full name so an
+        // unrelated message with the same short name remains a list element.
+        let entry_name = self
+            .message(element)
+            .full_name()
+            .strip_prefix(msg_fqn)?
+            .strip_prefix('.')?;
         let entry = containing
             .nested_type
             .iter()
