@@ -59,6 +59,20 @@ fn float_field_prints_f32_digits() {
 }
 
 #[test]
+fn float_field_round_trips_where_short_digits_would_not() {
+    // The two `f32` values whose shortest digits a reader that narrows from
+    // `f64` takes to a neighbour. They are written with their `f64` digits.
+    for bits in [0x15ae_43fd_u32, 0x95ae_43fd] {
+        let msg = AllScalars {
+            f_float: f32::from_bits(bits),
+            ..Default::default()
+        };
+        let back: AllScalars = decode_from_str(&encode_to_string(&msg)).unwrap();
+        assert_eq!(back.f_float.to_bits(), bits);
+    }
+}
+
+#[test]
 fn signed_special_floats_allow_comments_between_sign_and_literal() {
     let inf: AllScalars = decode_from_str("f_float: - # comment\ninf").unwrap();
     assert!(inf.f_float.is_infinite() && inf.f_float.is_sign_negative());
