@@ -1,0 +1,3 @@
+kind: Fixed
+body: Reject `packed = true` on non-packable fields in `DescriptorPool`, matching protoc instead of silently ignoring the option. This includes singular fields and repeated strings, bytes, messages, groups, and maps.
+time: 2026-10-04T00:59:25.450442+02:00

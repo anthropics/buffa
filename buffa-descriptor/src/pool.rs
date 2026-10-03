@@ -269,6 +269,9 @@ pub enum PoolError {
     /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
     /// [`buffa::encoding::LAST_RESERVED_FIELD_NUMBER`].
     ReservedFieldNumber { field: String, number: i32 },
+    /// A field sets `packed = true` but is not a repeated numeric, bool, or
+    /// enum field. Strings, bytes, messages, and groups cannot be packed.
+    InvalidPackedOption { field: String },
     /// A map entry message did not have exactly fields 1 (key) and 2 (value),
     /// or the key type is not a valid map key per the protobuf spec.
     MalformedMapEntry { message: String },
@@ -513,6 +516,10 @@ impl core::fmt::Display for PoolError {
                     "field {field} uses field number {number}, which is reserved for the protobuf implementation"
                 )
             }
+            Self::InvalidPackedOption { field } => write!(
+                f,
+                "field {field} sets packed = true but is not a repeated primitive field"
+            ),
             Self::MalformedMapEntry { message } => {
                 write!(f, "malformed map entry message {message}")
             }
@@ -854,8 +861,9 @@ impl DescriptorPool {
     /// range, a message or enum declares a reserved name twice, an open enum's
     /// first value is non-zero, an enum value reuses a reserved name or number
     /// or a duplicate number without `allow_alias`, a oneof index is invalid,
-    /// a `proto3_optional` field is malformed, a message exceeds 65 535
-    /// fields, or a map entry is malformed.
+    /// a `proto3_optional` field is malformed, a non-packable field sets
+    /// `packed = true`, a message exceeds 65 535 fields, or a map entry is
+    /// malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -878,8 +886,8 @@ impl DescriptorPool {
     /// overlapping extension range, duplicate symbols or field identities,
     /// duplicate reserved names, an open enum whose first value is non-zero,
     /// reserved enum values, duplicate enum numbers without `allow_alias`,
-    /// invalid oneof indices, malformed `proto3_optional` fields, or malformed
-    /// map entries).
+    /// invalid oneof indices, malformed `proto3_optional` fields, `packed = true`
+    /// on non-packable fields, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -2314,9 +2322,13 @@ impl DescriptorPool {
             kind,
             FieldKind::List(SingularKind::Scalar(s)) if !matches!(s, ScalarType::String | ScalarType::Bytes)
         ) || matches!(kind, FieldKind::List(SingularKind::Enum(_)));
+        let packed_option = f.options.as_option().and_then(|o| o.packed);
+        if packed_option == Some(true) && !packable {
+            return Err(PoolError::InvalidPackedOption { field: field_fqn });
+        }
         let packed = if packable {
             // An explicit [packed = ...] option wins over feature resolution.
-            match f.options.as_option().and_then(|o| o.packed) {
+            match packed_option {
                 Some(p) => p,
                 None => resolved.repeated_field_encoding == RepeatedFieldEncoding::Packed,
             }

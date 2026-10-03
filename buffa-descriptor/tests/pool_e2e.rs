@@ -19,6 +19,320 @@ use buffa_descriptor::{DescriptorPool, FieldKind, PoolError, ScalarType, Singula
 
 const FDS_BYTES: &[u8] = include_bytes!("protos/reflect_test.fds");
 
+mod packed_options {
+    use super::{assert_set_rejected_without_mutating_pool, enum_value, scalar_field};
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FieldOptions,
+        FileDescriptorProto, FileDescriptorSet, MessageOptions,
+    };
+    use buffa_descriptor::{DescriptorPool, FieldKind, PoolError};
+
+    const PACKABLE_TYPES: &[Type] = &[
+        Type::TYPE_DOUBLE,
+        Type::TYPE_FLOAT,
+        Type::TYPE_INT64,
+        Type::TYPE_UINT64,
+        Type::TYPE_INT32,
+        Type::TYPE_FIXED64,
+        Type::TYPE_FIXED32,
+        Type::TYPE_BOOL,
+        Type::TYPE_UINT32,
+        Type::TYPE_ENUM,
+        Type::TYPE_SFIXED32,
+        Type::TYPE_SFIXED64,
+        Type::TYPE_SINT32,
+        Type::TYPE_SINT64,
+    ];
+    const NON_PACKABLE_TYPES: &[Type] = &[
+        Type::TYPE_STRING,
+        Type::TYPE_BYTES,
+        Type::TYPE_MESSAGE,
+        Type::TYPE_GROUP,
+    ];
+
+    fn field(ty: Type, label: Label, packed: Option<bool>) -> FieldDescriptorProto {
+        let mut field = scalar_field("value", 1, ty);
+        field.label = Some(label);
+        field.type_name = match ty {
+            Type::TYPE_ENUM => Some(".packed.test.Kind".into()),
+            Type::TYPE_MESSAGE => Some(".packed.test.Child".into()),
+            Type::TYPE_GROUP => Some(".packed.test.Sample.Child".into()),
+            _ => None,
+        };
+        if ty == Type::TYPE_GROUP {
+            field.name = Some("child".into());
+        }
+        if packed.is_some() {
+            field.options = FieldOptions {
+                packed,
+                ..Default::default()
+            }
+            .into();
+        }
+        field
+    }
+
+    fn set(syntax: Option<&str>, field: FieldDescriptorProto) -> FileDescriptorSet {
+        FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("packed-options.proto".into()),
+                package: Some("packed.test".into()),
+                syntax: syntax.map(Into::into),
+                message_type: vec![
+                    DescriptorProto {
+                        name: Some("Sample".into()),
+                        field: vec![field],
+                        nested_type: vec![DescriptorProto {
+                            name: Some("Child".into()),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                    DescriptorProto {
+                        name: Some("Child".into()),
+                        ..Default::default()
+                    },
+                ],
+                enum_type: vec![EnumDescriptorProto {
+                    name: Some("Kind".into()),
+                    value: vec![enum_value("ZERO", 0), enum_value("ONE", 1)],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn packed_true_is_rejected_for_non_packable_fields() {
+        for syntax in [None, Some("proto2"), Some("proto3")] {
+            for &ty in PACKABLE_TYPES.iter().chain(NON_PACKABLE_TYPES) {
+                if ty == Type::TYPE_GROUP && syntax == Some("proto3") {
+                    continue;
+                }
+                for label in [
+                    Label::LABEL_OPTIONAL,
+                    Label::LABEL_REQUIRED,
+                    Label::LABEL_REPEATED,
+                ] {
+                    if (label == Label::LABEL_REPEATED && PACKABLE_TYPES.contains(&ty))
+                        || (label == Label::LABEL_REQUIRED && syntax == Some("proto3"))
+                    {
+                        continue;
+                    }
+                    let field = field(ty, label, Some(true));
+                    let full_name =
+                        format!("packed.test.Sample.{}", field.name.as_deref().unwrap());
+                    assert_set_rejected_without_mutating_pool(
+                        "packed-options.proto",
+                        "packed.test.Sample",
+                        set(syntax, field),
+                        |err| {
+                            assert!(
+                                matches!(err, PoolError::InvalidPackedOption { field } if field == &full_name)
+                            );
+                            assert_eq!(
+                                err.to_string(),
+                                format!("field {full_name} sets packed = true but is not a repeated primitive field"),
+                                "syntax {syntax:?}, type {ty:?}, label {label:?}",
+                            );
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn packed_false_and_absent_options_are_accepted_for_non_packable_fields() {
+        for syntax in [None, Some("proto2"), Some("proto3")] {
+            for &ty in PACKABLE_TYPES.iter().chain(NON_PACKABLE_TYPES) {
+                if ty == Type::TYPE_GROUP && syntax == Some("proto3") {
+                    continue;
+                }
+                for label in [
+                    Label::LABEL_OPTIONAL,
+                    Label::LABEL_REQUIRED,
+                    Label::LABEL_REPEATED,
+                ] {
+                    if (label == Label::LABEL_REPEATED && PACKABLE_TYPES.contains(&ty))
+                        || (label == Label::LABEL_REQUIRED && syntax == Some("proto3"))
+                    {
+                        continue;
+                    }
+                    for packed in [None, Some(false)] {
+                        let p = DescriptorPool::new(set(syntax, field(ty, label, packed))).unwrap();
+                        assert!(!p
+                            .message_by_name("packed.test.Sample")
+                            .unwrap()
+                            .field(1)
+                            .unwrap()
+                            .is_packed());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn repeated_packable_fields_honor_the_packed_option() {
+        for syntax in [None, Some("proto2"), Some("proto3")] {
+            for &ty in PACKABLE_TYPES {
+                for packed in [None, Some(false), Some(true)] {
+                    let p =
+                        DescriptorPool::new(set(syntax, field(ty, Label::LABEL_REPEATED, packed)))
+                            .unwrap();
+                    let field = p
+                        .message_by_name("packed.test.Sample")
+                        .unwrap()
+                        .field(1)
+                        .unwrap();
+                    assert_eq!(
+                        field.is_packed(),
+                        packed.unwrap_or(syntax == Some("proto3"))
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn packed_options_use_the_resolved_field_type() {
+        for syntax in [None, Some("proto2"), Some("proto3")] {
+            for ty in [Type::TYPE_ENUM, Type::TYPE_MESSAGE] {
+                let mut field = field(ty, Label::LABEL_REPEATED, Some(true));
+                field.r#type = None;
+                let set = set(syntax, field);
+                if ty == Type::TYPE_ENUM {
+                    let p = DescriptorPool::new(set).unwrap();
+                    assert!(p
+                        .message_by_name("packed.test.Sample")
+                        .unwrap()
+                        .field(1)
+                        .unwrap()
+                        .is_packed());
+                } else {
+                    assert_set_rejected_without_mutating_pool(
+                        "packed-options.proto",
+                        "packed.test.Sample",
+                        set,
+                        |err| {
+                            assert!(matches!(
+                                err,
+                                PoolError::InvalidPackedOption { field }
+                                    if field == "packed.test.Sample.value"
+                            ));
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn map_fields_reject_packed_true() {
+        for syntax in [None, Some("proto2"), Some("proto3")] {
+            for packed in [None, Some(false), Some(true)] {
+                let mut map_field = field(Type::TYPE_MESSAGE, Label::LABEL_REPEATED, packed);
+                map_field.name = Some("values".into());
+                map_field.type_name = Some(".packed.test.Sample.ValuesEntry".into());
+                let mut set = set(syntax, map_field);
+                set.file[0].message_type[0]
+                    .nested_type
+                    .push(DescriptorProto {
+                        name: Some("ValuesEntry".into()),
+                        options: MessageOptions {
+                            map_entry: Some(true),
+                            ..Default::default()
+                        }
+                        .into(),
+                        field: vec![
+                            scalar_field("key", 1, Type::TYPE_STRING),
+                            scalar_field("value", 2, Type::TYPE_INT32),
+                        ],
+                        ..Default::default()
+                    });
+                if packed == Some(true) {
+                    assert_set_rejected_without_mutating_pool(
+                        "packed-options.proto",
+                        "packed.test.Sample",
+                        set,
+                        |err| {
+                            assert!(
+                                matches!(err, PoolError::InvalidPackedOption { field } if field == "packed.test.Sample.values")
+                            );
+                            assert_eq!(err.to_string(), "field packed.test.Sample.values sets packed = true but is not a repeated primitive field");
+                        },
+                    );
+                } else {
+                    let p = DescriptorPool::new(set).unwrap();
+                    let field = p
+                        .message_by_name("packed.test.Sample")
+                        .unwrap()
+                        .field(1)
+                        .unwrap();
+                    assert!(matches!(field.kind(), FieldKind::Map { .. }));
+                    assert!(!field.is_packed());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn packed_extension_options_are_validated_transactionally() {
+        for nested in [false, true] {
+            for (ty, label, valid) in [
+                (Type::TYPE_INT32, Label::LABEL_OPTIONAL, false),
+                (Type::TYPE_ENUM, Label::LABEL_OPTIONAL, false),
+                (Type::TYPE_STRING, Label::LABEL_REPEATED, false),
+                (Type::TYPE_BYTES, Label::LABEL_REPEATED, false),
+                (Type::TYPE_MESSAGE, Label::LABEL_REPEATED, false),
+                (Type::TYPE_INT32, Label::LABEL_REPEATED, true),
+                (Type::TYPE_ENUM, Label::LABEL_REPEATED, true),
+            ] {
+                let mut ext = field(ty, label, Some(true));
+                ext.number = Some(100);
+                ext.extendee = Some(".packed.test.Sample".into());
+                let mut set = set(Some("proto2"), ext.clone());
+                set.file[0].message_type[0].field.clear();
+                set.file[0].message_type[0]
+                    .extension_range
+                    .push(ExtensionRange {
+                        start: Some(100),
+                        end: Some(101),
+                        ..Default::default()
+                    });
+                let full_name = if nested {
+                    set.file[0].message_type[1].extension.push(ext);
+                    "packed.test.Child.value"
+                } else {
+                    set.file[0].extension.push(ext);
+                    "packed.test.value"
+                };
+                if valid {
+                    let p = DescriptorPool::new(set).unwrap();
+                    assert!(p.extension_by_name(full_name).unwrap().field().is_packed());
+                } else {
+                    assert_set_rejected_without_mutating_pool(
+                        "packed-options.proto",
+                        full_name,
+                        set,
+                        |err| {
+                            assert!(
+                                matches!(err, PoolError::InvalidPackedOption { field } if field == full_name)
+                            );
+                            assert_eq!(err.to_string(), format!("field {full_name} sets packed = true but is not a repeated primitive field"));
+                        },
+                    );
+                }
+            }
+        }
+    }
+}
+
 fn pool() -> Arc<DescriptorPool> {
     Arc::new(DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS"))
 }
