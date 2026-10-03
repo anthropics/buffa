@@ -261,6 +261,8 @@ pub enum PoolError {
     RealOneofAfterSyntheticOneof { message: String, oneof: String },
     /// Two oneof declarations in one message have the same name.
     DuplicateOneofName { message: String, name: String },
+    /// A oneof declaration has no member fields.
+    EmptyOneof { oneof: String },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
@@ -504,6 +506,7 @@ impl core::fmt::Display for PoolError {
                     "message {message} declares oneof name {name:?} more than once"
                 )
             }
+            Self::EmptyOneof { oneof } => write!(f, "oneof {oneof} has no fields"),
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
@@ -853,9 +856,9 @@ impl DescriptorPool {
     /// number its message reserved, an extension range overlaps a reserved
     /// range, a message or enum declares a reserved name twice, an open enum's
     /// first value is non-zero, an enum value reuses a reserved name or number
-    /// or a duplicate number without `allow_alias`, a oneof index is invalid,
-    /// a `proto3_optional` field is malformed, a message exceeds 65 535
-    /// fields, or a map entry is malformed.
+    /// or a duplicate number without `allow_alias`, a oneof is empty or its
+    /// index is invalid, a `proto3_optional` field is malformed, a message
+    /// exceeds 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -878,8 +881,8 @@ impl DescriptorPool {
     /// overlapping extension range, duplicate symbols or field identities,
     /// duplicate reserved names, an open enum whose first value is non-zero,
     /// reserved enum values, duplicate enum numbers without `allow_alias`,
-    /// invalid oneof indices, malformed `proto3_optional` fields, or malformed
-    /// map entries).
+    /// empty oneofs, invalid oneof indices, malformed `proto3_optional`
+    /// fields, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1775,6 +1778,14 @@ impl DescriptorPool {
         }
         field_by_number.sort_unstable_by_key(|&(n, _)| n);
         field_by_name.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+
+        for oneof in &oneofs {
+            if oneof.field_indices.is_empty() {
+                return Err(PoolError::EmptyOneof {
+                    oneof: format!("{fqn}.{}", oneof.name),
+                });
+            }
+        }
 
         // Validate and mark synthetic oneofs (proto3 optional). Per protobuf
         // semantics, a proto3 optional field must be the only member of its
