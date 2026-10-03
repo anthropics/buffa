@@ -1,0 +1,3 @@
+kind: Fixed
+body: Reflection reads of absent enum fields now return the first declared enum value, including nonzero proto2 defaults, instead of always returning zero.
+time: 2026-10-04T00:35:38.494001+02:00
