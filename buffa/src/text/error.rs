@@ -17,6 +17,7 @@ pub struct ParseError {
     /// 1-based column (Unicode scalar count from start of line).
     pub col: u32,
     /// What went wrong.
+    #[source]
     pub kind: ParseErrorKind,
 }
 
@@ -113,4 +114,52 @@ pub enum ParseErrorKind {
     /// report it if encountered.
     #[error("internal error (this is a buffa bug): {0}")]
     Internal(&'static str),
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+    use crate::text::TextDecoder;
+    use std::error::Error;
+
+    #[test]
+    fn parse_error_exposes_kind_as_source() {
+        for (input, expected) in [
+            ("value: 2147483648", ParseErrorKind::InvalidNumber),
+            (
+                "value: true",
+                ParseErrorKind::UnexpectedToken { expected: "number" },
+            ),
+            ("value:", ParseErrorKind::UnexpectedEof),
+        ] {
+            let mut decoder = TextDecoder::new(input);
+            assert_eq!(decoder.read_field_name().unwrap(), Some("value"));
+            let error = decoder.read_i32().unwrap_err();
+            let source = error.source().expect("parse error should expose its kind");
+            assert_eq!(source.downcast_ref::<ParseErrorKind>(), Some(&expected));
+            assert!(source.source().is_none());
+            assert_eq!(source.to_string(), expected.to_string());
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "text format parse error (line {}:{}): {expected}",
+                    error.line, error.col
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn parse_error_source_preserves_string_failure() {
+        let mut decoder = TextDecoder::new(r#"name: "\q""#);
+        assert_eq!(decoder.read_field_name().unwrap(), Some("name"));
+        let error = decoder.read_string().unwrap_err();
+        let source = error.source().expect("parse error should expose its kind");
+        assert_eq!(
+            source.downcast_ref::<ParseErrorKind>(),
+            Some(&ParseErrorKind::InvalidString(
+                "unrecognised escape sequence"
+            ))
+        );
+    }
 }

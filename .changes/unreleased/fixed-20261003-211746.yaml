@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Expose text parse error causes.** `ParseError::source()` now returns its `ParseErrorKind`, preserving the cause in standard error chains.'
+time: 2026-10-03T21:17:46.274976+02:00
