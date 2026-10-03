@@ -6,7 +6,8 @@
 //! literal syntax. [`unescape`] therefore returns `Vec<u8>`, and the
 //! UTF-8-validating wrapper [`unescape_str`] sits on top.
 //!
-//! Escape sequences (reference: protobuf-go `decode_string.go`):
+//! Escape sequences (reference: protobuf-go `decode_string.go` and the
+//! [C++ tokenizer](https://github.com/protocolbuffers/protobuf/blob/v33.5/src/google/protobuf/io/tokenizer.cc)):
 //!
 //! | escape      | result                                                  |
 //! |-------------|---------------------------------------------------------|
@@ -16,7 +17,7 @@
 //! | `\a \b`     | BEL (0x07), BS (0x08)                                   |
 //! | `\f \v`     | FF (0x0C), VT (0x0B)                                    |
 //! | `\NNN`      | 1–3 octal digits → one byte (value must be ≤ 255)       |
-//! | `\xNN`      | 1–2 hex digits → one byte                               |
+//! | `\xNN \XNN` | 1–2 hex digits → one byte                               |
 //! | `\uNNNN`    | 4 hex digits → UTF-8 encoding of that code point        |
 //! | `\UNNNNNNNN`| 8 hex digits → UTF-8 encoding of that code point        |
 //!
@@ -119,7 +120,7 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
                             }
                             out.push(v as u8);
                         }
-                        b'x' => {
+                        b'x' | b'X' => {
                             // 1–2 hex digits.
                             let (v, consumed) = take_hex(s, 2);
                             if consumed == 0 {
@@ -441,6 +442,42 @@ mod tests {
         // \xFF is a valid textproto byte escape but not a valid UTF-8 byte.
         assert!(unescape(r#""\xFF""#).is_ok());
         assert!(unescape_str(r#""\xFF""#).is_err());
+    }
+
+    #[test]
+    fn unescape_uppercase_hex_escapes() {
+        let cases: &[(&str, &[u8])] = &[
+            (r#""\X41""#, b"A"),
+            (r#"'\X4'"#, &[0x04]),
+            (r#""\Xff\XaB\X0""#, &[0xFF, 0xAB, 0x00]),
+            (r#""\X414""#, b"A4"),
+            (r#""\X4G""#, &[0x04, b'G']),
+            (r#""\x41" '\X42'"#, b"AB"),
+            ("\"\\X41\" # between\n '\\X42'", b"AB"),
+            (r#""\XC3\xA9""#, "é".as_bytes()),
+        ];
+        for &(input, expected) in cases {
+            assert_eq!(unescape(input).unwrap(), expected, "input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn unescape_str_uppercase_hex_escapes() {
+        for (input, expected) in [(r#""\X41""#, "A"), (r#""\XC3\XA9""#, "é")] {
+            let decoded = unescape_str(input).unwrap();
+            assert!(matches!(decoded, Cow::Owned(_)));
+            assert_eq!(decoded, expected, "input: {input:?}");
+        }
+        assert_eq!(unescape_str(r#""\Xff""#), Err(UnescapeError::InvalidUtf8));
+    }
+
+    #[test]
+    fn unescape_uppercase_hex_requires_a_digit() {
+        for input in [r#""\X""#, r#"'\Xg'"#, r#""\X-1""#] {
+            let expected = UnescapeError::BadEscape("invalid \\x escape");
+            assert_eq!(unescape(input), Err(expected), "input: {input:?}");
+            assert_eq!(unescape_str(input), Err(expected), "input: {input:?}");
+        }
     }
 
     // ── escape ──────────────────────────────────────────────────────────────

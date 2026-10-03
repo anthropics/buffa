@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Textproto decoding accepts uppercase hex escapes**. String and bytes fields accept `\X` with one or two hex digits, matching the C++ text-format parser.'
+time: 2026-10-04T00:07:27.938247+02:00
