@@ -4,54 +4,58 @@
 use super::*;
 
 #[test]
-fn test_missing_message_names_rejected() {
-    let mut top_level = proto3_file("test.proto");
-    top_level.message_type.push(DescriptorProto::default());
+fn test_absent_or_empty_type_names_rejected() {
+    for (name_label, name) in [("absent", None), ("empty", Some(String::new()))] {
+        let mut message = proto3_file("test.proto");
+        message.message_type.push(DescriptorProto {
+            name: name.clone(),
+            ..Default::default()
+        });
 
-    let mut nested = proto3_file("test.proto");
-    nested.message_type.push(DescriptorProto {
-        name: Some("Parent".to_string()),
-        nested_type: vec![DescriptorProto::default()],
-        ..Default::default()
-    });
+        let mut nested_message = proto3_file("test.proto");
+        nested_message.message_type.push(DescriptorProto {
+            name: Some("Parent".to_string()),
+            nested_type: vec![DescriptorProto {
+                name: name.clone(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
 
-    for file in [top_level, nested] {
-        let err = generate(
-            &[file],
-            &["test.proto".to_string()],
-            &CodeGenConfig::default(),
-        )
-        .expect_err("missing message name must be rejected");
-        assert!(
-            matches!(err, CodeGenError::MissingField("message.name")),
-            "expected MissingField(message.name), got: {err}"
-        );
-    }
-}
+        let mut top_level_enum = proto3_file("test.proto");
+        top_level_enum.enum_type.push(EnumDescriptorProto {
+            name: name.clone(),
+            ..Default::default()
+        });
 
-#[test]
-fn test_missing_enum_names_rejected() {
-    let mut top_level = proto3_file("test.proto");
-    top_level.enum_type.push(EnumDescriptorProto::default());
+        let mut nested_enum = proto3_file("test.proto");
+        nested_enum.message_type.push(DescriptorProto {
+            name: Some("Parent".to_string()),
+            enum_type: vec![EnumDescriptorProto {
+                name: name.clone(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
 
-    let mut nested = proto3_file("test.proto");
-    nested.message_type.push(DescriptorProto {
-        name: Some("Parent".to_string()),
-        enum_type: vec![EnumDescriptorProto::default()],
-        ..Default::default()
-    });
-
-    for file in [top_level, nested] {
-        let err = generate(
-            &[file],
-            &["test.proto".to_string()],
-            &CodeGenConfig::default(),
-        )
-        .expect_err("missing enum name must be rejected");
-        assert!(
-            matches!(err, CodeGenError::MissingField("enum.name")),
-            "expected MissingField(enum.name), got: {err}"
-        );
+        let cases = [
+            ("top-level message", message, "message.name"),
+            ("nested message", nested_message, "message.name"),
+            ("top-level enum", top_level_enum, "enum.name"),
+            ("nested enum", nested_enum, "enum.name"),
+        ];
+        for (shape, file, want) in cases {
+            let result = generate(
+                &[file],
+                &["test.proto".to_string()],
+                &CodeGenConfig::default(),
+            );
+            assert!(
+                matches!(result, Err(CodeGenError::MissingField(field)) if field == want),
+                "{shape} with an {name_label} name: expected MissingField({want}), got: {:?}",
+                result.map(|files| files.len())
+            );
+        }
     }
 }
 
