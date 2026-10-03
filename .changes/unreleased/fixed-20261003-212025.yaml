@@ -1,0 +1,3 @@
+kind: Fixed
+body: Reject single text-format scalar values without a colon after the field name. Message values still allow an optional colon.
+time: 2026-10-03T21:20:25.429696+02:00

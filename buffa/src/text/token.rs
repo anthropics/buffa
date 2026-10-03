@@ -106,7 +106,7 @@ enum OpenKind {
 enum LastKind {
     /// Beginning of file — no token emitted yet.
     Bof,
-    Name,
+    Name(bool),
     Scalar,
     MessageOpen,
     MessageClose,
@@ -322,7 +322,7 @@ impl<'a> Tokenizer<'a> {
                     return self.parse_field_name();
                 }
 
-                LastKind::Name => {
+                LastKind::Name(has_separator) => {
                     // After a name: MessageOpen, ListOpen, or Scalar.
                     if at_eof {
                         return Err(self.err_here(ParseErrorKind::UnexpectedEof));
@@ -336,6 +336,11 @@ impl<'a> Tokenizer<'a> {
                         b'[' => {
                             self.push_open(ch)?;
                             return Ok(self.emit(TokenKind::ListOpen, 1));
+                        }
+                        _ if !has_separator => {
+                            return Err(self.err_here(ParseErrorKind::UnexpectedToken {
+                                expected: "':' before scalar value",
+                            }));
                         }
                         _ => return self.parse_scalar(),
                     }
@@ -502,7 +507,7 @@ impl<'a> Tokenizer<'a> {
         let raw = &self.input[pos..pos + len];
         self.consume(len);
         self.last_kind = match kind {
-            TokenKind::Name => LastKind::Name,
+            TokenKind::Name => LastKind::Name(false),
             TokenKind::Scalar => LastKind::Scalar,
             TokenKind::MessageOpen => LastKind::MessageOpen,
             TokenKind::MessageClose => LastKind::MessageClose,
@@ -560,8 +565,8 @@ impl<'a> Tokenizer<'a> {
             let len = i + 1; // include `]`
             let raw = &self.input[start..start + len];
             self.consume(len);
-            self.last_kind = LastKind::Name;
             let has_separator = self.try_consume_char(b':');
+            self.last_kind = LastKind::Name(has_separator);
             return Ok(Token {
                 kind: TokenKind::Name,
                 raw,
@@ -577,8 +582,8 @@ impl<'a> Tokenizer<'a> {
         if ilen > 0 {
             let raw = &self.input[start..start + ilen];
             self.consume(ilen);
-            self.last_kind = LastKind::Name;
             let has_separator = self.try_consume_char(b':');
+            self.last_kind = LastKind::Name(has_separator);
             return Ok(Token {
                 kind: TokenKind::Name,
                 raw,
@@ -598,8 +603,8 @@ impl<'a> Tokenizer<'a> {
                 if s.parse::<i32>().is_ok() {
                     let raw = s;
                     self.consume(num.len);
-                    self.last_kind = LastKind::Name;
                     let has_separator = self.try_consume_char(b':');
+                    self.last_kind = LastKind::Name(has_separator);
                     return Ok(Token {
                         kind: TokenKind::Name,
                         raw,
@@ -1369,6 +1374,69 @@ mod tests {
     }
 
     // ── errors ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn direct_scalar_requires_colon() {
+        for name in ["field", "[pkg.ext]", "42"] {
+            for value in [
+                "7", "- 7", "0x1F", ".5", "true", "ACTIVE", "-inf", "\"text\"", "'bytes'",
+            ] {
+                let input = alloc::format!("{name} {value}");
+                let mut t = Tokenizer::new(&input);
+                assert!(!t.read().unwrap().has_separator);
+                let err = t.read().unwrap_err();
+                assert_eq!(
+                    err.kind,
+                    ParseErrorKind::UnexpectedToken {
+                        expected: "':' before scalar value",
+                    },
+                    "input: {input:?}"
+                );
+                assert_eq!((err.line, err.col), (1, name.len() as u32 + 2));
+
+                let valid = alloc::format!("{name}: {value}");
+                assert!(drain(&valid).is_ok(), "input: {valid:?}");
+            }
+        }
+        for input in ["field\"text\"", "field # comment\n  7", "m { field 7 }"] {
+            assert!(drain(input).is_err(), "input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn peek_preserves_field_separator() {
+        for input in ["field: 7", "field 7"] {
+            let mut t = Tokenizer::new(input);
+            assert_eq!(t.peek().unwrap().has_separator, input.contains(':'));
+            assert_eq!(t.peek().unwrap().has_separator, input.contains(':'));
+            t.read().unwrap();
+            if input.contains(':') {
+                assert_eq!(t.peek().unwrap().raw, "7");
+                assert_eq!(t.read().unwrap().raw, "7");
+            } else {
+                assert!(t.peek().is_err());
+                assert!(t.read().is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn message_values_allow_optional_colon() {
+        for input in [
+            "m {}",
+            "m <i: 7>",
+            "m: {}",
+            "m: <i: 7>",
+            "m [{} , <i: 7>]",
+            "m: [{} , <i: 7>]",
+            "m []",
+            "m: []",
+            "[pkg.ext] {}",
+            "[type.googleapis.com/pkg.Msg] {}",
+        ] {
+            assert!(drain(input).is_ok(), "input: {input:?}");
+        }
+    }
 
     #[test]
     fn delimiter_mismatch() {
