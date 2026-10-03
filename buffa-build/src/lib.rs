@@ -94,6 +94,9 @@ impl Config {
     }
 
     /// Add include directories for protoc to search for imports.
+    ///
+    /// Directories are searched in order. If directories overlap, the first
+    /// matching directory determines the proto-relative file name.
     #[must_use]
     pub fn includes(mut self, includes: &[impl AsRef<Path>]) -> Self {
         self.includes
@@ -2251,7 +2254,7 @@ impl Config {
         // `FileDescriptorProto.name` contains the path relative to the proto
         // source root (protoc: `--proto_path`; buf: the module root). For
         // Precompiled, Bytes, and Buf mode, `.files()` are expected to already be
-        // proto-relative names. For Protoc mode, strip the longest matching
+        // proto-relative names. For Protoc mode, strip the first matching
         // include prefix.
         let files_to_generate: Vec<String> = if matches!(
             self.descriptor_source,
@@ -2591,22 +2594,20 @@ fn emit_buf_rerun_if_changed() {
 /// Convert a filesystem proto path to the name protoc uses in the descriptor.
 ///
 /// `FileDescriptorProto.name` is relative to the `--proto_path` include
-/// directory. This strips the longest matching include prefix; if no include
+/// directory. This strips the first matching include prefix; if no include
 /// matches, returns the path as-is (not just file_name — that would break
 /// nested proto directories).
 fn proto_relative_name(file: &Path, includes: &[PathBuf]) -> String {
-    // Longest prefix wins: a file under both "proto/" and "proto/vendor/"
-    // should strip "proto/vendor/" for a correct relative name.
-    let mut best: Option<&Path> = None;
-    for include in includes {
-        if let Ok(rel) = file.strip_prefix(include) {
-            match best {
-                Some(prev) if prev.as_os_str().len() <= rel.as_os_str().len() => {}
-                _ => best = Some(rel),
-            }
-        }
-    }
-    best.unwrap_or(file).to_str().unwrap_or("").to_string()
+    let name = includes
+        .iter()
+        .find_map(|include| file.strip_prefix(include).ok())
+        .unwrap_or(file)
+        .to_str()
+        .unwrap_or("")
+        .to_string();
+    #[cfg(windows)]
+    let name = name.replace('\\', "/");
+    name
 }
 
 /// Files Cargo should watch for protoc-based builds.
@@ -3128,20 +3129,64 @@ mod tests {
     }
 
     #[test]
-    fn proto_relative_name_longest_prefix_wins() {
-        // Overlapping includes: file under both proto/ and proto/vendor/.
-        // Must strip the LONGER prefix for the correct relative name.
+    fn proto_relative_name_first_matching_prefix_wins() {
         let got = proto_relative_name(
             Path::new("proto/vendor/ext.proto"),
             &[PathBuf::from("proto/"), PathBuf::from("proto/vendor/")],
         );
-        assert_eq!(got, "ext.proto");
-        // Same with reversed include order.
+        assert_eq!(got, "vendor/ext.proto");
         let got = proto_relative_name(
             Path::new("proto/vendor/ext.proto"),
             &[PathBuf::from("proto/vendor/"), PathBuf::from("proto/")],
         );
         assert_eq!(got, "ext.proto");
+    }
+
+    #[test]
+    fn proto_relative_name_skips_unmatched_prefixes() {
+        let got = proto_relative_name(
+            Path::new("proto/vendor/ext.proto"),
+            &[
+                PathBuf::from("unrelated"),
+                PathBuf::from("proto/"),
+                PathBuf::from("proto/vendor/"),
+            ],
+        );
+        assert_eq!(got, "vendor/ext.proto");
+    }
+
+    #[test]
+    fn proto_relative_name_requires_a_complete_path_component() {
+        let got = proto_relative_name(
+            Path::new("proto/vendor2/ext.proto"),
+            &[PathBuf::from("proto/vendor"), PathBuf::from("proto/")],
+        );
+        assert_eq!(got, "vendor2/ext.proto");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn proto_relative_name_normalizes_windows_separators() {
+        let got = proto_relative_name(
+            Path::new(r"C:\proto\vendor\ext.proto"),
+            &[
+                PathBuf::from(r"C:\proto"),
+                PathBuf::from(r"C:\proto\vendor"),
+            ],
+        );
+        assert_eq!(got, "vendor/ext.proto");
+        let got = proto_relative_name(Path::new(r"vendor\ext.proto"), &[]);
+        assert_eq!(got, "vendor/ext.proto");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn proto_relative_name_preserves_literal_backslashes() {
+        let got = proto_relative_name(
+            Path::new(r"proto/vendor\ext.proto"),
+            &[PathBuf::from("proto")],
+        );
+        assert_eq!(got, r"vendor\ext.proto");
     }
 
     #[test]

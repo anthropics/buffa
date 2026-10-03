@@ -1,0 +1,3 @@
+kind: Fixed
+body: Fix code generation with overlapping protoc include directories by matching protoc's include order and descriptor file names, including Windows path separators.
+time: 2026-10-04T00:33:30.391118+02:00
