@@ -172,14 +172,16 @@
 //! assembles the map, and the `Arbitrary` impl is bounded on it.
 //!
 //! Not every newtype needs the key. Under `generate_arbitrary`, codegen
-//! attaches its own builder to most custom `string` and `bytes` fields, and
+//! attaches its own builder to custom `string` and `bytes` fields, and
 //! `MessageField` builds a custom box pointer itself:
 //!
-//! - `ProtoString`: needed only when the type is a `map` key or value.
+//! - `ProtoString`: not needed for generated messages.
 //! - `ProtoBytes`: not needed for generated messages.
-//! - `ProtoList`: needed.
-//! - `MapStorage`: needed, except for a map whose value is a non-default
-//!   `bytes` type (`bytes::Bytes` or a custom one).
+//! - `ProtoList`: needed, except for a `repeated` field whose element is a
+//!   custom string type or a non-default `bytes` type.
+//! - `MapStorage`: needed, except for a map with a custom string key, a
+//!   custom string value, or a non-default `bytes` value (`bytes::Bytes` or a
+//!   custom one).
 //! - `ProtoBox`: needed only when the pointer boxes a oneof variant.
 //!
 //! # `ProtoBox` and `MapStorage`: inherent methods, not trait methods
