@@ -1,0 +1,13 @@
+
+ä
+google/protobuf/any.protogoogle.protobuf"6
+Any
+type_url (	RtypeUrl
+value (RvalueBv
+com.google.protobufBAnyProtoPZ,google.golang.org/protobuf/types/known/anypb¢GPBªGoogle.Protobuf.WellKnownTypesbproto3
+Á
+json_any_test.protoreflect.jsongoogle/protobuf/any.proto"y
+Batch
+xs (Rxs.
+payload (2.google.protobuf.AnyRpayload0
+payloads (2.google.protobuf.AnyRpayloadsbproto3

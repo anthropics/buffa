@@ -11,10 +11,12 @@
 //!   i32s  int32→string   : `string_key_map` (non-string key + custom value)
 //!   smsg  string→message : serde derive
 //!   senum string→enum    : `map_enum`
+//!   wrapped string→UInt32Value : `proto_str_key_map` (see `src/tests/string_map.rs`)
+//!   sbytes string→bytes  : `proto_str_key_map` (base64 `bytes::Bytes` value)
 //!
 //! The checks below pin the field types and the binary / JSON / text / view→owned
-//! / reflection round-trips. `MapStr` is `Hash + Eq + Ord` (map key) and
-//! derives serde + (under the feature) `Arbitrary`.
+//! / reflection round-trips. `MapStr` is `Hash + Eq + Ord` (map key) and derives
+//! serde.
 
 use buffa::{Map, Message};
 use buffa_test::string_map::{Color, Inner, MapStr, Maps};
@@ -52,6 +54,10 @@ fn sample() -> Maps {
     senum.insert(s("red"), buffa::EnumValue::Known(Color::COLOR_RED));
     senum.insert(s("blue"), buffa::EnumValue::Known(Color::COLOR_BLUE));
 
+    let mut sbytes = Map::default();
+    sbytes.insert(s("blob"), bytes::Bytes::from_static(b"\x00\xffraw"));
+    sbytes.insert(s("empty"), bytes::Bytes::new());
+
     Maps {
         ss,
         si64,
@@ -59,6 +65,7 @@ fn sample() -> Maps {
         i32s,
         smsg,
         senum,
+        sbytes,
         ..Default::default()
     }
 }
@@ -74,6 +81,7 @@ fn field_types_use_custom_string() {
     let _: &Map<i32, MapStr> = &m.i32s;
     let _: &Map<MapStr, Inner> = &m.smsg;
     let _: &Map<MapStr, buffa::EnumValue<Color>> = &m.senum;
+    let _: &Map<MapStr, bytes::Bytes> = &m.sbytes;
 }
 
 #[test]
@@ -150,13 +158,10 @@ fn reflect_map_key_and_value() {
 fn arbitrary_builds_custom_string_map() {
     use arbitrary::{Arbitrary, Unstructured};
 
-    // The struct derives `Arbitrary`; each custom-string map slot requires the
-    // newtype's own `Arbitrary` impl (the map path has no per-key shim). Build
-    // one and touch the custom-keyed field to pin the derive ran.
-    let raw: [u8; 256] = core::array::from_fn(|i| i as u8);
-    let mut u = Unstructured::new(&raw);
-    let msg = Maps::arbitrary(&mut u).unwrap();
-    for k in msg.ss.keys() {
-        let _: &str = k.as_ref();
-    }
+    // `Maps: Arbitrary` compiling is most of the test (see `MapStr`). `ss` is
+    // the first field and takes the input: odd bytes make its "another entry?"
+    // draws true.
+    let raw: [u8; 256] = core::array::from_fn(|i| (i as u8) | 1);
+    let msg = Maps::arbitrary(&mut Unstructured::new(&raw)).unwrap();
+    assert!(!msg.ss.is_empty());
 }

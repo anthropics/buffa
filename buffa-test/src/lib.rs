@@ -216,7 +216,10 @@ pub mod repeated_type {
     /// A `Vec`-backed collection implementing `buffa::ProtoList<T>`. `Default`
     /// is hand-written (not derived) so it does not require `T: Default`, which
     /// the supertrait bound would otherwise force on every element type.
+    /// `Arbitrary` is derived for the fields whose element type has its own
+    /// impl; `labels` and `blobs` are built through `From<Vec<T>>` instead.
     #[derive(Clone, PartialEq, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct CustomList<T>(pub ::buffa::alloc::vec::Vec<T>);
 
     impl<T> ::core::default::Default for CustomList<T> {
@@ -400,13 +403,20 @@ pub mod map_type {
 /// `HashMap` key bound and every JSON dispatch path. The type is crate-local
 /// because vtable reflection emits `impl ReflectMapKey` / `impl ReflectElement`
 /// for it (a foreign type would be an orphan-rule error — exactly as for a
-/// custom `repeated` element). The seven fields cover every custom-string-key/value
-/// JSON dispatch path; exercised by `src/tests/string_map.rs`.
+/// custom `repeated` element). The fields cover every custom-string-key/value
+/// JSON dispatch path and every generated `Arbitrary` map builder that converts
+/// a string slot; exercised by `tests/string_map.rs` and
+/// `src/tests/string_map.rs`.
 #[allow(clippy::derivable_impls, non_camel_case_types)]
 pub mod string_map {
     /// `String`-backed newtype satisfying `buffa::ProtoString`, plus the
     /// `Hash + Eq + Ord` a map key needs and `Serialize`/`Deserialize` the JSON
     /// paths need.
+    ///
+    /// It has no `Arbitrary` impl. The fixture is compiled with
+    /// `generate_arbitrary`, so under the `arbitrary` feature the crate builds
+    /// only if every map field with a `MapStr` slot got a builder that makes
+    /// the `MapStr` from a `String`.
     #[derive(
         Clone,
         PartialEq,
@@ -419,11 +429,6 @@ pub mod string_map {
         ::serde::Serialize,
         ::serde::Deserialize,
     )]
-    // A custom string used in a `map` under `generate_arbitrary` must impl
-    // `Arbitrary` (unlike singular/repeated string fields, which get a generic
-    // builder): the map arbitrary path has no per-key shim. Deriving it on the
-    // newtype is the one-line requirement.
-    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct MapStr(pub ::buffa::alloc::string::String);
 
     impl ::core::ops::Deref for MapStr {

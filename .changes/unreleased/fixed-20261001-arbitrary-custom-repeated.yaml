@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Under `generate_arbitrary`, a `repeated string` or `repeated bytes` field with a custom collection and a non-default element type did not compile** (#500). The builder for a custom string type or a non-default `bytes` type returned `Vec<T>` whatever `repeated_type` rule the field had. It now returns the field's collection, made through `From<Vec<T>>`, so a custom collection needs no `Arbitrary` impl on such a field.
+time: 2026-10-01T19:50:17-07:00
