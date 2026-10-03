@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Reject NUL in field JSON names.** The descriptor pool now rejects fields and extensions whose JSON name contains NUL, matching protoc.'
+time: 2026-10-04T01:20:35.242319+02:00

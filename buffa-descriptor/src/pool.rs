@@ -238,6 +238,8 @@ pub enum PoolError {
     DuplicateFieldNumber { message: String, number: u32 },
     /// Two fields in one message claim the same proto or JSON name.
     DuplicateFieldName { message: String, name: String },
+    /// A field's JSON name contains NUL, which ProtoJSON forbids.
+    InvalidJsonName { field: String, name: String },
     /// A field refers to a oneof declaration that does not exist in its
     /// containing message.
     InvalidOneofIndex {
@@ -465,6 +467,9 @@ impl core::fmt::Display for PoolError {
                     f,
                     "message {message} declares field name {name:?} more than once"
                 )
+            }
+            Self::InvalidJsonName { field, name } => {
+                write!(f, "field {field} has JSON name {name:?} containing NUL")
             }
             Self::InvalidOneofIndex {
                 message,
@@ -848,14 +853,14 @@ impl DescriptorPool {
     ///
     /// Returns a [`PoolError`] if any type name fails to resolve or resolves
     /// to a file the referring file does not import, a symbol or field
-    /// identity is declared twice, a field number is out of range or in
-    /// the implementation-reserved band (19000-19999), a field uses a name or
-    /// number its message reserved, an extension range overlaps a reserved
-    /// range, a message or enum declares a reserved name twice, an open enum's
-    /// first value is non-zero, an enum value reuses a reserved name or number
-    /// or a duplicate number without `allow_alias`, a oneof index is invalid,
-    /// a `proto3_optional` field is malformed, a message exceeds 65 535
-    /// fields, or a map entry is malformed.
+    /// identity is declared twice, a JSON name contains NUL, a field number is
+    /// out of range or in the implementation-reserved band (19000-19999), a
+    /// field uses a name or number its message reserved, an extension range
+    /// overlaps a reserved range, a message or enum declares a reserved name
+    /// twice, an open enum's first value is non-zero, an enum value reuses a
+    /// reserved name or number or a duplicate number without `allow_alias`,
+    /// a oneof index is invalid, a `proto3_optional` field is malformed, a
+    /// message exceeds 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -2341,6 +2346,12 @@ impl DescriptorPool {
             .json_name
             .clone()
             .unwrap_or_else(|| derive_json_name(&name));
+        if json_name.contains('\0') {
+            return Err(PoolError::InvalidJsonName {
+                field: field_fqn,
+                name: json_name,
+            });
+        }
 
         // Validate the field number. The wire format reserves 0, and the
         // upper bound is `(1 << 29) - 1`. Spec-compliant `protoc` never emits
