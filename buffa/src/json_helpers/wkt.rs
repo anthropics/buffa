@@ -367,9 +367,15 @@ pub fn field_mask_path_round_trips(path: &str) -> bool {
 /// Convert days-since-unix-epoch to a proleptic Gregorian `(year, month, day)`.
 #[must_use]
 pub fn days_to_date(z: i64) -> (i64, u8, u8) {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
+    let (era, doe) = match z.checked_add(719_468) {
+        Some(z) => (z.div_euclid(146_097), z.rem_euclid(146_097)),
+        None => {
+            // Add the epoch offset to the bounded remainder instead.
+            let era = z.div_euclid(146_097);
+            let doe = z.rem_euclid(146_097) + 719_468;
+            (era + doe / 146_097, doe % 146_097)
+        }
+    };
     let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
     let y = yoe + era * 400;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
@@ -382,19 +388,20 @@ pub fn days_to_date(z: i64) -> (i64, u8, u8) {
 /// Convert a proleptic Gregorian `(year, month, day)` to days-since-unix-epoch.
 ///
 /// Returns `None` if the date is invalid (out-of-range month, or day exceeding
-/// the Gregorian month length including the leap-year rule for February).
+/// the Gregorian month length including the leap-year rule for February),
+/// or if the day count cannot be represented as an `i64`.
 #[must_use]
 pub fn date_to_days(y: i64, m: u8, d: u8) -> Option<i64> {
     if !(1..=12).contains(&m) || d == 0 || u32::from(d) > days_in_month(y, u32::from(m)) {
         return None;
     }
-    let y = if m <= 2 { y - 1 } else { y };
+    let y = if m <= 2 { y.checked_sub(1)? } else { y };
     let era = y.div_euclid(400);
     let yoe = y.rem_euclid(400);
     let mp = if m > 2 { m - 3 } else { m + 9 } as i64;
     let doy = (153 * mp + 2) / 5 + i64::from(d) - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    Some(era * 146_097 + doe - 719_468)
+    i64::try_from(i128::from(era) * 146_097 + i128::from(doe) - 719_468).ok()
 }
 
 /// Days in `month` of `year` (1-indexed month). Validates the Gregorian
@@ -417,6 +424,69 @@ fn days_in_month(year: i64, month: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn civil_calendar_extreme_days_round_trip() {
+        let cases = [
+            (i64::MIN, (-25_252_734_927_764_585, 6, 7)),
+            (i64::MIN + 1, (-25_252_734_927_764_585, 6, 8)),
+            (i64::MAX - 1, (25_252_734_927_768_524, 7, 26)),
+            (i64::MAX, (25_252_734_927_768_524, 7, 27)),
+        ];
+        for (days, date) in cases {
+            assert_eq!(days_to_date(days), date, "days: {days}");
+            assert_eq!(date_to_days(date.0, date.1, date.2), Some(days));
+        }
+        for days in [i64::MAX - 719_468, i64::MAX - 719_467] {
+            let (year, month, day) = days_to_date(days);
+            assert_eq!(date_to_days(year, month, day), Some(days));
+        }
+    }
+
+    #[test]
+    fn civil_calendar_rejects_days_outside_i64_range() {
+        assert_eq!(date_to_days(-25_252_734_927_764_585, 6, 6), None);
+        assert_eq!(date_to_days(25_252_734_927_768_524, 7, 28), None);
+        for year in [i64::MIN, i64::MAX] {
+            for month in 1..=12 {
+                assert_eq!(date_to_days(year, month, 1), None);
+            }
+        }
+    }
+
+    #[test]
+    fn civil_calendar_round_trip() {
+        let cases = [
+            (-719_469, (0, 2, 29)),
+            (-719_468, (0, 3, 1)),
+            (-719_162, (1, 1, 1)),
+            (-1, (1969, 12, 31)),
+            (0, (1970, 1, 1)),
+            (11_016, (2000, 2, 29)),
+            (2_932_896, (9999, 12, 31)),
+        ];
+        for (days, date) in cases {
+            assert_eq!(days_to_date(days), date, "days: {days}");
+            assert_eq!(date_to_days(date.0, date.1, date.2), Some(days));
+        }
+    }
+
+    #[test]
+    fn civil_calendar_rejects_invalid_dates() {
+        for (year, month, day) in [
+            (2024, 0, 1),
+            (2024, 13, 1),
+            (2024, 1, 0),
+            (2024, 4, 31),
+            (1900, 2, 29),
+            (2023, 2, 29),
+            (2024, 2, 30),
+            (i64::MIN, 2, 30),
+            (i64::MAX, 2, 29),
+        ] {
+            assert_eq!(date_to_days(year, month, day), None);
+        }
+    }
 
     #[test]
     fn timestamp_round_trip() {

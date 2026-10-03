@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Avoid overflow in the public civil calendar helpers.** `days_to_date` handles the full `i64` day range, and `date_to_days` returns `None` when the day count is outside that range.'
+time: 2026-10-03T21:15:17.336617+02:00
