@@ -1,0 +1,3 @@
+kind: Changed
+body: '**Reuse the entry buffer when normalizing reflective maps.** Sort and remove duplicate keys in place while keeping the last value for each key, avoiding a second full-size entry allocation.'
+time: 2026-10-04T01:00:17.051579+02:00

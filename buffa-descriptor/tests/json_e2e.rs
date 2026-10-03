@@ -361,6 +361,29 @@ fn json_containers_round_trip() {
 }
 
 #[test]
+fn json_map_duplicate_keys_keep_last_value() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let msg = DynamicMessage::from_json(
+        p,
+        idx,
+        r#"{"tags":{"b":1,"a":2,"b":3,"a":4,"b":5,"a":6,"b":7}}"#,
+    )
+    .unwrap();
+    let Some(Value::Map(tags)) = msg.field_by_number(3) else {
+        panic!("tags must be a map");
+    };
+    assert_eq!(
+        tags.entries(),
+        &[
+            (MapKey::String("a".into()), Value::I32(6)),
+            (MapKey::String("b".into()), Value::I32(7)),
+        ]
+    );
+    assert_eq!(msg.to_json().unwrap(), r#"{"tags":{"a":6,"b":7}}"#);
+}
+
+#[test]
 fn json_default_omitted() {
     let p = pool();
     let idx = p.message_index("reflect.test.Scalars").unwrap();
