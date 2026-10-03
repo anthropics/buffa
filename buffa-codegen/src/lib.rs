@@ -2755,6 +2755,10 @@ fn rule_paths<R>(rules: &[(String, R)]) -> Vec<&String> {
 /// idiomatic CamelCase aliases were suppressed by a naming conflict) are
 /// **discarded** here. Use [`generate_with_diagnostics`] to receive them and
 /// surface them as build warnings.
+///
+/// # Errors
+///
+/// As [`generate_with_diagnostics`].
 pub fn generate(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
@@ -3183,10 +3187,10 @@ fn warn_excluded_refs_msg(
 /// collected during generation (e.g. enums whose idiomatic CamelCase aliases
 /// were suppressed by a naming conflict).
 ///
-/// Surface each warning via its [`Display`](core::fmt::Display) impl — e.g. as a
-/// `cargo:warning=...` from a `build.rs`, or on stderr from a standalone
+/// Report each warning through its [`Display`](core::fmt::Display) impl — e.g.
+/// as a `cargo:warning=...` from a `build.rs`, or on stderr from a standalone
 /// generator — or match on it for programmatic handling. [`generate`] discards
-/// them, so existing callers are unaffected.
+/// them.
 ///
 /// Warnings are returned only on success. On error, any warnings already
 /// collected are dropped along with the partial output — the [`CodeGenError`]
@@ -3194,16 +3198,30 @@ fn warn_excluded_refs_msg(
 ///
 /// # Errors
 ///
-/// Returns [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has
-/// no matching descriptor, [`CodeGenError::InvalidTypeNamePrefix`] if
-/// [`CodeGenConfig::type_name_prefix`] is not empty or PascalCase,
-/// [`CodeGenError::Other`] if `generate_reflection_vtable`
-/// is set without `generate_reflection` or if an active feature-gate name in
-/// [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
-/// [`CodeGenError::OneofEnumNameConflict`] if sibling oneofs map to the same
-/// Rust enum identifier (rename either oneof to resolve it), and other
-/// [`CodeGenError`] variants for malformed descriptors (e.g. a missing
-/// required field) encountered while generating.
+/// - [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has no
+///   matching descriptor.
+/// - [`CodeGenError::InvalidTypeNamePrefix`] if
+///   [`CodeGenConfig::type_name_prefix`] is neither empty nor PascalCase.
+/// - [`CodeGenError::Other`] if `config` sets an option without the option
+///   it requires: `generate_reflection_vtable` or `shared_descriptor_pool`
+///   without `generate_reflection`, `shared_descriptor_pool_root` without
+///   `shared_descriptor_pool`, or `idiomatic_imports` without
+///   `file_per_package`.
+/// - [`CodeGenError::Other`] if an active feature-gate name in
+///   [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
+///   or if `shared_descriptor_pool_root` or an `exclude_packages` entry is
+///   malformed.
+/// - [`CodeGenError::SharedCorpusContextMismatch`] if
+///   [`CodeGenConfig::shared_corpus_context`] was built from a different
+///   corpus or different rules than this call uses.
+/// - For a valid schema whose names collide in the generated Rust:
+///   [`CodeGenError::OneofEnumNameConflict`],
+///   [`CodeGenError::ModuleNameConflict`],
+///   [`CodeGenError::ReservedFieldName`] or
+///   [`CodeGenError::ReservedModuleName`].
+/// - Other [`CodeGenError`] variants for a schema that generation does not
+///   support or a malformed descriptor, such as
+///   [`CodeGenError::MissingField`].
 pub fn generate_with_diagnostics(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
@@ -5149,15 +5167,25 @@ pub enum CodeGenError {
         name_b: String,
         module_name: String,
     },
-    /// Two sibling oneofs produce the same Rust enum identifier.
+    /// Two oneofs of one message produce the same Rust enum name after
+    /// PascalCase conversion and keyword escaping (e.g., `foo_bar` and
+    /// `foo__bar` both become `FooBar`; `self` and `self_` both become
+    /// `Self_`). Resolve by renaming one of the oneofs. A oneof's name is in
+    /// neither the wire format nor JSON, so the rename changes generated
+    /// code only.
     #[error(
         "oneof enum name conflict in message '{message_name}': oneofs \
-         '{first_oneof}' and '{second_oneof}' both map to Rust enum '{rust_name}'"
+         '{first_oneof}' and '{second_oneof}' both map to Rust enum '{rust_name}'; \
+         rename one of them"
     )]
     OneofEnumNameConflict {
+        /// Fully-qualified proto name of the message, without a leading dot.
         message_name: String,
+        /// Proto name of the oneof declared first.
         first_oneof: String,
+        /// Proto name of the oneof declared second.
         second_oneof: String,
+        /// The Rust enum name that both oneofs map to.
         rust_name: String,
     },
     /// A proto package segment, message name, or file-level enum name

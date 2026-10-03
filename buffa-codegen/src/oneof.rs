@@ -948,8 +948,9 @@ fn oneof_enum_ident(oneof_name: &str) -> proc_macro2::Ident {
 /// Compute oneof enum identifiers for all non-synthetic oneofs in a message.
 ///
 /// Returns a map from oneof declaration index to its Rust enum `Ident`.
-/// Synthetic oneofs (proto3 `optional`) are omitted. Returns an error when
-/// sibling oneofs map to the same Rust enum identifier.
+/// Synthetic oneofs (proto3 `optional`) are omitted. Returns
+/// [`CodeGenError::OneofEnumNameConflict`] when two of the remaining oneofs
+/// map to the same Rust enum identifier.
 pub(crate) fn resolve_oneof_idents(
     msg: &DescriptorProto,
     message_name: &str,

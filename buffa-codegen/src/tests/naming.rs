@@ -3,71 +3,6 @@
 
 use super::*;
 
-fn oneof_name_file(names: &[&str], synthetic_index: Option<usize>) -> FileDescriptorProto {
-    let mut file = proto3_file("oneof_names.proto");
-    file.package = Some("my.pkg".to_string());
-    file.message_type.push(DescriptorProto {
-        name: Some("Msg".to_string()),
-        field: names
-            .iter()
-            .enumerate()
-            .map(|(index, _)| {
-                let mut field = make_field(
-                    &format!("choice_{index}"),
-                    index as i32 + 1,
-                    Label::LABEL_OPTIONAL,
-                    Type::TYPE_STRING,
-                );
-                field.oneof_index = Some(index as i32);
-                if synthetic_index == Some(index) {
-                    field.proto3_optional = Some(true);
-                }
-                field
-            })
-            .collect(),
-        oneof_decl: names
-            .iter()
-            .map(|name| OneofDescriptorProto {
-                name: Some((*name).to_string()),
-                ..Default::default()
-            })
-            .collect(),
-        ..Default::default()
-    });
-    file
-}
-
-fn assert_oneof_name_conflict(first: &str, second: &str, rust_name: &str) {
-    assert_oneof_name_conflict_in_file(
-        oneof_name_file(&[first, second], None),
-        "my.pkg.Msg",
-        first,
-        second,
-        rust_name,
-        &CodeGenConfig::default(),
-    );
-}
-
-fn assert_oneof_name_conflict_in_file(
-    file: FileDescriptorProto,
-    message_name: &str,
-    first: &str,
-    second: &str,
-    rust_name: &str,
-    config: &CodeGenConfig,
-) {
-    let err = generate(&[file], &["oneof_names.proto".to_string()], config)
-        .expect_err("colliding sibling oneof names must be rejected");
-    assert_eq!(
-        err.to_string(),
-        format!(
-            "oneof enum name conflict in message '{message_name}': oneofs '{first}' and \
-             '{second}' both map to Rust enum '{rust_name}'"
-        )
-    );
-    assert!(matches!(err, CodeGenError::OneofEnumNameConflict { .. }));
-}
-
 #[test]
 fn test_reserved_field_name_rejected() {
     let field = make_field(
@@ -1324,9 +1259,101 @@ fn test_oneof_named_self_escapes_its_enum_to_self_underscore() {
     );
 }
 
+fn oneof_name_file(names: &[&str], synthetic_index: Option<usize>) -> FileDescriptorProto {
+    let mut file = proto3_file("oneof_names.proto");
+    file.package = Some("my.pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: names
+            .iter()
+            .enumerate()
+            .map(|(index, _)| {
+                let mut field = make_field(
+                    &format!("choice_{index}"),
+                    index as i32 + 1,
+                    Label::LABEL_OPTIONAL,
+                    Type::TYPE_STRING,
+                );
+                field.oneof_index = Some(index as i32);
+                if synthetic_index == Some(index) {
+                    field.proto3_optional = Some(true);
+                }
+                field
+            })
+            .collect(),
+        oneof_decl: names
+            .iter()
+            .map(|name| OneofDescriptorProto {
+                name: Some((*name).to_string()),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    });
+    file
+}
+
+#[track_caller]
+fn assert_oneof_name_conflict(first: &str, second: &str, rust_name: &str) {
+    assert_oneof_name_conflict_in_file(
+        oneof_name_file(&[first, second], None),
+        "my.pkg.Msg",
+        first,
+        second,
+        rust_name,
+        &CodeGenConfig::default(),
+    );
+}
+
+#[track_caller]
+fn assert_oneof_name_conflict_in_file(
+    file: FileDescriptorProto,
+    message_name: &str,
+    first: &str,
+    second: &str,
+    rust_name: &str,
+    config: &CodeGenConfig,
+) {
+    let err = generate(&[file], &["oneof_names.proto".to_string()], config)
+        .expect_err("colliding sibling oneof names must be rejected");
+    let CodeGenError::OneofEnumNameConflict {
+        message_name: got_message,
+        first_oneof,
+        second_oneof,
+        rust_name: got_rust_name,
+    } = &err
+    else {
+        panic!("expected OneofEnumNameConflict, got: {err}");
+    };
+    assert_eq!(
+        (
+            got_message.as_str(),
+            first_oneof.as_str(),
+            second_oneof.as_str(),
+            got_rust_name.as_str()
+        ),
+        (message_name, first, second, rust_name)
+    );
+}
+
 #[test]
 fn test_sibling_oneofs_with_same_pascal_case_are_rejected() {
     assert_oneof_name_conflict("foo_bar", "foo__bar", "FooBar");
+}
+
+#[test]
+fn test_oneof_name_conflict_message_names_both_oneofs_and_the_remedy() {
+    let err = generate(
+        &[oneof_name_file(&["foo_bar", "foo__bar"], None)],
+        &["oneof_names.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("colliding sibling oneof names must be rejected");
+    assert_eq!(
+        err.to_string(),
+        "oneof enum name conflict in message 'my.pkg.Msg': oneofs 'foo_bar' and 'foo__bar' \
+         both map to Rust enum 'FooBar'; rename one of them"
+    );
 }
 
 #[test]
@@ -1356,6 +1383,7 @@ fn test_nested_oneof_conflict_reports_full_name_without_views() {
         nested_type: vec![inner],
         ..Default::default()
     });
+    // Views off: the owned-message path alone reports the conflict.
     let config = CodeGenConfig {
         generate_views: false,
         ..Default::default()
@@ -1378,5 +1406,6 @@ fn test_synthetic_oneof_name_collision_is_ignored() {
         &CodeGenConfig::default(),
     )
     .expect("synthetic proto3 optional oneofs do not emit enums");
-    assert!(!files.is_empty());
+    // One owned enum, for the real oneof. The view enum is `FooBar<'a>`.
+    assert_eq!(joined(&files).matches("pub enum FooBar {").count(), 1);
 }

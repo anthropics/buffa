@@ -997,6 +997,8 @@ pub mod contact {
 
 Adding or removing sibling types never changes the Rust name of an existing oneof enum.
 
+Two oneofs of one message can still collide with each other: `oneof foo_bar` and `oneof foo__bar` both map to `FooBar`, and `oneof self` and `oneof self_` both map to `Self_`. Code generation rejects such a message with `CodeGenError::OneofEnumNameConflict`, which names both oneofs. Rename one of them; a oneof's name is in neither the wire format nor JSON, so the rename changes generated code only.
+
 ### Nested types and module structure
 
 Nested proto messages are scoped in Rust modules named after the parent:
