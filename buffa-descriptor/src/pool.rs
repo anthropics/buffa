@@ -264,6 +264,9 @@ pub enum PoolError {
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
+    /// A field in a proto3 or Editions file uses a `required` label.
+    /// Editions express required presence through features instead of labels.
+    RequiredFieldOutsideProto2 { field: String },
     /// A field number, or a finite extension range, overlaps the field-number
     /// interval reserved for the protobuf implementation. The bounds are
     /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
@@ -507,6 +510,10 @@ impl core::fmt::Display for PoolError {
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
+            Self::RequiredFieldOutsideProto2 { field } => write!(
+                f,
+                "field {field} uses a required label outside a proto2 file"
+            ),
             Self::ReservedFieldNumber { field, number } => {
                 write!(
                     f,
@@ -766,6 +773,8 @@ struct LinkScope<'a> {
     file: usize,
     /// Whether the referring file declares proto3 syntax.
     proto3: bool,
+    /// Whether the referring file's syntax permits legacy `required` labels.
+    allows_required_labels: bool,
     /// Itself, its direct and weak dependencies, and their transitive
     /// `public_dependency` closure; `None` when visibility is not enforced.
     visible: Option<&'a BTreeSet<usize>>,
@@ -846,6 +855,9 @@ impl DescriptorPool {
     ///
     /// # Errors
     ///
+    /// Returns [`PoolError::RequiredFieldOutsideProto2`] if a proto3 or
+    /// Editions field uses a `required` label.
+    ///
     /// Returns a [`PoolError`] if any type name fails to resolve or resolves
     /// to a file the referring file does not import, a symbol or field
     /// identity is declared twice, a field number is out of range or in
@@ -872,7 +884,9 @@ impl DescriptorPool {
     /// # Errors
     ///
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
-    /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
+    /// `FileDescriptorSet`, [`PoolError::RequiredFieldOutsideProto2`] if a
+    /// proto3 or Editions field uses a `required` label, or any other
+    /// [`PoolError`] on a structural
     /// validation failure (dangling or unimported type names, out-of-range or
     /// implementation-reserved field numbers, reserved message fields, an
     /// overlapping extension range, duplicate symbols or field identities,
@@ -1078,6 +1092,10 @@ impl DescriptorPool {
             let scope = LinkScope {
                 file: base + i,
                 proto3: file.syntax.as_deref() == Some("proto3"),
+                allows_required_labels: !matches!(
+                    file.syntax.as_deref(),
+                    Some("proto3" | "editions")
+                ),
                 visible: visible.as_ref(),
             };
             for msg in &file.message_type {
@@ -1102,6 +1120,10 @@ impl DescriptorPool {
             let scope = LinkScope {
                 file: base + i,
                 proto3: file.syntax.as_deref() == Some("proto3"),
+                allows_required_labels: !matches!(
+                    file.syntax.as_deref(),
+                    Some("proto3" | "editions")
+                ),
                 visible: visible.as_ref(),
             };
             for svc in &file.service {
@@ -2243,6 +2265,9 @@ impl DescriptorPool {
             }
         }
         let is_repeated = label == Label::LABEL_REPEATED;
+        if label == Label::LABEL_REQUIRED && !scope.allows_required_labels {
+            return Err(PoolError::RequiredFieldOutsideProto2 { field: field_fqn });
+        }
 
         // Resolve the singular kind (element type).
         let element = self.resolve_singular(f.r#type, f.type_name.as_deref(), &field_fqn, scope)?;

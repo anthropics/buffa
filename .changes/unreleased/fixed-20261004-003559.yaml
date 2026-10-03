@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Reject required field labels outside proto2.** DescriptorPool now rejects required labels in proto3 and Editions files, including nested fields and extensions. Editions still express required presence with the LEGACY_REQUIRED feature.'
+time: 2026-10-04T00:35:59.454342+02:00
