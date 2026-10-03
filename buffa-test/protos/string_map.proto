@@ -20,12 +20,16 @@ import "google/protobuf/wrappers.proto";
 //   senum string→enum    : map_enum — custom key + open-enum value.
 //   wrapped string→UInt32Value : proto_str_key_map — custom key + wrapper
 //                               value uses the scalar ProtoJSON path.
+//   sbytes string→bytes  : proto_str_key_map — custom key + `bytes::Bytes`
+//                          value (base64).
 //
 // Compiling the crate exercises the owned codegen surface (the `ProtoStringMap`
 // codec for both key and value, view→owned `Into` conversion, vtable reflect,
-// and the generic arbitrary map builder); the runtime tests add binary / JSON /
-// view→owned round-trips. The key type is `Hash + Eq` (a HashMap container),
-// enforced at the generated field type.
+// and the arbitrary map builders that convert a string slot: `ss` both
+// slots, `si64` the key, `i32s` the value, `sbytes` the key with a `Bytes`
+// value); the runtime tests add binary / JSON / view→owned round-trips. The
+// key type is `Hash + Eq` (a HashMap container), enforced at the generated
+// field type.
 message Maps {
   map<string, string> ss = 1;
   map<string, int64> si64 = 2;
@@ -34,6 +38,7 @@ message Maps {
   map<string, Inner> smsg = 5;
   map<string, Color> senum = 6;
   map<string, google.protobuf.UInt32Value> wrapped = 7;
+  map<string, bytes> sbytes = 8;
 }
 
 message Inner {
