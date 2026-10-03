@@ -269,8 +269,9 @@ pub enum PoolError {
     /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
     /// [`buffa::encoding::LAST_RESERVED_FIELD_NUMBER`].
     ReservedFieldNumber { field: String, number: i32 },
-    /// A map entry message did not have exactly fields 1 (key) and 2 (value),
-    /// or the key type is not a valid map key per the protobuf spec.
+    /// A map entry message does not have exactly the optional fields `key`
+    /// (1) and `value` (2), or the key type is not a valid map key per the
+    /// protobuf spec.
     MalformedMapEntry { message: String },
     /// Two extensions claim the same field number on the same message.
     /// protoc rejects this within one compilation unit, but it can arise
@@ -2510,6 +2511,11 @@ impl DescriptorPool {
         field_fqn: &str,
         scope: LinkScope<'_>,
     ) -> Result<(ScalarType, SingularKind), PoolError> {
+        if entry.field.len() != 2 {
+            return Err(PoolError::MalformedMapEntry {
+                message: field_fqn.to_string(),
+            });
+        }
         let key_fd = entry.field.iter().find(|f| f.number == Some(1));
         let val_fd = entry.field.iter().find(|f| f.number == Some(2));
         let (Some(kf), Some(vf)) = (key_fd, val_fd) else {
@@ -2517,6 +2523,17 @@ impl DescriptorPool {
                 message: field_fqn.to_string(),
             });
         };
+        if [("key", kf), ("value", vf)]
+            .into_iter()
+            .any(|(name, field)| {
+                field.name.as_deref() != Some(name)
+                    || field.label.unwrap_or_default() != Label::LABEL_OPTIONAL
+            })
+        {
+            return Err(PoolError::MalformedMapEntry {
+                message: field_fqn.to_string(),
+            });
+        }
         let key_ty = ScalarType::from_proto(kf.r#type.unwrap_or_default()).ok_or_else(|| {
             PoolError::MalformedMapEntry {
                 message: field_fqn.to_string(),
