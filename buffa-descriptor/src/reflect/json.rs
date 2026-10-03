@@ -329,9 +329,10 @@ impl Serialize for MapKeyRef<'_> {
 // expands about twentyfold. The charges match the reflective binary
 // decoder's (`reflect/dynamic.rs`) element for element. A
 // `google.protobuf.Any` payload has two costs with no counterpart there:
-// the `serde_json::Value` tree it is buffered into, which is not charged,
-// and its elements, which are charged here while the binary decoder leaves
-// `Any.value` undecoded.
+// the `serde_json::Value` tree it is buffered into, which is charged as a
+// map entry for each object member and as a repeated element for each array
+// element for as long as the buffer is held, and its elements, which are
+// charged here while the binary decoder leaves `Any.value` undecoded.
 
 /// Display text of the error for a parse that exceeds its element-memory
 /// budget. `buffa::DecodeError::ElementMemoryLimitExceeded` displays the same
@@ -372,9 +373,9 @@ impl DynamicMessage {
     /// another limit, build a [`DynamicMessageSeed`], set
     /// [`with_element_memory_limit`](DynamicMessageSeed::with_element_memory_limit)
     /// and call [`parse_json`](DynamicMessageSeed::parse_json). The limit
-    /// does not bound the memory a `google.protobuf.Any` payload takes to
-    /// read; see
-    /// [`with_element_memory_limit`](DynamicMessageSeed::with_element_memory_limit).
+    /// also covers the buffer that a `google.protobuf.Any` payload is read
+    /// into; the documentation of `with_element_memory_limit` gives each
+    /// charge.
     ///
     /// # Errors
     ///
@@ -491,6 +492,11 @@ impl DynamicMessageSeed {
     ///
     /// The setting propagates to nested messages, repeated elements, and map
     /// values. See [`DynamicMessage::from_json_ignoring_unknown`].
+    ///
+    /// An unknown field inside a `google.protobuf.Any` payload is buffered
+    /// with the rest of the payload before it is discarded, and the buffer
+    /// counts toward the
+    /// [element-memory limit](Self::with_element_memory_limit).
     #[must_use]
     pub fn ignore_unknown_fields(mut self, ignore: bool) -> Self {
         self.ignore_unknown = ignore;
@@ -517,14 +523,29 @@ impl DynamicMessageSeed {
     ///
     /// # `google.protobuf.Any` payloads
     ///
-    /// The limit does not bound the memory an `Any` payload takes to read.
-    /// `@type` can follow the fields it types, so the payload object is
-    /// buffered as a `serde_json::Value` tree before any of it is charged,
-    /// and only the message built from that tree draws on the budget. Peak
-    /// memory for such input grows with the input length whatever the limit
-    /// is; one measurement put it at about 27 times the input length for an
-    /// `Any` full of empty objects. If an `Any` is reachable from the
-    /// message type, cap the input length as well.
+    /// `@type` can follow the fields it types, so the parser buffers an `Any`
+    /// payload as a `serde_json::Value` tree and decodes the message from
+    /// that tree. The buffer draws on the same budget. At every depth of the
+    /// payload, each object member is charged as a map entry and each array
+    /// element as a repeated element. The members include `@type`, singular
+    /// fields and unknown fields. The parser returns the buffer's charge
+    /// after it decodes the payload. The elements that the decode built stay
+    /// charged until the parse ends.
+    ///
+    /// A payload needs room for its buffer and its message together, on top
+    /// of what the parse has kept when it reaches the `Any`. So an `Any`
+    /// that follows a large repeated field has less room than one that
+    /// precedes it. When the order of members can vary, size the limit for
+    /// the `Any` coming last. Each enclosing `Any` buffers a nested `Any`
+    /// again, so a value at `Any` depth *d* is charged in *d* buffers while
+    /// the innermost payload is decoded.
+    ///
+    /// A message costs more inside an `Any` than as a field of its own type.
+    /// Where a [`Value`] is 64 bytes and a [`MapKey`] 24, as on a 64-bit
+    /// target with a current compiler, the default lets a payload of
+    /// singular fields buffer 381,300 members. A payload that is one
+    /// repeated field of scalars can have about 262,000 elements, because
+    /// each is charged in the buffer and again in the message.
     #[must_use]
     pub fn with_element_memory_limit(mut self, bytes: usize) -> Self {
         self.element_memory_limit = bytes;
@@ -544,7 +565,7 @@ impl DynamicMessageSeed {
     /// not match the message descriptor, or exceeds the element-memory
     /// limit. See
     /// [`with_element_memory_limit`](Self::with_element_memory_limit) for
-    /// what that limit leaves unbounded.
+    /// what that limit charges.
     #[doc(alias = "from_json")]
     #[doc(alias = "from_json_with_element_memory_limit")]
     pub fn parse_json(self, json: &str) -> Result<DynamicMessage, serde_json::Error> {
