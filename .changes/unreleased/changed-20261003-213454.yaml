@@ -1,0 +1,3 @@
+kind: Changed
+body: '**Lazy repeated-view iteration** skips undecoded message bytes in `nth` and `nth_back`, so only the selected element is decoded.'
+time: 2026-10-03T21:34:54.025538+02:00
