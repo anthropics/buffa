@@ -1158,6 +1158,23 @@ mod tests {
         }
 
         #[test]
+        fn serialize_value_wkt_requires_kind() {
+            use crate::google::protobuf::Value;
+
+            with_registry(|| {
+                let unset = Any::pack_message(&Value::default());
+                assert!(serde_json::to_string(&unset).is_err());
+
+                let null = Any::pack_message(&Value::null());
+                let json = serde_json::to_value(&null).unwrap();
+                assert_eq!(
+                    json,
+                    serde_json::json!({ "@type": Value::TYPE_URL, "value": null })
+                );
+            });
+        }
+
+        #[test]
         fn serialize_empty_any_is_empty_object() {
             with_registry(|| {
                 let any = Any::default();
