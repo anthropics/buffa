@@ -2121,6 +2121,168 @@ fn negative_oneof_indices_are_rejected_without_mutating_pool() {
     );
 }
 
+fn oneof_cardinality_set(
+    syntax: Option<&str>,
+    label: Option<buffa_descriptor::generated::descriptor::field_descriptor_proto::Label>,
+) -> buffa_descriptor::generated::descriptor::FileDescriptorSet {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+    };
+
+    let mut member = scalar_field("member", 1, Type::TYPE_INT32);
+    member.label = label;
+    member.oneof_index = Some(0);
+    let mut other = scalar_field("other", 2, Type::TYPE_STRING);
+    other.oneof_index = Some(0);
+    FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("oneof-cardinality.proto".into()),
+            package: Some("cardinality.test".into()),
+            syntax: syntax.map(Into::into),
+            edition: (syntax == Some("editions")).then_some(Edition::EDITION_2023),
+            message_type: vec![DescriptorProto {
+                name: Some("Choice".into()),
+                field: vec![member, other],
+                oneof_decl: vec![OneofDescriptorProto {
+                    name: Some("choice".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn non_optional_oneof_fields_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+
+    for syntax in [None, Some("proto2"), Some("proto3"), Some("editions")] {
+        for label in [Label::LABEL_REQUIRED, Label::LABEL_REPEATED] {
+            assert_set_rejected_without_mutating_pool(
+                "oneof-cardinality.proto",
+                "cardinality.test.Choice",
+                oneof_cardinality_set(syntax, Some(label)),
+                |err| {
+                    assert!(matches!(
+                        err,
+                        PoolError::InvalidOneofCardinality { field }
+                            if field == "cardinality.test.Choice.member"
+                    ));
+                    assert_eq!(
+                        err.to_string(),
+                        "field cardinality.test.Choice.member is a oneof member but is not optional"
+                    );
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn non_optional_nested_message_oneof_fields_are_rejected() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    for label in [Label::LABEL_REQUIRED, Label::LABEL_REPEATED] {
+        let mut set = oneof_cardinality_set(Some("proto2"), Some(label));
+        let message = &mut set.file[0].message_type[0];
+        message.field[0].r#type = Some(Type::TYPE_MESSAGE);
+        message.field[0].type_name = Some(".cardinality.test.Outer.Child".into());
+        let choice = set.file[0].message_type.remove(0);
+        set.file[0].message_type.push(DescriptorProto {
+            name: Some("Outer".into()),
+            nested_type: vec![
+                DescriptorProto {
+                    name: Some("Child".into()),
+                    ..Default::default()
+                },
+                choice,
+            ],
+            ..Default::default()
+        });
+        assert_set_rejected_without_mutating_pool(
+            "oneof-cardinality.proto",
+            "cardinality.test.Outer",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidOneofCardinality { field }
+                        if field == "cardinality.test.Outer.Choice.member"
+                ));
+            },
+        );
+    }
+}
+
+#[test]
+fn invalid_proto3_optional_oneof_labels_keep_the_specific_error() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+
+    for label in [Label::LABEL_REQUIRED, Label::LABEL_REPEATED] {
+        let mut set = oneof_cardinality_set(Some("proto3"), Some(label));
+        set.file[0].message_type[0].field[0].proto3_optional = Some(true);
+        assert_set_rejected_without_mutating_pool(
+            "oneof-cardinality.proto",
+            "cardinality.test.Choice",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidProto3OptionalCardinality { field }
+                        if field == "cardinality.test.Choice.member"
+                ));
+            },
+        );
+    }
+}
+
+#[test]
+fn optional_and_unset_oneof_labels_link_with_explicit_presence() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+
+    for syntax in [None, Some("proto2"), Some("proto3"), Some("editions")] {
+        for label in [None, Some(Label::LABEL_OPTIONAL)] {
+            let p = DescriptorPool::new(oneof_cardinality_set(syntax, label)).unwrap();
+            let message = p.message_by_name("cardinality.test.Choice").unwrap();
+            for field in message.fields() {
+                assert!(matches!(field.kind(), FieldKind::Singular(_)));
+                assert_eq!(field.presence(), FieldPresence::Explicit);
+                assert_eq!(field.oneof_index(), Some(0));
+            }
+        }
+    }
+}
+
+#[test]
+fn required_and_repeated_fields_outside_oneofs_still_link() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+
+    for label in [Label::LABEL_REQUIRED, Label::LABEL_REPEATED] {
+        let mut set = oneof_cardinality_set(Some("proto2"), Some(label));
+        let message = &mut set.file[0].message_type[0];
+        message.field[0].oneof_index = None;
+        let p = DescriptorPool::new(set).unwrap();
+        let field = p
+            .message_by_name("cardinality.test.Choice")
+            .unwrap()
+            .field(1)
+            .unwrap();
+        assert_eq!(field.oneof_index(), None);
+        if label == Label::LABEL_REPEATED {
+            assert!(matches!(field.kind(), FieldKind::List(_)));
+            assert_eq!(field.presence(), FieldPresence::Implicit);
+        } else {
+            assert!(matches!(field.kind(), FieldKind::Singular(_)));
+            assert_eq!(field.presence(), FieldPresence::LegacyRequired);
+        }
+    }
+}
+
 #[test]
 fn proto3_optional_fields_without_oneofs_are_rejected_transactionally() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;

@@ -245,6 +245,8 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// A oneof member has required or repeated cardinality instead of optional.
+    InvalidOneofCardinality { field: String },
     /// A field marked `proto3_optional` is not declared in a proto3 file.
     Proto3OptionalOutsideProto3 { field: String },
     /// A field marked `proto3_optional` does not have optional cardinality.
@@ -474,6 +476,9 @@ impl core::fmt::Display for PoolError {
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
             ),
+            Self::InvalidOneofCardinality { field } => {
+                write!(f, "field {field} is a oneof member but is not optional")
+            }
             Self::Proto3OptionalOutsideProto3 { field } => write!(
                 f,
                 "field {field} is marked proto3_optional outside a proto3 file"
@@ -853,7 +858,8 @@ impl DescriptorPool {
     /// number its message reserved, an extension range overlaps a reserved
     /// range, a message or enum declares a reserved name twice, an open enum's
     /// first value is non-zero, an enum value reuses a reserved name or number
-    /// or a duplicate number without `allow_alias`, a oneof index is invalid,
+    /// or a duplicate number without `allow_alias`, a oneof index is invalid
+    /// or a oneof member is not optional,
     /// a `proto3_optional` field is malformed, a message exceeds 65 535
     /// fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
@@ -878,8 +884,8 @@ impl DescriptorPool {
     /// overlapping extension range, duplicate symbols or field identities,
     /// duplicate reserved names, an open enum whose first value is non-zero,
     /// reserved enum values, duplicate enum numbers without `allow_alias`,
-    /// invalid oneof indices, malformed `proto3_optional` fields, or malformed
-    /// map entries).
+    /// invalid oneof indices, non-optional oneof members, malformed
+    /// `proto3_optional` fields, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -2241,6 +2247,9 @@ impl DescriptorPool {
             if containing_msg.is_some() && f.oneof_index.is_none() {
                 return Err(PoolError::Proto3OptionalWithoutOneof { field: field_fqn });
             }
+        }
+        if containing_msg.is_some() && f.oneof_index.is_some() && label != Label::LABEL_OPTIONAL {
+            return Err(PoolError::InvalidOneofCardinality { field: field_fqn });
         }
         let is_repeated = label == Label::LABEL_REPEATED;
 

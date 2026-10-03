@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Descriptor pools reject required and repeated oneof fields**. Oneof members must have optional cardinality, matching protoc. Invalid additions leave the existing pool unchanged.'
+time: 2026-10-04T00:21:38.997016+02:00
