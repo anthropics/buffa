@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Accept JSON null in reflective wrapper parsing.** Parsing a wrapper directly or as an Any payload now matches the typed wrappers and produces the default message.'
+time: 2026-10-04T00:57:32.343425+02:00
