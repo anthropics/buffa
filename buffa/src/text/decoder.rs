@@ -287,15 +287,20 @@ impl<'a> TextDecoder<'a> {
 
     /// Read an `f32` value.
     ///
-    /// Accepts decimal numeric forms plus the case-insensitive literals `nan`,
-    /// `inf`, `infinity`, each optionally with a leading `-` (whitespace or
-    /// comments may separate the sign from the literal). Overflow
-    /// saturates to ±∞ (matching C++ text-format behaviour).
+    /// Accepts a decimal number, optionally with an `f` suffix, or one of the
+    /// case-insensitive literals `nan`, `inf` and `infinity`. Either can
+    /// follow a `-`, and whitespace or comments can separate the sign from
+    /// what it negates.
+    ///
+    /// A number rounds once, to the nearest value of the type, ties to even.
+    /// Overflow gives ±∞ and underflow gives ±0.
     ///
     /// # Errors
     ///
-    /// [`ParseErrorKind::InvalidNumber`] if the token is neither a number nor
-    /// a recognised float literal.
+    /// [`ParseErrorKind::InvalidNumber`] if the token is a hex or octal
+    /// number, or an identifier other than `nan`, `inf` or `infinity`.
+    /// [`ParseErrorKind::UnexpectedToken`] if the token is a string or is not
+    /// a scalar.
     pub fn read_f32(&mut self) -> Result<f32, ParseError> {
         self.read_float(f32::NAN, f32::INFINITY)
     }
@@ -324,8 +329,10 @@ impl<'a> TextDecoder<'a> {
                 // the literal, so reuse its trivia handling for the raw span.
                 let (neg, lit) = match tok.raw.strip_prefix('-') {
                     Some(r) => {
-                        // `consume_ws` only stops at ASCII whitespace or a comment's
-                        // newline, neither of which can split a UTF-8 character.
+                        // `consume_ws` only stops after an ASCII whitespace
+                        // byte or a comment's `\n`, neither of which can sit
+                        // inside a multi-byte sequence, so the offset is a
+                        // char boundary even when a comment holds non-ASCII.
                         let trivia_len = r.len() - consume_ws(r.as_bytes()).len();
                         debug_assert!(r.is_char_boundary(trivia_len));
                         (true, &r[trivia_len..])
@@ -346,15 +353,24 @@ impl<'a> TextDecoder<'a> {
                     .ok_or_else(|| self.err_at(&tok, ParseErrorKind::InvalidNumber))?;
                 match num.kind {
                     NumKind::Dec | NumKind::Float => {
-                        // Parse directly to the requested precision. Parsing through f64 first
-                        // can double-round decimal values near an f32 midpoint.
+                        // Rust's float parse saturates to ±∞ on overflow and
+                        // to ±0.0 on underflow (since 1.55), both of which are
+                        // the behaviours the textproto spec requires. The sign
+                        // is preserved: `"-0"` and `"-1e-400"` parse to -0.0.
+                        //
+                        // The parse goes straight to `T` so that it rounds
+                        // once. Reading an `f32` as an `f64` and narrowing
+                        // rounds twice, and for a decimal just off the
+                        // midpoint of two `f32` values the result is one ulp
+                        // from the nearest `f32`.
                         number_for_parse(tok.raw, &num)
                             .parse::<T>()
                             .map_err(|_| self.err_at(&tok, ParseErrorKind::InvalidNumber))
                     }
                     NumKind::Hex | NumKind::Oct => {
                         // The textproto spec's FLOAT production is base-10
-                        // only; conformance tests require rejecting hex and octal.
+                        // only; `0x1` and `01` are not float literals. The
+                        // conformance suite explicitly tests rejection.
                         Err(self.err_at(&tok, ParseErrorKind::InvalidNumber))
                     }
                 }
@@ -1011,19 +1027,60 @@ mod tests {
     }
 
     #[test]
-    fn read_f32_rounds_directly_to_target_precision() {
-        // These values are just beyond the midpoint above/below 1.0f32. Parsing
-        // through f64 rounds to the midpoint first, then ties to the even 1.0f32.
+    fn read_f32_rounds_once() {
+        // Each input rounds to a different `f32` when it is read as an `f64`
+        // and narrowed: the `f64` lands on the midpoint of two `f32` values,
+        // and the tie then goes the other way.
         let cases = [
+            // Just past the midpoint of 1.0 and its neighbour.
             ("1.0000000596046447753906250000000000000001", 0x3f80_0001u32),
-            ("-1.0000000596046447753906250000000000000001", 0xbf80_0001u32),
+            (
+                "-1.0000000596046447753906250000000000000001",
+                0xbf80_0001u32,
+            ),
+            // The shortest decimal that identifies this `f32`.
+            ("7.038531e-26", 0x15ae_43fd),
+            // One below 2^128 - 2^103, the midpoint of `f32::MAX` and 2^128:
+            // narrowed, it overflows to infinity.
+            ("340282356779733661637539395458142568447", 0x7f7f_ffff),
+            // Just above 2^-150, the midpoint of zero and the smallest
+            // subnormal: narrowed, it underflows to zero.
+            (
+                "7.006492321624085354618647916449580656401309709382578858785341419448955413429303\
+                 00743319094181060791015625000000001e-46",
+                0x0000_0001,
+            ),
+        ];
+        for (input, expected) in cases {
+            let narrowed = input.parse::<f64>().unwrap() as f32;
+            assert_ne!(narrowed.to_bits(), expected, "input: {input}");
+
+            let full = alloc::format!("f: {input}");
+            let mut d = TextDecoder::new(&full);
+            d.read_field_name().unwrap();
+            let got = d.read_f32().unwrap();
+            assert_eq!(got.to_bits(), expected, "input: {input}");
+        }
+    }
+
+    #[test]
+    fn read_f32_ties_overflow_underflow_and_suffix() {
+        let cases = [
+            // The exact midpoint of 1.0 and its neighbour ties to even.
+            ("1.000000059604644775390625", 1.0f32),
+            ("1e39", f32::INFINITY),
+            ("-1e39", f32::NEG_INFINITY),
+            ("1e-46", 0.0),
+            ("-1e-46", -0.0),
+            ("1.5f", 1.5),
+            ("3.4028235e38", f32::MAX),
         ];
         for (input, expected) in cases {
             let full = alloc::format!("f: {input}");
             let mut d = TextDecoder::new(&full);
             d.read_field_name().unwrap();
             let got = d.read_f32().unwrap();
-            assert_eq!(got.to_bits(), expected, "input: {input}");
+            assert_eq!(got.to_bits(), expected.to_bits(), "input: {input}");
         }
     }
 
