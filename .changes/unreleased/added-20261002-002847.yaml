@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`ServiceIndex::index`** (#503) returns the ordinal a service index holds within the pool that issued it, equal to the service's position in `DescriptorPool::services`. It completes the set started by `MessageIndex::index`, `EnumIndex::index` and `ExtensionIndex::index` (#438).
+time: 2026-10-02T00:28:47.822349+02:00

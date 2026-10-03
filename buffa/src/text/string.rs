@@ -41,31 +41,32 @@ pub enum UnescapeError {
 /// Unescape a textproto string token — one or more adjacent quoted literals —
 /// into a byte vector.
 ///
-/// `raw` must begin with `"` or `'`. Adjacent literals (`"foo" 'bar'`) are
-/// concatenated: whitespace and `#` comments between them are consumed, the
-/// enclosing quotes are stripped, and escapes are resolved. This matches the
-/// textproto grammar's treatment of `"a" "b"` as a single scalar value `"ab"`.
+/// Adjacent literals (`"foo" 'bar'`) are concatenated: whitespace and `#`
+/// comments between them are consumed, the enclosing quotes are stripped, and
+/// escapes are resolved. This matches the textproto grammar's treatment of
+/// `"a" "b"` as a single scalar value `"ab"`.
 ///
 /// # Errors
 ///
-/// Returns [`UnescapeError::BadEscape`] on the first malformed escape or
-/// structural problem encountered.
+/// Returns [`UnescapeError::BadEscape`] when `raw` does not begin with `"` or
+/// `'`, when anything other than whitespace and `#` comments follows the last
+/// literal, and on the first malformed escape or unterminated literal.
 pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
-    debug_assert!(
-        matches!(raw.as_bytes().first(), Some(b'"' | b'\'')),
-        "unescape input must start with a quote; got {raw:?}"
-    );
     let mut out = Vec::new();
     let mut s = raw.as_bytes();
     loop {
-        // Each iteration consumes one quoted literal.
-        let Some(&quote) = s.first() else {
-            return Err(UnescapeError::BadEscape("unterminated string"));
+        // Each iteration consumes one quoted literal. Every iteration after
+        // the first starts at a quote (checked at the bottom of the loop), so
+        // the two error arms report on the start of `raw`.
+        let quote = match s.first() {
+            Some(&quote @ (b'"' | b'\'')) => quote,
+            Some(_) => {
+                return Err(UnescapeError::BadEscape(
+                    "string literal must start with a quote",
+                ));
+            }
+            None => return Err(UnescapeError::BadEscape("unterminated string")),
         };
-        if quote != b'"' && quote != b'\'' {
-            // Not a string-literal opener — we're done with adjacent concatenation.
-            break;
-        }
         s = &s[1..];
         loop {
             match s.first() {
@@ -155,13 +156,19 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
                 }
             }
         }
-        // Skip whitespace and comments; continue only if another quote follows.
+        // Skip whitespace and comments. Another quote continues the
+        // concatenation; the end of input completes it.
         s = super::token::consume_ws(s);
-        if !matches!(s.first(), Some(b'"') | Some(b'\'')) {
-            break;
+        match s.first() {
+            Some(b'"' | b'\'') => {}
+            Some(_) => {
+                return Err(UnescapeError::BadEscape(
+                    "unexpected content after string literal",
+                ));
+            }
+            None => return Ok(out),
         }
     }
-    Ok(out)
 }
 
 /// Unescape a textproto string token and validate as UTF-8.
@@ -358,6 +365,23 @@ mod tests {
         for &(input, expected) in cases {
             let got = unescape(input).ok();
             assert_eq!(got.as_deref(), expected, "input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn unescape_rejects_content_outside_quotes() {
+        for (input, reason) in [
+            ("", "unterminated string"),
+            ("hello", "string literal must start with a quote"),
+            (" hello", "string literal must start with a quote"),
+            (" \"hello\"", "string literal must start with a quote"),
+            ("\"a\" b", "unexpected content after string literal"),
+            ("\"\" hello", "unexpected content after string literal"),
+            ("\"a\" # c\n b", "unexpected content after string literal"),
+        ] {
+            let want = UnescapeError::BadEscape(reason);
+            assert_eq!(unescape(input), Err(want), "input: {input:?}");
+            assert_eq!(unescape_str(input), Err(want), "input: {input:?}");
         }
     }
 

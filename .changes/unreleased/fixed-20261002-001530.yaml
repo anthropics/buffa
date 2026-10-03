@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`text::unescape` and `text::unescape_str` return an error for content outside a quoted literal** (#502). Called directly with unquoted input such as `hello`, they returned empty output in a release build and panicked in a debug build, and content after the last literal (`"a" b`) was dropped. Both now return `UnescapeError::BadEscape`. Text-format parsing is unchanged, because the parser passes these functions only quoted tokens.
+time: 2026-10-02T00:15:30.668802+02:00

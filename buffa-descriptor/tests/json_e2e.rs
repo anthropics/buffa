@@ -83,6 +83,102 @@ fn json_scalar_round_trip() {
 }
 
 #[test]
+fn json_bytes_follow_shared_base64_decoder_rules() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+
+    let accepted: &[(&str, &[u8])] = &[
+        // One byte: either alphabet, padded or unpadded.
+        ("+w==", &[0xfb]),
+        ("-w==", &[0xfb]),
+        ("+w", &[0xfb]),
+        ("-w", &[0xfb]),
+        // Non-zero trailing bits and a short pad are tolerated.
+        ("Zh==", b"f"),
+        ("Zg=", b"f"),
+        // Two bytes.
+        ("Zm8=", b"fo"),
+        ("Zm8", b"fo"),
+        ("+/8=", &[0xfb, 0xff]),
+        ("-_8", &[0xfb, 0xff]),
+        // Three bytes: a whole group, no padding in either form.
+        ("Zm9v", b"foo"),
+        ("++++", &[0xfb, 0xef, 0xbe]),
+        ("----", &[0xfb, 0xef, 0xbe]),
+        // A whole group followed by a partial one.
+        ("Zm9vYg==", b"foob"),
+        ("Zm9vYg", b"foob"),
+    ];
+    for &(encoded, expected) in accepted {
+        let input = format!(r#"{{"fBytes":"{encoded}"}}"#);
+        let parsed = DynamicMessage::from_json(Arc::clone(&p), idx, &input)
+            .unwrap_or_else(|e| panic!("base64 input {encoded} must be accepted: {e}"));
+        assert_eq!(
+            parsed.field_by_number(15),
+            Some(&Value::Bytes(expected.to_vec())),
+            "decoded bytes for {encoded}"
+        );
+    }
+
+    for (encoded, why) in [
+        ("+_", "both alphabets"),
+        ("/-", "both alphabets"),
+        ("++--", "both alphabets"),
+        ("Zm9v+w-_", "both alphabets"),
+        ("Zg===", "excess padding"),
+        ("Zm8==", "excess padding"),
+        ("Zm9v=", "excess padding"),
+        ("Zm9v==", "excess padding"),
+        ("=", "padding with no data"),
+        ("==", "padding with no data"),
+        ("====", "padding with no data"),
+        ("Zg==Zg==", "padding before the end"),
+        ("Zm9vZ", "lone trailing character"),
+        ("Zm 9v", "character outside both alphabets"),
+    ] {
+        let input = format!(r#"{{"fBytes":"{encoded}"}}"#);
+        assert!(
+            DynamicMessage::from_json(Arc::clone(&p), idx, &input).is_err(),
+            "base64 input {encoded} must be rejected: {why}"
+        );
+    }
+}
+
+#[test]
+fn json_bytes_serialize_as_standard_padded_base64() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+
+    let cases: &[(&[u8], &str)] = &[
+        (b"f", "Zg=="),
+        (b"fo", "Zm8="),
+        (b"foo", "Zm9v"),
+        (b"foob", "Zm9vYg=="),
+        // Sextets 62 and 63 are `+` and `/`, not the URL-safe `-` and `_`.
+        (&[0xfb, 0xff], "+/8="),
+        (&[0xfb, 0xef, 0xbe], "++++"),
+        (&[0xff, 0xff, 0xff], "////"),
+    ];
+    for &(bytes, encoded) in cases {
+        let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+        msg.set(md.field(15).unwrap(), Value::Bytes(bytes.to_vec()));
+        let json = msg.to_json().unwrap();
+        assert_eq!(json, format!(r#"{{"fBytes":"{encoded}"}}"#));
+        let parsed = DynamicMessage::from_json(Arc::clone(&p), idx, &json).unwrap();
+        assert_eq!(parsed, msg, "round trip of {encoded}");
+    }
+
+    // An empty value is the proto3 default: left out on output, accepted as
+    // `""` on input.
+    let empty = DynamicMessage::new(Arc::clone(&p), idx);
+    assert_eq!(empty.to_json().unwrap(), "{}");
+    let parsed = DynamicMessage::from_json(Arc::clone(&p), idx, r#"{"fBytes":""}"#).unwrap();
+    assert_eq!(parsed.field_by_number(15), Some(&Value::Bytes(Vec::new())));
+    assert_eq!(parsed.to_json().unwrap(), "{}");
+}
+
+#[test]
 fn json_integer_parsing_matches_generated_messages() {
     let p = pool();
     let idx = p.message_index("reflect.test.Scalars").unwrap();
