@@ -193,9 +193,9 @@ pub fn unescape_str(raw: &str) -> Result<Cow<'_, str>, UnescapeError> {
                 let b = inner[i];
                 if b == quote {
                     // Found closing quote. If nothing follows, we can borrow.
-                    // Trailing whitespace is fine (tokenizer may include it).
+                    // Trailing whitespace and comments do not change the literal.
                     let tail = &inner[i + 1..];
-                    if tail.iter().all(|&c| super::token::is_textproto_ws(c)) {
+                    if super::token::consume_ws(tail).is_empty() {
                         // The original `raw` is &str, so this slice is valid
                         // UTF-8 by construction (no escapes present means no
                         // byte-level rewriting happened).
@@ -410,6 +410,38 @@ mod tests {
         // Tokenizer may hand over a raw span with trailing whitespace.
         let got = unescape_str("\"hello\"  ").unwrap();
         assert!(matches!(got, Cow::Borrowed("hello")));
+    }
+
+    #[test]
+    fn unescape_str_borrows_with_trailing_comments() {
+        for (input, expected) in [
+            ("\"hello\"# trailing", "hello"),
+            ("'hello' \t# trailing\n \r\x0B\x0C", "hello"),
+            ("\"café 😀\" # café 😀\n# another comment\n", "café 😀"),
+            ("\"hello\" # \"another literal\" \\z", "hello"),
+            ("\"\" # trailing", ""),
+            ("\"a#b\" # trailing", "a#b"),
+        ] {
+            let got = unescape_str(input).unwrap();
+            assert_eq!(got, expected, "input: {input:?}");
+            assert!(matches!(got, Cow::Borrowed(_)), "input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn unescape_str_owns_when_comments_separate_literals() {
+        for input in ["\"foo\" # between\n \"bar\"", "'foo' # between\n 'bar'"] {
+            let got = unescape_str(input).unwrap();
+            assert_eq!(got, "foobar", "input: {input:?}");
+            assert!(matches!(got, Cow::Owned(_)), "input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn unescape_str_owns_when_escaped_with_trailing_comment() {
+        let got = unescape_str("\"hel\\nlo\" # trailing").unwrap();
+        assert!(matches!(got, Cow::Owned(_)));
+        assert_eq!(got, "hel\nlo");
     }
 
     #[test]

@@ -1,0 +1,3 @@
+kind: Changed
+body: 'Textproto: `unescape_str` now borrows unescaped single literals followed by whitespace and comments instead of allocating a copy.'
+time: 2026-10-03T21:18:07.895583+02:00
