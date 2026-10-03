@@ -542,8 +542,15 @@ fn serialize_any<S: Serializer>(
 
 /// Deserialize an `Any` from `{"@type": ..., ...}`. Buffers the object
 /// because `@type` may come before or after the inner fields
-/// (`AnyUnorderedTypeTag`), and buffers it with `BufferedObject`, never with
-/// `serde_json::Map`'s own `Deserialize`: see `buffa::json_helpers::buffered`.
+/// (`AnyUnorderedTypeTag`), and buffers it with `buffered::charged_object`,
+/// never with `serde_json::Map`'s own `Deserialize`: see
+/// `buffa::json_helpers::buffered`.
+///
+/// The buffer is charged to `budget` at the map-entry rate for each object
+/// member it holds and at the repeated-element rate for each array element.
+/// The charge is returned once the payload has been decoded from the buffer.
+/// While it is held, the elements that decode builds are charged too, so the
+/// buffer and the message built from it fit the limit together.
 #[cfg(feature = "std")]
 fn deserialize_any<'de, D: Deserializer<'de>>(
     pool: Arc<DescriptorPool>,
@@ -552,25 +559,17 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     ignore_unknown: bool,
     budget: &Cell<usize>,
 ) -> Result<DynamicMessage, D::Error> {
+    use buffa::json_helpers::buffered;
     use serde::de::Error as _;
-    // #493: charge the buffered `serde_json::Value` tree against the element
-    // memory limit while it is built, so an oversized `Any` payload fails
-    // before it is fully buffered rather than being bounded by the input
-    // length alone. The buffer draws on a scratch copy of the remaining
-    // budget; the real `budget` is charged by the replay below (as it always
-    // was), so the payload is not counted twice — refund-on-replay, the first
-    // strategy the issue names. The scratch starts from what is left, so an
-    // `Any` reached after other large fields gets less room, like every other
-    // element on this one shared budget.
-    let scratch = Cell::new(budget.get());
-    let mut obj = buffa::json_helpers::buffered::ChargingObject(
-        buffa::json_helpers::buffered::Budget {
-            remaining: &scratch,
-            per_value: core::mem::size_of::<Value>(),
-            limit_msg: ELEMENT_MEMORY_LIMIT_EXCEEDED,
-        },
-    )
-    .deserialize(d)?;
+    let before_buffer = budget.get();
+    let mut obj = buffered::charged_object(
+        d,
+        budget,
+        core::mem::size_of::<MapKey>() + core::mem::size_of::<Value>(),
+        core::mem::size_of::<Value>(),
+        ELEMENT_MEMORY_LIMIT_EXCEEDED,
+    )?;
+    let buffer_charge = before_buffer - budget.get();
     let mut any = DynamicMessage::new(Arc::clone(&pool), midx);
     if obj.is_empty() {
         return Ok(any);
@@ -627,6 +626,9 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
             D::Error::custom(format!("Any inner deserialize failed: {e}"))
         }
     })?;
+    // The decode is done with the buffer, so its charge goes back. The error
+    // returns above keep the charge; each of them fails the whole parse.
+    budget.set(budget.get() + buffer_charge);
     let inner_bytes = inner
         .try_encode_to_vec()
         .map_err(|e| D::Error::custom(format!("Any inner re-encode failed: {e}")))?;
