@@ -335,15 +335,14 @@ pub mod __private {
 
     // ── Type-agnostic `Arbitrary` builders for configurable owned types ──────
     //
-    // These replace the per-type shims above (`arbitrary_ecow*`,
-    // `arbitrary_bytes*`): codegen attaches them to any field whose
-    // representation is non-default, selecting by *kind* (string vs bytes,
-    // singular vs optional vs repeated) rather than by the concrete type. They
-    // build the canonical `String` / `Vec<u8>` first and convert through the
-    // `From` bound, so a substituted type needs no native `Arbitrary` impl and
-    // codegen carries no knowledge of any specific type. Materializing the
-    // canonical type first also keeps byte-consumption order identical to the
-    // default-representation impl, which the parity tests assert.
+    // Codegen attaches them to any field whose representation is non-default,
+    // selecting by *kind* (string vs bytes, singular vs optional vs repeated)
+    // rather than by the concrete type. They build the canonical `String` /
+    // `Vec<u8>` first and convert through the `From` bound, so a substituted
+    // type needs no native `Arbitrary` impl and codegen carries no knowledge of
+    // any specific type. Materializing the canonical type first also keeps
+    // byte-consumption order identical to the default-representation impl,
+    // which the parity tests assert.
 
     /// Build a [`ProtoString`](crate::ProtoString) from `Arbitrary` bytes.
     #[cfg(feature = "arbitrary")]
@@ -364,13 +363,19 @@ pub mod __private {
         Ok(opt.map(S::from))
     }
 
-    /// Build a `Vec<S>` for a repeated `string` field.
+    /// Build the collection of a repeated `string` field: `Vec<S>`, or a
+    /// custom [`ProtoList<S>`](crate::ProtoList). The `Deref` bound names the
+    /// element type, so `S` is inferred from the field type.
     #[cfg(feature = "arbitrary")]
-    pub fn arbitrary_proto_string_vec<S: crate::ProtoString>(
+    pub fn arbitrary_proto_string_vec<S, L>(
         u: &mut ::arbitrary::Unstructured<'_>,
-    ) -> ::arbitrary::Result<::alloc::vec::Vec<S>> {
+    ) -> ::arbitrary::Result<L>
+    where
+        S: crate::ProtoString,
+        L: ::core::ops::Deref<Target = [S]> + ::core::convert::From<::alloc::vec::Vec<S>>,
+    {
         let vv: ::alloc::vec::Vec<::alloc::string::String> = ::arbitrary::Arbitrary::arbitrary(u)?;
-        Ok(vv.into_iter().map(S::from).collect())
+        Ok(L::from(vv.into_iter().map(S::from).collect()))
     }
 
     /// Build a [`ProtoBytes`](crate::ProtoBytes) from `Arbitrary` bytes.
@@ -392,19 +397,53 @@ pub mod __private {
         Ok(opt.map(B::from))
     }
 
-    /// Build a `Vec<B>` for a repeated `bytes` field.
+    /// Build the collection of a repeated `bytes` field: `Vec<B>`, or a
+    /// custom [`ProtoList<B>`](crate::ProtoList). The `Deref` bound names the
+    /// element type, so `B` is inferred from the field type.
     #[cfg(feature = "arbitrary")]
-    pub fn arbitrary_proto_bytes_vec<B: crate::ProtoBytes>(
+    pub fn arbitrary_proto_bytes_vec<B, L>(
         u: &mut ::arbitrary::Unstructured<'_>,
-    ) -> ::arbitrary::Result<::alloc::vec::Vec<B>> {
+    ) -> ::arbitrary::Result<L>
+    where
+        B: crate::ProtoBytes,
+        L: ::core::ops::Deref<Target = [B]> + ::core::convert::From<::alloc::vec::Vec<B>>,
+    {
         let vv: ::alloc::vec::Vec<::alloc::vec::Vec<u8>> = ::arbitrary::Arbitrary::arbitrary(u)?;
-        Ok(vv.into_iter().map(B::from).collect())
+        Ok(L::from(vv.into_iter().map(B::from).collect()))
     }
 
-    /// Build the owned map collection for a `map<K, bytes>` field with a
-    /// non-default value representation. Generic over the container (any
-    /// [`MapStorage`](crate::map_codec::MapStorage)) and the key type, so a
-    /// `HashMap`, `BTreeMap`, or custom map field needs no per-container shim.
+    // `map` fields: one builder per combination of slots that need converting.
+    // A slot converts when its type is a custom `string` type or a non-default
+    // `bytes` type; any other slot uses its own `Arbitrary` impl. All of them are
+    // generic over the container (any `MapStorage`), so a `HashMap`, `BTreeMap`
+    // or custom map field uses the same builder, and a custom container needs
+    // no `Arbitrary` impl on these fields.
+
+    /// Build a map from entries of the source types `K` and `V`, converting
+    /// each slot through `From`. A slot that needs no conversion passes its
+    /// own type (`From<T> for T`). Consumes the same bytes as
+    /// `HashMap<K, V>`'s `Arbitrary` impl.
+    #[cfg(feature = "arbitrary")]
+    fn arbitrary_map_from<'a, C, K, V>(
+        u: &mut ::arbitrary::Unstructured<'a>,
+    ) -> ::arbitrary::Result<C>
+    where
+        C: crate::map_codec::MapStorage + Default,
+        C::Key: ::core::convert::From<K>,
+        C::Value: ::core::convert::From<V>,
+        K: ::arbitrary::Arbitrary<'a>,
+        V: ::arbitrary::Arbitrary<'a>,
+    {
+        let mut out = C::default();
+        for entry in u.arbitrary_iter::<(K, V)>()? {
+            let (key, value) = entry?;
+            out.storage_insert(key.into(), value.into());
+        }
+        Ok(out)
+    }
+
+    /// Build a `map<K, bytes>` field whose value is a non-default `bytes` type
+    /// (`bytes::Bytes` or a custom one) and whose key is not a custom string.
     #[cfg(feature = "arbitrary")]
     pub fn arbitrary_proto_bytes_map<'a, C>(
         u: &mut ::arbitrary::Unstructured<'a>,
@@ -414,22 +453,75 @@ pub mod __private {
         C::Key: ::arbitrary::Arbitrary<'a>,
         C::Value: crate::ProtoBytes,
     {
-        let mut out = C::default();
-        for entry in u.arbitrary_iter::<(C::Key, ::alloc::vec::Vec<u8>)>()? {
-            let (k, v) = entry?;
-            out.storage_insert(k, <C::Value as ::core::convert::From<_>>::from(v));
-        }
-        Ok(out)
+        arbitrary_map_from::<C, C::Key, ::alloc::vec::Vec<u8>>(u)
+    }
+
+    /// Build a `map<string, V>` field whose key is a custom string type and
+    /// whose value is neither a custom string nor a non-default `bytes` type.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_string_map_key<'a, C>(
+        u: &mut ::arbitrary::Unstructured<'a>,
+    ) -> ::arbitrary::Result<C>
+    where
+        C: crate::map_codec::MapStorage + Default,
+        C::Key: crate::ProtoString,
+        C::Value: ::arbitrary::Arbitrary<'a>,
+    {
+        arbitrary_map_from::<C, ::alloc::string::String, C::Value>(u)
+    }
+
+    /// Build a `map<K, string>` field whose value is a custom string type and
+    /// whose key is not a `string`.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_string_map_value<'a, C>(
+        u: &mut ::arbitrary::Unstructured<'a>,
+    ) -> ::arbitrary::Result<C>
+    where
+        C: crate::map_codec::MapStorage + Default,
+        C::Key: ::arbitrary::Arbitrary<'a>,
+        C::Value: crate::ProtoString,
+    {
+        arbitrary_map_from::<C, C::Key, ::alloc::string::String>(u)
+    }
+
+    /// Build a `map<string, string>` field whose key and value are a custom
+    /// string type.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_string_map<'a, C>(
+        u: &mut ::arbitrary::Unstructured<'a>,
+    ) -> ::arbitrary::Result<C>
+    where
+        C: crate::map_codec::MapStorage + Default,
+        C::Key: crate::ProtoString,
+        C::Value: crate::ProtoString,
+    {
+        arbitrary_map_from::<C, ::alloc::string::String, ::alloc::string::String>(u)
+    }
+
+    /// Build a `map<string, bytes>` field whose key is a custom string type
+    /// and whose value is a non-default `bytes` type.
+    #[cfg(feature = "arbitrary")]
+    pub fn arbitrary_proto_string_bytes_map<'a, C>(
+        u: &mut ::arbitrary::Unstructured<'a>,
+    ) -> ::arbitrary::Result<C>
+    where
+        C: crate::map_codec::MapStorage + Default,
+        C::Key: crate::ProtoString,
+        C::Value: crate::ProtoBytes,
+    {
+        arbitrary_map_from::<C, ::alloc::string::String, ::alloc::vec::Vec<u8>>(u)
     }
 }
 
 #[cfg(all(test, feature = "arbitrary"))]
 mod arbitrary_tests {
     use super::__private::{
-        arbitrary_proto_bytes, arbitrary_proto_bytes_opt, arbitrary_proto_bytes_vec,
+        arbitrary_proto_bytes, arbitrary_proto_bytes_map, arbitrary_proto_bytes_opt,
+        arbitrary_proto_bytes_vec, arbitrary_proto_string_bytes_map, arbitrary_proto_string_map,
+        arbitrary_proto_string_map_key, arbitrary_proto_string_map_value, HashMap,
     };
     use ::bytes::Bytes;
-    use alloc::vec::Vec;
+    use alloc::{string::String, vec::Vec};
     use arbitrary::{Arbitrary, Unstructured};
 
     /// Non-zero seed so the helper has data to consume — an all-zero buffer
@@ -483,16 +575,145 @@ mod arbitrary_tests {
         }
     }
 
+    /// A custom repeated collection with no `Arbitrary` impl.
+    #[derive(Debug, PartialEq)]
+    struct List<T>(Vec<T>);
+
+    impl<T> core::ops::Deref for List<T> {
+        type Target = [T];
+        fn deref(&self) -> &[T] {
+            &self.0
+        }
+    }
+
+    impl<T> From<Vec<T>> for List<T> {
+        fn from(v: Vec<T>) -> Self {
+            List(v)
+        }
+    }
+
+    // The repeated builders return whatever collection the field uses; the
+    // element type is inferred from the collection.
+    #[test]
+    fn arbitrary_proto_vec_builders_fill_a_custom_collection() {
+        use super::__private::arbitrary_proto_string_vec;
+
+        let bs: List<Bytes> = arbitrary_proto_bytes_vec(&mut Unstructured::new(&SEED)).unwrap();
+        let vs: Vec<Vec<u8>> = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert!(!vs.is_empty(), "the seed must produce elements");
+        assert_eq!(bs.iter().map(|b| b.to_vec()).collect::<Vec<_>>(), vs);
+
+        let ss: List<String> = arbitrary_proto_string_vec(&mut Unstructured::new(&SEED)).unwrap();
+        let vs: Vec<String> = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert!(!vs.is_empty(), "the seed must produce elements");
+        assert_eq!(ss, List(vs));
+    }
+
     // The generic `arbitrary_proto_string` builder is the identity for `String`;
     // confirm it consumes bytes identically to the native `String` impl.
     #[test]
     fn arbitrary_proto_string_matches_string() {
         use super::__private::arbitrary_proto_string;
-        use alloc::string::String;
 
         let s: String = arbitrary_proto_string(&mut Unstructured::new(&SEED)).unwrap();
         let v: String = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
         assert_eq!(s, v);
+    }
+
+    // The map builders consume the same bytes as the native `HashMap<K, V>`
+    // impl of the source types. `String` and `Bytes` stand in for the custom
+    // types; the `string_map` fixture in `buffa-test` covers a real newtype.
+    fn native_map<K, V>() -> HashMap<K, V>
+    where
+        K: for<'a> Arbitrary<'a> + Eq + core::hash::Hash,
+        V: for<'a> Arbitrary<'a>,
+    {
+        let native: HashMap<K, V> = Arbitrary::arbitrary(&mut Unstructured::new(&SEED)).unwrap();
+        assert!(!native.is_empty(), "the seed must produce map entries");
+        native
+    }
+
+    #[test]
+    fn arbitrary_proto_string_map_key_matches_native_map() {
+        let mapped: HashMap<String, u32> =
+            arbitrary_proto_string_map_key(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(mapped, native_map::<String, u32>());
+    }
+
+    #[test]
+    fn arbitrary_proto_string_map_value_matches_native_map() {
+        let mapped: HashMap<u32, String> =
+            arbitrary_proto_string_map_value(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(mapped, native_map::<u32, String>());
+    }
+
+    #[test]
+    fn arbitrary_proto_string_map_matches_native_map() {
+        let mapped: HashMap<String, String> =
+            arbitrary_proto_string_map(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(mapped, native_map::<String, String>());
+    }
+
+    #[test]
+    fn arbitrary_proto_string_map_key_fills_a_btree_map() {
+        use alloc::collections::BTreeMap;
+
+        let mapped: BTreeMap<String, u32> =
+            arbitrary_proto_string_map_key(&mut Unstructured::new(&SEED)).unwrap();
+        let native = native_map::<String, u32>();
+        assert_eq!(mapped, native.into_iter().collect());
+    }
+
+    /// A custom map container with no `Arbitrary` impl.
+    #[derive(Default)]
+    struct PairList(Vec<(String, u32)>);
+
+    impl crate::map_codec::MapStorage for PairList {
+        type Key = String;
+        type Value = u32;
+        fn storage_len(&self) -> usize {
+            self.0.len()
+        }
+        fn storage_insert(&mut self, key: String, value: u32) {
+            self.0.retain(|(k, _)| *k != key);
+            self.0.push((key, value));
+        }
+        fn storage_clear(&mut self) {
+            self.0.clear();
+        }
+        fn storage_iter<'a>(&'a self) -> impl Iterator<Item = (&'a String, &'a u32)>
+        where
+            String: 'a,
+            u32: 'a,
+        {
+            self.0.iter().map(|(k, v)| (k, v))
+        }
+    }
+
+    #[test]
+    fn arbitrary_proto_string_map_key_fills_a_container_without_arbitrary() {
+        let mapped: PairList =
+            arbitrary_proto_string_map_key(&mut Unstructured::new(&SEED)).unwrap();
+        let mapped: HashMap<String, u32> = mapped.0.into_iter().collect();
+        assert_eq!(mapped, native_map::<String, u32>());
+    }
+
+    fn to_vec_values<K: Eq + core::hash::Hash>(map: HashMap<K, Bytes>) -> HashMap<K, Vec<u8>> {
+        map.into_iter().map(|(k, v)| (k, v.to_vec())).collect()
+    }
+
+    #[test]
+    fn arbitrary_proto_bytes_map_matches_native_map() {
+        let mapped: HashMap<u32, Bytes> =
+            arbitrary_proto_bytes_map(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(to_vec_values(mapped), native_map::<u32, Vec<u8>>());
+    }
+
+    #[test]
+    fn arbitrary_proto_string_bytes_map_matches_native_map() {
+        let mapped: HashMap<String, Bytes> =
+            arbitrary_proto_string_bytes_map(&mut Unstructured::new(&SEED)).unwrap();
+        assert_eq!(to_vec_values(mapped), native_map::<String, Vec<u8>>());
     }
 }
 
