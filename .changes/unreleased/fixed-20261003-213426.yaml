@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Reject unrecognized file syntax in descriptor pools.** Files with an unknown syntax now return `PoolError::UnrecognizedSyntax` instead of silently using proto2 defaults. Missing and empty syntax still default to proto2.'
+time: 2026-10-03T21:34:26.89645+02:00
