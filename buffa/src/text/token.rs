@@ -215,9 +215,9 @@ impl<'a> Tokenizer<'a> {
 
     /// Convert a byte offset into the input into a 1-based (line, column).
     ///
-    /// Column counts Unicode scalar values, not bytes. `pos` past the end of
-    /// input clamps to the final position. An offset inside a UTF-8 character
-    /// is treated as that character's start.
+    /// Column counts Unicode scalar values, not bytes. A `pos` past the end
+    /// of the input gives the position just after the last character. An
+    /// offset inside a UTF-8 character is treated as that character's start.
     ///
     /// Line and column use `u32`: inputs larger than ~4 GiB would wrap, but
     /// that is not a realistic textproto size and this is error-reporting only.
@@ -1496,6 +1496,12 @@ mod tests {
         }
         assert_eq!(t.line_col(4), (1, 2));
         assert_eq!(t.line_col(usize::MAX), (1, 2));
+
+        // '€' is 3 bytes; the offsets inside it and the one after it differ.
+        let t = Tokenizer::new("a€b");
+        assert_eq!(t.line_col(2), (1, 2));
+        assert_eq!(t.line_col(3), (1, 2));
+        assert_eq!(t.line_col(4), (1, 3));
     }
 
     #[test]
