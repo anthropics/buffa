@@ -197,12 +197,11 @@ impl Config {
     /// arbitrary = ["dep:arbitrary", "buffa/arbitrary"]
     /// ```
     ///
-    /// Forgetting `"buffa/arbitrary"` produces a confusing
-    /// `cannot find function 'arbitrary_bytes' in module '__private'` error
-    /// in generated code when [`use_bytes_type`](Self::use_bytes_type) or
-    /// [`use_bytes_type_in`](Self::use_bytes_type_in) is also enabled,
-    /// because the helper that backs `#[arbitrary(with = ...)]` for
-    /// `bytes::Bytes` fields lives in `buffa` under that feature gate.
+    /// Forgetting `"buffa/arbitrary"` produces a confusing error in generated
+    /// code, such as ``cannot find function `arbitrary_proto_bytes` in module
+    /// `buffa::__private` ``, when a `string_type` or `bytes_type` rule selects
+    /// a non-default type: the functions that back `#[arbitrary(with = ...)]`
+    /// on those fields live in `buffa` under that feature gate.
     #[must_use]
     pub fn generate_arbitrary(mut self, enabled: bool) -> Self {
         self.codegen_config.generate_arbitrary = enabled;
@@ -1419,10 +1418,9 @@ impl Config {
     ///   default `HashMap` container, or `Ord` for `BTreeMap`.
     /// - A `path` that does not parse as a Rust type is reported as a codegen
     ///   error from [`compile`](Self::compile).
-    /// - A custom string type needs no native `arbitrary::Arbitrary` impl on
-    ///   singular, optional, repeated and oneof fields (a generic builder
-    ///   handles them under `generate_arbitrary`). One used as a `map` key or
-    ///   value must implement `Arbitrary`.
+    /// - A custom string type needs no native `arbitrary::Arbitrary` impl (a
+    ///   generic builder handles it under `generate_arbitrary`, as a `map` key
+    ///   or value too).
     #[must_use]
     pub fn string_type_custom_in(self, path: &str, paths: &[impl AsRef<str>]) -> Self {
         self.string_type_in(StringRepr::Custom(path.to_string()), paths)
