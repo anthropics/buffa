@@ -505,7 +505,7 @@ fn serialize_any<S: Serializer>(
         // Empty Any → empty object.
         return s.serialize_map(Some(0))?.end();
     }
-    let Some(inner_idx) = resolve_any_type(pool, type_url) else {
+    let Some(inner_idx) = super::dynamic::resolve_any_type(pool, type_url) else {
         return Err(S::Error::custom(format!(
             "Any type_url {type_url:?} not registered in the descriptor pool"
         )));
@@ -577,7 +577,7 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     let Some(serde_json::Value::String(type_url)) = obj.remove("@type") else {
         return Err(D::Error::custom("Any object missing string \"@type\""));
     };
-    let Some(inner_idx) = resolve_any_type(&pool, &type_url) else {
+    let Some(inner_idx) = super::dynamic::resolve_any_type(&pool, &type_url) else {
         return Err(D::Error::custom(format!(
             "Any type_url {type_url:?} not registered in the descriptor pool"
         )));
@@ -649,14 +649,6 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
         "Any JSON deserialization requires the `std` feature",
     ))
 }
-
-/// Resolve a `type_url` to a [`MessageIndex`]. Accepts `type.googleapis.com/`
-/// and any other prefix; the type name is the segment after the last `/`.
-fn resolve_any_type(pool: &DescriptorPool, type_url: &str) -> Option<MessageIndex> {
-    let name = type_url.rsplit('/').next()?;
-    pool.message_index(name)
-}
-
 
 // ── Timestamp / Duration / FieldMask formatting ─────────────────────────────
 //

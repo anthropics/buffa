@@ -1519,8 +1519,8 @@ impl DynamicMessage {
     ///
     /// - [`AnyError::NotAny`] if this message is not a `google.protobuf.Any`.
     /// - [`AnyError::MissingTypeUrl`] if the `Any` has no `type_url`.
-    /// - [`AnyError::UnknownType`] if the `type_url` names a type the pool
-    ///   doesn't carry.
+    /// - [`AnyError::UnknownType`] if the `type_url` has no non-empty name
+    ///   after a `/`, or names a type the pool doesn't carry.
     /// - [`AnyError::Decode`] if the wrapped bytes are malformed. Note that
     ///   an `Any` whose `value` is absent or empty is **not** an error: it
     ///   decodes to a default-valued message of the resolved type, per the
@@ -1541,13 +1541,9 @@ impl DynamicMessage {
             Some(Value::Bytes(b)) => b,
             _ => &[],
         };
-        let type_name = type_url.rsplit('/').next().unwrap_or(type_url);
-        let idx = self
-            .pool
-            .message_index(type_name)
-            .ok_or_else(|| AnyError::UnknownType {
-                type_url: type_url.to_owned(),
-            })?;
+        let idx = resolve_any_type(&self.pool, type_url).ok_or_else(|| AnyError::UnknownType {
+            type_url: type_url.to_owned(),
+        })?;
         DynamicMessage::decode(Arc::clone(&self.pool), idx, value).map_err(|source| {
             AnyError::Decode {
                 type_url: type_url.to_owned(),
@@ -1633,6 +1629,15 @@ impl DynamicMessage {
 /// The fully-qualified name of `google.protobuf.Any`.
 const ANY_FULL_NAME: &str = "google.protobuf.Any";
 
+/// Resolve an Any URL whose last `/` is followed by a non-empty type name.
+pub(super) fn resolve_any_type(pool: &DescriptorPool, type_url: &str) -> Option<MessageIndex> {
+    let (_, name) = type_url.rsplit_once('/')?;
+    if name.is_empty() {
+        return None;
+    }
+    pool.message_index(name)
+}
+
 /// An error from [`DynamicMessage::unpack_any`] or
 /// [`DynamicMessage::pack_any`].
 #[derive(Clone, Debug)]
@@ -1649,7 +1654,8 @@ pub enum AnyError {
     AnyNotRegistered,
     /// The `Any` has no `type_url` (field 1 absent, empty, or not a string).
     MissingTypeUrl,
-    /// The `Any`'s `type_url` names a type the pool does not carry.
+    /// The `Any`'s `type_url` has no non-empty name after a `/`, or names a
+    /// type the pool does not carry.
     UnknownType {
         /// The unresolvable type URL.
         type_url: String,

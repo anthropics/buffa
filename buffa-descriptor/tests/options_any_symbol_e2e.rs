@@ -132,6 +132,80 @@ fn any_json_spreads_payload_extensions() {
     assert_eq!(parsed.unpack_any().unwrap(), opts);
 }
 
+#[cfg(feature = "json")]
+#[test]
+fn empty_any_json_preserves_empty_object() {
+    let p = pool();
+    let any_idx = p.message_index("google.protobuf.Any").unwrap();
+    let any = DynamicMessage::new(Arc::clone(&p), any_idx);
+    assert_eq!(any.to_json().unwrap(), "{}");
+    for input in ["{}", r#"{"@type":""}"#] {
+        let strict = DynamicMessage::from_json(Arc::clone(&p), any_idx, input);
+        let lenient = DynamicMessage::from_json_ignoring_unknown(Arc::clone(&p), any_idx, input);
+        if input == "{}" {
+            assert_eq!(strict.unwrap(), any);
+            assert_eq!(lenient.unwrap(), any);
+        } else {
+            assert!(strict.is_err());
+            assert!(lenient.is_err());
+        }
+    }
+}
+
+#[cfg(feature = "json")]
+#[test]
+fn any_json_requires_a_slash_and_non_empty_type_name() {
+    let p = pool();
+    let any_idx = p.message_index("google.protobuf.Any").unwrap();
+
+    for type_url in [
+        "type.googleapis.com/reflect.opt.Annotated",
+        "company.example/v1/reflect.opt.Annotated",
+        "/reflect.opt.Annotated",
+    ] {
+        let input = format!(r#"{{"@type":"{type_url}"}}"#);
+        let parsed = DynamicMessage::from_json(Arc::clone(&p), any_idx, &input)
+            .unwrap_or_else(|err| panic!("{type_url}: {err}"));
+        assert_eq!(parsed.to_json().unwrap(), input);
+        assert_eq!(
+            DynamicMessage::from_json_ignoring_unknown(Arc::clone(&p), any_idx, &input)
+                .unwrap()
+                .to_json()
+                .unwrap(),
+            input
+        );
+    }
+
+    for type_url in [
+        "reflect.opt.Annotated",
+        "type.googleapis.com/",
+        "company.example/v1/reflect.opt.Annotated/",
+        "/",
+        "type.googleapis.com/no.Such",
+    ] {
+        let input = format!(r#"{{"@type":"{type_url}"}}"#);
+        assert!(
+            DynamicMessage::from_json(Arc::clone(&p), any_idx, &input).is_err(),
+            "unexpectedly parsed {type_url:?}"
+        );
+
+        assert!(
+            DynamicMessage::from_json_ignoring_unknown(Arc::clone(&p), any_idx, &input).is_err(),
+            "unexpectedly parsed {type_url:?} in lenient mode"
+        );
+
+        let mut any = DynamicMessage::new(Arc::clone(&p), any_idx);
+        any.set(
+            p.message(any_idx).field(1).unwrap(),
+            Value::String(type_url.to_owned()),
+        );
+        assert!(
+            any.to_json().is_err(),
+            "unexpectedly serialized {type_url:?}"
+        );
+    }
+}
+
 /// Read a custom option off a re-encoded options message: decode it as a
 /// `DynamicMessage` of `options_type` and pull the extension's value. This
 /// is the documented generic flow for reading a custom option by name when
@@ -222,6 +296,44 @@ fn any_pack_unpack_round_trip() {
     );
     assert_eq!(back.field_by_number(2), Some(&Value::I32(7)));
     assert_eq!(back, ann);
+}
+
+#[test]
+fn any_unpack_requires_a_slash_and_non_empty_type_name() {
+    let p = pool();
+    let any_idx = p.message_index("google.protobuf.Any").unwrap();
+    let any_md = p.message(any_idx);
+
+    for type_url in [
+        "type.googleapis.com/reflect.opt.Annotated",
+        "company.example/v1/reflect.opt.Annotated",
+        "/reflect.opt.Annotated",
+    ] {
+        let mut any = DynamicMessage::new(Arc::clone(&p), any_idx);
+        any.set(any_md.field(1).unwrap(), Value::String(type_url.to_owned()));
+        let unpacked = any
+            .unpack_any()
+            .unwrap_or_else(|err| panic!("{type_url}: {err}"));
+        assert_eq!(
+            unpacked.message_descriptor().full_name(),
+            "reflect.opt.Annotated"
+        );
+    }
+
+    for type_url in [
+        "reflect.opt.Annotated",
+        "type.googleapis.com/",
+        "company.example/v1/reflect.opt.Annotated/",
+        "/",
+        "type.googleapis.com/no.Such",
+    ] {
+        let mut any = DynamicMessage::new(Arc::clone(&p), any_idx);
+        any.set(any_md.field(1).unwrap(), Value::String(type_url.to_owned()));
+        match any.unpack_any().unwrap_err() {
+            AnyError::UnknownType { type_url: actual } => assert_eq!(actual, type_url),
+            other => panic!("unexpected error for {type_url:?}: {other}"),
+        }
+    }
 }
 
 #[test]
