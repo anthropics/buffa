@@ -83,13 +83,19 @@ pub(crate) fn generate_lazy_view_with_nesting(
         ..scope
     };
     let view_oneof_prefix = ancillary_prefix(
+        ctx,
         AncillaryKind::ViewOneof,
         current_package,
         proto_fqn,
         view_depth,
     );
-    let owned_oneof_prefix =
-        ancillary_prefix(AncillaryKind::Oneof, current_package, proto_fqn, view_depth);
+    let owned_oneof_prefix = ancillary_prefix(
+        ctx,
+        AncillaryKind::Oneof,
+        current_package,
+        proto_fqn,
+        view_depth,
+    );
 
     let lazy_fields = msg
         .field

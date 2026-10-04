@@ -10,5 +10,10 @@ message Oof {
   message Inner {
     int32 x = 1;
   }
+  // Takes the name of the natural re-export of `Inner`'s view, so that view
+  // is reachable only at `__buffa::view::oof_::InnerView`.
+  message InnerView {
+    int32 y = 1;
+  }
   Inner inner = 1;
 }

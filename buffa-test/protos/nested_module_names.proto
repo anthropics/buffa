@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package test.nested_module_names;
+
+// Messages whose nested types cannot live in a module named
+// `snake_case(Name)`, because that name is taken in the scope or cannot name
+// a module. Each such module gets a trailing underscore. `Holder` refers to
+// every nested type. Compilation is the main assertion.
+
+// The struct is `item`, so the module is `item_`.
+message item {
+  message Inner {
+    int32 n = 1;
+  }
+  enum Mode {
+    MODE_UNSPECIFIED = 0;
+    MODE_ONE = 1;
+  }
+  Inner inner = 1;
+  Mode mode = 2;
+  oneof pick {
+    string name = 3;
+    Inner picked = 4;
+  }
+}
+
+// `crate`, `super` and `self` cannot name a module.
+message Crate {
+  message Inner {
+    int32 n = 1;
+  }
+  Inner inner = 1;
+  oneof pick {
+    string name = 2;
+    Inner picked = 3;
+  }
+}
+
+message Super {
+  message Inner {
+    int32 n = 1;
+  }
+  Inner inner = 1;
+}
+
+message Self {
+  message Inner {
+    int32 n = 1;
+  }
+  Inner inner = 1;
+}
+
+// A module named `arbitrary` beside the struct would take the place of the
+// crate in the output of `derive(Arbitrary)`: the module is `arbitrary_`.
+message Arbitrary {
+  message Inner {
+    int32 n = 1;
+  }
+  Inner inner = 1;
+  oneof pick {
+    string name = 2;
+    Inner picked = 3;
+  }
+}
+
+// `__buffa::view::oneof` is the root of the view-oneof tree, so the module
+// is `oneof_`.
+message Oneof {
+  message Inner {
+    int32 n = 1;
+  }
+  Inner inner = 1;
+  oneof pick {
+    string name = 2;
+    Inner picked = 3;
+  }
+}
+
+message Outer {
+  // The struct is `outer::leaf`, so the module is `outer::leaf_`.
+  message leaf {
+    message Deep {
+      int32 n = 1;
+    }
+    Deep deep = 1;
+  }
+  // The enum `mode` takes the module name of `Mode`: `outer::mode_`.
+  message Mode {
+    message Detail {
+      int32 n = 1;
+    }
+    Detail detail = 1;
+  }
+  enum mode {
+    MODE_UNSPECIFIED = 0;
+    MODE_ONE = 1;
+  }
+  // `Outer`'s oneof enum is a sibling of this message's module in
+  // `__buffa::oneof::outer`, and derives `Arbitrary` there.
+  message Arbitrary {
+    oneof pick {
+      int32 a = 1;
+      string b = 2;
+    }
+  }
+  // The struct is `outer::self_`, so the module is `outer::self__`.
+  message self {
+    message Deep {
+      int32 n = 1;
+    }
+    Deep deep = 1;
+  }
+  leaf l = 1;
+  Mode m = 2;
+  mode e = 3;
+  Arbitrary a = 4;
+  self s = 5;
+  oneof kind {
+    int32 x = 10;
+    string y = 11;
+  }
+}
+
+message Holder {
+  .test.nested_module_names.item item = 1;
+  .test.nested_module_names.item.Inner item_inner = 2;
+  .test.nested_module_names.item.Mode item_mode = 3;
+  .test.nested_module_names.Crate.Inner crate_inner = 4;
+  .test.nested_module_names.Super.Inner super_inner = 5;
+  .test.nested_module_names.Self.Inner self_inner = 6;
+  repeated .test.nested_module_names.Arbitrary.Inner arbitrary_inners = 7;
+  .test.nested_module_names.Outer.leaf.Deep deep = 8;
+  map<string, .test.nested_module_names.Outer.Mode.Detail> details = 9;
+  .test.nested_module_names.Outer outer = 10;
+  .test.nested_module_names.Oneof.Inner oneof_inner = 13;
+  .test.nested_module_names.Outer.self.Deep self_deep = 14;
+  oneof pick {
+    .test.nested_module_names.item.Inner pick_item = 11;
+    .test.nested_module_names.Outer.leaf pick_leaf = 12;
+  }
+}

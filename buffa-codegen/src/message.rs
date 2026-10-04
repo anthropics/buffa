@@ -235,24 +235,12 @@ fn generate_message_with_nesting(
         })
         .collect();
 
-    // Module name for this message (snake_case of proto name). Used for the
-    // `__buffa` ancillary trees (view/oneof), which are sentinel-isolated and so
-    // never need deconfliction.
+    // The module that holds this message's nested types: the caller wraps
+    // `owned_mod` in it, and each `__buffa` ancillary tree (view/oneof) has a
+    // module of the same name. The owned Any-registry paths bubbled from
+    // nested messages are prefixed with it.
     let proto_name = msg.name.as_deref().unwrap_or(rust_name);
-    let mod_name_str = crate::oneof::to_snake_case(proto_name);
-    let mod_ident = make_field_ident(&mod_name_str);
-
-    // The module name under which THIS message's owned `owned_mod` is wrapped by
-    // its caller. For a top-level message (nesting 0) the caller is `lib.rs`,
-    // which uses the deconflicted name (issue #135); for a nested message the
-    // parent wraps with the raw snake name. The owned Any-registry paths bubbled
-    // from nested messages are prefixed with this so they resolve to the actual
-    // module location.
-    let owned_wrap_ident = if nesting == 0 {
-        make_field_ident(&ctx.nested_module_name(current_package, proto_name))
-    } else {
-        mod_ident.clone()
-    };
+    let mod_ident = make_field_ident(&ctx.message_module_name(proto_fqn));
 
     // Compute oneof enum identifiers for all non-synthetic oneofs up front.
     let oneof_idents = crate::oneof::resolve_oneof_idents(msg, proto_fqn)?;
@@ -260,7 +248,13 @@ fn generate_message_with_nesting(
     // Path prefix from this struct's emission scope to its oneof enums at
     // `__buffa::oneof::<msg_path>::`. The owned struct sits at `nesting`
     // levels below the package root.
-    let oneof_prefix = ancillary_prefix(AncillaryKind::Oneof, current_package, proto_fqn, nesting);
+    let oneof_prefix = ancillary_prefix(
+        ctx,
+        AncillaryKind::Oneof,
+        current_package,
+        proto_fqn,
+        nesting,
+    );
 
     let gates = ctx.config.feature_gates();
 
@@ -666,7 +660,9 @@ fn generate_message_with_nesting(
     for (nested_desc, nested_out) in non_map_nested.iter().zip(nested_msgs) {
         nested_items.extend(nested_out.owned_top);
         let nested_name = nested_desc.name.as_deref().unwrap_or("");
-        let nested_mod = make_field_ident(&crate::oneof::to_snake_case(nested_name));
+        let nested_mod_name = ctx.message_module_name(&format!("{proto_fqn}.{nested_name}"));
+        let nested_mod = make_field_ident(&nested_mod_name);
+        let nested_mod_doc = module_rename_doc(nested_name, &nested_mod_name);
         // Extension paths: nested's module-scope → our module-scope = prefix
         // with the nested message's own module ident.
         for p in nested_out.reg.json_ext {
@@ -676,17 +672,18 @@ fn generate_message_with_nesting(
             reg_paths.text_ext.push(quote! { #nested_mod :: #p });
         }
         // Any paths: nested's struct-scope → our struct-scope = prefix with the
-        // module our owned_mod is wrapped in (deconflicted at the top level).
+        // module our owned_mod is wrapped in.
         for p in nested_out.reg.json_any {
-            reg_paths.json_any.push(quote! { #owned_wrap_ident :: #p });
+            reg_paths.json_any.push(quote! { #mod_ident :: #p });
         }
         for p in nested_out.reg.text_any {
-            reg_paths.text_any.push(quote! { #owned_wrap_ident :: #p });
+            reg_paths.text_any.push(quote! { #mod_ident :: #p });
         }
 
         if !nested_out.owned_mod.is_empty() {
             let inner = nested_out.owned_mod;
             nested_items.extend(quote! {
+                #nested_mod_doc
                 pub mod #nested_mod {
                     #[allow(unused_imports)]
                     use super::*;
@@ -892,6 +889,27 @@ fn generate_message_with_nesting(
     })
 }
 
+/// Returns the doc attribute for a nested-types module named `mod_name`, or
+/// an empty stream when that is `snake_case(message_name)`, the name that
+/// needs no explanation.
+pub(crate) fn module_rename_doc(message_name: &str, mod_name: &str) -> TokenStream {
+    let base = crate::oneof::to_snake_case(message_name);
+    if mod_name == base {
+        return TokenStream::new();
+    }
+    let summary = format!("Nested items of `{message_name}`.");
+    let reason = format!(
+        "The module is named `{mod_name}` because `{base}` is not available \
+         in this scope: a sub-package or a generated type has that name, or \
+         it is one of `self`, `super`, `crate`, `arbitrary` and `oneof`."
+    );
+    quote! {
+        #[doc = #summary]
+        #[doc = ""]
+        #[doc = #reason]
+    }
+}
+
 // ── Natural-path re-exports ──────────────────────────────────────────────────
 //
 // Ancillary types (views, oneof enums, view-oneof enums) live unconditionally
@@ -958,7 +976,7 @@ fn collect_natural_reexports(
         // is benign, but proto `message FooView` → `pub mod foo_view` is
         // also benign). We track both for safety with no real cost.
         occupied.insert(ctx.config.prefixed_type_name(name));
-        occupied.insert(crate::oneof::to_snake_case(name));
+        occupied.insert(ctx.message_module_name(&format!("{proto_fqn}.{name}")));
     }
     for e in &msg.enum_type {
         occupied.insert(
@@ -975,24 +993,28 @@ fn collect_natural_reexports(
     // The `pub use` statements live one module level deeper than the struct.
     let from_nesting = nesting + 1;
     let view_prefix = ancillary_prefix(
+        ctx,
         AncillaryKind::View,
         current_package,
         proto_fqn,
         from_nesting,
     );
     let oneof_prefix = ancillary_prefix(
+        ctx,
         AncillaryKind::Oneof,
         current_package,
         proto_fqn,
         from_nesting,
     );
     let view_oneof_prefix = ancillary_prefix(
+        ctx,
         AncillaryKind::ViewOneof,
         current_package,
         proto_fqn,
         from_nesting,
     );
     let lazy_view_prefix = ancillary_prefix(
+        ctx,
         AncillaryKind::LazyView,
         current_package,
         proto_fqn,

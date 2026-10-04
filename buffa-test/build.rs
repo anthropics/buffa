@@ -471,6 +471,19 @@ fn main() {
         .compile()
         .expect("buffa_build failed for type_name_escapes.proto");
 
+    // Messages whose nested-types module gets a trailing underscore. Lazy
+    // views are on so that every tree under `__buffa` is compiled, and
+    // `Arbitrary` so that its derive expands beside the `arbitrary_` modules.
+    buffa_build::Config::new()
+        .files(&["protos/nested_module_names.proto"])
+        .includes(&["protos/"])
+        .generate_json(true)
+        .generate_text(true)
+        .generate_arbitrary(true)
+        .lazy_views(true)
+        .compile()
+        .expect("buffa_build failed for nested_module_names.proto");
+
     // Special float defaults in a package named `f32` must not resolve
     // against generated `f32`/`f64` modules. The nested extension constants
     // deliberately occupy all six shadowable paths; compilation is the

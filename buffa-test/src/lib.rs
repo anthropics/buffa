@@ -641,6 +641,16 @@ pub mod type_name_escapes {
     buffa::include_proto!("test.type_name_escapes");
 }
 
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    dead_code,
+    non_camel_case_types
+)]
+pub mod nested_module_names {
+    buffa::include_proto!("test.nested_module_names");
+}
+
 #[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
 pub mod float_default_shadow {
     buffa::include_proto!("f32");

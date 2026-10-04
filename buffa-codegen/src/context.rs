@@ -88,15 +88,11 @@ pub struct CodeGenContext<'a> {
     /// proto FQN they already have, rather than threading index-based paths
     /// through every function signature.
     comment_map: Arc<HashMap<String, String>>,
-    /// Deconflicted module name for each top-level message, keyed by the
-    /// leading-dot FQN (`".pkg.Msg"`).
+    /// Nested-types module name of each message whose module is not named
+    /// `snake_case(Name)`, keyed by the leading-dot FQN (`".pkg.Msg"`).
     ///
-    /// A message's nested types live in a `snake_case(Name)` submodule. When
-    /// that name would collide with a sub-package module in the same scope
-    /// (proto is case-sensitive, so `message Oof` and `package foo.oof` both map
-    /// to `mod oof`), a trailing `_` is appended until the name is unique within
-    /// the scope's occupied set. Entries exist for every top-level message; the
-    /// value equals `snake_case(Name)` when no deconfliction was needed.
+    /// [`deconflict_modules`] chooses the names. The ancillary trees under
+    /// `__buffa` use the same name as the owned tree.
     nested_module_names: HashMap<String, String>,
     /// Variant paths (leading-dot form) resolved from
     /// `config.unboxed_oneof_fields` whose oneof variants are stored inline.
@@ -174,42 +170,92 @@ fn child_package_segments(package: &str, all_packages: &HashSet<String>) -> Hash
         .collect()
 }
 
-/// Deconflict the nested-types module names for one package's top-level
-/// messages against the sub-package modules in the same scope (issue #135).
+/// Module names that cannot hold a message's nested types in any scope.
 ///
-/// `message_names` are the package's top-level message names in declaration
-/// order; `children` are the sub-package segment names that share the package's
-/// module scope. Returns one module name per input message, in the same order.
+/// `self`, `super` and `crate` cannot name a module. The output of
+/// `derive(Arbitrary)` starts its paths with `arbitrary::`, and beside a
+/// module named `arbitrary` those paths resolve to the module. The name is
+/// reserved whether or not
+/// [`generate_arbitrary`](crate::CodeGenConfig::generate_arbitrary) is on, so
+/// that a crate and a crate that refers to its types through `extern_path`
+/// choose the same module.
+const RESERVED_MODULE_NAMES: [&str; 4] = ["self", "super", "crate", "arbitrary"];
+
+/// A module name that is taken at package level, in addition to
+/// [`RESERVED_MODULE_NAMES`]: `__buffa::view::oneof` is the root of the
+/// view-oneof tree, beside the view modules of the package's messages.
+const PACKAGE_RESERVED_MODULE_NAME: &str = "oneof";
+
+/// The nested-types module of a message that an exact `extern_path` entry
+/// maps to `rust_path`: the name a buffa-generated crate gives the module
+/// beside a type of that name. `package_level` is true for a message declared
+/// in a package and false for a nested one. A sub-package or a second type of
+/// the module's name in that crate does not show in the entry, and is not
+/// accounted for.
+fn extern_override_module(name: &str, rust_path: &str, package_level: bool) -> String {
+    let type_name = last_path_segment(rust_path);
+    let mut module = to_snake_case(name);
+    if RESERVED_MODULE_NAMES.contains(&module.as_str())
+        || (package_level && module == PACKAGE_RESERVED_MODULE_NAME)
+        || module == type_name
+    {
+        module.push('_');
+        while module == type_name {
+            module.push('_');
+        }
+    }
+    module
+}
+
+/// The last segment of a Rust path: the name a type declares in its module.
+fn last_path_segment(rust_path: &str) -> &str {
+    rust_path.rsplit("::").next().unwrap_or(rust_path)
+}
+
+/// Choose the nested-types module names for the messages of one scope: a
+/// package's top-level messages, or the messages nested in one message.
 ///
-/// Each name is `snake_case(Name)` unless it collides with a sub-package
-/// segment, in which case `_` is appended until the candidate is unique against:
-/// the sub-package segments, every message's raw module name, the `__buffa`
-/// sentinel, **and every already-assigned deconflicted name**. That last set —
-/// threaded through the shared `taken` set — is what keeps two messages that
-/// would otherwise race to the same slot distinct (e.g. `Oof` and `Oof_`
-/// alongside sub-packages `oof` and `oof_` resolve to `oof__` and `oof___`,
-/// never both to `oof__`).
+/// `message_names` are the messages' proto names in declaration order.
+/// `occupied` are the names a module cannot take in that scope, in addition to
+/// [`RESERVED_MODULE_NAMES`]: sub-package segments (issue #135), the Rust
+/// names of the scope's types, and at package level
+/// [`PACKAGE_RESERVED_MODULE_NAME`]. Returns one module name per input
+/// message, in the same order.
 ///
-/// Colliding messages are assigned in a stable order (sorted by base name), so
-/// the per-message result is independent of declaration order — reordering the
-/// input files or messages never changes which name a given message receives.
-fn deconflict_package_modules(message_names: &[String], children: &HashSet<String>) -> Vec<String> {
+/// Each name is `snake_case(Name)` unless that is reserved or in `occupied`,
+/// in which case `_` is appended until the candidate is unique against:
+/// `occupied`, every message's raw module name, the `__buffa` sentinel, **and
+/// every already-assigned deconflicted name**. That last set, kept in
+/// `taken`, is what keeps two messages that would otherwise race to the same
+/// slot distinct (e.g. `Oof` and `Oof_` alongside sub-packages `oof` and
+/// `oof_` resolve to `oof__` and `oof___`, never both to `oof__`).
+///
+/// Colliding messages are assigned in a stable order (sorted by base name,
+/// then by proto name), so the per-message result is independent of
+/// declaration order: reordering the input files or messages never changes
+/// which name a given message receives.
+fn deconflict_modules(message_names: &[String], occupied: &HashSet<String>) -> Vec<String> {
     let bases: Vec<String> = message_names.iter().map(|n| to_snake_case(n)).collect();
-    // Seed with everything fixed: sub-package segments, the sentinel, and every
+    let is_occupied =
+        |base: &String| RESERVED_MODULE_NAMES.contains(&base.as_str()) || occupied.contains(base);
+    if !bases.iter().any(is_occupied) {
+        return bases;
+    }
+    // Seed with everything fixed: the occupied names, the sentinel, and every
     // message's raw module name. Assigned deconflicted names are added as we go.
-    let mut taken: HashSet<String> = children.clone();
+    let mut taken: HashSet<String> = occupied.clone();
     taken.insert(SENTINEL_MOD.to_string());
     taken.extend(bases.iter().cloned());
 
     // Result starts as the raw bases (correct for every non-colliding message),
-    // and colliding messages overwrite their slot. Assign in a stable order
-    // (sorted by base name) so the per-message suffix is independent of
-    // declaration order; two colliding messages can't both grab the same slot.
+    // and colliding messages overwrite their slot. Assign in a stable order so
+    // the per-message suffix is independent of declaration order; two
+    // colliding messages can't both grab the same slot.
     let mut out = bases.clone();
     let mut order: Vec<usize> = (0..bases.len()).collect();
-    order.sort_by(|&a, &b| bases[a].cmp(&bases[b]));
+    order.sort_by(|&a, &b| (&bases[a], &message_names[a]).cmp(&(&bases[b], &message_names[b])));
     for i in order {
-        if !children.contains(&bases[i]) {
+        if !is_occupied(&bases[i]) {
             continue;
         }
         let mut candidate = format!("{}_", bases[i]);
@@ -297,33 +343,52 @@ impl<'a> CodeGenContext<'a> {
         let inlined_message_fields = Arc::clone(shared.inlined_message_fields());
         let comment_map = Arc::clone(shared.comment_map());
 
-        // Pre-pass: collect every package and top-level message name in the
-        // descriptor set so nested-types module deconfliction (issue #135) is
-        // identical whether the package is generated locally or referenced via
-        // `extern_path`. Skipping extern packages here made cross-crate refs
-        // use plain `snake_case` (e.g. `money::Currency`) while the owning
-        // crate emits deconflicted modules (e.g. `money_::Currency`).
+        // Pre-pass: collect every package, and the top-level message names and
+        // Rust type names of each, in the descriptor set. Extern packages are
+        // included: without them a consumer emits `money::Currency` where the
+        // owning crate emits `money_::Currency`.
         let mut all_packages: HashSet<String> = HashSet::new();
         let mut pkg_message_names: HashMap<String, Vec<String>> = HashMap::new();
+        let mut pkg_type_names: HashMap<String, HashSet<String>> = HashMap::new();
         for file in files {
             let package = file.package.as_deref().unwrap_or("");
             all_packages.insert(package.to_string());
-            for msg in &file.message_type {
-                if let Some(name) = &msg.name {
-                    // A per-type `extern_path` override (issue #111) makes the
-                    // message extern: it emits no local module, so it must not
-                    // reserve a module name in sub-package deconfliction (#135).
-                    let fqn = if package.is_empty() {
-                        format!(".{name}")
-                    } else {
-                        format!(".{package}.{name}")
-                    };
-                    if effective_extern_paths
-                        .iter()
-                        .any(|(proto, _)| proto == &fqn)
-                    {
-                        continue;
-                    }
+            let file_root = file
+                .name
+                .as_deref()
+                .and_then(|n| resolve_file_extern(n, file_extern_paths));
+            let local_module = package.replace('.', "::");
+            let messages = file.message_type.iter().map(|m| (m.name.as_ref(), true));
+            let enums = file.enum_type.iter().map(|e| (e.name.as_ref(), false));
+            for (name, is_message) in messages.chain(enums) {
+                let Some(name) = name else { continue };
+                // A per-type `extern_path` override (issue #111) makes the
+                // type extern: it emits no local item, so it must not
+                // reserve a name in this scope's deconfliction (#135).
+                let fqn = if package.is_empty() {
+                    format!(".{name}")
+                } else {
+                    format!(".{package}.{name}")
+                };
+                if effective_extern_paths
+                    .iter()
+                    .any(|(proto, _)| proto == &fqn)
+                {
+                    continue;
+                }
+                let (rust_path, _) = resolve_type_path(
+                    &fqn,
+                    name,
+                    file_root,
+                    &local_module,
+                    effective_extern_paths,
+                    &config.type_name_prefix,
+                );
+                pkg_type_names
+                    .entry(package.to_string())
+                    .or_default()
+                    .insert(last_path_segment(&rust_path).to_string());
+                if is_message {
                     pkg_message_names
                         .entry(package.to_string())
                         .or_default()
@@ -337,9 +402,24 @@ impl<'a> CodeGenContext<'a> {
         // Each package is an independent scope, so the populated map is the same
         // regardless of `pkg_message_names` iteration order.
         for (package, names) in &pkg_message_names {
-            let children = child_package_segments(package, &all_packages);
-            let modules = deconflict_package_modules(names, &children);
+            let mut occupied = child_package_segments(package, &all_packages);
+            // A sub-package named `self`, `super` or `crate` is the module
+            // `crate_` (`escape_mod_ident`).
+            let escaped: Vec<String> = ["self", "super", "crate"]
+                .iter()
+                .filter(|name| occupied.contains(**name))
+                .map(|name| format!("{name}_"))
+                .collect();
+            occupied.extend(escaped);
+            occupied.insert(PACKAGE_RESERVED_MODULE_NAME.to_string());
+            if let Some(type_names) = pkg_type_names.get(package) {
+                occupied.extend(type_names.iter().cloned());
+            }
+            let modules = deconflict_modules(names, &occupied);
             for (name, module) in names.iter().zip(modules) {
+                if module == to_snake_case(name) {
+                    continue;
+                }
                 let fqn = if package.is_empty() {
                     format!(".{name}")
                 } else {
@@ -386,28 +466,28 @@ impl<'a> CodeGenContext<'a> {
                         &config.type_name_prefix,
                     );
 
-                    // The module the message's nested types live in. For a local
-                    // message it is `<package>::<module>`, where the module name
-                    // is deconflicted against sub-package modules (issue #135),
-                    // precomputed above and looked up here so emission and
-                    // references share the same value. For an extern/overridden
-                    // message no local module is emitted, so the nested module is
-                    // the resolved path's parent plus the plain `snake_case` name.
-                    let parent_mod = if is_extern {
-                        let snake = nested_module_names
+                    // The module the message's nested types are in: the
+                    // resolved path's parent plus the module name. The name
+                    // was chosen above, except for a message with an exact
+                    // `extern_path` entry, which the pre-pass skips.
+                    let is_exact_override = effective_extern_paths
+                        .iter()
+                        .any(|(proto, _)| proto == &fqn);
+                    let module = if is_exact_override {
+                        extern_override_module(name, &rust_path, true)
+                    } else {
+                        nested_module_names
                             .get(&fqn)
                             .cloned()
-                            .unwrap_or_else(|| to_snake_case(name));
+                            .unwrap_or_else(|| to_snake_case(name))
+                    };
+                    let parent_mod = if is_extern {
                         match rust_path.rsplit_once("::") {
-                            Some((parent, _)) => format!("{parent}::{snake}"),
-                            None => snake,
+                            Some((parent, _)) => format!("{parent}::{module}"),
+                            None => module,
                         }
                     } else {
-                        let snake = nested_module_names
-                            .get(&fqn)
-                            .cloned()
-                            .unwrap_or_else(|| to_snake_case(name));
-                        join_mod(&local_module, &snake)
+                        join_mod(&local_module, &module)
                     };
 
                     type_map.insert(fqn.clone(), rust_path);
@@ -415,6 +495,7 @@ impl<'a> CodeGenContext<'a> {
                     register_nested_types(
                         &mut type_map,
                         &mut package_of,
+                        &mut nested_module_names,
                         NestedRegistrationCtx {
                             package,
                             extern_paths: effective_extern_paths,
@@ -724,24 +805,40 @@ impl<'a> CodeGenContext<'a> {
         crate::idents::rust_path_to_tokens(&self.root_path(canonical.to_string(), nesting))
     }
 
-    /// The nested-types module name for a top-level message, deconflicted
-    /// against sub-package modules (issue #135).
+    /// Returns the name of the module that holds the nested types of a
+    /// top-level message.
     ///
     /// `package` is the proto package (empty for none), `name` the message's
-    /// proto name. Returns the recorded deconflicted name (e.g. `oof_` when
-    /// `message Oof` collides with `package <pkg>.oof`), or `snake_case(name)`
-    /// when no override was recorded. Both emission and reference resolution go
-    /// through the same recorded value, so they always agree.
+    /// proto name. The module is `snake_case(name)`, with `_` appended until
+    /// the name is free when it is taken in the package: `oof_` when
+    /// `message Oof` is beside `package <pkg>.oof` (issue #135), `item_` for
+    /// `message item`, whose struct has the module's name, and `crate_`,
+    /// `arbitrary_` and `oneof_` for `message Crate`, `message Arbitrary` and
+    /// `message Oneof`. Both emission and reference resolution use this
+    /// value, so they agree.
+    ///
+    /// Returns `snake_case(name)` for a name that is not a top-level message
+    /// of `package`, and for a message that has a per-type `extern_path`
+    /// entry.
     pub fn nested_module_name(&self, package: &str, name: &str) -> String {
-        let fqn = if package.is_empty() {
-            format!(".{name}")
+        if package.is_empty() {
+            self.message_module_name(name)
         } else {
-            format!(".{package}.{name}")
-        };
+            self.message_module_name(&format!("{package}.{name}"))
+        }
+    }
+
+    /// Returns the name of the module that holds the nested types of the
+    /// message `proto_fqn`, at any nesting level. The rule is that of
+    /// [`nested_module_name`](Self::nested_module_name), applied in the scope
+    /// that declares the message: its package, or its enclosing message.
+    ///
+    /// `proto_fqn` is the dotless form (`"pkg.Outer.Inner"`).
+    pub(crate) fn message_module_name(&self, proto_fqn: &str) -> String {
         self.nested_module_names
-            .get(&fqn)
+            .get(&format!(".{proto_fqn}"))
             .cloned()
-            .unwrap_or_else(|| to_snake_case(name))
+            .unwrap_or_else(|| to_snake_case(proto_fqn.rsplit('.').next().unwrap_or(proto_fqn)))
     }
 
     /// Build a context matching what [`generate()`](crate::generate) uses
@@ -1427,7 +1524,9 @@ impl AncillaryKind {
 ///
 /// Always climbs to the package root via `super::` and re-descends through
 /// `__buffa::<kind>::<msg_path>::` — uniform regardless of where the caller
-/// sits. `from_nesting` is the caller's total module depth below the
+/// sits. `<msg_path>` is the nested-types module of each enclosing message,
+/// then of the message itself, as [`CodeGenContext::message_module_name`]
+/// returns them. `from_nesting` is the caller's total module depth below the
 /// package root (message-nesting plus any `__buffa::<kind>::` levels the
 /// caller is already inside).
 ///
@@ -1437,6 +1536,7 @@ impl AncillaryKind {
 /// Returned tokens always end with `::` so callers append the type
 /// identifier directly: `quote! { #prefix #ident }`.
 pub(crate) fn ancillary_prefix(
+    ctx: &CodeGenContext<'_>,
     kind: AncillaryKind,
     current_package: &str,
     proto_fqn: &str,
@@ -1462,7 +1562,8 @@ pub(crate) fn ancillary_prefix(
         .map(|s| make_field_ident(s))
         .collect();
 
-    // Snake-cased message path within the package (e.g. "outer::inner::").
+    // Module path of the message within the package (e.g. "outer::inner::"):
+    // the nested-types module of each enclosing message, then its own.
     let within_pkg = if current_package.is_empty() {
         proto_fqn
     } else {
@@ -1471,11 +1572,15 @@ pub(crate) fn ancillary_prefix(
             .and_then(|s| s.strip_prefix('.'))
             .unwrap_or(proto_fqn)
     };
-    let msg_segs: Vec<_> = within_pkg
-        .split('.')
-        .filter(|s| !s.is_empty())
-        .map(|name| make_field_ident(&to_snake_case(name)))
-        .collect();
+    let mut fqn = current_package.to_string();
+    let mut msg_segs = Vec::new();
+    for name in within_pkg.split('.').filter(|s| !s.is_empty()) {
+        if !fqn.is_empty() {
+            fqn.push('.');
+        }
+        fqn.push_str(name);
+        msg_segs.push(make_field_ident(&ctx.message_module_name(&fqn)));
+    }
 
     quote! { #supers_tokens #sentinel :: #(#kind_segs ::)* #(#msg_segs ::)* }
 }
@@ -1639,8 +1744,7 @@ fn join_mod(module: &str, name: &str) -> String {
 /// then the **local** package path.
 ///
 /// Returns `(rust_path, is_extern)`; `is_extern` is `false` only for the local
-/// fallback, telling the caller whether the type emits a local module (and thus
-/// participates in sub-package deconfliction, issue #135).
+/// fallback, telling the caller whether the type emits a local module.
 fn resolve_type_path(
     fqn: &str,
     name: &str,
@@ -1687,7 +1791,9 @@ struct NestedRegistrationCtx<'a> {
 /// Recursively register nested messages and enums with module-qualified paths.
 ///
 /// Each nested message `Parent.Child` maps to `parent_mod::Child` in Rust,
-/// where `parent_mod` is the snake_case module path of the enclosing message.
+/// where `parent_mod` is the module path of the enclosing message's nested
+/// types. A nested message whose own module is not named `snake_case(Child)`
+/// (see [`deconflict_modules`]) is recorded in `module_names`.
 ///
 /// A per-type `extern_path` override (issue #111) on a nested type's own FQN
 /// takes priority over the inherited `parent_mod` path; otherwise the nested
@@ -1696,6 +1802,7 @@ struct NestedRegistrationCtx<'a> {
 fn register_nested_types(
     type_map: &mut HashMap<String, String>,
     package_of: &mut HashMap<String, String>,
+    module_names: &mut HashMap<String, String>,
     reg: NestedRegistrationCtx<'_>,
     parent_fqn: &str,
     parent_mod: &str,
@@ -1706,52 +1813,106 @@ fn register_nested_types(
         extern_paths,
         type_name_prefix,
     } = reg;
+    let extern_override = |fqn: &str| {
+        extern_paths
+            .iter()
+            .find(|(proto, _)| proto == fqn)
+            .map(|(_, rust)| rust.as_str())
+    };
+
+    // The module of each nested message that is declared in `parent_mod`,
+    // by proto name. A module cannot take the name of a type declared beside
+    // it. A map entry declares neither a type nor a module.
+    let is_local = |name: &&String| extern_override(&format!("{parent_fqn}.{name}")).is_none();
+    let is_map_entry = |nested: &&crate::generated::descriptor::DescriptorProto| {
+        nested
+            .options
+            .as_option()
+            .and_then(|o| o.map_entry)
+            .unwrap_or(false)
+    };
+    let local: Vec<String> = msg
+        .nested_type
+        .iter()
+        .filter(|nested| !is_map_entry(nested))
+        .filter_map(|nested| nested.name.as_ref())
+        .filter(is_local)
+        .cloned()
+        .collect();
+    let local_modules: HashMap<&str, String> = if local.is_empty() {
+        HashMap::new()
+    } else {
+        let enums = msg.enum_type.iter().filter_map(|e| e.name.as_ref());
+        let occupied: HashSet<String> = local
+            .iter()
+            .chain(enums.filter(is_local))
+            .map(|name| crate::idents::local_type_name(type_name_prefix, name))
+            .collect();
+        let modules = deconflict_modules(&local, &occupied);
+        local.iter().map(String::as_str).zip(modules).collect()
+    };
+
     for nested in &msg.nested_type {
         if let Some(name) = &nested.name {
             let fqn = format!("{}.{}", parent_fqn, name);
-            // An exact per-type override wins; the child module is then the
-            // override's parent plus the plain snake_case name. Otherwise the
-            // type lives in `parent_mod`, named with the configured prefix
-            // (the module segment stays the proto-derived snake_case name —
-            // modules never collide with type names).
-            let (rust_path, child_mod) = match extern_paths.iter().find(|(proto, _)| proto == &fqn)
-            {
-                Some((_, rust)) => {
+            // An exact per-type override wins; the child module is then
+            // beside the override's type. Otherwise the type is in
+            // `parent_mod`, named with the configured prefix, and its own
+            // nested types are in the module chosen above.
+            let (rust_path, child_mod) = match extern_override(&fqn) {
+                Some(rust) => {
+                    let module = extern_override_module(name, rust, false);
                     let child = match rust.rsplit_once("::") {
-                        Some((parent, _)) => format!("{parent}::{}", to_snake_case(name)),
-                        None => to_snake_case(name),
+                        Some((parent, _)) => format!("{parent}::{module}"),
+                        None => module,
                     };
-                    (rust.clone(), child)
+                    (rust.to_string(), child)
                 }
-                None => (
-                    format!(
-                        "{parent_mod}::{}",
-                        crate::idents::local_type_name(type_name_prefix, name)
-                    ),
-                    format!("{parent_mod}::{}", to_snake_case(name)),
-                ),
+                None => {
+                    let module = local_modules
+                        .get(name.as_str())
+                        .cloned()
+                        .unwrap_or_else(|| to_snake_case(name));
+                    if module != to_snake_case(name) {
+                        module_names.insert(fqn.clone(), module.clone());
+                    }
+                    (
+                        format!(
+                            "{parent_mod}::{}",
+                            crate::idents::local_type_name(type_name_prefix, name)
+                        ),
+                        format!("{parent_mod}::{module}"),
+                    )
+                }
             };
             type_map.insert(fqn.clone(), rust_path);
             package_of.insert(fqn.clone(), package.to_string());
 
             // Recurse: nested-of-nested goes in a deeper module.
-            register_nested_types(type_map, package_of, reg, &fqn, &child_mod, nested);
+            register_nested_types(
+                type_map,
+                package_of,
+                module_names,
+                reg,
+                &fqn,
+                &child_mod,
+                nested,
+            );
         }
     }
 
     for enum_type in &msg.enum_type {
         if let Some(name) = &enum_type.name {
             let fqn = format!("{}.{}", parent_fqn, name);
-            let rust_path = extern_paths
-                .iter()
-                .find(|(proto, _)| proto == &fqn)
-                .map(|(_, rust)| rust.clone())
-                .unwrap_or_else(|| {
+            let rust_path = extern_override(&fqn).map_or_else(
+                || {
                     format!(
                         "{parent_mod}::{}",
                         crate::idents::local_type_name(type_name_prefix, name)
                     )
-                });
+                },
+                str::to_string,
+            );
             type_map.insert(fqn.clone(), rust_path);
             package_of.insert(fqn, package.to_string());
         }
@@ -1835,8 +1996,8 @@ mod tests {
     use super::*;
     use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDescriptorProto};
 
-    fn children(segs: &[&str]) -> HashSet<String> {
-        segs.iter().map(|s| s.to_string()).collect()
+    fn set(names: &[&str]) -> HashSet<String> {
+        names.iter().map(|s| s.to_string()).collect()
     }
 
     fn names(ns: &[&str]) -> Vec<String> {
@@ -1846,20 +2007,20 @@ mod tests {
     #[test]
     fn deconflict_no_collision_keeps_base() {
         // No sub-package shares a module name → names are unchanged.
-        let out = deconflict_package_modules(&names(&["Oof", "Bar"]), &children(&["other"]));
+        let out = deconflict_modules(&names(&["Oof", "Bar"]), &set(&["other"]));
         assert_eq!(out, vec!["oof".to_string(), "bar".to_string()]);
     }
 
     #[test]
     fn deconflict_single_collision_appends_underscore() {
-        let out = deconflict_package_modules(&names(&["Oof"]), &children(&["oof"]));
+        let out = deconflict_modules(&names(&["Oof"]), &set(&["oof"]));
         assert_eq!(out, vec!["oof_".to_string()]);
     }
 
     #[test]
     fn deconflict_repeated_append_when_underscore_slot_also_taken() {
         // Sub-packages `oof` AND `oof_` both exist → grow past both.
-        let out = deconflict_package_modules(&names(&["Oof"]), &children(&["oof", "oof_"]));
+        let out = deconflict_modules(&names(&["Oof"]), &set(&["oof", "oof_"]));
         assert_eq!(out, vec!["oof__".to_string()]);
     }
 
@@ -1867,7 +2028,7 @@ mod tests {
     fn deconflict_two_messages_racing_to_same_slot_stay_distinct() {
         // `Oof` (oof) and `Oof_` (oof_), sub-packages `oof` and `oof_`. Without
         // the shared `taken` set both would land on `oof__`.
-        let out = deconflict_package_modules(&names(&["Oof", "Oof_"]), &children(&["oof", "oof_"]));
+        let out = deconflict_modules(&names(&["Oof", "Oof_"]), &set(&["oof", "oof_"]));
         assert_eq!(out, vec!["oof__".to_string(), "oof___".to_string()]);
         // All distinct and clear of the sub-package modules.
         let set: HashSet<&String> = out.iter().collect();
@@ -1878,9 +2039,9 @@ mod tests {
     #[test]
     fn deconflict_is_independent_of_declaration_order() {
         // Reordering the input must not change which message gets which name.
-        let ch = children(&["oof", "oof_"]);
-        let fwd = deconflict_package_modules(&names(&["Oof", "Oof_"]), &ch);
-        let rev = deconflict_package_modules(&names(&["Oof_", "Oof"]), &ch);
+        let ch = set(&["oof", "oof_"]);
+        let fwd = deconflict_modules(&names(&["Oof", "Oof_"]), &ch);
+        let rev = deconflict_modules(&names(&["Oof_", "Oof"]), &ch);
         // fwd: [Oof, Oof_]; rev: [Oof_, Oof] — same per-name mapping either way.
         assert_eq!(fwd, vec!["oof__".to_string(), "oof___".to_string()]);
         assert_eq!(rev, vec!["oof___".to_string(), "oof__".to_string()]);
@@ -1890,14 +2051,64 @@ mod tests {
     fn deconflict_avoids_other_messages_raw_base() {
         // `Oof` collides with sub-package `oof`; its `oof_` candidate must also
         // avoid the raw module of a sibling message `Oof_`.
-        let out = deconflict_package_modules(&names(&["Oof", "Oof_"]), &children(&["oof"]));
+        let out = deconflict_modules(&names(&["Oof", "Oof_"]), &set(&["oof"]));
         // Oof -> oof_ is taken by Oof_'s raw base, so Oof -> oof__; Oof_ stays.
         assert_eq!(out, vec!["oof__".to_string(), "oof_".to_string()]);
     }
 
     #[test]
+    fn deconflict_avoids_type_names_and_reserved_names() {
+        // `message item` declares `struct item`. `crate` cannot name a module,
+        // and `arbitrary` is reserved whatever the config.
+        let out = deconflict_modules(
+            &names(&["item", "Crate", "Arbitrary", "Other"]),
+            &set(&["item"]),
+        );
+        assert_eq!(out, ["item_", "crate_", "arbitrary_", "other"]);
+    }
+
+    #[test]
+    fn deconflict_suffix_skips_a_type_of_that_name() {
+        // `message crate` is the struct `crate_`, so its module is `crate__`.
+        let out = deconflict_modules(&names(&["crate"]), &set(&["crate_"]));
+        assert_eq!(out, ["crate__"]);
+    }
+
+    #[test]
+    fn deconflict_order_of_equal_bases_follows_the_proto_name() {
+        // `Item` and `item` in two files of one package both have the base
+        // `item`, which `struct item` takes.
+        let occupied = set(&["Item", "item"]);
+        assert_eq!(
+            deconflict_modules(&names(&["Item", "item"]), &occupied),
+            ["item_", "item__"]
+        );
+        assert_eq!(
+            deconflict_modules(&names(&["item", "Item"]), &occupied),
+            ["item__", "item_"]
+        );
+    }
+
+    #[test]
+    fn extern_override_module_follows_the_mapped_type_name() {
+        let module = |name, path| extern_override_module(name, path, false);
+        assert_eq!(module("Outer", "::ext::Outer"), "outer");
+        assert_eq!(module("item", "::ext::item"), "item_");
+        // The owning crate used a `type_name_prefix`, so `item` is free there.
+        assert_eq!(module("item", "::ext::Pbitem"), "item");
+        assert_eq!(module("Crate", "::ext::Crate"), "crate_");
+        assert_eq!(module("crate", "::ext::crate_"), "crate__");
+        // `oneof` is taken at package level only.
+        assert_eq!(module("Oneof", "::ext::outer::Oneof"), "oneof");
+        assert_eq!(
+            extern_override_module("Oneof", "::ext::Oneof", true),
+            "oneof_"
+        );
+    }
+
+    #[test]
     fn deconflict_never_yields_the_sentinel() {
-        let out = deconflict_package_modules(&names(&["Buffa"]), &children(&["__buffa", "buffa"]));
+        let out = deconflict_modules(&names(&["Buffa"]), &set(&["__buffa", "buffa"]));
         // base `buffa` collides; `buffa_` is free, so it is chosen (not __buffa).
         assert_eq!(out, vec!["buffa_".to_string()]);
         assert_ne!(out[0], SENTINEL_MOD);
@@ -1905,7 +2116,7 @@ mod tests {
 
     #[test]
     fn child_package_segments_extracts_immediate_segment() {
-        let pkgs = children(&["foo", "foo.oof", "foo.bar.baz", "foobar"]);
+        let pkgs = set(&["foo", "foo.oof", "foo.bar.baz", "foobar"]);
         let mut got: Vec<String> = child_package_segments("foo", &pkgs).into_iter().collect();
         got.sort();
         // `foo.oof` -> oof, `foo.bar.baz` -> bar; `foobar` is not a sub-package.
@@ -2404,6 +2615,233 @@ mod tests {
         assert_eq!(
             ctx.rust_type_relative(".pkg.Outer.Inner", "pkg", 0),
             Some("outer::Inner".into())
+        );
+    }
+
+    #[test]
+    fn test_nested_module_avoids_the_type_names_of_its_scope() {
+        // `item` declares `struct item`, so its nested types are in `item_`.
+        // In `Outer`, the enum `mode` takes the module name of `Mode`.
+        let item = msg_with_nested("item", vec![msg("Inner")]);
+        let outer = msg_with_nested_and_enums(
+            "Outer",
+            vec![
+                msg_with_nested("leaf", vec![msg("Deep")]),
+                msg_with_nested("Mode", vec![msg("Detail")]),
+            ],
+            vec![enum_desc("mode")],
+        );
+        let files = [make_file("test.proto", "pkg", vec![item, outer], vec![])];
+        let config = CodeGenConfig::default();
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+
+        assert_eq!(ctx.rust_type(".pkg.item"), Some("pkg::item"));
+        assert_eq!(ctx.rust_type(".pkg.item.Inner"), Some("pkg::item_::Inner"));
+        assert_eq!(
+            ctx.rust_type(".pkg.Outer.leaf.Deep"),
+            Some("pkg::outer::leaf_::Deep")
+        );
+        assert_eq!(
+            ctx.rust_type(".pkg.Outer.Mode.Detail"),
+            Some("pkg::outer::mode_::Detail")
+        );
+        assert_eq!(ctx.nested_module_name("pkg", "item"), "item_");
+        assert_eq!(ctx.message_module_name("pkg.Outer"), "outer");
+        assert_eq!(ctx.message_module_name("pkg.Outer.leaf"), "leaf_");
+    }
+
+    #[test]
+    fn test_nested_module_of_a_prefixed_type_keeps_its_name() {
+        // With prefix `Pb` the struct is `Pbitem`, and `item` is free.
+        let item = msg_with_nested("item", vec![msg("Inner")]);
+        let files = [make_file("test.proto", "pkg", vec![item], vec![])];
+        let config = CodeGenConfig {
+            type_name_prefix: "Pb".to_string(),
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        assert_eq!(ctx.rust_type(".pkg.item.Inner"), Some("pkg::item::PbInner"));
+    }
+
+    #[test]
+    fn test_nested_module_named_after_a_path_keyword_gets_a_suffix() {
+        let files = [make_file(
+            "test.proto",
+            "pkg",
+            vec![
+                msg_with_nested("Crate", vec![msg("Inner")]),
+                msg_with_nested("Self", vec![msg("Inner")]),
+            ],
+            vec![],
+        )];
+        let config = CodeGenConfig::default();
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        assert_eq!(
+            ctx.rust_type(".pkg.Crate.Inner"),
+            Some("pkg::crate_::Inner")
+        );
+        assert_eq!(ctx.rust_type(".pkg.Self"), Some("pkg::Self_"));
+        assert_eq!(ctx.rust_type(".pkg.Self.Inner"), Some("pkg::self_::Inner"));
+    }
+
+    #[test]
+    fn test_reserved_module_names_do_not_depend_on_the_config() {
+        let files = [make_file(
+            "test.proto",
+            "pkg",
+            vec![
+                msg_with_nested("Arbitrary", vec![msg("Inner")]),
+                msg_with_nested("Oneof", vec![msg("Inner")]),
+                msg_with_nested("Outer", vec![msg_with_nested("Oneof", vec![msg("Inner")])]),
+            ],
+            vec![],
+        )];
+        // `generate_arbitrary` and `generate_views` are at their defaults.
+        let config = CodeGenConfig::default();
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        assert_eq!(
+            ctx.rust_type(".pkg.Arbitrary.Inner"),
+            Some("pkg::arbitrary_::Inner")
+        );
+        assert_eq!(
+            ctx.rust_type(".pkg.Oneof.Inner"),
+            Some("pkg::oneof_::Inner")
+        );
+        // `oneof` is taken at package level only.
+        assert_eq!(
+            ctx.rust_type(".pkg.Outer.Oneof.Inner"),
+            Some("pkg::outer::oneof::Inner")
+        );
+    }
+
+    #[test]
+    fn test_top_level_module_avoids_an_enum_in_another_file() {
+        let mode = || msg_with_nested("Mode", vec![msg("Detail")]);
+        let same_file = [make_file(
+            "a.proto",
+            "pkg",
+            vec![mode()],
+            vec![enum_desc("mode")],
+        )];
+        let two_files = [
+            make_file("a.proto", "pkg", vec![mode()], vec![]),
+            make_file("b.proto", "pkg", vec![], vec![enum_desc("mode")]),
+        ];
+        let config = CodeGenConfig::default();
+        for files in [&same_file[..], &two_files[..]] {
+            let ctx = CodeGenContext::new(files, &config, &config.extern_paths);
+            assert_eq!(
+                ctx.rust_type(".pkg.Mode.Detail"),
+                Some("pkg::mode_::Detail")
+            );
+        }
+    }
+
+    #[test]
+    fn test_module_avoids_a_sub_package_named_after_a_path_keyword() {
+        // The sub-package `pkg.crate` is the module `crate_`.
+        let files = [
+            make_file(
+                "a.proto",
+                "pkg",
+                vec![msg_with_nested("Crate", vec![msg("Inner")])],
+                vec![],
+            ),
+            make_file("b.proto", "pkg.crate", vec![msg("Thing")], vec![]),
+            // A sub-package named `arbitrary` keeps that module name.
+            make_file(
+                "c.proto",
+                "pkg",
+                vec![msg_with_nested("Arbitrary", vec![msg("Inner")])],
+                vec![],
+            ),
+            make_file("d.proto", "pkg.arbitrary", vec![msg("Thing")], vec![]),
+        ];
+        let config = CodeGenConfig::default();
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        assert_eq!(
+            ctx.rust_type(".pkg.Crate.Inner"),
+            Some("pkg::crate__::Inner")
+        );
+        assert_eq!(
+            ctx.rust_type(".pkg.Arbitrary.Inner"),
+            Some("pkg::arbitrary_::Inner")
+        );
+    }
+
+    #[test]
+    fn test_extern_package_nested_types_use_the_renamed_modules() {
+        let files = [
+            make_file(
+                "other.proto",
+                "other",
+                vec![
+                    msg_with_nested("item", vec![msg("Inner")]),
+                    msg_with_nested("Crate", vec![msg("Inner")]),
+                    msg_with_nested("Outer", vec![msg_with_nested("leaf", vec![msg("Deep")])]),
+                ],
+                vec![],
+            ),
+            make_file("local.proto", "local", vec![msg("User")], vec![]),
+        ];
+        let config = CodeGenConfig {
+            extern_paths: vec![(".other".into(), "::ext::other".into())],
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::for_generate(&files, &["local.proto".to_string()], &config);
+        assert_eq!(
+            ctx.rust_type(".other.item.Inner"),
+            Some("::ext::other::item_::Inner")
+        );
+        assert_eq!(
+            ctx.rust_type(".other.Crate.Inner"),
+            Some("::ext::other::crate_::Inner")
+        );
+        assert_eq!(
+            ctx.rust_type(".other.Outer.leaf.Deep"),
+            Some("::ext::other::outer::leaf_::Deep")
+        );
+        // The `__buffa` trees are entered at the package and use the same
+        // module path.
+        let split = ctx
+            .rust_type_relative_split(".other.item.Inner", "local", 0)
+            .expect("type resolves");
+        assert_eq!(split.to_package, "::ext::other");
+        assert_eq!(split.within_package, "item_::Inner");
+    }
+
+    #[test]
+    fn test_exact_extern_override_nested_types_use_the_renamed_module() {
+        let files = [make_file(
+            "test.proto",
+            "pkg",
+            vec![
+                msg_with_nested("item", vec![msg("Inner")]),
+                msg_with_nested("Crate", vec![msg("Inner")]),
+                msg_with_nested("Outer", vec![msg_with_nested("leaf", vec![msg("Deep")])]),
+            ],
+            vec![],
+        )];
+        let config = CodeGenConfig {
+            extern_paths: vec![
+                (".pkg.item".into(), "::ext::item".into()),
+                (".pkg.Crate".into(), "::ext::Crate".into()),
+                (".pkg.Outer.leaf".into(), "::ext::outer::leaf".into()),
+            ],
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &config.extern_paths);
+        assert_eq!(
+            ctx.rust_type(".pkg.item.Inner"),
+            Some("::ext::item_::Inner")
+        );
+        assert_eq!(
+            ctx.rust_type(".pkg.Crate.Inner"),
+            Some("::ext::crate_::Inner")
+        );
+        assert_eq!(
+            ctx.rust_type(".pkg.Outer.leaf.Deep"),
+            Some("::ext::outer::leaf_::Deep")
         );
     }
 

@@ -1101,6 +1101,189 @@ fn module_no_collision_keeps_natural_module_name() {
 }
 
 #[test]
+fn module_of_a_lower_case_message_gets_a_suffix() {
+    // `message item` declares `struct item`, so its nested types, and its
+    // modules in the `__buffa` trees, are in `item_`.
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package foo;
+        message item {
+          message Inner { int32 x = 1; }
+          Inner inner = 1;
+          oneof pick { int32 a = 2; string b = 3; }
+        }
+        message User { item.Inner inner = 1; }
+        "#,
+        &CodeGenConfig::default(),
+    );
+    assert!(content.contains("pub struct item {"), "{content}");
+    assert!(!content.contains("pub mod item {"), "{content}");
+    // Once in the owned tree, and once each under `__buffa::view`,
+    // `__buffa::oneof` and `__buffa::view::oneof`.
+    assert_eq!(content.matches("pub mod item_ {").count(), 4, "{content}");
+    for path in [
+        "item_::Inner",
+        "__buffa::view::item_::InnerView",
+        "__buffa::oneof::item_::Pick",
+    ] {
+        assert!(content.contains(path), "missing `{path}`: {content}");
+    }
+    assert!(
+        content.contains("because `item` is not available in this scope"),
+        "the renamed module is documented: {content}"
+    );
+}
+
+#[test]
+fn module_named_after_a_path_keyword_gets_a_suffix() {
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package foo;
+        message Crate { message Inner { int32 x = 1; } Inner inner = 1; }
+        message Self { message Inner { int32 x = 1; } Inner inner = 1; }
+        message User { Crate.Inner a = 1; Self.Inner b = 2; }
+        "#,
+        &CodeGenConfig::default(),
+    );
+    for expected in [
+        "pub mod crate_ {",
+        "pub mod self_ {",
+        "pub struct Self_ {",
+        "crate_::Inner",
+        "self_::Inner",
+        "__buffa::view::crate_::InnerView",
+    ] {
+        assert!(
+            content.contains(expected),
+            "missing `{expected}`: {content}"
+        );
+    }
+    assert!(!content.contains("crate::Inner"), "{content}");
+}
+
+#[test]
+fn module_named_arbitrary_gets_a_suffix_whatever_the_config() {
+    let proto = r#"
+        syntax = "proto3";
+        package foo;
+        message Arbitrary { message Inner { int32 x = 1; } Inner inner = 1; }
+        "#;
+    let mut config = no_views();
+    for generate_arbitrary in [false, true] {
+        config.generate_arbitrary = generate_arbitrary;
+        let content = generate_proto(proto, &config);
+        assert!(content.contains("pub mod arbitrary_ {"), "{content}");
+        assert!(content.contains("arbitrary_::Inner"), "{content}");
+    }
+}
+
+#[test]
+fn module_named_oneof_gets_a_suffix_at_package_level() {
+    // `__buffa::view::oneof` is the root of the view-oneof tree.
+    let proto = r#"
+        syntax = "proto3";
+        package foo;
+        message Oneof {
+          message Inner { int32 x = 1; }
+          message Oneof { message Deep { int32 x = 1; } Deep deep = 1; }
+          Inner inner = 1;
+          oneof pick { int32 a = 2; string b = 3; }
+        }
+        "#;
+    for config in [CodeGenConfig::default(), no_views()] {
+        let content = generate_proto(proto, &config);
+        assert!(content.contains("pub mod oneof_ {"), "{content}");
+        assert!(content.contains("oneof_::Inner"), "{content}");
+        // The nested `Oneof` keeps `oneof`: only the package level is taken.
+        assert!(content.contains("oneof_::oneof::Deep"), "{content}");
+    }
+    let content = generate_proto(proto, &CodeGenConfig::default());
+    assert!(
+        content.contains("__buffa::view::oneof_::InnerView"),
+        "{content}"
+    );
+    assert!(
+        content.contains("__buffa::view::oneof::oneof_::Pick"),
+        "{content}"
+    );
+}
+
+#[test]
+fn nested_module_avoids_a_sibling_type_name() {
+    // Inside `Outer`: `leaf` declares `struct leaf`, and the enum `mode`
+    // takes the module name of `Mode`.
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package foo;
+        message Outer {
+          message leaf { message Deep { int32 n = 1; } Deep deep = 1; }
+          message Mode { message Detail { int32 n = 1; } Detail detail = 1; }
+          enum mode { MODE_UNSPECIFIED = 0; }
+          leaf l = 1;
+          Mode m = 2;
+          mode e = 3;
+        }
+        "#,
+        &no_views(),
+    );
+    for expected in [
+        "pub mod leaf_ {",
+        "pub mod mode_ {",
+        "leaf_::Deep",
+        "mode_::Detail",
+    ] {
+        assert!(
+            content.contains(expected),
+            "missing `{expected}`: {content}"
+        );
+    }
+    assert!(!content.contains("pub mod leaf {"), "{content}");
+}
+
+#[test]
+fn module_deconflicted_from_a_subpackage_is_renamed_in_the_view_tree() {
+    // `InnerView` takes the name of the natural re-export of `Inner`'s view.
+    let dir = tempfile::tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("foo.proto"),
+        "syntax = \"proto3\";\npackage foo;\n\
+         message Oof {\n\
+           message Inner { int32 x = 1; }\n\
+           message InnerView { int32 y = 1; }\n\
+           Inner inner = 1;\n\
+         }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("foo_oof.proto"),
+        "syntax = \"proto3\";\npackage foo.oof;\nmessage Thing { int32 y = 1; }\n",
+    )
+    .unwrap();
+    let fds = compile_protos(
+        &[
+            dir.path().join("foo.proto").to_str().unwrap(),
+            dir.path().join("foo_oof.proto").to_str().unwrap(),
+        ],
+        &[dir.path().to_str().unwrap()],
+    );
+    let content =
+        buffa_codegen::generate(&fds.file, &["foo.proto".into()], &CodeGenConfig::default())
+            .expect("codegen")
+            .into_iter()
+            .map(|f| f.content)
+            .collect::<Vec<_>>()
+            .join("\n");
+    assert!(!content.contains("pub mod oof {"), "{content}");
+    assert!(
+        content.contains("__buffa::view::oof_::InnerView"),
+        "{content}"
+    );
+}
+
+#[test]
 fn inline_string_field_mapping() {
     use buffa_codegen::StringRepr;
     let mut config = no_views();

@@ -125,13 +125,19 @@ pub(crate) fn generate_view_with_nesting(
     };
     // Path prefixes from the view struct's scope to its ancillary enums.
     let view_oneof_prefix = ancillary_prefix(
+        ctx,
         AncillaryKind::ViewOneof,
         current_package,
         proto_fqn,
         view_depth,
     );
-    let owned_oneof_prefix =
-        ancillary_prefix(AncillaryKind::Oneof, current_package, proto_fqn, view_depth);
+    let owned_oneof_prefix = ancillary_prefix(
+        ctx,
+        AncillaryKind::Oneof,
+        current_package,
+        proto_fqn,
+        view_depth,
+    );
 
     // View struct fields (excludes real-oneof members, map fields, and
     // unsupported types like groups).
