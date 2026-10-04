@@ -835,6 +835,8 @@ let maybe_address = Some(Address::default());
 msg.address = maybe_address.into();
 ```
 
+`==` includes presence, as on `Option`: an unset `address` differs from one set to `Address::default()`, since only the set one is encoded. Write `*a.address == *b.address` to compare the values alone.
+
 See the [`MessageField` rustdoc](https://docs.rs/buffa/latest/buffa/struct.MessageField.html#construction-and-conversion) for the complete construction and consuming-conversion examples.
 
 ### `EnumValue<T>` — type-safe open enums
