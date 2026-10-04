@@ -38,6 +38,8 @@ pub(crate) mod impl_text;
 pub(crate) mod imports;
 pub(crate) mod lazy_view;
 pub(crate) mod message;
+pub(crate) mod name_override;
+pub use name_override::NameOptionProblem;
 pub(crate) mod oneof;
 pub(crate) mod owned_view;
 pub(crate) mod reflect;
@@ -1818,7 +1820,10 @@ pub struct CodeGenConfig {
     /// verbatim proto name. If an adjusted field name still collides, the
     /// changed members in that collision group fall back to their verbatim
     /// proto names. Each adjustment is reported as a
-    /// [`CodeGenWarning::IdiomaticFieldNamesAdjusted`]. protoc rejects the
+    /// [`CodeGenWarning::IdiomaticFieldNamesAdjusted`]. A field that sets
+    /// `(buffa.ext.field).name` is not converted and not adjusted, and a
+    /// member that converts to its name is the error
+    /// [`CodeGenError::NameOptionConflict`]. protoc rejects the
     /// underlying name collisions for proto3 and editions files (conflicting
     /// `json_name`s), so adjustments are only reachable from proto2 inputs.
     ///
@@ -3219,6 +3224,10 @@ fn warn_excluded_refs_msg(
 ///   [`CodeGenError::ModuleNameConflict`],
 ///   [`CodeGenError::ReservedFieldName`] or
 ///   [`CodeGenError::ReservedModuleName`].
+/// - For `(buffa.ext.field).name`: [`CodeGenError::InvalidNameOption`] if
+///   the value cannot be the Rust name, or
+///   [`CodeGenError::NameOptionConflict`] if another field or oneof of the
+///   same struct, or another variant of the same oneof, has that Rust name.
 /// - Other [`CodeGenError`] variants for a schema that generation does not
 ///   support or a malformed descriptor, such as
 ///   [`CodeGenError::MissingField`].
@@ -4046,7 +4055,8 @@ fn validate_shared_root_name(
 ///
 /// Checks, in one walk of the message tree:
 ///
-/// - **Required type names**: every message and enum has a non-empty name.
+/// - **Required names**: every message, enum and message field has a
+///   non-empty name. An extension's name is not checked.
 /// - **Reserved field names**: no field starts with `__buffa_` (would clash
 ///   with generated `__buffa_unknown_fields` / `__buffa_cached_size`).
 /// - **Module-name conflicts**: no two sibling messages snake_case to the
@@ -4104,13 +4114,16 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
             }
 
             for field in &msg.field {
-                if let Some(fname) = &field.name {
-                    if fname.starts_with("__buffa_") {
-                        return Err(CodeGenError::ReservedFieldName {
-                            message_name: fqn,
-                            field_name: fname.clone(),
-                        });
-                    }
+                let fname = field
+                    .name
+                    .as_deref()
+                    .filter(|name| !name.is_empty())
+                    .ok_or(CodeGenError::MissingField("field.name"))?;
+                if fname.starts_with("__buffa_") {
+                    return Err(CodeGenError::ReservedFieldName {
+                        message_name: fqn,
+                        field_name: fname.to_string(),
+                    });
                 }
             }
 
@@ -4182,6 +4195,7 @@ fn generate_proto_content(
     use crate::message::MessageOutput;
 
     validate_file(file)?;
+    name_override::validate_file(ctx, file)?;
 
     let resolver = imports::ImportResolver::new();
     let features = crate::features::for_file(file);
@@ -5262,6 +5276,53 @@ pub enum CodeGenError {
          and digits only)"
     )]
     InvalidTypeNamePrefix { prefix: String },
+    /// A `name` setting of a `buffa.ext` option, such as
+    /// `(buffa.ext.field).name`, has a value that cannot be the Rust name of
+    /// the element that sets it.
+    ///
+    /// buffa uses the value as written, so it must be an ASCII Rust
+    /// identifier that is not a keyword and does not start with `__buffa_`.
+    /// [`NameOptionProblem`] lists every case.
+    #[error("invalid `{option}` = {name:?} on '{element}': {problem}")]
+    #[non_exhaustive]
+    InvalidNameOption {
+        /// The setting as a schema writes it, such as
+        /// `(buffa.ext.field).name`.
+        option: &'static str,
+        /// Fully-qualified proto name of the element that sets the option,
+        /// without a leading dot.
+        element: String,
+        /// The value of the setting.
+        name: String,
+        /// Why the value was rejected.
+        problem: NameOptionProblem,
+    },
+    /// A `name` setting of a `buffa.ext` option gives an element a Rust name
+    /// that another element in the same scope has.
+    ///
+    /// For `(buffa.ext.field).name` the scope is a message. The fields
+    /// outside a oneof and the oneofs share the names of the struct's
+    /// fields, and the fields of one oneof share the names of its variants.
+    /// Code generation does not rename either element: change the option.
+    #[error(
+        "name conflict: `{option}` gives '{element}' the Rust name \
+         `{rust_name}`, which '{other}' also has; change the option"
+    )]
+    #[non_exhaustive]
+    NameOptionConflict {
+        /// The setting as a schema writes it, such as
+        /// `(buffa.ext.field).name`.
+        option: &'static str,
+        /// Fully-qualified proto name of the element whose option sets the
+        /// Rust name, without a leading dot. When both elements set it, this
+        /// is the one declared second.
+        element: String,
+        /// Fully-qualified proto name of the other element with that Rust
+        /// name, without a leading dot.
+        other: String,
+        /// The Rust name that both elements map to.
+        rust_name: String,
+    },
 }
 
 #[cfg(test)]

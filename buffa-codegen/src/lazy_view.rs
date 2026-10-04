@@ -571,7 +571,7 @@ fn lazy_struct_field(
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     let number = field.number.unwrap_or(0);
     let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
     let field_fqn = format!("{}.{}", proto_fqn, field_name);
@@ -719,13 +719,7 @@ fn lazy_singular_message_arm(
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
     let field_number = validated_field_number(field)?;
-    let ident = scope.ctx.field_ident(
-        field
-            .name
-            .as_deref()
-            .ok_or(CodeGenError::MissingField("field.name"))?,
-        field.number.unwrap_or(0),
-    );
+    let ident = scope.ctx.field_ident(field);
     let wire_check = wire_type_check(
         &quote! { tag },
         &quote! { ::buffa::encoding::WireType::LengthDelimited },
@@ -753,13 +747,7 @@ fn lazy_repeated_message_arm(
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
     let field_number = validated_field_number(field)?;
-    let ident = scope.ctx.field_ident(
-        field
-            .name
-            .as_deref()
-            .ok_or(CodeGenError::MissingField("field.name"))?,
-        field.number.unwrap_or(0),
-    );
+    let ident = scope.ctx.field_ident(field);
     let wire_check = wire_type_check(
         &quote! { tag },
         &quote! { ::buffa::encoding::WireType::LengthDelimited },
@@ -799,7 +787,7 @@ fn build_lazy_to_owned_fields(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
-        let ident = ctx.field_ident(name, field.number.unwrap_or(0));
+        let ident = ctx.field_ident(field);
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
         if is_repeated && is_map_field(msg, field) {
             let expr = map_to_owned_expr(scope, msg, field, &ident)?;
@@ -870,7 +858,7 @@ fn build_lazy_to_owned_fields(
                     .name
                     .as_deref()
                     .ok_or(CodeGenError::MissingField("field.name"))?;
-                let variant = crate::oneof::oneof_variant_ident(fname);
+                let variant = crate::oneof::oneof_variant_ident(f);
                 let ty = effective_type(ctx, f, features);
                 let conv = oneof_variant_to_owned(scope, ty, oneof_name, fname);
                 Ok(quote! {
@@ -1001,7 +989,7 @@ fn lazy_field_serialize_stmt(
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let json_name = field.json_name.as_deref().unwrap_or(field_name);
-    let ident = scope.ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = scope.ctx.field_ident(field);
     let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
 
     if is_repeated {

@@ -33,7 +33,10 @@
 //!
 //! Within one message, the struct namespace is the set of non-oneof-member
 //! fields plus the non-synthetic oneof names (each oneof is one struct
-//! field). When two or more members convert to the same candidate name:
+//! field). A field that sets `(buffa.ext.field).name` is outside the plan:
+//! its name is the option's value, and a member that converts to that name
+//! is the error `NameOptionConflict`, not an adjustment. When two or more of
+//! the other members convert to the same candidate name:
 //!
 //! - A member whose name the conversion leaves **unchanged** (it was already
 //!   snake_case) always keeps it. Proto names are unique per message, so at
@@ -219,7 +222,8 @@ fn sweep_inherited(
         let Some(name) = field.name.as_deref() else {
             continue;
         };
-        if is_real_oneof_member(field) {
+        // A `name` option sets the Rust name, so the field inherits nothing.
+        if is_real_oneof_member(field) || crate::name_override::field_name(field).is_some() {
             continue;
         }
         if assigned.contains(&(fqn.to_string(), name.to_string())) {
@@ -267,8 +271,8 @@ fn plan_message(
     assigned: &mut HashSet<(String, String)>,
 ) {
     // Build the struct namespace: non-oneof-member fields + real oneofs.
-    // Oneof member fields appear only as PascalCase enum variants and inside
-    // per-arm scopes, so they cannot collide with struct members.
+    // Oneof member fields appear only as enum variants and inside per-arm
+    // scopes, so they cannot collide with struct members.
     let mut members: Vec<Member<'_>> = Vec::new();
     let mut real_oneofs: HashSet<i32> = HashSet::new();
     for field in &msg.field {
@@ -279,6 +283,12 @@ fn plan_message(
             if let Some(idx) = field.oneof_index {
                 real_oneofs.insert(idx);
             }
+            continue;
+        }
+        // A `name` option takes the field out of the plan: its Rust name is
+        // fixed, and `name_override::validate_file` rejects a collision with
+        // it instead of adjusting the other member.
+        if crate::name_override::field_name(field).is_some() {
             continue;
         }
         members.push(Member {

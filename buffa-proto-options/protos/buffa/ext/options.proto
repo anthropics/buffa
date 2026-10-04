@@ -6,7 +6,7 @@
 //
 //   message Reading {
 //     option (buffa.ext.message) = {};
-//     double mass = 1 [(buffa.ext.field) = {}];
+//     double mass = 1 [(buffa.ext.field).name = "kilograms"];
 //   }
 //
 // protoc resolves the import from an include path. The file is in the
@@ -37,7 +37,32 @@ message FileOptions {}
 message MessageOptions {}
 
 // Settings for the code generated from one field.
-message FieldOptions {}
+message FieldOptions {
+  // The Rust name of the field that sets this option, in place of the name
+  // that buffa derives from the proto name:
+  //
+  //     string type = 1 [(buffa.ext.field).name = "kind"];
+  //
+  // The Rust identifier is the value exactly as written. The value must be
+  // an ASCII Rust identifier that is not a keyword and does not start with
+  // `__buffa_`. buffa does not escape it, and `idiomatic_field_names` does
+  // not convert it.
+  //
+  // buffa does not check the case of the value. A field outside a oneof is
+  // a struct field, where the Rust convention is snake_case. A field in a
+  // oneof is an enum variant, where the convention is UpperCamelCase:
+  // `PlainText` gives the variant `PlainText`, and `plain_text` gives the
+  // variant `plain_text`.
+  //
+  // Only the Rust identifiers change. The wire format, the JSON and text
+  // format names, and the descriptor keep the proto name.
+  //
+  // Code generation fails for a value that is not such an identifier, for
+  // the option on an extension, and for a value that another member already
+  // has as its Rust name. The members of a struct are the fields outside a
+  // oneof and the oneofs, and the members of a oneof's enum are its fields.
+  optional string name = 1;
+}
 
 // Settings for the code generated from one oneof.
 message OneofOptions {}

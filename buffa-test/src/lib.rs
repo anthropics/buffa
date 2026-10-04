@@ -741,6 +741,20 @@ pub mod ext_options {
     buffa::include_proto!("test.extoptions");
 }
 
+/// `(buffa.ext.field).name` fixture: fields and oneof variants with Rust
+/// names set by the option. See tests/ext_name.rs.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod ext_name {
+    buffa::include_proto!("test.extname");
+}
+
+/// `(buffa.ext.field).name` with the table codec. See tests/ext_name.rs.
+#[cfg(has_table_codec)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod ext_name_table {
+    buffa::include_proto!("test.extname_table");
+}
+
 // Mixed-mode reflection fixtures: bridge-mode dependency, vtable-mode parent
 // referencing it via extern_path. See tests/reflect_mixed_mode.rs.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]

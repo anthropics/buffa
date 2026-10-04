@@ -181,8 +181,8 @@ mod tests {
     /// built against this one.
     #[test]
     fn unknown_setting_survives_a_round_trip() {
-        // Field 1, varint 1: a setting this version does not declare.
-        let newer = [0x08, 0x01];
+        // Field 2047, varint 1: a number far above the declared settings.
+        let newer = [0xF8, 0x7F, 0x01];
         let decoded = FieldOptions::decode_from_slice(&newer).unwrap();
         assert_eq!(decoded.encode_to_vec(), newer);
     }

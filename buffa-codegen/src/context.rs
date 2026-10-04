@@ -5,7 +5,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::features::{self, ResolvedFeatures};
-use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDescriptorProto};
+use crate::generated::descriptor::{
+    DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+};
 use crate::oneof::to_snake_case;
 use crate::CodeGenConfig;
 
@@ -491,16 +493,22 @@ impl<'a> CodeGenContext<'a> {
 
     /// The Rust source name for a proto field (pre keyword escaping).
     ///
-    /// With `idiomatic_field_names` off this is the proto name verbatim.
-    /// With it on, the name is snake_case-converted, unless the collision
-    /// plan recorded an exception for `(name, number)` (see
-    /// [`crate::field_names`]).
-    pub(crate) fn field_rust_name<'n>(&'n self, name: &'n str, number: i32) -> Cow<'n, str> {
+    /// A `(buffa.ext.field).name` option sets the name outright. Without
+    /// one, the name is the proto name verbatim when `idiomatic_field_names`
+    /// is off. With it on, the name is snake_case-converted, unless the
+    /// collision plan recorded an exception for the field's
+    /// `(name, number)` (see [`crate::field_names`]).
+    pub(crate) fn field_rust_name<'n>(&'n self, field: &'n FieldDescriptorProto) -> Cow<'n, str> {
+        if let Some(name) = crate::name_override::field_name(field) {
+            return Cow::Owned(name);
+        }
+        let name = field.name.as_deref().unwrap_or_default();
         if !self.config.idiomatic_field_names {
             return Cow::Borrowed(name);
         }
         if !self.field_renames.is_empty() {
-            if let Some(renamed) = self.field_renames.get(&(name.to_string(), number)) {
+            let key = (name.to_string(), field.number.unwrap_or(0));
+            if let Some(renamed) = self.field_renames.get(&key) {
                 return Cow::Borrowed(renamed.as_str());
             }
         }
@@ -514,8 +522,17 @@ impl<'a> CodeGenContext<'a> {
 
     /// The Rust field identifier for a proto field:
     /// [`field_rust_name`](Self::field_rust_name) plus keyword escaping.
-    pub(crate) fn field_ident(&self, name: &str, number: i32) -> proc_macro2::Ident {
-        crate::idents::make_field_ident(&self.field_rust_name(name, number))
+    ///
+    /// # Panics
+    ///
+    /// Panics if the Rust name is not an identifier. `validate_file` rejects
+    /// an empty proto name, and
+    /// [`name_override::validate_file`](crate::name_override::validate_file)
+    /// rejects an option value that is not an identifier. A non-empty proto
+    /// name that is not an identifier, which protoc does not produce, still
+    /// panics.
+    pub(crate) fn field_ident(&self, field: &FieldDescriptorProto) -> proc_macro2::Ident {
+        crate::idents::make_field_ident(&self.field_rust_name(field))
     }
 
     /// The Rust source name for a oneof (pre keyword escaping).
@@ -543,12 +560,19 @@ impl<'a> CodeGenContext<'a> {
     /// Doc note for a field whose Rust name was *adjusted* by the
     /// `idiomatic_field_names` collision plan (an `_f<number>` suffix or a
     /// verbatim fallback). `None` for the plain conversion — there the
-    /// `Field N: `name`` doc tag already discloses the proto name.
-    pub(crate) fn field_rename_note(&self, name: &str, number: i32) -> Option<String> {
-        if !self.config.idiomatic_field_names || self.field_renames.is_empty() {
+    /// `Field N: `name`` doc tag already discloses the proto name. Also
+    /// `None` for a field that sets `(buffa.ext.field).name`, which the plan
+    /// does not adjust.
+    pub(crate) fn field_rename_note(&self, field: &FieldDescriptorProto) -> Option<String> {
+        if !self.config.idiomatic_field_names
+            || self.field_renames.is_empty()
+            || crate::name_override::field_name(field).is_some()
+        {
             return None;
         }
-        let resolved = self.field_renames.get(&(name.to_string(), number))?;
+        let name = field.name.as_deref().unwrap_or_default();
+        let key = (name.to_string(), field.number.unwrap_or(0));
+        let resolved = self.field_renames.get(&key)?;
         Some(format!(
             " Note: the snake_case conversion of `{name}` collides with another \
              member of this message; the Rust name was adjusted to `{resolved}` \
@@ -574,9 +598,9 @@ impl<'a> CodeGenContext<'a> {
         let mut real_oneofs: HashSet<i32> = HashSet::new();
         let mut found = false;
         for field in &msg.field {
-            let Some(name) = field.name.as_deref() else {
+            if field.name.is_none() {
                 continue;
-            };
+            }
             // Mirrors `impl_message::is_real_oneof_member` (not imported to
             // keep context.rs free of emission-module dependencies).
             if field.oneof_index.is_some() && !field.proto3_optional.unwrap_or(false) {
@@ -585,7 +609,7 @@ impl<'a> CodeGenContext<'a> {
                 }
                 continue;
             }
-            if non_snake(&self.field_rust_name(name, field.number.unwrap_or(0))) {
+            if non_snake(&self.field_rust_name(field)) {
                 found = true;
                 break;
             }

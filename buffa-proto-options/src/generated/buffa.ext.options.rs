@@ -471,13 +471,45 @@ pub const __MESSAGE_OPTIONS_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::b
 #[cfg_attr(feature = "json", serde(default))]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
 pub struct FieldOptions {
+    /// The Rust name of the field that sets this option, in place of the name
+    /// that buffa derives from the proto name:
+    ///
+    /// ```text
+    /// string type = 1 [(buffa.ext.field).name = "kind"];
+    /// ```
+    ///
+    /// The Rust identifier is the value exactly as written. The value must be
+    /// an ASCII Rust identifier that is not a keyword and does not start with
+    /// `__buffa_`. buffa does not escape it, and `idiomatic_field_names` does
+    /// not convert it.
+    ///
+    /// buffa does not check the case of the value. A field outside a oneof is
+    /// a struct field, where the Rust convention is snake_case. A field in a
+    /// oneof is an enum variant, where the convention is UpperCamelCase:
+    /// `PlainText` gives the variant `PlainText`, and `plain_text` gives the
+    /// variant `plain_text`.
+    ///
+    /// Only the Rust identifiers change. The wire format, the JSON and text
+    /// format names, and the descriptor keep the proto name.
+    ///
+    /// Code generation fails for a value that is not such an identifier, for
+    /// the option on an extension, and for a value that another member already
+    /// has as its Rust name. The members of a struct are the fields outside a
+    /// oneof and the oneofs, and the members of a oneof's enum are its fields.
+    ///
+    /// Field 1: `name`
+    #[cfg_attr(
+        feature = "json",
+        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+    )]
+    pub name: ::core::option::Option<::buffa::alloc::string::String>,
     #[cfg_attr(feature = "json", serde(skip))]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
 impl ::core::fmt::Debug for FieldOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-        f.debug_struct("FieldOptions").finish()
+        f.debug_struct("FieldOptions").field("name", &self.name).finish()
     }
 }
 impl FieldOptions {
@@ -486,6 +518,18 @@ impl FieldOptions {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/buffa.ext.FieldOptions";
+}
+impl FieldOptions {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_name(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.name = Some(value.into());
+        self
+    }
 }
 ::buffa::impl_default_instance!(FieldOptions);
 #[cfg(feature = "reflect")]
@@ -510,6 +554,11 @@ const _: () = {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
             match field.number() {
+                1u32 => {
+                    ::buffa_descriptor::reflect::ValueRef::String(
+                        self.name.as_deref().unwrap_or(""),
+                    )
+                }
                 _ => {
                     ::core::debug_assert!(
                         false,
@@ -522,6 +571,7 @@ const _: () = {
         }
         fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
             match field.number() {
+                1u32 => self.name.is_some(),
                 _ => false,
             }
         }
@@ -602,6 +652,9 @@ impl ::buffa::Message for FieldOptions {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u64;
+        if let Some(ref v) = self.name {
+            size += 1u64 + ::buffa::types::string_encoded_len(v) as u64;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u64;
         ::buffa::saturate_size(size)
     }
@@ -612,6 +665,9 @@ impl ::buffa::Message for FieldOptions {
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        if let Some(ref v) = self.name {
+            ::buffa::types::put_string_field(1u32, v, buf);
+        }
         self.__buffa_unknown_fields.write_to(buf);
     }
     fn merge_field(
@@ -625,6 +681,16 @@ impl ::buffa::Message for FieldOptions {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         match tag.field_number() {
+            1u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                ::buffa::types::merge_string(
+                    self.name.get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);
@@ -633,6 +699,7 @@ impl ::buffa::Message for FieldOptions {
         ::core::result::Result::Ok(())
     }
     fn clear(&mut self) {
+        self.name = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -653,6 +720,10 @@ impl ::buffa::text::TextFormat for FieldOptions {
     ) -> ::core::fmt::Result {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        if let ::core::option::Option::Some(ref __v) = self.name {
+            enc.write_field_name("name")?;
+            enc.write_string(__v)?;
+        }
         enc.write_unknown_fields(&self.__buffa_unknown_fields)?;
         ::core::result::Result::Ok(())
     }
@@ -662,8 +733,15 @@ impl ::buffa::text::TextFormat for FieldOptions {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        if dec.read_field_name()?.is_some() {
-            return ::core::result::Result::Err(dec.unknown_field());
+        while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
+            match __name {
+                "name" => {
+                    self.name = ::core::option::Option::Some(
+                        dec.read_string()?.into_owned(),
+                    );
+                }
+                _ => return ::core::result::Result::Err(dec.unknown_field()),
+            }
         }
         ::core::result::Result::Ok(())
     }

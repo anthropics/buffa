@@ -1,0 +1,36 @@
+// Fixture for `(buffa.ext.field).name`: the option sets the Rust name of a
+// field, and the wire format, JSON, text format and descriptor keep the proto
+// name. See tests/ext_name.rs.
+
+syntax = "proto2";
+
+package test.extname;
+
+import "buffa/ext/options.proto";
+
+message Renamed {
+  // A Rust keyword. Without the option the field is `r#type`.
+  optional string type = 1 [(buffa.ext.field).name = "kind"];
+  // A keyword that has no raw form. Without the option the field is `self_`.
+  required int32 self = 2 [(buffa.ext.field).name = "this"];
+  repeated string tags = 3 [(buffa.ext.field).name = "labels"];
+  map<string, int32> counts = 4 [(buffa.ext.field).name = "tallies"];
+  optional Inner inner = 5 [(buffa.ext.field).name = "child"];
+  optional string plain = 6;
+
+  oneof body {
+    // The variant is the value as written: `PlainText`.
+    string text = 7 [(buffa.ext.field).name = "PlainText"];
+    // A snake_case value is not converted: the variant is `raw_bytes`.
+    bytes raw = 8 [(buffa.ext.field).name = "raw_bytes"];
+    Inner nested = 9;
+    // A variant with the name of a trait method. The `From` impls that
+    // buffa generates for `nested` call `From::from` on the same enum.
+    string origin = 10 [(buffa.ext.field).name = "from"];
+  }
+
+  message Inner {
+    // The name and number of `Renamed.type`, without the option.
+    optional string type = 1;
+  }
+}

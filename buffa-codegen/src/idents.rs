@@ -64,6 +64,11 @@ pub fn rust_path_to_tokens(path: &str) -> TokenStream {
 /// Most keywords use raw identifiers (`r#type`). The keywords `self`, `super`,
 /// `Self`, `crate` cannot be raw identifiers and are suffixed with `_` instead
 /// (e.g. `self_`), matching prost's convention.
+///
+/// This is the identifier of a struct field only when the proto name is the
+/// Rust name. A field that sets `(buffa.ext.field).name` has the option's
+/// value as its Rust name, and `idiomatic_field_names` converts a proto name
+/// before it is escaped.
 pub fn make_field_ident(name: &str) -> Ident {
     if is_rust_keyword(name) {
         if can_be_raw_ident(name) {

@@ -23,7 +23,9 @@ pub mod value {
     }
     impl From<super::super::super::Struct> for ::core::option::Option<Kind> {
         fn from(v: super::super::super::Struct) -> Self {
-            Self::Some(Kind::from(v))
+            Self::Some(
+                <Kind as ::core::convert::From<super::super::super::Struct>>::from(v),
+            )
         }
     }
     impl From<super::super::super::ListValue> for Kind {
@@ -33,7 +35,9 @@ pub mod value {
     }
     impl From<super::super::super::ListValue> for ::core::option::Option<Kind> {
         fn from(v: super::super::super::ListValue) -> Self {
-            Self::Some(Kind::from(v))
+            Self::Some(
+                <Kind as ::core::convert::From<super::super::super::ListValue>>::from(v),
+            )
         }
     }
 }

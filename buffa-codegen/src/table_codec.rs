@@ -183,7 +183,7 @@ fn field_entry(
     } = scope;
     let field = f.field;
     let field_name = field.name.as_deref().unwrap_or("");
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     let kind = format_ident!("{}", f.kind);
     let number = f.number;
 

@@ -15,6 +15,9 @@ buffa = { workspace = true, features = ["std", "fast-utf8"] }
 # text. The workspace dep is `default-features = false`; `std` is added back
 # because codegen is a build-time tool, never `no_std`.
 buffa-descriptor = { workspace = true, features = ["std"] }
+# The `buffa.ext` options that a schema sets on its elements, read from the
+# descriptors with the binary codec.
+buffa-proto-options = { workspace = true }
 prettyplease = { workspace = true }
 proc-macro2 = { workspace = true }
 quote = { workspace = true }

@@ -85,6 +85,8 @@ The generated code is checked in (regenerate via `task gen-bootstrap-types`). Th
 
 The options keep protobuf's default runtime retention, so they are present both in the `CodeGeneratorRequest.proto_file` descriptors that the plugin reads and in the descriptor set that reflection embeds.
 
+**Names.** `(buffa.ext.field).name` sets the Rust name of a field. The struct field, or the variant for a field in a oneof, is the value as written; codegen does not convert its case, escape it or adjust it. A name that codegen derives can be adjusted when it collides, as the `_f<number>` suffix of `idiomatic_field_names` does. A name that the schema sets stays as it is, and so does every name around it: a collision with a set name is the error `CodeGenError::NameOptionConflict`. An `idiomatic_field_names` adjustment is keyed by proto name and field number, so it applies to every message that has that pair. `buffa-codegen` reads the option from one field's descriptor, so the option renames that field only.
+
 ### `buffa-codegen` — Shared Code Generation Logic
 
 The code generation library, shared between `protoc-gen-buffa` and `buffa-build`. Takes protobuf descriptors (from protoc's `FileDescriptorProto`) and emits Rust source code.

@@ -92,7 +92,7 @@ pub(crate) fn reflect_owned_impls(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
-        let id = ctx.field_ident(name, field.number.unwrap_or(0));
+        let id = ctx.field_ident(field);
         let number = field.number.unwrap_or(0) as u32;
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
 
@@ -219,7 +219,7 @@ pub(crate) fn reflect_owned_impls(
                 .as_deref()
                 .ok_or(CodeGenError::MissingField("field.name"))?;
             let number = field.number.unwrap_or(0) as u32;
-            let variant = oneof_variant_ident(name);
+            let variant = oneof_variant_ident(field);
             let ty = effective_type(ctx, field, features);
 
             let (active, default) = match ty {

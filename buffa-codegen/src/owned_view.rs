@@ -86,14 +86,14 @@ pub(crate) fn generate_owned_view_wrapper(
         // The reserved-name check runs against the *resolved* Rust name, so
         // an `idiomatic_field_names` conversion that lands on a reserved
         // method (`toOwnedMessage` → `to_owned_message`) is also suppressed.
-        if RESERVED_WRAPPER_METHODS.contains(&ctx.field_rust_name(field_name, number).as_ref()) {
+        if RESERVED_WRAPPER_METHODS.contains(&ctx.field_rust_name(field).as_ref()) {
             ctx.warn(CodeGenWarning::OwnedViewAccessorSuppressed {
                 wrapper_name: wrapper_ident.to_string(),
                 field_name: field_name.to_string(),
             });
             continue;
         }
-        let ident = ctx.field_ident(field_name, number);
+        let ident = ctx.field_ident(field);
         let field_fqn = format!("{proto_fqn}.{field_name}");
         let proto_comment = ctx.comment(&field_fqn);
 

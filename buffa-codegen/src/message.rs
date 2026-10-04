@@ -1354,11 +1354,8 @@ fn custom_deser_regular_field(
     let json_name = field.json_name.as_deref().unwrap_or(field_name);
     // The local is derived from the *resolved* Rust name so renamed-mode
     // output stays free of non_snake_case warnings.
-    let var_ident = format_ident!(
-        "__f_{}",
-        ctx.field_rust_name(field_name, field.number.unwrap_or(0))
-    );
-    let field_ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let var_ident = format_ident!("__f_{}", ctx.field_rust_name(field));
+    let field_ident = ctx.field_ident(field);
 
     let info = classify_field(scope, msg, field, resolver)?;
     let rust_type = &info.rust_type;
@@ -1462,7 +1459,7 @@ fn custom_deser_oneof_group(
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
         let json_name = field.json_name.as_deref().unwrap_or(proto_name);
-        let variant_ident = crate::oneof::oneof_variant_ident(proto_name);
+        let variant_ident = crate::oneof::oneof_variant_ident(field);
         let field_type = crate::impl_message::effective_type(ctx, field, features);
         // bytes_fields override: feeds #variant_type into the _DeserSeed
         // return type, which pins the generic T in json_helpers::bytes::
@@ -1978,7 +1975,7 @@ fn generate_field(
     }
 
     let info = classify_field(scope, msg, field, resolver)?;
-    let rust_name = ctx.field_ident(field_name, field_number);
+    let rust_name = ctx.field_ident(field);
 
     let field_fqn = format!("{}.{}", proto_fqn, field_name);
     let tag_line = format!("Field {field_number}: `{field_name}`");
@@ -2011,7 +2008,7 @@ fn generate_field(
     // the enum-alias doc note). Empty in the common (non-collision) case
     // and always empty with the flag off. Non-snake fallback names are
     // covered by the struct-level `message_non_snake_attr`.
-    let rename_note = match ctx.field_rename_note(field_name, field_number) {
+    let rename_note = match ctx.field_rename_note(field) {
         Some(note) => quote! { #[doc = ""] #[doc = #note] },
         None => quote! {},
     };
@@ -2030,7 +2027,7 @@ fn generate_field(
     // is_optional=true (explicit-presence default) while is_repeated=true.
     let setter = if let Some(inner) = &info.inner_opt_type {
         let field_type = crate::impl_message::effective_type(ctx, field, features);
-        let setter_ident = format_ident!("with_{}", ctx.field_rust_name(field_name, field_number));
+        let setter_ident = format_ident!("with_{}", ctx.field_rust_name(field));
         // impl Into<T> where a common conversion exists:
         //   String: &str. Vec<u8>: &[u8; N] (From<&[T; N]> stable since Rust 1.74).
         //   bytes::Bytes: Vec<u8>. EnumValue<E>: E (From<E> impl on EnumValue).
@@ -2734,7 +2731,7 @@ fn generate_custom_default(
             .name
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
-        let field_ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+        let field_ident = ctx.field_ident(field);
         let field_type = crate::impl_message::effective_type(ctx, field, features);
         let is_optional = is_explicit_presence_scalar(field, field_type, features);
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;

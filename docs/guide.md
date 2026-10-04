@@ -450,7 +450,7 @@ use proto::google::r#type::LatLng;
 
 This is the standard Rust mechanism for using keywords as identifiers. It applies to all Rust keywords (`type`, `match`, `async`, `mod`, etc.).
 
-**Rust keywords in field names** are also escaped. Most keywords use raw identifiers (`r#type`, `r#match`), but `self`, `super`, `Self`, and `crate` cannot be raw identifiers and are suffixed with `_` instead (`self_`, `super_`). This matches prost's convention.
+**Rust keywords in field names** are also escaped. Most keywords use raw identifiers (`r#type`, `r#match`), but `self`, `super`, `Self`, and `crate` cannot be raw identifiers and are suffixed with `_` instead (`self_`, `super_`). This matches prost's convention. To give such a field another Rust name, see [Field names](#field-names).
 
 **Generated files are named by proto file path, not package.** The file `proto/api/v1/service.proto` produces `api.v1.service.rs` regardless of the `package` declaration. The module tree generator uses the package from the file descriptor (not the file name) to build the `pub mod` nesting. This means the file name and module path may not correspond — the file `api.v1.service.rs` might be included inside `pub mod myapp { pub mod api { pub mod v1 { ... } } }` if the package is `myapp.api.v1`.
 
@@ -998,6 +998,47 @@ pub mod contact {
 Adding or removing sibling types never changes the Rust name of an existing oneof enum.
 
 Two oneofs of one message can still collide with each other: `oneof foo_bar` and `oneof foo__bar` both map to `FooBar`, and `oneof self` and `oneof self_` both map to `Self_`. Code generation rejects such a message with `CodeGenError::OneofEnumNameConflict`, which names both oneofs. Rename one of them; a oneof's name is in neither the wire format nor JSON, so the rename changes generated code only.
+
+### Field names
+
+A struct field has the name of its proto field, with a Rust keyword escaped (`r#type`, `self_`). The `idiomatic_field_names` option, listed under [Plugin options](#plugin-options), converts camelCase names to snake_case.
+
+To choose the Rust name of one field, set `(buffa.ext.field).name` in the schema. The schema imports `buffa/ext/options.proto`, which must be on protoc's include path. The text of the file is `buffa_proto_options::OPTIONS_PROTO`: a build script can write that text to `buffa/ext/options.proto` under a directory of its own, and pass the directory to `buffa_build::Config::includes` or to `protoc -I`.
+
+```protobuf
+import "buffa/ext/options.proto";
+
+message Document {
+  string type = 1 [(buffa.ext.field).name = "kind"];
+
+  oneof body {
+    string text = 2 [(buffa.ext.field).name = "PlainText"];
+  }
+}
+```
+
+```rust,ignore
+pub struct Document {
+    pub kind: String,
+    pub body: Option<__buffa::oneof::document::Body>,
+    // ...
+}
+
+// pkg::__buffa::oneof::document
+pub enum Body {
+    PlainText(String),
+}
+```
+
+The Rust identifier is the option's value exactly as written: buffa does not convert it, with or without `idiomatic_field_names`, and does not check its case. A field outside a oneof is a struct field, where the Rust convention is snake_case. A field in a oneof is an enum variant, where the convention is UpperCamelCase; `plain_text` there would give the variant `Body::plain_text`.
+
+The names derived from the field follow the option: the view's field is also `kind`, the view's oneof enum has the variant `PlainText`, and if `type` were `optional` its setter would be `with_kind`.
+
+Only Rust identifiers change. The wire format, the JSON and text format names, and the descriptor that reflection reads keep the proto name, so a peer or a stored message is unaffected. Build configuration that selects a field by its path, such as `field_attribute(".pkg.Document.type", ...)`, also keeps the proto name.
+
+The value must be an ASCII Rust identifier that is not a keyword and does not start with `__buffa_`. Any other value fails code generation with `CodeGenError::InvalidNameOption`, and so does the option on an extension.
+
+A value that another member already has as its Rust name fails with `CodeGenError::NameOptionConflict`. A message's struct has one member for each field outside a oneof and one for each oneof. A oneof's enum has one variant for each of its fields. A value conflicts only inside its own struct or enum. Without the option, the variant of a field in a oneof is its proto name in PascalCase, so the value `PlainText` conflicts with a sibling field `plain_text`.
 
 ### Nested types and module structure
 

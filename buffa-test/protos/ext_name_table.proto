@@ -1,0 +1,19 @@
+// Fixture for `(buffa.ext.field).name` with the table codec. `Flat` has no
+// oneof, so the table codec encodes and decodes it. See tests/ext_name.rs.
+
+syntax = "proto2";
+
+package test.extname_table;
+
+import "buffa/ext/options.proto";
+
+message Flat {
+  optional string type = 1 [(buffa.ext.field).name = "kind"];
+  repeated int32 match = 2 [(buffa.ext.field).name = "hits"];
+  optional Leaf leaf = 3 [(buffa.ext.field).name = "child"];
+  optional string plain = 4;
+}
+
+message Leaf {
+  optional int32 value = 1;
+}

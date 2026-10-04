@@ -63,6 +63,7 @@ mod idiomatic_imports;
 mod json_codegen;
 mod lifetime_anchor;
 mod map_type;
+mod name_option;
 mod naming;
 mod owned_view_codegen;
 mod pointer_repr;

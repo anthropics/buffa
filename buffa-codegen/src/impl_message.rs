@@ -762,12 +762,8 @@ fn lazy_fragment_encode_stmts(
     field: &FieldDescriptorProto,
     accessor: TokenStream,
 ) -> Result<(TokenStream, TokenStream), CodeGenError> {
-    let field_name = field
-        .name
-        .as_deref()
-        .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     let ld_tag_len = tag_encoded_len(field_number, 2);
     let compute = quote! {
         for __frag in self.#ident.#accessor() {
@@ -874,12 +870,7 @@ pub(crate) fn build_view_encode_methods(
                 for field in fields {
                     let field_number = validated_field_number(field)?;
                     let ty = effective_type(ctx, field, features);
-                    let variant = crate::oneof::oneof_variant_ident(
-                        field
-                            .name
-                            .as_deref()
-                            .ok_or(CodeGenError::MissingField("field.name"))?,
-                    );
+                    let variant = crate::oneof::oneof_variant_ident(field);
                     let tag_len = tag_encoded_len(field_number, wire_type_byte(ty));
                     size_arms.push(oneof_size_arm(&qualified, &variant, tag_len, ty));
                     write_arms.push(oneof_write_arm(&qualified, &variant, field_number, ty));
@@ -997,13 +988,7 @@ fn vec_field_clear_stmt(
     field: &FieldDescriptorProto,
     repr: &crate::RepeatedRepr,
 ) -> Result<TokenStream, CodeGenError> {
-    let ident = ctx.field_ident(
-        field
-            .name
-            .as_deref()
-            .ok_or(CodeGenError::MissingField("field.name"))?,
-        field.number.unwrap_or(0),
-    );
+    let ident = ctx.field_ident(field);
     if repr.is_default() {
         Ok(quote! { self.#ident.clear(); })
     } else {
@@ -1026,7 +1011,7 @@ fn map_field_clear_stmt(
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     if field_map_repr(ctx, proto_fqn, field_name).is_default() {
         Ok(quote! { self.#ident.clear(); })
     } else {
@@ -1187,7 +1172,7 @@ fn scalar_clear_stmt(
         .as_deref()
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let ty = effective_type(ctx, field, features);
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
 
     // Explicit-presence fields (Option<T>): set to None.
@@ -1585,13 +1570,9 @@ fn scalar_compute_size_stmt(
     field: &FieldDescriptorProto,
     features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
-    let field_name = field
-        .name
-        .as_deref()
-        .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     let tag_len = tag_encoded_len(field_number, wire_type_byte(ty));
     // Proto2 `required` scalars must always be encoded, even when their value
     // equals the type default (zero / empty).  All other non-optional scalars
@@ -1740,13 +1721,9 @@ fn scalar_write_to_stmt(
     field: &FieldDescriptorProto,
     features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
-    let field_name = field
-        .name
-        .as_deref()
-        .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     let is_proto2_required = is_required_field(field, features);
 
     // Explicit-presence field: encoded as Option<T>; always encode when Some.
@@ -1974,7 +1951,7 @@ fn scalar_merge_arm(
     let ty = effective_type(ctx, field, features);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
     let string_repr = field_string_repr(ctx, proto_fqn, field_name);
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     let wire_type = wire_type_token(ty);
 
     let wire_check = wire_type_check(&quote! { tag }, &wire_type);
@@ -2209,13 +2186,9 @@ fn repeated_compute_size_stmt(
     features: &ResolvedFeatures,
     repr: &crate::RepeatedRepr,
 ) -> Result<TokenStream, CodeGenError> {
-    let field_name = field
-        .name
-        .as_deref()
-        .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     let elems = repeated_for_iter(&ident, repr);
     // LengthDelimited tag (wire type 2): used for packed, message, string, bytes.
     let ld_tag_len = tag_encoded_len(field_number, 2);
@@ -2307,13 +2280,9 @@ fn repeated_write_to_stmt(
     features: &ResolvedFeatures,
     repr: &crate::RepeatedRepr,
 ) -> Result<TokenStream, CodeGenError> {
-    let field_name = field
-        .name
-        .as_deref()
-        .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     let elems = repeated_for_iter(&ident, repr);
 
     if ty == Type::TYPE_MESSAGE {
@@ -2393,7 +2362,7 @@ fn repeated_merge_arm(
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     // For a custom collection, bring `ProtoList` into the arm's scope so the
     // bare `self.field.push(..)` / `.reserve(..)` below resolve to the trait
     // (a newtype has no inherent push). For the default `Vec` this stays empty,
@@ -2923,7 +2892,7 @@ fn generate_oneof_impls(
             .ok_or(CodeGenError::MissingField("field.name"))?;
         let field_number = validated_field_number(field)?;
         let ty = effective_type(ctx, field, features);
-        let variant_ident = crate::oneof::oneof_variant_ident(field_name);
+        let variant_ident = crate::oneof::oneof_variant_ident(field);
         let tag_len = tag_encoded_len(field_number, wire_type_byte(ty));
 
         size_arms.push(oneof_size_arm(&qualified_enum, &variant_ident, tag_len, ty));
@@ -3117,7 +3086,7 @@ fn map_entry_ctx(
     let val_string_repr = map_string_repr(ctx, val_ty, proto_fqn, field_name);
     Ok(MapEntryCtx {
         field_number,
-        ident: ctx.field_ident(field_name, field.number.unwrap_or(0)),
+        ident: ctx.field_ident(field),
         outer_tag_len: tag_encoded_len(field_number, 2),
         val_ty,
         val_is_closed_enum: val_ty == Type::TYPE_ENUM && is_closed_enum(&val_features),
@@ -3212,12 +3181,8 @@ fn map_view_compute_size_stmt(
     field: &FieldDescriptorProto,
     features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
-    let field_name = field
-        .name
-        .as_deref()
-        .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     let outer_tag_len = tag_encoded_len(field_number, 2);
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
@@ -3280,12 +3245,8 @@ fn map_view_write_to_stmt(
     field: &FieldDescriptorProto,
     features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
-    let field_name = field
-        .name
-        .as_deref()
-        .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
-    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ident = ctx.field_ident(field);
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
     let val_ty = effective_type_in_map_entry(ctx, val_fd, features);

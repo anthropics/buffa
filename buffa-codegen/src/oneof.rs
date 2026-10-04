@@ -369,7 +369,7 @@ fn collect_variant_info(
                 .as_deref()
                 .ok_or(CodeGenError::MissingField("field.name"))?;
             let json_name = field.json_name.as_deref().unwrap_or(proto_name).to_string();
-            let variant_ident = oneof_variant_ident(proto_name);
+            let variant_ident = oneof_variant_ident(field);
             let field_type = crate::impl_message::effective_type(ctx, field, features);
             // bytes_fields config override: scalar_or_message_type_nested goes
             // through scalar_rust_type which hardcodes Vec<u8> for TYPE_BYTES.
@@ -577,13 +577,16 @@ pub fn generate_oneof_enum(
             // From<T> for Option<Oneof> — legal only when T is local
             // (RFC 2451: T as trait param satisfies the orphan rule).
             // Collapses struct-literal construction to `field: Msg{..}.into()`.
+            // The call names the trait: `Enum::from(v)` would be the variant
+            // constructor when a `(buffa.ext.field).name` option names a
+            // variant `from`.
             let from_option = if ty_is_extern {
                 quote! {}
             } else {
                 quote! {
                     impl From<#ty> for ::core::option::Option<#rust_enum_ident> {
                         fn from(v: #ty) -> Self {
-                            Self::Some(#rust_enum_ident::from(v))
+                            Self::Some(<#rust_enum_ident as ::core::convert::From<#ty>>::from(v))
                         }
                     }
                 }
@@ -984,13 +987,27 @@ pub(crate) fn resolve_oneof_idents(
 
 /// Build the Rust variant identifier for a oneof field.
 ///
-/// PascalCase the proto field name, then sanitize against reserved Rust
-/// idents — the only lowercase Rust keyword whose PascalCase form is also
-/// reserved is `self` → `Self`, which would otherwise produce
+/// The variant is the field's `(buffa.ext.field).name` option exactly as
+/// written. Without the option, PascalCase the proto name, then sanitize
+/// against reserved Rust idents. `self` is the only lowercase Rust keyword
+/// whose PascalCase form is also reserved: `Self` would otherwise produce
 /// `pub enum Foo { Self(...) }` and fail to parse. `make_field_ident`
 /// suffixes such names with `_` so the variant becomes `Self_`.
-pub(crate) fn oneof_variant_ident(proto_name: &str) -> proc_macro2::Ident {
-    crate::idents::make_field_ident(&to_pascal_case(proto_name))
+///
+/// # Panics
+///
+/// Panics if the name is not an identifier.
+/// [`name_override::validate_file`](crate::name_override::validate_file)
+/// rejects such an option value. A proto name whose PascalCase form is not
+/// an identifier, such as `_1`, still panics.
+pub(crate) fn oneof_variant_ident(field: &FieldDescriptorProto) -> proc_macro2::Ident {
+    match crate::name_override::field_name(field) {
+        Some(name) => quote::format_ident!("{}", name),
+        None => {
+            let name = field.name.as_deref().unwrap_or_default();
+            crate::idents::make_field_ident(&to_pascal_case(name))
+        }
+    }
 }
 
 /// Convert a snake_case identifier to PascalCase.

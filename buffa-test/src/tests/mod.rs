@@ -87,6 +87,7 @@ mod editions_2024;
 mod editions_enum_json;
 mod element_memory_limit;
 mod encode_as_option;
+mod ext_name;
 mod ext_options;
 mod extensions;
 mod extensions_json;

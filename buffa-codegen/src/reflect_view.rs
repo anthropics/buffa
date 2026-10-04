@@ -96,11 +96,7 @@ pub(crate) fn reflect_view_impls(
         if !is_supported_field_type(ty) {
             continue;
         }
-        let name = field
-            .name
-            .as_deref()
-            .ok_or(CodeGenError::MissingField("field.name"))?;
-        let id = ctx.field_ident(name, field.number.unwrap_or(0));
+        let id = ctx.field_ident(field);
         // `FieldDescriptor::number()` (matched on below) returns `u32`; proto
         // field numbers are always positive.
         let number = field.number.unwrap_or(0) as u32;
@@ -190,10 +186,7 @@ pub(crate) fn reflect_view_impls(
         // words / `is_set`), surfaced by the generated `has_*` accessor —
         // route reflection's `has()` through it so the two surfaces agree.
         let has_val = if is_required_field(field, features) && field.number.is_some() {
-            let has_method = format_ident!(
-                "has_{}",
-                ctx.field_rust_name(name, field.number.unwrap_or(0))
-            );
+            let has_method = format_ident!("has_{}", ctx.field_rust_name(field));
             quote! { self.#has_method() }
         } else {
             has_val
@@ -219,12 +212,8 @@ pub(crate) fn reflect_view_impls(
             .iter()
             .filter(|f| is_real_oneof_member(f) && f.oneof_index == Some(idx as i32))
         {
-            let name = field
-                .name
-                .as_deref()
-                .ok_or(CodeGenError::MissingField("field.name"))?;
             let number = field.number.unwrap_or(0) as u32;
-            let variant = oneof_variant_ident(name);
+            let variant = oneof_variant_ident(field);
             let ty = effective_type(ctx, field, features);
 
             let (active, default) = match ty {
