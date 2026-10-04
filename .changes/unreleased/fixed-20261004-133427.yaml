@@ -1,0 +1,3 @@
+kind: Fixed
+body: buffa-build creates the output directory for include files and shared descriptor sidecars when no per-package files are generated, including when all selected packages are excluded.
+time: 2026-10-04T13:34:27.085158+02:00

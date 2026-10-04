@@ -2306,6 +2306,7 @@ impl Config {
 
         // Generate the include file if requested.
         if let Some(ref include_name) = self.include_file {
+            std::fs::create_dir_all(&out_dir)?;
             let tree = generate_include_file(&output_entries, relative_includes);
             let include_content = if let Some(sidecar) = sidecar {
                 // Embed the descriptor set once, at the tree root, instead of a
@@ -3266,6 +3267,128 @@ mod tests {
             !out.contains("OUT_DIR"),
             "relative mode must not reference OUT_DIR: {out}"
         );
+    }
+
+    fn config_with_excluded_package() -> Config {
+        use buffa_codegen::generated::descriptor::{DescriptorProto, FileDescriptorProto};
+
+        let file = FileDescriptorProto {
+            name: Some("example.proto".into()),
+            package: Some("example".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Message".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        Config::new()
+            .descriptor_set_bytes(buffa_codegen::encode_descriptor_set(&[file], &[]))
+            .files(&["example.proto"])
+            .exclude_package("example")
+    }
+
+    #[test]
+    fn include_file_creates_output_directory_without_generated_files() {
+        for config in [
+            Config::new().descriptor_set_bytes(Vec::new()),
+            config_with_excluded_package(),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let out = dir.path().join("nested/gen");
+            assert!(!out.exists());
+
+            config
+                .out_dir(&out)
+                .include_file("gen_mod.rs")
+                .compile()
+                .unwrap();
+
+            assert_eq!(
+                std::fs::read_to_string(out.join("gen_mod.rs")).unwrap(),
+                generate_include_file(&[], true)
+            );
+            assert_eq!(std::fs::read_dir(&out).unwrap().count(), 1);
+        }
+    }
+
+    #[test]
+    fn shared_descriptor_pool_writes_output_without_generated_files() {
+        let config = config_with_excluded_package();
+        let DescriptorSource::Bytes(ref bytes) = config.descriptor_source else {
+            unreachable!();
+        };
+        let expected_bytes = bytes.clone();
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("nested/gen");
+
+        config
+            .out_dir(&out)
+            .include_file("gen_mod.rs")
+            .generate_reflection(true)
+            .shared_descriptor_pool(true)
+            .compile()
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read(out.join("gen_mod.descriptor_set.binpb")).unwrap(),
+            expected_bytes
+        );
+        let include = std::fs::read_to_string(out.join("gen_mod.rs")).unwrap();
+        assert!(include.contains("pub mod __buffa_fds"), "{include}");
+        assert!(
+            include.contains("\"gen_mod.descriptor_set.binpb\""),
+            "{include}"
+        );
+        assert_eq!(std::fs::read_dir(&out).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn include_file_preserves_existing_directory_without_generated_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let preserved = dir.path().join("existing.rs");
+        std::fs::write(&preserved, b"existing content").unwrap();
+
+        config_with_excluded_package()
+            .out_dir(dir.path())
+            .include_file("gen_mod.rs")
+            .compile()
+            .unwrap();
+
+        assert_eq!(std::fs::read(&preserved).unwrap(), b"existing content");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("gen_mod.rs")).unwrap(),
+            generate_include_file(&[], true)
+        );
+    }
+
+    #[test]
+    fn include_file_reports_output_directory_that_is_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("gen");
+        std::fs::write(&out, b"existing content").unwrap();
+
+        let err = config_with_excluded_package()
+            .out_dir(&out)
+            .include_file("gen_mod.rs")
+            .compile()
+            .unwrap_err();
+
+        assert!(err.downcast_ref::<std::io::Error>().is_some(), "{err}");
+        assert_eq!(std::fs::read(&out).unwrap(), b"existing content");
+    }
+
+    #[test]
+    fn compile_without_include_file_does_not_create_empty_output_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("nested/gen");
+
+        config_with_excluded_package()
+            .out_dir(&out)
+            .compile()
+            .unwrap();
+
+        assert!(!out.exists());
     }
 
     #[test]
