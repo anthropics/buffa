@@ -17,6 +17,9 @@ use crate::CodeGenError;
 ///   `from_i32`), or null (→ `Default::default()`). Unknown values produce
 ///   a hard error — lenient handling happens at the field-level serde helpers.
 fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
+    // `stringify!` keeps the `r#` of a raw identifier, so the `expecting`
+    // text takes the name from a plain one.
+    let name_label = format_ident!("{}", name_ident.to_string().trim_start_matches("r#"));
     quote! {
         impl ::serde::Serialize for #name_ident {
             fn serialize<S: ::serde::Serializer>(&self, s: S) -> ::core::result::Result<S::Ok, S::Error> {
@@ -31,7 +34,7 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
                     type Value = #name_ident;
 
                     fn expecting(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                        f.write_str(concat!("a string, integer, or null for ", stringify!(#name_ident)))
+                        f.write_str(concat!("a string, integer, or null for ", stringify!(#name_label)))
                     }
 
                     fn visit_str<E: ::serde::de::Error>(self, v: &str) -> ::core::result::Result<#name_ident, E> {
@@ -92,9 +95,8 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
 
 /// Generate Rust code for a protobuf enum type.
 ///
-/// `rust_name` is the Rust identifier to use.  For top-level enums this is
-/// the proto enum name; for nested enums it is the parent-prefixed flat name
-/// (e.g. `TestAllTypesProto3NestedEnum`) matching the type-map convention.
+/// `rust_name` is the Rust identifier to use, from
+/// [`CodeGenContext::enum_rust_name`].
 pub fn generate_enum(
     ctx: &CodeGenContext,
     enum_desc: &EnumDescriptorProto,
@@ -103,7 +105,7 @@ pub fn generate_enum(
     features: &ResolvedFeatures,
     _resolver: &crate::imports::ImportResolver,
 ) -> Result<TokenStream, CodeGenError> {
-    let name_ident = format_ident!("{}", rust_name);
+    let name_ident = crate::idents::make_type_ident(rust_name);
 
     // Track which discriminant values have been seen to identify aliases.
     // Proto spec: the first value with a given number is the primary; subsequent

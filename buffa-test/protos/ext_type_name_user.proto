@@ -1,0 +1,15 @@
+// A second package that imports the types `ext_type_name.proto` renames with
+// `(buffa.ext.message).name` and `(buffa.ext.enum).name`. The references
+// compile only if they use the options' names. See tests/ext_type_name.rs.
+
+syntax = "proto3";
+
+package test.exttypename.user;
+
+import "ext_type_name.proto";
+
+message User {
+  test.exttypename.Type item = 1;
+  test.exttypename.Type.Part part = 2;
+  test.exttypename.Level level = 3;
+}

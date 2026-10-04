@@ -59,7 +59,7 @@ pub(crate) fn generate_table_impl(
         features,
         ..
     } = scope;
-    let name = format_ident!("{}", rust_name);
+    let name = crate::idents::make_type_ident(rust_name);
     let table = table_ident(rust_name);
     let dotted_fqn = format!(".{proto_fqn}");
 

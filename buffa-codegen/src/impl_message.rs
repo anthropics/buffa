@@ -406,7 +406,7 @@ pub fn generate_message_impl(
     nesting: usize,
     table_impl: Option<TokenStream>,
 ) -> Result<TokenStream, CodeGenError> {
-    let name_ident = format_ident!("{}", rust_name);
+    let name_ident = crate::idents::make_type_ident(rust_name);
 
     let fields = classify_fields_ordered(msg, oneof_idents)?;
     // The lazy predicate applies to the lazy view family only; owned is eager.

@@ -713,7 +713,8 @@ fn error_messages_name_the_option_the_element_and_the_fix() {
     assert_eq!(
         invalid(named(string_field("f", 1), "__buffa_x")),
         prefix("__buffa_x")
-            + "names that start with `__buffa_` are reserved for buffa's own identifiers"
+            + "`__buffa` and names that start with `__buffa_` are reserved for buffa's own \
+               identifiers"
     );
 
     let mut file = file_of(vec![message("Msg", vec![])]);

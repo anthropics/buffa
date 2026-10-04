@@ -328,6 +328,46 @@ const _: () = {
 /// Settings for the code generated from one message.
 #[derive(Clone, Debug, Default)]
 pub struct MessageOptionsView<'a> {
+    /// The Rust name of the struct that buffa generates for the message that
+    /// sets this option, in place of the name that buffa derives from the
+    /// proto name:
+    ///
+    /// ```text
+    /// message Type {
+    ///   option (buffa.ext.message).name = "Kind";
+    /// }
+    /// ```
+    ///
+    /// The struct is the value exactly as written. The value must be an ASCII
+    /// Rust identifier that is not a keyword, is not `__buffa`, and does not
+    /// start with `__buffa_`. It must also not be a primitive type name that
+    /// generated code uses: `bool`, `str`, `u8`, `usize`, `i32`, `i64`, `u32`,
+    /// `u64`, `f32` or `f64`. buffa does not escape the value, and does not add
+    /// the prefix that the `type_name_prefix` build option sets. The Rust
+    /// convention for a struct is UpperCamelCase, and buffa does not check the
+    /// case of the value.
+    ///
+    /// The types that buffa derives from the struct follow the value: the view
+    /// of a struct `Kind` is `KindView`. The module that holds the message's
+    /// nested types keeps the name derived from the proto name. buffa does not
+    /// compare the value with module names: a value equal to the module of the
+    /// message or of a sibling message does not compile.
+    ///
+    /// A reference from another file, another package, or a crate that maps
+    /// the package with an `extern_path` prefix uses the value. An exact
+    /// `extern_path` entry for the type is used as written.
+    ///
+    /// Only the Rust identifiers and the struct's `Debug` output change. Type
+    /// URLs, the JSON and text formats, and the descriptor keep the proto
+    /// name.
+    ///
+    /// Code generation fails for a value that is not such an identifier, and
+    /// for a value that another message or enum in the same scope already has
+    /// as its Rust name. A scope is a package, or the message that a type is
+    /// nested in.
+    ///
+    /// Field 1: `name`
+    pub name: ::core::option::Option<&'a str>,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> ::buffa::MessageView<'a> for MessageOptionsView<'a> {
@@ -360,6 +400,13 @@ impl<'a> ::buffa::MessageView<'a> for MessageOptionsView<'a> {
         let view = self;
         let mut cur = cur;
         match tag.field_number() {
+            1u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.name = Some(::buffa::types::borrow_str(&mut cur)?);
+            }
             _ => {
                 ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
                 let span_len = before_tag.len() - cur.len();
@@ -382,6 +429,7 @@ impl<'a> ::buffa::MessageView<'a> for MessageOptionsView<'a> {
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
         ::core::result::Result::Ok(super::super::MessageOptions {
+            name: self.name.map(|s| s.to_string()),
             __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
         })
@@ -393,6 +441,9 @@ impl<'a> ::buffa::ViewEncode<'a> for MessageOptionsView<'a> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u64;
+        if let Some(ref v) = self.name {
+            size += 1u64 + ::buffa::types::string_encoded_len(v) as u64;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u64;
         ::buffa::saturate_size(size)
     }
@@ -404,6 +455,9 @@ impl<'a> ::buffa::ViewEncode<'a> for MessageOptionsView<'a> {
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        if let Some(ref v) = self.name {
+            ::buffa::types::put_string_field(1u32, v, buf);
+        }
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
@@ -426,6 +480,9 @@ impl<'__a> ::serde::Serialize for MessageOptionsView<'__a> {
     ) -> ::core::result::Result<__S::Ok, __S::Error> {
         use ::serde::ser::SerializeMap as _;
         let mut __map = __s.serialize_map(::core::option::Option::None)?;
+        if let ::core::option::Option::Some(__v) = self.name {
+            __map.serialize_entry("name", __v)?;
+        }
         __map.end()
     }
 }
@@ -520,6 +577,49 @@ impl MessageOptionsOwnedView {
     pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
         self.0.into_bytes()
     }
+    /// The Rust name of the struct that buffa generates for the message that
+    /// sets this option, in place of the name that buffa derives from the
+    /// proto name:
+    ///
+    /// ```text
+    /// message Type {
+    ///   option (buffa.ext.message).name = "Kind";
+    /// }
+    /// ```
+    ///
+    /// The struct is the value exactly as written. The value must be an ASCII
+    /// Rust identifier that is not a keyword, is not `__buffa`, and does not
+    /// start with `__buffa_`. It must also not be a primitive type name that
+    /// generated code uses: `bool`, `str`, `u8`, `usize`, `i32`, `i64`, `u32`,
+    /// `u64`, `f32` or `f64`. buffa does not escape the value, and does not add
+    /// the prefix that the `type_name_prefix` build option sets. The Rust
+    /// convention for a struct is UpperCamelCase, and buffa does not check the
+    /// case of the value.
+    ///
+    /// The types that buffa derives from the struct follow the value: the view
+    /// of a struct `Kind` is `KindView`. The module that holds the message's
+    /// nested types keeps the name derived from the proto name. buffa does not
+    /// compare the value with module names: a value equal to the module of the
+    /// message or of a sibling message does not compile.
+    ///
+    /// A reference from another file, another package, or a crate that maps
+    /// the package with an `extern_path` prefix uses the value. An exact
+    /// `extern_path` entry for the type is used as written.
+    ///
+    /// Only the Rust identifiers and the struct's `Debug` output change. Type
+    /// URLs, the JSON and text formats, and the descriptor keep the proto
+    /// name.
+    ///
+    /// Code generation fails for a value that is not such an identifier, and
+    /// for a value that another message or enum in the same scope already has
+    /// as its Rust name. A scope is a package, or the message that a type is
+    /// nested in.
+    ///
+    /// Field 1: `name`
+    #[must_use]
+    pub fn name(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().name
+    }
 }
 impl ::core::convert::From<::buffa::OwnedView<MessageOptionsView<'static>>>
 for MessageOptionsOwnedView {
@@ -571,6 +671,11 @@ const _: () = {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
             match field.number() {
+                1u32 => {
+                    ::buffa_descriptor::reflect::ValueRef::String(
+                        self.name.unwrap_or(""),
+                    )
+                }
                 _ => {
                     ::core::debug_assert!(
                         false,
@@ -583,6 +688,7 @@ const _: () = {
         }
         fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
             match field.number() {
+                1u32 => self.name.is_some(),
                 _ => false,
             }
         }
@@ -1384,6 +1490,24 @@ const _: () = {
 /// Settings for the code generated from one enum.
 #[derive(Clone, Debug, Default)]
 pub struct EnumOptionsView<'a> {
+    /// The Rust name of the enum that buffa generates for the enum that sets
+    /// this option, in place of the name that buffa derives from the proto
+    /// name:
+    ///
+    /// ```text
+    /// enum Type {
+    ///   option (buffa.ext.enum).name = "Kind";
+    ///   TYPE_UNSPECIFIED = 0;
+    /// }
+    /// ```
+    ///
+    /// The rules are those of `MessageOptions.name`: the enum is the value
+    /// exactly as written, only the Rust identifier changes, and code
+    /// generation fails for a value that cannot be the name or that another
+    /// message or enum in the same scope already has.
+    ///
+    /// Field 1: `name`
+    pub name: ::core::option::Option<&'a str>,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
 impl<'a> ::buffa::MessageView<'a> for EnumOptionsView<'a> {
@@ -1416,6 +1540,13 @@ impl<'a> ::buffa::MessageView<'a> for EnumOptionsView<'a> {
         let view = self;
         let mut cur = cur;
         match tag.field_number() {
+            1u32 => {
+                ::buffa::encoding::check_wire_type(
+                    tag,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )?;
+                view.name = Some(::buffa::types::borrow_str(&mut cur)?);
+            }
             _ => {
                 ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
                 let span_len = before_tag.len() - cur.len();
@@ -1438,6 +1569,7 @@ impl<'a> ::buffa::MessageView<'a> for EnumOptionsView<'a> {
         use ::buffa::alloc::string::ToString as _;
         let _ = __buffa_src;
         ::core::result::Result::Ok(super::super::EnumOptions {
+            name: self.name.map(|s| s.to_string()),
             __buffa_unknown_fields: self.__buffa_unknown_fields.to_owned()?.into(),
             ..::core::default::Default::default()
         })
@@ -1449,6 +1581,9 @@ impl<'a> ::buffa::ViewEncode<'a> for EnumOptionsView<'a> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
         let mut size = 0u64;
+        if let Some(ref v) = self.name {
+            size += 1u64 + ::buffa::types::string_encoded_len(v) as u64;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u64;
         ::buffa::saturate_size(size)
     }
@@ -1460,6 +1595,9 @@ impl<'a> ::buffa::ViewEncode<'a> for EnumOptionsView<'a> {
     ) {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        if let Some(ref v) = self.name {
+            ::buffa::types::put_string_field(1u32, v, buf);
+        }
         self.__buffa_unknown_fields.write_to(buf);
     }
 }
@@ -1482,6 +1620,9 @@ impl<'__a> ::serde::Serialize for EnumOptionsView<'__a> {
     ) -> ::core::result::Result<__S::Ok, __S::Error> {
         use ::serde::ser::SerializeMap as _;
         let mut __map = __s.serialize_map(::core::option::Option::None)?;
+        if let ::core::option::Option::Some(__v) = self.name {
+            __map.serialize_entry("name", __v)?;
+        }
         __map.end()
     }
 }
@@ -1574,6 +1715,27 @@ impl EnumOptionsOwnedView {
     pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
         self.0.into_bytes()
     }
+    /// The Rust name of the enum that buffa generates for the enum that sets
+    /// this option, in place of the name that buffa derives from the proto
+    /// name:
+    ///
+    /// ```text
+    /// enum Type {
+    ///   option (buffa.ext.enum).name = "Kind";
+    ///   TYPE_UNSPECIFIED = 0;
+    /// }
+    /// ```
+    ///
+    /// The rules are those of `MessageOptions.name`: the enum is the value
+    /// exactly as written, only the Rust identifier changes, and code
+    /// generation fails for a value that cannot be the name or that another
+    /// message or enum in the same scope already has.
+    ///
+    /// Field 1: `name`
+    #[must_use]
+    pub fn name(&self) -> ::core::option::Option<&'_ str> {
+        self.0.reborrow().name
+    }
 }
 impl ::core::convert::From<::buffa::OwnedView<EnumOptionsView<'static>>>
 for EnumOptionsOwnedView {
@@ -1625,6 +1787,11 @@ const _: () = {
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
             match field.number() {
+                1u32 => {
+                    ::buffa_descriptor::reflect::ValueRef::String(
+                        self.name.unwrap_or(""),
+                    )
+                }
                 _ => {
                     ::core::debug_assert!(
                         false,
@@ -1637,6 +1804,7 @@ const _: () = {
         }
         fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
             match field.number() {
+                1u32 => self.name.is_some(),
                 _ => false,
             }
         }

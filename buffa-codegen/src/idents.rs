@@ -81,6 +81,55 @@ pub fn make_field_ident(name: &str) -> Ident {
     }
 }
 
+/// Returns the Rust name of a generated message or enum type, before
+/// raw-identifier escaping.
+///
+/// The name of a primitive type that generated code uses, such as `bool`,
+/// `u32` or `str`, gets a trailing `_`. So does a keyword that cannot be a
+/// raw identifier (`Self`, `self`, `super`, `crate`), as in
+/// [`make_field_ident`]. A struct named `bool` would otherwise replace the
+/// primitive for every item in its module, including the code that derive
+/// macros expand there. Any other name is returned unchanged, and
+/// [`make_type_ident`] makes it a raw identifier when it is a keyword.
+pub(crate) fn escape_type_name(name: &str) -> std::borrow::Cow<'_, str> {
+    if is_generated_primitive(name) || (is_rust_keyword(name) && !can_be_raw_ident(name)) {
+        std::borrow::Cow::Owned(format!("{name}_"))
+    } else {
+        std::borrow::Cow::Borrowed(name)
+    }
+}
+
+/// Returns the Rust name that buffa derives for a locally generated message
+/// or enum type without a `name` option:
+/// [`CodeGenConfig::type_name_prefix`](crate::CodeGenConfig::type_name_prefix),
+/// then the proto simple name, with [`escape_type_name`] applied to the two
+/// joined. Prefix `Pb` and `bool` give `Pbbool`, with the suffix left off.
+pub(crate) fn local_type_name(type_name_prefix: &str, proto_name: &str) -> String {
+    escape_type_name(&format!("{type_name_prefix}{proto_name}")).into_owned()
+}
+
+/// Create the identifier for a generated message or enum type, for its
+/// declaration and its impls. `rust_name` must come from
+/// [`escape_type_name`], [`local_type_name`], or a `name` option that
+/// [`name_override`](crate::name_override) accepted: a keyword becomes
+/// `r#type`, and any other name is used as written.
+pub(crate) fn make_type_ident(rust_name: &str) -> Ident {
+    make_field_ident(rust_name)
+}
+
+/// Is `name` a primitive type that generated code names without a path?
+///
+/// These are the Rust types of the proto scalars, plus `u8` and `usize`.
+/// The other primitive type names (`char`, `i8`, `u16`) are left out:
+/// generated code does not name them, so a message with one of those names
+/// compiles as written.
+pub(crate) fn is_generated_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "bool" | "str" | "u8" | "usize" | "i32" | "i64" | "u32" | "u64" | "f32" | "f64"
+    )
+}
+
 /// Convert a protobuf enum value name to `UpperCamelCase`.
 ///
 /// Word boundaries are underscores **and** case transitions, so the conversion
@@ -293,6 +342,40 @@ mod tests {
             rust_path_to_tokens("super::super::Foo").to_string(),
             "super :: super :: Foo"
         );
+    }
+
+    #[test]
+    fn type_name_escape() {
+        for name in [
+            "bool", "str", "u8", "usize", "i32", "i64", "u32", "u64", "f32", "f64",
+        ] {
+            assert_eq!(escape_type_name(name), format!("{name}_"), "{name}");
+        }
+        for name in ["Self", "self", "super", "crate"] {
+            assert_eq!(escape_type_name(name), format!("{name}_"), "{name}");
+        }
+        // Case-sensitive, and raw-able keywords are left for the ident.
+        // Generated code does not name the last six, so they stay as written.
+        for name in [
+            "Bool", "U32", "Str", "Crate", "type", "Foo", "char", "i8", "u16", "i128", "isize",
+            "f16",
+        ] {
+            assert_eq!(escape_type_name(name), name, "{name}");
+        }
+    }
+
+    #[test]
+    fn local_type_name_escapes_the_prefixed_name() {
+        assert_eq!(local_type_name("", "bool"), "bool_");
+        assert_eq!(local_type_name("Pb", "bool"), "Pbbool");
+        assert_eq!(local_type_name("Pb", "Foo"), "PbFoo");
+    }
+
+    #[test]
+    fn type_ident_is_raw_for_keywords() {
+        assert_eq!(make_type_ident("type").to_string(), "r#type");
+        assert_eq!(make_type_ident("bool_").to_string(), "bool_");
+        assert_eq!(make_type_ident("Foo").to_string(), "Foo");
     }
 
     #[test]

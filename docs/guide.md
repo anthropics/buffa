@@ -215,7 +215,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.strict_utf8_mapping(bool)` | `false` | Map `utf8_validation = NONE` string fields to `Vec<u8>` / `&[u8]` instead of `String` (see [Skipping UTF-8 validation](#skipping-utf-8-validation)) |
 | `.extern_path(proto, rust)` | — | Map a proto package or a single type to an external Rust path (see below) |
 | `.exclude_package(pkg)` | — | Drop a proto package (and its sub-packages) from code generation. Useful when directory globbing pulls in option-only packages (e.g. `buf.validate`) that you don't want Rust types for. A leading dot is accepted and stripped. Pair with `.extern_path` if kept files reference types from the excluded package; the generator emits a `cargo:warning` for each such cross-package reference. |
-| `.type_name_prefix(prefix)` | `""` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`); modules, oneof enums, extern-mapped types, and the wire format are unaffected. A crate referencing these types via `extern_path` must spell out the prefixed name (`::crate_a::RpcUser`) |
+| `.type_name_prefix(prefix)` | `""` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to the name of every generated message and enum that does not set `(buffa.ext.message).name` or `(buffa.ext.enum).name` (`message User` → `struct RpcUser`); modules, oneof enums, extern-mapped types, and the wire format are unaffected. A crate referencing these types via `extern_path` must spell out the prefixed name (`::crate_a::RpcUser`) |
 | `.codec_strategy(strategy)` | `Unrolled` | Generate each message's binary `Message` code specialised to its fields (`CodecStrategy::Unrolled`), or from a static table and interpreters shared by every message (`CodecStrategy::Table`), which on a schema it fully covers is about half the compiled size and slower on messages of many small fields; see [Smaller generated code](#smaller-generated-code-codec_strategy) |
 | `.codec_strategy_in(strategy, &[...])` | — | Choose the strategy for matching messages and the messages nested in them (proto-path prefixes; the last matching rule wins), on top of the global setting |
 | `.use_bytes_type()` | — | Use `bytes::Bytes` for all bytes fields, including `map<K, bytes>` values |
@@ -452,6 +452,14 @@ This is the standard Rust mechanism for using keywords as identifiers. It applie
 
 **Rust keywords in field names** are also escaped. Most keywords use raw identifiers (`r#type`, `r#match`), but `self`, `super`, `Self`, and `crate` cannot be raw identifiers and are suffixed with `_` instead (`self_`, `super_`). This matches prost's convention. To give such a field another Rust name, see [Field names](#field-names).
 
+**Message and enum names** keep the spelling of the `.proto` file, unless the name is a Rust keyword or one of ten primitive type names. A keyword other than `Self`, `self`, `super` and `crate` becomes a raw identifier: `message type` generates `pub struct r#type`. Those four keywords, and the primitive type names that generated code uses (`bool`, `str`, `u8`, `usize`, `i32`, `i64`, `u32`, `u64`, `f32` and `f64`), get a trailing underscore: `message bool` generates `pub struct bool_`. With `type_name_prefix` set, the prefix is added first and the rule applies to the prefixed name, so prefix `Rpc` and `message bool` generate `pub struct Rpcbool`. View types append to the escaped name without `r#`: `bool_View`, `typeView`. The module that holds a message's nested types keeps the snake_case proto name, so a message nested in `bool` is `bool::Inner`. The proto name is unchanged in JSON, the text format, type URLs and reflection.
+
+Two sibling types that end up with one Rust name, such as `bool` and `bool_`, are rejected with `CodeGenError::TypeNameConflict`.
+
+To choose the name of a type, set `(buffa.ext.message).name` or `(buffa.ext.enum).name` in the schema: see [Type names](#type-names).
+
+A message whose name has no upper-case letter, such as `type` or `item`, cannot contain a nested message, a nested enum, an `extend` block or a oneof, unless the name is one of those ten. The struct and the module for its nested items get the same Rust name, and the generated code does not compile. Rename the message, or set `(buffa.ext.message).name` to a value that differs from the module name, such as `Item`; the option leaves the full name and the type URL as they are.
+
 **Generated files are named by proto file path, not package.** The file `proto/api/v1/service.proto` produces `api.v1.service.rs` regardless of the `package` declaration. The module tree generator uses the package from the file descriptor (not the file name) to build the `pub mod` nesting. This means the file name and module path may not correspond — the file `api.v1.service.rs` might be included inside `pub mod myapp { pub mod api { pub mod v1 { ... } } }` if the package is `myapp.api.v1`.
 
 **Recursive message types** work automatically: singular message fields use `MessageField<T>` (which is `Option<Box<T>>` internally), and message-typed oneof variants are boxed by default. Both direct recursion (`message T { oneof k { T self = 1; } }`) and mutual recursion (`A ↔ B`) compile without workarounds.
@@ -627,7 +635,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `register_types=false` | Disable the per-package `register_types()` helper that populates a `MessageRegistry` (default: emitted) |
 | `allow_message_set=true` | Permit `option message_set_wire_format = true;` instead of rejecting it (default: false) |
 | `strict_utf8=true` | Map `string` fields to `Vec<u8>`/`&[u8]` (no UTF-8 validation) instead of `String`/`&str`. Alias: `strict_utf8_mapping`. |
-| `type_name_prefix=<prefix>` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`) |
+| `type_name_prefix=<prefix>` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to the name of every generated message and enum that does not set `(buffa.ext.message).name` or `(buffa.ext.enum).name` (`message User` → `struct RpcUser`) |
 | `idiomatic_field_names=true` | Convert camelCase proto field and oneof names to snake_case Rust identifiers (`webMessageInfo` → `web_message_info`) (default: false). JSON, text-format and reflection names are unchanged. A converted field that collides with another member (proto2 only) gets an `_f<number>` suffix, with a build warning |
 | `idiomatic_enum_aliases=false` | Omit the `UpperCamelCase` associated-const aliases for enum values (`Status::Active`); the `SHOUTY_SNAKE_CASE` variants are unaffected (default: emitted). See [Enums](#enumvaluet--type-safe-open-enums) |
 | `override_feature_in=<path>=<feature>:<value>` | Apply a path-scoped editions feature override (currently `enum_type:OPEN`) to the compiled descriptors. Repeatable |
@@ -1039,6 +1047,47 @@ Only Rust identifiers change. The wire format, the JSON and text format names, a
 The value must be an ASCII Rust identifier that is not a keyword and does not start with `__buffa_`. Any other value fails code generation with `CodeGenError::InvalidNameOption`, and so does the option on an extension.
 
 A value that another member already has as its Rust name fails with `CodeGenError::NameOptionConflict`. A message's struct has one member for each field outside a oneof and one for each oneof. A oneof's enum has one variant for each of its fields. A value conflicts only inside its own struct or enum. Without the option, the variant of a field in a oneof is its proto name in PascalCase, so the value `PlainText` conflicts with a sibling field `plain_text`.
+
+### Type names
+
+To choose the Rust name of a message or an enum, set `(buffa.ext.message).name` or `(buffa.ext.enum).name` in the schema. The schema imports `buffa/ext/options.proto`, as [Field names](#field-names) describes.
+
+```protobuf
+import "buffa/ext/options.proto";
+
+message Record {
+  option (buffa.ext.message).name = "Entry";
+
+  enum Level {
+    option (buffa.ext.enum).name = "Severity";
+    LEVEL_UNSPECIFIED = 0;
+  }
+}
+```
+
+```rust,ignore
+pub struct Entry {
+    // ...
+}
+
+pub mod record {
+    pub enum Severity {
+        // ...
+    }
+}
+```
+
+The struct or enum is the option's value exactly as written: buffa does not escape it, does not add `type_name_prefix` to it, and does not check its case. The types that buffa derives from a struct follow the value, so the view of `Entry` is `EntryView`.
+
+The module that holds a message's nested types keeps the name derived from the proto name, so the enum in the example is `record::Severity`. buffa does not compare the value with module names. A value equal to the nested-types module of the message or of a sibling, such as `record` here, gives a struct and a module the same name, and the generated code does not compile.
+
+Every reference to the type uses the value, including a reference from another file or another package. A crate that reaches the type through an `extern_path` prefix reads the option from the imported file's descriptor, so the mapping stays as it is. That holds when the crate that owns the type was generated by a buffa that reads the option. For any other owner, such as hand-written types, give the type an exact `extern_path` entry, which is used as written.
+
+Only Rust identifiers and the struct's `Debug` output change. `FULL_NAME`, the `Any` type URL, JSON, the text format and the descriptor that reflection reads keep the proto name. Build configuration that selects a type by its path, such as `type_attribute(".pkg.Record", ...)`, also keeps the proto name.
+
+The value must be an ASCII Rust identifier that is not a keyword, is not `__buffa`, and does not start with `__buffa_`. It must also not be one of the ten primitive type names listed under [Quirks and gotchas](#quirks-and-gotchas). Any other value fails code generation with `CodeGenError::InvalidNameOption`. In a file that is imported and not generated, buffa reports no error for such a value and uses the name derived from the proto name.
+
+A value that another message or enum in the same scope already has as its Rust name fails with `CodeGenError::NameOptionConflict`. A scope is a package, across the files of it that one run generates, or the message that the types are nested in.
 
 ### Nested types and module structure
 

@@ -174,3 +174,107 @@ fn test_nested_option_sibling_propagation_compiles() {
     assert_eq!(decoded.inner.x, Some(1));
     assert_eq!(decoded.note.as_deref(), Some("n"));
 }
+
+#[test]
+fn test_escaped_type_names_round_trip_binary_and_json() {
+    // Fixture: `type_name_escapes.proto`.
+    use crate::type_name_escapes::{self as esc, __buffa::oneof};
+    use buffa::{EnumValue, MessageField};
+
+    let msg = esc::Holder {
+        flag: MessageField::some(esc::bool_ {
+            label: Some("on".into()),
+            inner: MessageField::some(esc::bool::Inner {
+                n: 7,
+                ..Default::default()
+            }),
+            pick: Some(oneof::bool::Pick::Number(3)),
+            ..Default::default()
+        }),
+        strs: vec![esc::str_ {
+            data: vec![1, 2],
+            ..Default::default()
+        }],
+        bytes_by_name: [(
+            "k".to_string(),
+            esc::u8_ {
+                v: 255,
+                ..Default::default()
+            },
+        )]
+        .into_iter()
+        .collect(),
+        big: MessageField::some(esc::u64_ {
+            v: u64::MAX,
+            inner: MessageField::some(esc::u64::Inner {
+                n: 1,
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        size: MessageField::some(esc::usize_ {
+            v: 9,
+            ..Default::default()
+        }),
+        small: MessageField::some(esc::i32_ {
+            pick: Some(oneof::i32::Pick::Number(-1)),
+            ..Default::default()
+        }),
+        unsigned: EnumValue::Known(esc::u32_::U32_ONE),
+        floats: vec![EnumValue::Known(esc::f64_::F64_ONE)],
+        maybe_unsigned: Some(EnumValue::Known(esc::u32_::U32_ONE)),
+        me: MessageField::some(esc::Self_ {
+            v: "me".into(),
+            ..Default::default()
+        }),
+        kind: MessageField::some(esc::r#type {
+            v: "kind".into(),
+            ..Default::default()
+        }),
+        arm: EnumValue::Known(esc::r#match::MATCH_ONE),
+        // `char` and `i8` are not escaped: generated code does not name them.
+        letter: MessageField::some(esc::char {
+            v: "c".into(),
+            ..Default::default()
+        }),
+        tiny: EnumValue::Known(esc::i8::I8_ONE),
+        pick: Some(oneof::holder::Pick::PickFloat(EnumValue::Known(
+            esc::f64_::F64_ONE,
+        ))),
+        scalar_bool: true,
+        scalar_i32: -1,
+        scalar_u64: u64::MAX,
+        scalar_f64: 1.5,
+        scalar_string: "s".into(),
+        bools: vec![true, false],
+        doubles: [(1, 2.5)].into_iter().collect(),
+        maybe_u64: Some(1),
+        ..Default::default()
+    };
+
+    assert_eq!(round_trip(&msg), msg);
+
+    let json = serde_json::to_string(&msg).expect("serialize");
+    let back: esc::Holder = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(back, msg);
+}
+
+#[test]
+fn test_escaped_type_names_keep_their_proto_names() {
+    use crate::type_name_escapes as esc;
+    use buffa::MessageName;
+
+    assert_eq!(esc::bool_::FULL_NAME, "test.type_name_escapes.bool");
+    assert_eq!(esc::Self_::FULL_NAME, "test.type_name_escapes.Self");
+    assert_eq!(esc::r#type::FULL_NAME, "test.type_name_escapes.type");
+    assert_eq!(
+        esc::bool::Inner::FULL_NAME,
+        "test.type_name_escapes.bool.Inner"
+    );
+    assert_eq!(
+        esc::bool_::TYPE_URL,
+        "type.googleapis.com/test.type_name_escapes.bool"
+    );
+    // `Debug` prints the Rust name as `#[derive(Debug)]` would: no `r#`.
+    assert!(format!("{:?}", esc::r#type::default()).starts_with("type {"));
+}

@@ -1,0 +1,69 @@
+// Fixture for `(buffa.ext.message).name` and `(buffa.ext.enum).name`: the
+// options set the Rust names of a struct and an enum, and the type URL, JSON,
+// text format and descriptor keep the proto names. See
+// tests/ext_type_name.rs.
+
+syntax = "proto3";
+
+package test.exttypename;
+
+import "buffa/ext/options.proto";
+
+// Without the option the struct is `Type`.
+message Type {
+  option (buffa.ext.message).name = "Kind";
+
+  string label = 1;
+  Level level = 2;
+  Part part = 3;
+  Mode mode = 4;
+  // The struct refers to itself by the option's name.
+  repeated Type children = 5;
+  map<string, Part> parts = 6;
+
+  oneof choice {
+    Part chosen = 7;
+    Level chosen_level = 8;
+  }
+
+  // Nested types take the option too. Their module is still `type`.
+  message Part {
+    option (buffa.ext.message).name = "Piece";
+
+    int32 size = 1;
+  }
+
+  enum Mode {
+    option (buffa.ext.enum).name = "Setting";
+
+    MODE_UNSPECIFIED = 0;
+    MODE_ON = 1;
+  }
+}
+
+enum Level {
+  option (buffa.ext.enum).name = "Severity";
+
+  LEVEL_UNSPECIFIED = 0;
+  LEVEL_HIGH = 1;
+}
+
+// A message whose name has no upper-case letter derives a struct with the
+// name of its nested-types module. The option gives the struct another name.
+message item {
+  option (buffa.ext.message).name = "Item";
+
+  Inner inner = 1;
+
+  message Inner {
+    int32 n = 1;
+  }
+}
+
+// A message without the option that refers to the renamed types.
+message Holder {
+  Type item = 1;
+  Type.Part part = 2;
+  Level level = 3;
+  Type.Mode mode = 4;
+}

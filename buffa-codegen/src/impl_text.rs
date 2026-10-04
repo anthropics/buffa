@@ -99,7 +99,7 @@ pub(crate) fn generate_text_impl(
         .and_then(|o| o.message_set_wire_format)
         .unwrap_or(false);
     if is_message_set {
-        let name_ident = format_ident!("{}", rust_name);
+        let name_ident = crate::idents::make_type_ident(rust_name);
         // Same gate as the main return below — a `proto2` `message_set_wire_format`
         // type is the one early-out, and it must not leak an ungated
         // `impl TextFormat` when `gate_impls_on_crate_features` is on.
@@ -127,7 +127,7 @@ pub(crate) fn generate_text_impl(
         ));
     }
 
-    let name_ident = format_ident!("{}", rust_name);
+    let name_ident = crate::idents::make_type_ident(rust_name);
 
     // ── field grouping (mirrors generate_message_impl) ──────────────────────
 

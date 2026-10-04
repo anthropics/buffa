@@ -1,0 +1,118 @@
+syntax = "proto3";
+
+package test.type_name_escapes;
+
+// Messages and enums named after Rust primitive types, `Self` and keywords.
+// `bool` and `u64` also have a nested message, and `bool` and `i32` a oneof.
+// `char` and `i8` are primitive names that generated code does not use, so
+// they keep their spelling. `Holder` refers to each type and has a scalar
+// field for each primitive that an unescaped name would shadow. Compilation
+// is the main assertion.
+
+message bool {
+  message Inner {
+    int32 n = 1;
+  }
+  optional string label = 1;
+  Inner inner = 2;
+  oneof pick {
+    string name = 3;
+    int32 number = 4;
+  }
+}
+
+message str {
+  bytes data = 1;
+}
+
+message u8 {
+  uint32 v = 1;
+}
+
+message u64 {
+  message Inner {
+    uint64 n = 1;
+  }
+  uint64 v = 1;
+  Inner inner = 2;
+}
+
+message usize {
+  uint64 v = 1;
+}
+
+message i32 {
+  oneof pick {
+    int32 number = 1;
+    string name = 2;
+  }
+}
+
+enum u32 {
+  U32_UNSPECIFIED = 0;
+  U32_ONE = 1;
+}
+
+enum f64 {
+  F64_UNSPECIFIED = 0;
+  F64_ONE = 1;
+}
+
+message Self {
+  string v = 1;
+}
+
+message type {
+  string v = 1;
+}
+
+enum match {
+  MATCH_UNSPECIFIED = 0;
+  MATCH_ONE = 1;
+}
+
+message char {
+  string v = 1;
+}
+
+enum i8 {
+  I8_UNSPECIFIED = 0;
+  I8_ONE = 1;
+}
+
+message Holder {
+  .test.type_name_escapes.bool flag = 1;
+  .test.type_name_escapes.bool.Inner inner = 2;
+  repeated .test.type_name_escapes.str strs = 3;
+  map<string, .test.type_name_escapes.u8> bytes_by_name = 4;
+  .test.type_name_escapes.u64 big = 5;
+  .test.type_name_escapes.u64.Inner big_inner = 6;
+  .test.type_name_escapes.usize size = 7;
+  .test.type_name_escapes.i32 small = 8;
+  .test.type_name_escapes.u32 unsigned = 9;
+  repeated .test.type_name_escapes.f64 floats = 10;
+  optional .test.type_name_escapes.u32 maybe_unsigned = 11;
+  .test.type_name_escapes.Self me = 12;
+  .test.type_name_escapes.type kind = 13;
+  .test.type_name_escapes.match arm = 14;
+  .test.type_name_escapes.char letter = 15;
+  .test.type_name_escapes.i8 tiny = 16;
+  oneof pick {
+    .test.type_name_escapes.bool pick_flag = 17;
+    .test.type_name_escapes.f64 pick_float = 18;
+    .test.type_name_escapes.type pick_kind = 19;
+  }
+
+  bool scalar_bool = 20;
+  int32 scalar_i32 = 21;
+  int64 scalar_i64 = 22;
+  uint32 scalar_u32 = 23;
+  uint64 scalar_u64 = 24;
+  float scalar_f32 = 25;
+  double scalar_f64 = 26;
+  string scalar_string = 27;
+  bytes scalar_bytes = 28;
+  repeated bool bools = 29;
+  map<int32, double> doubles = 30;
+  optional uint64 maybe_u64 = 31;
+}

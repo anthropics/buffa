@@ -89,6 +89,7 @@ mod element_memory_limit;
 mod encode_as_option;
 mod ext_name;
 mod ext_options;
+mod ext_type_name;
 mod extensions;
 mod extensions_json;
 mod idiomatic_fields;

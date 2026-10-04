@@ -366,11 +366,11 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     parse_codec_strategy(strategy)?,
                 ));
             }
-            // `type_name_prefix=Rpc` prepends a prefix to every generated
-            // message/enum type name (and their view types). The value is
-            // passed through verbatim; buffa-codegen rejects anything that
-            // is not PascalCase at generation time (same rule as the
-            // builder API).
+            // `type_name_prefix=Rpc` prepends a prefix to the name of every
+            // generated message and enum without a `name` option (and to
+            // their view types). The value is passed through verbatim;
+            // buffa-codegen rejects anything that is not PascalCase at
+            // generation time (same rule as the builder API).
             "type_name_prefix" => codegen.type_name_prefix = value.to_string(),
             // Repeatable path-scoped editions feature override; value is
             // "<path>=<feature>:<value>" (e.g. ".my.pkg.E=enum_type:OPEN").

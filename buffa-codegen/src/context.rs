@@ -8,6 +8,7 @@ use crate::features::{self, ResolvedFeatures};
 use crate::generated::descriptor::{
     DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
 };
+use crate::name_override::TypeDecl;
 use crate::oneof::to_snake_case;
 use crate::CodeGenConfig;
 
@@ -381,7 +382,7 @@ impl<'a> CodeGenContext<'a> {
                     let fqn = format!("{}{}", proto_prefix, name);
                     let (rust_path, is_extern) = resolve_type_path(
                         &fqn,
-                        name,
+                        &TypeDecl::message(msg),
                         file_root,
                         &local_module,
                         effective_extern_paths,
@@ -441,7 +442,7 @@ impl<'a> CodeGenContext<'a> {
                     let fqn = format!("{}{}", proto_prefix, name);
                     let (rust_path, _) = resolve_type_path(
                         &fqn,
-                        name,
+                        &TypeDecl::enumeration(enum_type),
                         file_root,
                         &local_module,
                         effective_extern_paths,
@@ -789,6 +790,23 @@ impl<'a> CodeGenContext<'a> {
         let paths = crate::effective_extern_paths(files, files_to_generate, config);
         let file_paths = crate::effective_file_extern_paths(files_to_generate, config);
         Self::with_extern_resolution(files, config, &paths, &file_paths)
+    }
+
+    /// Returns the Rust name of the struct generated for `msg`: its
+    /// `(buffa.ext.message).name`, or without one
+    /// [`local_type_name`](crate::idents::local_type_name) of its proto
+    /// name. A keyword name such as `type` is returned without `r#`;
+    /// [`make_type_ident`](crate::idents::make_type_ident) adds it.
+    pub(crate) fn message_rust_name(&self, msg: &DescriptorProto) -> String {
+        TypeDecl::message(msg).rust_name(&self.config.type_name_prefix)
+    }
+
+    /// Returns the Rust name of the enum generated for `enum_type`: its
+    /// `(buffa.ext.enum).name`, or without one
+    /// [`local_type_name`](crate::idents::local_type_name) of its proto
+    /// name.
+    pub(crate) fn enum_rust_name(&self, enum_type: &EnumDescriptorProto) -> String {
+        TypeDecl::enumeration(enum_type).rust_name(&self.config.type_name_prefix)
     }
 
     /// Look up the Rust type path for a fully-qualified protobuf type name.
@@ -1591,7 +1609,8 @@ pub(crate) fn resolve_extern_prefix(
 ///    e.g. `.google.protobuf.Timestamp = ::pbjson_types::Timestamp`).
 /// 2. Otherwise the **longest dotted-prefix** entry (a package or an enclosing
 ///    type) applies, with the proto segments past that prefix rendered as
-///    `snake_case` modules and the final segment kept as the Rust type name —
+///    `snake_case` modules and the final segment as the Rust type name, escaped
+///    by [`escape_type_name`](crate::idents::escape_type_name) —
 ///    exactly the path [`CodeGenContext::new`] would otherwise build from
 ///    [`resolve_extern_prefix`] plus the type name, so package-prefix mappings
 ///    resolve identically to before.
@@ -1629,7 +1648,8 @@ pub(crate) fn resolve_extern_type(fqn: &str, extern_paths: &[(String, String)]) 
             .unwrap_or("")
     };
     let mut segments = rest.split('.').collect::<Vec<_>>();
-    // The final segment is the type name (kept verbatim); the rest are modules.
+    // The final segment is the type name, escaped by the rule the owning
+    // crate's codegen applied; the rest are modules.
     let type_name = segments.pop()?;
     let mut path = rust_prefix.to_string();
     for module in segments {
@@ -1637,7 +1657,7 @@ pub(crate) fn resolve_extern_type(fqn: &str, extern_paths: &[(String, String)]) 
         path.push_str(&to_snake_case(module));
     }
     path.push_str("::");
-    path.push_str(type_name);
+    path.push_str(&crate::idents::escape_type_name(type_name));
     Some(path)
 }
 
@@ -1665,7 +1685,7 @@ fn join_mod(module: &str, name: &str) -> String {
 /// participates in sub-package deconfliction, issue #135).
 fn resolve_type_path(
     fqn: &str,
-    name: &str,
+    decl: &TypeDecl<'_>,
     file_root: Option<&str>,
     local_module: &str,
     extern_paths: &[(String, String)],
@@ -1680,15 +1700,26 @@ fn resolve_type_path(
     // types are named by the external crate, and the file-level root is the
     // internal descriptor.proto → buffa-descriptor split (also external to
     // this codegen run).
+    //
+    // A `name` option is in the descriptor, so the crate that owns an
+    // extern-mapped type read the same value: it replaces the type name
+    // under a file-level or a prefix mapping. An exact entry is the caller's
+    // own path, used as written.
     if let Some((_, rust)) = extern_paths.iter().find(|(proto, _)| proto == fqn) {
         (rust.clone(), true)
     } else if let Some(root) = file_root {
+        let name = decl.name_option().unwrap_or(decl.proto_name());
         (join_mod(root, name), true)
     } else if let Some(path) = resolve_extern_type(fqn, extern_paths) {
+        // `resolve_extern_type` ends the path with `::<type name>`.
+        let path = match (decl.name_option(), path.rsplit_once("::")) {
+            (Some(name), Some((parent, _))) => format!("{parent}::{name}"),
+            (None, _) | (Some(_), None) => path,
+        };
         (path, true)
     } else {
         (
-            join_mod(local_module, &format!("{type_name_prefix}{name}")),
+            join_mod(local_module, &decl.rust_name(type_name_prefix)),
             false,
         )
     }
@@ -1706,7 +1737,8 @@ struct NestedRegistrationCtx<'a> {
 /// Recursively register nested messages and enums with module-qualified paths.
 ///
 /// Each nested message `Parent.Child` maps to `parent_mod::Child` in Rust,
-/// where `parent_mod` is the snake_case module path of the enclosing message.
+/// or to `parent_mod::<name>` when `Child` sets a `name` option, where
+/// `parent_mod` is the snake_case module path of the enclosing message.
 ///
 /// A per-type `extern_path` override (issue #111) on a nested type's own FQN
 /// takes priority over the inherited `parent_mod` path; otherwise the nested
@@ -1730,9 +1762,9 @@ fn register_nested_types(
             let fqn = format!("{}.{}", parent_fqn, name);
             // An exact per-type override wins; the child module is then the
             // override's parent plus the plain snake_case name. Otherwise the
-            // type lives in `parent_mod`, named with the configured prefix
-            // (the module segment stays the proto-derived snake_case name —
-            // modules never collide with type names).
+            // type lives in `parent_mod`, named by its `name` option or with
+            // the configured prefix. The module segment stays the
+            // proto-derived snake_case name.
             let (rust_path, child_mod) = match extern_paths.iter().find(|(proto, _)| proto == &fqn)
             {
                 Some((_, rust)) => {
@@ -1743,7 +1775,10 @@ fn register_nested_types(
                     (rust.clone(), child)
                 }
                 None => (
-                    format!("{parent_mod}::{type_name_prefix}{name}"),
+                    format!(
+                        "{parent_mod}::{}",
+                        TypeDecl::message(nested).rust_name(type_name_prefix)
+                    ),
                     format!("{parent_mod}::{}", to_snake_case(name)),
                 ),
             };
@@ -1762,7 +1797,12 @@ fn register_nested_types(
                 .iter()
                 .find(|(proto, _)| proto == &fqn)
                 .map(|(_, rust)| rust.clone())
-                .unwrap_or_else(|| format!("{parent_mod}::{type_name_prefix}{name}"));
+                .unwrap_or_else(|| {
+                    format!(
+                        "{parent_mod}::{}",
+                        TypeDecl::enumeration(enum_type).rust_name(type_name_prefix)
+                    )
+                });
             type_map.insert(fqn.clone(), rust_path);
             package_of.insert(fqn, package.to_string());
         }
@@ -2623,6 +2663,28 @@ mod tests {
             )],
         );
         assert_eq!(result, Some("::pbjson_types::Timestamp".into()));
+    }
+
+    #[test]
+    fn test_resolve_extern_type_escapes_a_prefix_mapped_type_name() {
+        // The crate that owns the package declares `bool` as `bool_`.
+        let prefix = [(".other.v1".to_string(), "::other::v1".to_string())];
+        assert_eq!(
+            resolve_extern_type(".other.v1.bool", &prefix),
+            Some("::other::v1::bool_".into())
+        );
+        assert_eq!(
+            resolve_extern_type(".other.v1.Outer.Self", &prefix),
+            Some("::other::v1::outer::Self_".into())
+        );
+        // An exact entry is the caller's own path, used as written.
+        assert_eq!(
+            resolve_extern_type(
+                ".other.v1.bool",
+                &[(".other.v1.bool".into(), "::other::Flag".into())]
+            ),
+            Some("::other::Flag".into())
+        );
     }
 
     #[test]

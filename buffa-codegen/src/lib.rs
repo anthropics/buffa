@@ -1842,7 +1842,8 @@ pub struct CodeGenConfig {
     /// different feature name (e.g. its JSON support behind a `serde`
     /// feature). Inert unless one of the gating flags is on.
     pub feature_gate_names: FeatureGateNames,
-    /// Prefix prepended to every locally-generated Rust type name.
+    /// Prefix prepended to the Rust name of every locally-generated message
+    /// and enum that does not set a `name` option.
     ///
     /// With prefix `"Rpc"`, `message User {}` generates `struct RpcUser`,
     /// its view becomes `RpcUserView` / `RpcUserOwnedView`, and every
@@ -1865,16 +1866,18 @@ pub struct CodeGenConfig {
     ///   external crate),
     /// - wire-format and JSON output (proto names, `TYPE_URL`s, and JSON
     ///   field names are unaffected — this is a pure Rust-identifier
-    ///   rename).
+    ///   rename),
+    /// - a message or enum that sets `(buffa.ext.message).name` or
+    ///   `(buffa.ext.enum).name`: the option's value is the whole name.
     ///
     /// When another codegen run references these prefixed types via its own
     /// [`extern_paths`](Self::extern_paths) mapping, the mapped Rust path
     /// must spell out the prefixed name (e.g. `::crate_a::RpcUser`) — the
     /// proto name carries no prefix, so the mapping is not derived
-    /// automatically. Prefix-induced name collisions (e.g. `message RpcUser`
-    /// alongside `message User` with prefix `Rpc`) are not detected here;
-    /// they surface as ordinary duplicate-definition errors when the
-    /// generated code is compiled.
+    /// automatically. Two sibling types with one Rust name fail generation:
+    /// [`CodeGenError::TypeNameConflict`] for two derived names, and
+    /// [`CodeGenError::NameOptionConflict`] when a `name` option set either
+    /// name.
     ///
     /// Must be PascalCase (`[A-Z][A-Za-z0-9]*`) — an ASCII uppercase letter
     /// followed by ASCII letters and digits — so the prefixed names stay
@@ -2021,13 +2024,6 @@ impl CodeGenConfig {
     #[must_use]
     pub fn reflect_feature_gate(&self) -> Option<&str> {
         self.feature_gates().reflect
-    }
-
-    /// Apply [`type_name_prefix`](Self::type_name_prefix) to a locally
-    /// generated type's proto simple name, yielding the Rust identifier to
-    /// declare (and register in the type map).
-    pub(crate) fn prefixed_type_name(&self, proto_name: &str) -> String {
-        format!("{}{proto_name}", self.type_name_prefix)
     }
 
     /// Validate [`type_name_prefix`](Self::type_name_prefix): empty (no
@@ -3221,6 +3217,7 @@ fn warn_excluded_refs_msg(
 ///   corpus or different rules than this call uses.
 /// - For a valid schema whose names collide in the generated Rust:
 ///   [`CodeGenError::OneofEnumNameConflict`],
+///   [`CodeGenError::TypeNameConflict`],
 ///   [`CodeGenError::ModuleNameConflict`],
 ///   [`CodeGenError::ReservedFieldName`] or
 ///   [`CodeGenError::ReservedModuleName`].
@@ -3228,6 +3225,11 @@ fn warn_excluded_refs_msg(
 ///   the value cannot be the Rust name, or
 ///   [`CodeGenError::NameOptionConflict`] if another field or oneof of the
 ///   same struct, or another variant of the same oneof, has that Rust name.
+/// - For `(buffa.ext.message).name` and `(buffa.ext.enum).name`:
+///   [`CodeGenError::InvalidNameOption`] if the value cannot be the name of
+///   the type, or [`CodeGenError::NameOptionConflict`] if another message or
+///   enum of the same package, or nested in the same message, has that Rust
+///   name.
 /// - Other [`CodeGenError`] variants for a schema that generation does not
 ///   support or a malformed descriptor, such as
 ///   [`CodeGenError::MissingField`].
@@ -4061,13 +4063,17 @@ fn validate_shared_root_name(
 ///   with generated `__buffa_unknown_fields` / `__buffa_cached_size`).
 /// - **Module-name conflicts**: no two sibling messages snake_case to the
 ///   same module name (e.g. `HTTPRequest` vs `HttpRequest`).
+/// - **Type-name conflicts**: no two messages or enums nested in one message
+///   have the same Rust type name (e.g. `bool` vs `bool_`, or a `name`
+///   option equal to a sibling's name). The caller checks the package-level
+///   types, which span files.
 /// - **Reserved sentinel**: no package segment, message-module name, or
 ///   file-level enum name equals [`SENTINEL_MOD`](context::SENTINEL_MOD).
 ///   Ancillary types live under `pkg::__buffa::…`; a proto element
 ///   emitting an item named `__buffa` at package root would produce
 ///   E0428 against `pub mod __buffa`. This is the only name buffa
 ///   reserves in user namespace.
-fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
+fn validate_file(file: &FileDescriptorProto, type_name_prefix: &str) -> Result<(), CodeGenError> {
     use std::collections::HashMap;
 
     let sentinel = context::SENTINEL_MOD;
@@ -4078,14 +4084,15 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
             location: format!("package '{package}'"),
         });
     }
-    // File-level enums emit `pub enum <name>` at package root with the
-    // proto name preserved verbatim (no PascalCase normalization), so a
-    // proto `enum __buffa` would land beside `pub mod __buffa`. Nested
+    // File-level enums emit `pub enum <name>` at package root, and the
+    // derived name keeps the proto spelling (no PascalCase normalization),
+    // so a proto `enum __buffa` would land beside `pub mod __buffa`. Nested
     // enums live inside their owner message's module and cannot collide
     // with the package-root sentinel, so only file-level is checked.
     for enum_type in &file.enum_type {
         let name = required_type_name(enum_type.name.as_deref(), "enum.name")?;
-        if name == sentinel {
+        let rust_name = name_override::TypeDecl::enumeration(enum_type).rust_name(type_name_prefix);
+        if rust_name == sentinel {
             return Err(CodeGenError::ReservedModuleName {
                 name: sentinel.to_string(),
                 location: format!("enum '{package}.{name}'"),
@@ -4097,6 +4104,7 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
         messages: &[crate::generated::descriptor::DescriptorProto],
         scope: &str,
         sentinel: &str,
+        type_name_prefix: &str,
     ) -> Result<(), CodeGenError> {
         // snake_case module name → original proto name (for conflict diag).
         let mut seen: HashMap<String, &str> = HashMap::new();
@@ -4112,6 +4120,11 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
             for enum_type in &msg.enum_type {
                 required_type_name(enum_type.name.as_deref(), "enum.name")?;
             }
+            name_override::check_type_names(
+                &fqn,
+                name_override::type_decls(&msg.nested_type, &msg.enum_type),
+                type_name_prefix,
+            )?;
 
             for field in &msg.field {
                 let fname = field
@@ -4144,12 +4157,12 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
             }
             seen.insert(module_name, name);
 
-            walk(&msg.nested_type, &fqn, sentinel)?;
+            walk(&msg.nested_type, &fqn, sentinel, type_name_prefix)?;
         }
         Ok(())
     }
 
-    walk(&file.message_type, package, sentinel)
+    walk(&file.message_type, package, sentinel, type_name_prefix)
 }
 
 /// Returns the name of a message or enum descriptor, or
@@ -4194,7 +4207,7 @@ fn generate_proto_content(
     use crate::idents::make_field_ident;
     use crate::message::MessageOutput;
 
-    validate_file(file)?;
+    validate_file(file, &ctx.config.type_name_prefix)?;
     name_override::validate_file(ctx, file)?;
 
     let resolver = imports::ImportResolver::new();
@@ -4211,7 +4224,7 @@ fn generate_proto_content(
 
     for enum_type in &file.enum_type {
         let enum_proto_name = enum_type.name.as_deref().unwrap_or("");
-        let enum_rust_name = ctx.config.prefixed_type_name(enum_proto_name);
+        let enum_rust_name = ctx.enum_rust_name(enum_type);
         let enum_fqn = if current_package.is_empty() {
             enum_proto_name.to_string()
         } else {
@@ -4229,7 +4242,7 @@ fn generate_proto_content(
 
     for message_type in &file.message_type {
         let top_level_name = message_type.name.as_deref().unwrap_or("");
-        let rust_name = ctx.config.prefixed_type_name(top_level_name);
+        let rust_name = ctx.message_rust_name(message_type);
         let proto_fqn = if current_package.is_empty() {
             top_level_name.to_string()
         } else {
@@ -4441,6 +4454,15 @@ fn generate_package(
     let mut reg = message::RegistryPaths::default();
     let mut root_reexports: Vec<message::ReexportCandidate> = Vec::new();
 
+    // Package-level types share one module whichever file declares them.
+    name_override::check_type_names(
+        current_package,
+        files
+            .iter()
+            .flat_map(|file| name_override::type_decls(&file.message_type, &file.enum_type)),
+        &ctx.config.type_name_prefix,
+    )?;
+
     // Idiomatic imports: dry-run the package's generation once with the
     // registry collecting, so the set of package-root path references is
     // known — by construction, exactly the set the real pass will emit —
@@ -4600,17 +4622,14 @@ fn root_occupied_names(
         let package = file.package.as_deref().unwrap_or("");
         for m in &file.message_type {
             let name = m.name.as_deref().unwrap_or("");
-            // The declared struct name carries the configured prefix; the
-            // module name stays proto-derived.
-            occupied.insert(ctx.config.prefixed_type_name(name));
+            // The declared struct name is the `name` option or carries the
+            // configured prefix; the module name stays proto-derived.
+            occupied.insert(ctx.message_rust_name(m));
             // The actual module name (deconflicted from sub-packages, #135).
             occupied.insert(ctx.nested_module_name(package, name));
         }
         for e in &file.enum_type {
-            occupied.insert(
-                ctx.config
-                    .prefixed_type_name(e.name.as_deref().unwrap_or("")),
-            );
+            occupied.insert(ctx.enum_rust_name(e));
         }
     }
     // The reflect surface is re-exported at the package root directly by
@@ -5222,6 +5241,38 @@ pub enum CodeGenError {
         /// The Rust enum name that both oneofs map to.
         rust_name: String,
     },
+    /// Two types, each a message or an enum, declared at package level in
+    /// one package or nested in one message, have Rust type names that buffa
+    /// derived from their proto names, and the two names are the same. When
+    /// a `name` option set either name, the error is
+    /// [`NameOptionConflict`](Self::NameOptionConflict). With an empty [`CodeGenConfig::type_name_prefix`], a type named
+    /// after a primitive type that generated code uses (`bool`, `str`, `u8`,
+    /// `usize`, `i32`, `i64`, `u32`, `u64`, `f32`, `f64`), or named `Self`,
+    /// `self`, `super` or `crate`, is generated with a trailing `_`, so
+    /// `bool` and `bool_` both become `bool_`.
+    ///
+    /// Resolve by renaming one of the types, which changes its full name and
+    /// its `Any` type URL, by setting `(buffa.ext.message).name` or
+    /// `(buffa.ext.enum).name` on one of them, or by setting a prefix: with
+    /// prefix `Pb` the two types are `Pbbool` and `Pbbool_`.
+    #[error(
+        "type name conflict in '{scope}': '{first_type}' and '{second_type}' \
+         both map to Rust type '{rust_name}'; rename one of them, or set its \
+         `(buffa.ext.message).name` or `(buffa.ext.enum).name`"
+    )]
+    TypeNameConflict {
+        /// Fully-qualified proto name of the package or message that
+        /// declares both types, without a leading dot. Empty for a
+        /// package-level conflict in a file that declares no package.
+        scope: String,
+        /// Proto simple name of the type visited first: within each file,
+        /// messages in declaration order, then enums.
+        first_type: String,
+        /// Proto simple name of the type visited second.
+        second_type: String,
+        /// The Rust type name that both map to.
+        rust_name: String,
+    },
     /// A proto package segment, message name, or file-level enum name
     /// would emit a Rust item matching the reserved sentinel `__buffa`.
     ///
@@ -5282,7 +5333,12 @@ pub enum CodeGenError {
     ///
     /// buffa uses the value as written, so it must be an ASCII Rust
     /// identifier that is not a keyword and does not start with `__buffa_`.
-    /// [`NameOptionProblem`] lists every case.
+    /// The name of a message or an enum must also not be `__buffa` or a
+    /// primitive type that generated code uses. [`NameOptionProblem`] lists
+    /// every case.
+    ///
+    /// Only a file named in `files_to_generate` is checked. In an imported
+    /// file, a message or enum value that cannot be the name is ignored.
     #[error("invalid `{option}` = {name:?} on '{element}': {problem}")]
     #[non_exhaustive]
     InvalidNameOption {
@@ -5303,6 +5359,11 @@ pub enum CodeGenError {
     /// For `(buffa.ext.field).name` the scope is a message. The fields
     /// outside a oneof and the oneofs share the names of the struct's
     /// fields, and the fields of one oneof share the names of its variants.
+    /// For `(buffa.ext.message).name` and `(buffa.ext.enum).name` the scope
+    /// is a package, or the message that the types are nested in; two types
+    /// whose names buffa derived are
+    /// [`TypeNameConflict`](Self::TypeNameConflict). `element` and `other`
+    /// are fully-qualified names, where `TypeNameConflict` has simple names.
     /// Code generation does not rename either element: change the option.
     #[error(
         "name conflict: `{option}` gives '{element}' the Rust name \
@@ -5315,7 +5376,8 @@ pub enum CodeGenError {
         option: &'static str,
         /// Fully-qualified proto name of the element whose option sets the
         /// Rust name, without a leading dot. When both elements set it, this
-        /// is the one declared second.
+        /// is the one visited second: fields in declaration order, and for
+        /// types each file's messages in declaration order, then its enums.
         element: String,
         /// Fully-qualified proto name of the other element with that Rust
         /// name, without a leading dot.

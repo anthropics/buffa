@@ -425,7 +425,8 @@ impl Config {
         self
     }
 
-    /// Prepend a prefix to every generated Rust type name (default: none).
+    /// Prepend a prefix to the name of every generated message and enum
+    /// (default: none).
     ///
     /// With prefix `"Rpc"`, `message User {}` generates `struct RpcUser`
     /// (and `RpcUserView` / `RpcUserOwnedView`); every cross-reference uses
@@ -436,7 +437,9 @@ impl Config {
     /// Applies to message structs and enum types (top-level and nested).
     /// Module names, oneof enums, [`extern_path`](Self::extern_path)-mapped
     /// types (including well-known types), and the wire/JSON format are
-    /// unaffected.
+    /// unaffected. So is a message or enum whose schema sets
+    /// `(buffa.ext.message).name` or `(buffa.ext.enum).name`: the option's
+    /// value is the whole name.
     ///
     /// When another crate references these prefixed types via its own
     /// [`extern_path`](Self::extern_path) mapping, the mapped Rust path must
