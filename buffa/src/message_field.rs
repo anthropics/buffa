@@ -558,9 +558,13 @@ impl<T: DefaultInstance, P: ProtoBox<T>> Deref for MessageField<T, P> {
 
 impl<T: Default + Clone, P: ProtoBox<T> + Clone> Clone for MessageField<T, P> {
     fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            _marker: core::marker::PhantomData,
+        // Build each arm directly. Cloning `inner` into a temporary merges both
+        // arms before the move, and LLVM then copies the whole `Option<P>`,
+        // payload included, even for an unset field (a full nested-message copy
+        // with `Inline<T>`).
+        match &self.inner {
+            Some(value) => Self::from_pointer(value.clone()),
+            None => Self::none(),
         }
     }
 }
@@ -849,14 +853,29 @@ mod tests {
         assert_eq!(taken.unwrap().value, 7);
     }
 
-    #[test]
-    fn test_clone() {
-        let field: MessageField<Inner> = MessageField::some(Inner {
-            value: 99,
+    /// Clone keeps presence and value for every pointer representation `P`.
+    fn assert_clone_cases<P: ProtoBox<Inner> + Clone>() {
+        let unset: MessageField<Inner, P> = MessageField::none();
+        assert!(unset.clone().is_unset());
+
+        // Equality cannot tell set-to-default from unset, so check presence.
+        let default: MessageField<Inner, P> = MessageField::some(Inner::default());
+        assert!(default.clone().is_set());
+
+        let set: MessageField<Inner, P> = MessageField::some(Inner {
+            value: 7,
             name: "clone".into(),
         });
-        let cloned = field.clone();
-        assert_eq!(field, cloned);
+        let cloned = set.clone();
+        assert!(cloned.is_set());
+        assert_eq!(cloned, set);
+        assert_eq!(cloned.name, "clone");
+    }
+
+    #[test]
+    fn test_clone() {
+        assert_clone_cases::<Box<Inner>>();
+        assert_clone_cases::<Inline<Inner>>();
     }
 
     #[test]
