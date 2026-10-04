@@ -1478,6 +1478,29 @@ impl Config {
         self
     }
 
+    /// Encode map entries as prost does: leave an entry's key or value out
+    /// when it holds the default (default: false, both are always written, as
+    /// the C++ and Java runtimes write them). Entries themselves are never
+    /// dropped.
+    ///
+    /// For migrations from prost where stored or hashed encodings must not
+    /// change. A message value is left out when it encodes to nothing. Every
+    /// key and value decodes as before, except that a `-0.0` float value
+    /// decodes as `0.0`, as it does from prost. Applies to the owned and view
+    /// encoders of the messages generated in this run, not to buffa-types'
+    /// well-known types (`google.protobuf.Struct`), types from other crates or
+    /// `DynamicMessage`.
+    ///
+    /// This covers the entries' bytes only. For a map with more than one
+    /// entry to encode identically, the entries must also come in the same
+    /// order: use [`map_type`](Self::map_type) with [`MapRepr::BTreeMap`]
+    /// where prost used `btree_map`.
+    #[must_use]
+    pub fn map_entries_omit_defaults(mut self, enabled: bool) -> Self {
+        self.codegen_config.map_entries_omit_defaults = enabled;
+        self
+    }
+
     /// Map the matching `map` fields to a custom collection implementing
     /// `buffa::map_codec::MapStorage`, named by its fully-qualified Rust path
     /// (e.g. `"::my_crate::OrderedMap"`). The path must **not** include the

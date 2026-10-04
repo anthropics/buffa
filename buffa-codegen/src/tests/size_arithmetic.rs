@@ -249,3 +249,49 @@ fn no_u32_arithmetic_in_size_paths() {
         );
     }
 }
+
+/// `map_entries_omit_defaults` switches both map shapes, message- and
+/// scalar-valued, and both passes to the encoders that leave default entry
+/// fields out.
+#[test]
+fn map_entries_omit_defaults_selects_the_sparse_encoders() {
+    let dense = [
+        "map_codec::field_len::<",
+        "map_codec::write_field::<",
+        "map_codec::message_field_len::<",
+        "map_codec::write_message_field::<",
+    ];
+    let sparse = [
+        "map_codec::field_len_omitting_defaults::<",
+        "map_codec::write_field_omitting_defaults::<",
+        "map_codec::message_field_len_omitting_defaults::<",
+        "map_codec::write_message_field_omitting_defaults::<",
+    ];
+    let content = corpus_output();
+    for name in dense {
+        assert!(
+            content.contains(name),
+            "{name} without the option: {content}"
+        );
+    }
+    for name in sparse {
+        assert!(!content.contains(name), "{name} without the option");
+    }
+    let config = CodeGenConfig {
+        map_entries_omit_defaults: true,
+        ..CodeGenConfig::default()
+    };
+    let files = generate(
+        &[size_corpus_file()],
+        &["size_corpus.proto".to_string()],
+        &config,
+    )
+    .expect("corpus should generate");
+    let content = joined(&files);
+    for name in sparse {
+        assert!(content.contains(name), "{name} with the option: {content}");
+    }
+    for name in dense {
+        assert!(!content.contains(name), "{name} with the option");
+    }
+}

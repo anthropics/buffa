@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package map_omit_defaults;
+
+// Compiled with `map_entries_omit_defaults(true)`: entry keys and values at
+// their default are left out, as prost writes maps.
+message Maps {
+  enum Color {
+    COLOR_UNSPECIFIED = 0;
+    COLOR_RED = 1;
+  }
+
+  message Leaf {
+    int32 n = 1;
+  }
+
+  map<string, int32> counts = 1;
+  map<int32, string> names = 2;
+  map<bool, double> flags = 3;
+  map<string, bytes> blobs = 4;
+  map<int64, Color> colors = 5;
+  map<uint32, Leaf> leaves = 6;
+  map<sint32, float> floats = 7;
+}

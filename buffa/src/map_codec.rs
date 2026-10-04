@@ -27,6 +27,10 @@
 //! consumed during `write_to`, in identical iteration order). They get
 //! dedicated [`message_field_len`] / [`write_message_field`] helpers, and
 //! implement only [`MapValueDecode`] (via [`Msg`]) for the merge path.
+//!
+//! Every encoder has an `_omitting_defaults` twin, which generated code calls
+//! under `map_entries_omit_defaults`: it leaves a key or value at its default
+//! out of the entry, as prost does.
 
 use crate::bytes::Buf;
 use crate::encode_sink::EncodeSink;
@@ -349,6 +353,14 @@ pub trait MapCodec: MapValueDecode {
 
     /// Write the payload (no tag) to `buf`.
     fn encode(value: &Self::Value, buf: &mut impl EncodeSink);
+
+    /// Whether `value` is the type's default, which the `*_omitting_defaults`
+    /// encoders leave out of an entry: zero, `false`, empty, or an enum's zero
+    /// number. It must hold only for the value a missing field decodes to;
+    /// for enums that is 0, which protoc requires a map's enum value type to
+    /// declare first. Compared with `==`, as prost does, so `-0.0` counts as a
+    /// float's default and decodes back as `0.0`.
+    fn is_default(value: &Self::Value) -> bool;
 }
 
 /// Stamp a varint/fixed scalar codec from the existing `types::` functions.
@@ -388,6 +400,12 @@ macro_rules! scalar_codec {
             #[allow(clippy::redundant_closure_call)]
             fn encode(value: &Self::Value, buf: &mut impl EncodeSink) {
                 ($encode)(value, buf)
+            }
+
+            #[inline]
+            #[allow(clippy::float_cmp)]
+            fn is_default(value: &Self::Value) -> bool {
+                *value == <$value as Default>::default()
             }
         }
     };
@@ -544,6 +562,11 @@ impl<B: crate::types::ProtoBytes> MapCodec for ProtoBytesMap<B> {
         // sinks by refcount, like top-level bytes fields.
         types::encode_shared_bytes(value, buf);
     }
+
+    #[inline]
+    fn is_default(value: &Self::Value) -> bool {
+        value.as_ref().is_empty()
+    }
 }
 
 /// `string` codec for a custom [`ProtoString`](crate::types::ProtoString)
@@ -587,6 +610,11 @@ impl<S: crate::types::ProtoString> MapCodec for ProtoStringMap<S> {
     fn encode(value: &Self::Value, buf: &mut impl EncodeSink) {
         types::encode_string(value.as_ref(), buf);
     }
+
+    #[inline]
+    fn is_default(value: &Self::Value) -> bool {
+        value.as_ref().is_empty()
+    }
 }
 
 /// Open-enum codec: values decode into [`EnumValue<E>`], preserving unknown
@@ -619,6 +647,11 @@ impl<E: Enumeration> MapCodec for OpenEnum<E> {
     #[inline]
     fn encode(value: &Self::Value, buf: &mut impl EncodeSink) {
         types::encode_int32(value.to_i32(), buf);
+    }
+
+    #[inline]
+    fn is_default(value: &Self::Value) -> bool {
+        value.to_i32() == 0
     }
 }
 
@@ -661,6 +694,11 @@ impl<E: Enumeration + Default> MapCodec for ClosedEnum<E> {
     #[inline]
     fn encode(value: &Self::Value, buf: &mut impl EncodeSink) {
         types::encode_int32(value.to_i32(), buf);
+    }
+
+    #[inline]
+    fn is_default(value: &Self::Value) -> bool {
+        value.to_i32() == 0
     }
 }
 
@@ -781,6 +819,156 @@ pub fn write_message_field<KC: MapCodec, M: Message, C>(
         KC::encode(k, buf);
         Tag::new(2, WireType::LengthDelimited).encode(buf);
         encode_varint(inner as u64, buf);
+        v.write_to(cache, buf);
+    }
+}
+
+/// Tag length of an entry's key (field 1) or value (field 2), one byte for
+/// every wire type.
+const ENTRY_FIELD_TAG_LEN: u64 = 1;
+
+/// Which of an entry's fields the `_omitting_defaults` encoders leave out,
+/// decided once for the size and the write of the entry.
+struct Sparse {
+    key: bool,
+    value: bool,
+}
+
+impl Sparse {
+    #[inline]
+    fn of<KC: MapCodec, VC: MapCodec>(k: &KC::Value, v: &VC::Value) -> Self {
+        Self {
+            key: KC::is_default(k),
+            value: VC::is_default(v),
+        }
+    }
+
+    /// Encoded length of the entry's fields, the length prefix excluded.
+    #[inline]
+    fn entry_len<KC: MapCodec, VC: MapCodec>(&self, k: &KC::Value, v: &VC::Value) -> u64 {
+        let value = if self.value {
+            0
+        } else {
+            ENTRY_FIELD_TAG_LEN + VC::encoded_len(v)
+        };
+        sparse_key_len::<KC>(self.key, k) + value
+    }
+}
+
+/// Encoded length of an entry's key field, nothing when it is left out.
+#[inline]
+fn sparse_key_len<KC: MapCodec>(omitted: bool, k: &KC::Value) -> u64 {
+    if omitted {
+        0
+    } else {
+        ENTRY_FIELD_TAG_LEN + KC::encoded_len(k)
+    }
+}
+
+/// Encoded length of an entry's message value field, nothing for a value that
+/// encodes to nothing.
+#[inline]
+fn sparse_message_len(inner: u32) -> u64 {
+    if inner == 0 {
+        0
+    } else {
+        ENTRY_FIELD_TAG_LEN + varint_len(inner as u64) as u64 + inner as u64
+    }
+}
+
+/// [`field_len`] for entries that leave a default key or value out, as
+/// [`write_field_omitting_defaults`] writes them.
+pub fn field_len_omitting_defaults<KC: MapCodec, VC: MapCodec, C>(
+    map: &C,
+    outer_tag_len: u64,
+) -> u64
+where
+    C: MapStorage<Key = KC::Value, Value = VC::Value>,
+{
+    let mut size = 0u64;
+    for (k, v) in map.storage_iter() {
+        let entry = Sparse::of::<KC, VC>(k, v).entry_len::<KC, VC>(k, v);
+        size += outer_tag_len + varint_len(entry) as u64 + entry;
+    }
+    size
+}
+
+/// [`write_field`], leaving a key or value at its default out of its entry, as
+/// prost does. The entry decodes to the same key and value, except that a
+/// `-0.0` float decodes as `0.0`.
+pub fn write_field_omitting_defaults<KC: MapCodec, VC: MapCodec, C>(
+    map: &C,
+    field_number: u32,
+    buf: &mut impl EncodeSink,
+) where
+    C: MapStorage<Key = KC::Value, Value = VC::Value>,
+{
+    for (k, v) in map.storage_iter() {
+        let sparse = Sparse::of::<KC, VC>(k, v);
+        Tag::new(field_number, WireType::LengthDelimited).encode(buf);
+        encode_varint(sparse.entry_len::<KC, VC>(k, v), buf);
+        if !sparse.key {
+            Tag::new(1, KC::WIRE_TYPE).encode(buf);
+            KC::encode(k, buf);
+        }
+        if !sparse.value {
+            Tag::new(2, VC::WIRE_TYPE).encode(buf);
+            VC::encode(v, buf);
+        }
+    }
+}
+
+/// [`message_field_len`] for entries that leave a default key or a message
+/// that encodes to nothing out, as [`write_message_field_omitting_defaults`]
+/// writes them.
+pub fn message_field_len_omitting_defaults<KC: MapCodec, M: Message, C>(
+    map: &C,
+    outer_tag_len: u64,
+    cache: &mut SizeCache,
+) -> u64
+where
+    C: MapStorage<Key = KC::Value, Value = M>,
+{
+    let mut size = 0u64;
+    for (k, v) in map.storage_iter() {
+        let slot = cache.reserve();
+        let inner = v.compute_size(cache);
+        cache.set(slot, inner);
+        let entry = sparse_key_len::<KC>(KC::is_default(k), k) + sparse_message_len(inner);
+        size += outer_tag_len + varint_len(entry) as u64 + entry;
+    }
+    size
+}
+
+/// [`write_message_field`], leaving a default key or a message that encodes to
+/// nothing out of its entry. prost leaves out a message equal to its default,
+/// which encodes to nothing unless it holds unknown fields.
+pub fn write_message_field_omitting_defaults<KC: MapCodec, M: Message, C>(
+    map: &C,
+    field_number: u32,
+    cache: &mut SizeCache,
+    buf: &mut impl EncodeSink,
+) where
+    C: MapStorage<Key = KC::Value, Value = M>,
+{
+    for (k, v) in map.storage_iter() {
+        let inner = cache.consume_next();
+        let key_omitted = KC::is_default(k);
+        Tag::new(field_number, WireType::LengthDelimited).encode(buf);
+        encode_varint(
+            sparse_key_len::<KC>(key_omitted, k) + sparse_message_len(inner),
+            buf,
+        );
+        if !key_omitted {
+            Tag::new(1, KC::WIRE_TYPE).encode(buf);
+            KC::encode(k, buf);
+        }
+        if inner != 0 {
+            Tag::new(2, WireType::LengthDelimited).encode(buf);
+            encode_varint(inner as u64, buf);
+        }
+        // Writes nothing for an empty value, but consumes the slots its
+        // `compute_size` reserved.
         v.write_to(cache, buf);
     }
 }
@@ -1046,6 +1234,111 @@ mod tests {
         assert_eq!(back, map);
     }
 
+    /// Entries that leave the default key and value out, against the bytes
+    /// prost writes for them, decoding back to the same map.
+    #[test]
+    fn omitting_defaults_leaves_default_fields_out() {
+        let encode = |key: &str, value: i32| {
+            let mut map: Map<String, i32> = Map::default();
+            map.insert(key.into(), value);
+            let len = field_len_omitting_defaults::<Str, Int32, _>(&map, 1);
+            let mut buf = Vec::new();
+            write_field_omitting_defaults::<Str, Int32, _>(&map, 5, &mut buf);
+            assert_eq!(buf.len() as u64, len, "the size matches the written bytes");
+            assert_eq!(decode_field::<Str, Int32>(&buf), map);
+            buf
+        };
+        // tag 5, length 0: neither field
+        assert_eq!(encode("", 0), [0x2a, 0x00]);
+        // the key only
+        assert_eq!(encode("a", 0), [0x2a, 0x03, 0x0a, 0x01, b'a']);
+        // the value only
+        assert_eq!(encode("", 7), [0x2a, 0x02, 0x10, 0x07]);
+        assert_eq!(
+            encode("a", 7),
+            encode_field::<Str, Int32>(
+                &{
+                    let mut map = Map::default();
+                    map.insert(String::from("a"), 7);
+                    map
+                },
+                5,
+                1
+            )
+        );
+        // `-0.0` is a float's default to `==`, as to prost
+        let mut floats: Map<u32, f64> = Map::default();
+        floats.insert(1, -0.0);
+        let mut buf = Vec::new();
+        write_field_omitting_defaults::<Uint32, Double, _>(&floats, 2, &mut buf);
+        assert_eq!(buf, [0x12, 0x02, 0x08, 0x01]);
+    }
+
+    /// `is_default` holds for exactly the value a missing entry field decodes
+    /// to, for every codec.
+    #[test]
+    fn is_default_is_the_decoded_default() {
+        fn check<C: MapCodec>(default: C::Value, others: &[C::Value]) {
+            assert!(C::is_default(&default));
+            for other in others {
+                assert!(!C::is_default(other));
+            }
+        }
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+        #[repr(i32)]
+        enum E {
+            #[default]
+            A = 0,
+            B = 1,
+        }
+        impl Enumeration for E {
+            fn from_i32(value: i32) -> Option<Self> {
+                match value {
+                    0 => Some(E::A),
+                    1 => Some(E::B),
+                    _ => None,
+                }
+            }
+            fn to_i32(&self) -> i32 {
+                *self as i32
+            }
+            fn proto_name(&self) -> &'static str {
+                match self {
+                    E::A => "A",
+                    E::B => "B",
+                }
+            }
+        }
+        check::<Int32>(0, &[1, -1]);
+        check::<Int64>(0, &[1, i64::MIN]);
+        check::<Uint32>(0, &[1]);
+        check::<Uint64>(0, &[u64::MAX]);
+        check::<Sint32>(0, &[-1]);
+        check::<Sint64>(0, &[-1]);
+        check::<Fixed32>(0, &[1]);
+        check::<Fixed64>(0, &[1]);
+        check::<Sfixed32>(0, &[-1]);
+        check::<Sfixed64>(0, &[-1]);
+        check::<Bool>(false, &[true]);
+        check::<Float>(0.0, &[1.0, f32::NAN, f32::MIN_POSITIVE]);
+        check::<Float>(-0.0, &[]);
+        check::<Double>(0.0, &[1.0, f64::NAN, f64::MIN_POSITIVE]);
+        check::<Double>(-0.0, &[]);
+        check::<Str>(String::new(), &["a".into()]);
+        check::<BytesVec>(Vec::new(), &[vec![0]]);
+        check::<BytesBuf>(
+            crate::bytes::Bytes::new(),
+            &[crate::bytes::Bytes::from_static(&[0])],
+        );
+        check::<ProtoStringMap<String>>(String::new(), &[" ".into()]);
+        check::<ProtoBytesMap<Vec<u8>>>(Vec::new(), &[vec![0]]);
+        check::<OpenEnum<E>>(
+            EnumValue::from(0),
+            &[EnumValue::from(1), EnumValue::Unknown(7)],
+        );
+        check::<ClosedEnum<E>>(E::A, &[E::B]);
+    }
+
     #[test]
     fn missing_key_and_value_take_defaults() {
         // Entry with no fields at all: length prefix 0.
@@ -1178,6 +1471,110 @@ mod tests {
 
         let back = decode_field::<Int32, Msg<FlatMsg>>(&wire);
         assert_eq!(back, map);
+
+        // Omitting defaults: the empty message and the zero key go, the
+        // slots stay in step.
+        let mut cache = SizeCache::default();
+        let mut sparse: Map<i32, FlatMsg> = Map::default();
+        sparse.insert(0, FlatMsg { value: 5 });
+        sparse.insert(1, FlatMsg { value: 0 });
+        sparse.insert(2, FlatMsg { value: -3 });
+        let len = message_field_len_omitting_defaults::<Int32, FlatMsg, _>(&sparse, 1, &mut cache);
+        let mut wire = Vec::new();
+        write_message_field_omitting_defaults::<Int32, FlatMsg, _>(
+            &sparse, 4, &mut cache, &mut wire,
+        );
+        assert_eq!(wire.len() as u64, len, "size pass must match write pass");
+        assert_eq!(decode_field::<Int32, Msg<FlatMsg>>(&wire), sparse);
+        let entries: Vec<Vec<u8>> = {
+            let mut rest = wire.as_slice();
+            let mut out = Vec::new();
+            while !rest.is_empty() {
+                Tag::decode(&mut rest).unwrap();
+                let len = decode_varint(&mut rest).unwrap() as usize;
+                out.push(rest[..len].to_vec());
+                rest = &rest[len..];
+            }
+            out
+        };
+        // key 0 left out, value 5; key 1, the empty value left out
+        assert!(
+            entries.contains(&vec![0x12, 0x02, 0x08, 0x05]),
+            "{entries:?}"
+        );
+        assert!(entries.contains(&vec![0x08, 0x01]), "{entries:?}");
+
+        // A value that reserves a slot of its own, after an empty one: the
+        // slots stay in step.
+        #[derive(Clone, PartialEq, Eq, Debug, Default)]
+        struct Outer {
+            inner: Option<FlatMsg>,
+        }
+
+        impl DefaultInstance for Outer {
+            fn default_instance() -> &'static Self {
+                static INST: crate::__private::OnceBox<Outer> = crate::__private::OnceBox::new();
+                INST.get_or_init(|| crate::alloc::boxed::Box::new(Outer::default()))
+            }
+        }
+
+        impl Message for Outer {
+            fn compute_size(&self, cache: &mut SizeCache) -> u32 {
+                let Some(inner) = &self.inner else {
+                    return 0;
+                };
+                let slot = cache.reserve();
+                let len = inner.compute_size(cache);
+                cache.set(slot, len);
+                1 + varint_len(len as u64) as u32 + len
+            }
+            fn write_to(&self, cache: &mut SizeCache, buf: &mut impl EncodeSink) {
+                if let Some(inner) = &self.inner {
+                    let len = cache.consume_next();
+                    Tag::new(1, WireType::LengthDelimited).encode(buf);
+                    encode_varint(len as u64, buf);
+                    inner.write_to(cache, buf);
+                }
+            }
+            fn merge_field(
+                &mut self,
+                tag: Tag,
+                buf: &mut impl Buf,
+                ctx: DecodeContext<'_>,
+            ) -> Result<(), DecodeError> {
+                match tag.field_number() {
+                    1 => Message::merge_length_delimited(
+                        self.inner.get_or_insert_with(FlatMsg::default),
+                        buf,
+                        ctx,
+                    )?,
+                    _ => skip_field_depth(tag, buf, ctx.depth())?,
+                }
+                Ok(())
+            }
+            fn clear(&mut self) {
+                *self = Self::default();
+            }
+        }
+
+        let mut nested = crate::alloc::collections::BTreeMap::new();
+        nested.insert(1, Outer::default());
+        nested.insert(
+            2,
+            Outer {
+                inner: Some(FlatMsg { value: 7 }),
+            },
+        );
+        let mut cache = SizeCache::default();
+        let len = message_field_len_omitting_defaults::<Int32, Outer, _>(&nested, 1, &mut cache);
+        let mut wire = Vec::new();
+        write_message_field_omitting_defaults::<Int32, Outer, _>(&nested, 4, &mut cache, &mut wire);
+        assert_eq!(wire.len() as u64, len, "size pass must match write pass");
+        #[rustfmt::skip]
+        assert_eq!(wire, [
+            0x22, 0x02, 0x08, 0x01, // key 1, the empty value left out
+            0x22, 0x08, 0x08, 0x02, 0x12, 0x04, 0x0a, 0x02, 0x08, 0x07, // key 2
+        ]);
     }
 
     #[test]

@@ -284,6 +284,11 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             // methods. Like `register_types`, the default is on, so the
             // accepted spelling is the negation.
             "with_setters" => codegen.generate_with_setters = parse_bool("with_setters", value)?,
+            // `map_entries_omit_defaults=true` writes maps as prost does,
+            // leaving default entry fields out.
+            "map_entries_omit_defaults" => {
+                codegen.map_entries_omit_defaults = parse_bool("map_entries_omit_defaults", value)?
+            }
             // `reflection=true` selects the fast vtable mode (same as
             // `reflect_mode=vtable`); `reflect_mode=bridge` opts into the
             // smaller round-trip implementation.
@@ -759,6 +764,13 @@ mod tests {
     fn idiomatic_field_names_defaults_off() {
         let config = parse_config("").unwrap();
         assert!(!config.codegen.idiomatic_field_names);
+    }
+
+    #[test]
+    fn map_entries_omit_defaults_is_off_unless_asked() {
+        assert!(!parse_config("").unwrap().codegen.map_entries_omit_defaults);
+        let config = parse_config("map_entries_omit_defaults=true").unwrap();
+        assert!(config.codegen.map_entries_omit_defaults);
     }
 
     #[test]

@@ -1573,6 +1573,14 @@ pub struct CodeGenConfig {
     ///
     /// Defaults to `true`.
     pub generate_with_setters: bool,
+    /// Encode map entries as prost does: leave an entry's key or value out
+    /// when it holds the default, and a message value when it encodes to
+    /// nothing. Off, every entry carries both fields, as the C++ and Java
+    /// runtimes write them. Decoding reads either, except that a `-0.0` float
+    /// value decodes as `0.0`. Applies to the owned and view encoders.
+    ///
+    /// Defaults to `false`.
+    pub map_entries_omit_defaults: bool,
     /// Generate `impl Reflectable` for owned message types (bridge mode).
     ///
     /// When enabled, each generated message gets an
@@ -1968,6 +1976,7 @@ impl Default for CodeGenConfig {
             oneof_attributes: Vec::new(),
             gate_impls_on_crate_features: false,
             generate_with_setters: true,
+            map_entries_omit_defaults: false,
             generate_reflection: false,
             generate_reflection_vtable: false,
             shared_descriptor_pool: false,
