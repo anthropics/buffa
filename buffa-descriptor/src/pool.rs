@@ -1325,10 +1325,13 @@ impl DescriptorPool {
             format!("{scope}.{}", e.name.as_deref().unwrap_or(""))
         };
         for v in &e.value {
-            self.symbol_file.insert(
-                format!("{scope}.{}", v.name.as_deref().unwrap_or("")),
-                file_idx,
-            );
+            let name = v.name.as_deref().unwrap_or("");
+            let value_fqn = if scope.is_empty() {
+                name.to_string()
+            } else {
+                format!("{scope}.{name}")
+            };
+            self.symbol_file.insert(value_fqn, file_idx);
         }
         self.symbol_file.insert(fqn, file_idx);
     }

@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Fix enum value symbol lookup** in `DescriptorPool::file_containing_symbol` for files without a package.'
+time: 2026-10-04T10:17:52.047901+02:00
