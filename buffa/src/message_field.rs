@@ -595,7 +595,11 @@ impl<T: Default + Clone, P: ProtoBox<T> + Clone> Clone for MessageField<T, P> {
 /// equal when their values are, and an unset field never equals a set one,
 /// not even one set to the default. See [`MessageField`]'s "Equality" section.
 impl<T: Default + PartialEq, P: ProtoBox<T>> PartialEq for MessageField<T, P> {
-    #[inline]
+    // `always`: with plain `#[inline]`, LLVM inlines `T::eq` into this body
+    // first, and for a larger `T` the grown body then stays a call in the
+    // caller, paid even when both sides are unset. The dispatch is three arms;
+    // `T::eq` keeps its own inlining decision.
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         // Presence is part of the value, as in Go's `proto.Equal` and C++'s
         // `MessageDifferencer::Equals`: an unset field and one set to its
