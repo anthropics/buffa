@@ -270,22 +270,25 @@ fn generate_message_with_nesting(
     } else {
         quote! {}
     };
-    let oneof_generated: Vec<(TokenStream, Ident)> = msg
-        .oneof_decl
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, oneof)| {
-            let enum_ident = oneof_idents.get(&idx)?;
-            let oneof_name = oneof.name.as_deref()?;
-            let field_ident = ctx.oneof_ident(oneof_name);
-            let opt = resolver.option_at(ctx, nesting);
-            let tokens = quote! {
-                #oneof_serde_attr
-                pub #field_ident: #opt<#oneof_prefix #enum_ident>,
-            };
-            Some((tokens, field_ident))
-        })
-        .collect();
+    let mut oneof_generated: Vec<(TokenStream, Ident)> = Vec::new();
+    for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
+        let (Some(enum_ident), Some(oneof_name)) = (oneof_idents.get(&idx), oneof.name.as_deref())
+        else {
+            continue;
+        };
+        let field_ident = ctx.oneof_ident(oneof_name);
+        let opt = resolver.option_at(ctx, nesting);
+        let custom_attrs = CodeGenContext::matching_attributes(
+            &ctx.config.oneof_field_attributes,
+            &format!("{proto_fqn}.{oneof_name}"),
+        )?;
+        let tokens = quote! {
+            #oneof_serde_attr
+            #custom_attrs
+            pub #field_ident: #opt<#oneof_prefix #enum_ident>,
+        };
+        oneof_generated.push((tokens, field_ident));
+    }
     let oneof_struct_fields: Vec<&TokenStream> = oneof_generated.iter().map(|(t, _)| t).collect();
     // Redaction of oneof payloads is handled by the oneof enum's own Debug impl.
     debug_fields.extend(oneof_generated.iter().map(|(_, id)| (id, false)));

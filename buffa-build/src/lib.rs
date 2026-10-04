@@ -1809,7 +1809,9 @@ impl Config {
     /// Prefix matching respects proto-segment boundaries.
     ///
     /// Also applies to oneof variants when `path` matches
-    /// `".pkg.Msg.my_oneof.variant_name"`.
+    /// `".pkg.Msg.my_oneof.variant_name"`, but not to the struct field holding
+    /// the oneof; use [`oneof_field_attribute`](Self::oneof_field_attribute)
+    /// for that.
     ///
     /// # Example
     ///
@@ -1908,7 +1910,9 @@ impl Config {
     /// order. The match key is the oneof's fully-qualified path
     /// (`.my.pkg.MyMessage.my_oneof`) — the whole-enum path has no variant
     /// segment; to target a single variant's field, append `.variant_name`
-    /// and use [`field_attribute`](Self::field_attribute) instead. A
+    /// and use [`field_attribute`](Self::field_attribute) instead, and for the
+    /// message struct's field holding the oneof, use
+    /// [`oneof_field_attribute`](Self::oneof_field_attribute). A
     /// malformed attribute produces a compile-time error in the generated
     /// code. Useful when a oneof needs a different attribute set than the
     /// surrounding types — for example to keep `#[derive(serde::Serialize)]`
@@ -1949,6 +1953,49 @@ impl Config {
     ) -> Self {
         self.codegen_config
             .oneof_attributes
+            .push((normalize_attr_path(path.into()), attribute.into()));
+        self
+    }
+
+    /// Add a custom attribute to the message struct's field holding a oneof
+    /// (the `Option<OneofEnum>` member), not to the oneof's variants.
+    ///
+    /// The match key is the oneof's fully-qualified path
+    /// (`.my.pkg.MyMessage.my_oneof`), with the same path-matching semantics
+    /// as [`type_attribute`](Self::type_attribute): `".my.pkg"` reaches the
+    /// oneof field of every message in the package, nested ones included.
+    /// [`field_attribute`](Self::field_attribute) never reaches this field: on
+    /// the oneof's path it matches only the variants
+    /// (`.my.pkg.MyMessage.my_oneof.variant_name`), where an attribute such as
+    /// `#[serde(skip_serializing_if = "...")]` is rejected. prost-build put a
+    /// `field_attribute` on both; use this method for the struct field.
+    ///
+    /// Applies to the owned message struct only; view structs receive no
+    /// custom attributes.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .message_attribute(".my.pkg.MyMessage", "#[derive(serde::Serialize)]")
+    ///     .oneof_attribute(".my.pkg.MyMessage.my_oneof", "#[derive(serde::Serialize)]")
+    ///     .oneof_field_attribute(
+    ///         ".my.pkg.MyMessage.my_oneof",
+    ///         "#[serde(skip_serializing_if = \"Option::is_none\")]",
+    ///     )
+    ///     .files(&["proto/my_service.proto"])
+    ///     .includes(&["proto/"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn oneof_field_attribute(
+        mut self,
+        path: impl Into<String>,
+        attribute: impl Into<String>,
+    ) -> Self {
+        self.codegen_config
+            .oneof_field_attributes
             .push((normalize_attr_path(path.into()), attribute.into()));
         self
     }
@@ -3397,6 +3444,23 @@ mod tests {
     }
 
     #[test]
+    fn oneof_field_attribute_forwards_normalized_path() {
+        let cfg = Config::new().oneof_field_attribute("my.pkg.Msg.payload.", "#[serde(skip)]");
+        assert_eq!(
+            cfg.codegen_config.oneof_field_attributes,
+            vec![(
+                ".my.pkg.Msg.payload".to_string(),
+                "#[serde(skip)]".to_string()
+            )]
+        );
+        assert!(cfg.codegen_config.oneof_attributes.is_empty());
+        assert!(cfg.codegen_config.field_attributes.is_empty());
+        assert!(cfg.codegen_config.type_attributes.is_empty());
+        assert!(cfg.codegen_config.message_attributes.is_empty());
+        assert!(cfg.codegen_config.enum_attributes.is_empty());
+    }
+
+    #[test]
     fn oneof_attribute_forwards_normalized_path() {
         let cfg = Config::new().oneof_attribute("my.pkg.Msg.payload.", "#[derive(Hash)]");
         assert_eq!(
@@ -3411,6 +3475,7 @@ mod tests {
         assert!(cfg.codegen_config.enum_attributes.is_empty());
         assert!(cfg.codegen_config.message_attributes.is_empty());
         assert!(cfg.codegen_config.field_attributes.is_empty());
+        assert!(cfg.codegen_config.oneof_field_attributes.is_empty());
     }
 
     #[test]

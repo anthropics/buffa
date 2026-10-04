@@ -411,6 +411,80 @@ fn test_oneof_attribute_on_oneof_not_message_or_enum() {
 }
 
 #[test]
+fn test_oneof_field_attribute_on_oneof_field_only() {
+    let mut file = proto3_file("field.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type
+        .push(oneof_message("Msg", "payload", &["a", "b"]));
+    let config = CodeGenConfig {
+        generate_views: false,
+        oneof_field_attributes: vec![(
+            ".pkg.Msg.payload".to_string(),
+            "#[allow(clippy::pedantic)]".to_string(),
+        )],
+        ..CodeGenConfig::default()
+    };
+    let files = generate(&[file], &["field.proto".to_string()], &config).expect("should generate");
+    let content = &joined(&files);
+    // Exactly once, on the struct's oneof field: not on the oneof enum, and
+    // not on its variants, which a `field_attributes` rule on this path would
+    // also reach by prefix.
+    assert_eq!(
+        content.matches("allow(clippy::pedantic)").count(),
+        1,
+        "oneof_field_attribute should appear only on the oneof field: {content}"
+    );
+    let attr_pos = content.find("allow(clippy::pedantic)").expect("attr");
+    let field_pos = content.find("pub payload:").expect("oneof field");
+    assert!(
+        attr_pos < field_pos && field_pos - attr_pos < 100,
+        "attribute should sit on the oneof field: {content}"
+    );
+}
+
+/// A nested message's oneof field, with JSON and views on: the attribute sits
+/// on the owned struct's field next to buffa's own `serde(flatten)`, and the
+/// view struct's field stays bare.
+#[test]
+fn test_oneof_field_attribute_nested_with_json_and_views() {
+    let mut file = proto3_file("nested.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Outer".to_string()),
+        nested_type: vec![oneof_message("Inner", "payload", &["a", "b"])],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        generate_views: true,
+        generate_json: true,
+        oneof_field_attributes: vec![(
+            ".pkg.Outer.Inner.payload".to_string(),
+            "#[allow(clippy::pedantic)]".to_string(),
+        )],
+        ..CodeGenConfig::default()
+    };
+    let files = generate(&[file], &["nested.proto".to_string()], &config).expect("should generate");
+    let content = &joined(&files);
+    assert_eq!(
+        content.matches("allow(clippy::pedantic)").count(),
+        1,
+        "only the owned struct's oneof field gets the attribute: {content}"
+    );
+    let attr_pos = content.find("allow(clippy::pedantic)").expect("attr");
+    let field_pos = content[attr_pos..]
+        .find("pub payload:")
+        .expect("oneof field")
+        + attr_pos;
+    let flatten_pos = content[..field_pos]
+        .rfind("serde(flatten)")
+        .expect("flatten");
+    assert!(
+        field_pos - attr_pos < 100 && field_pos - flatten_pos < 200,
+        "both attributes sit on the oneof field: {content}"
+    );
+}
+
+#[test]
 fn test_oneof_attribute_specific_path_matches_one_oneof() {
     let mut file = proto3_file("two.proto");
     file.package = Some("pkg".to_string());

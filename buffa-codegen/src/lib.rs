@@ -1482,7 +1482,10 @@ pub struct CodeGenConfig {
     ///
     /// Each entry is `(proto_path, attribute)`. The `proto_path` is matched
     /// as a prefix against the fully-qualified field path (e.g.,
-    /// `".my.pkg.MyMessage.my_field"`). `"."` applies to all fields.
+    /// `".my.pkg.MyMessage.my_field"`). `"."` applies to all fields. Oneof
+    /// variants are matched as `".my.pkg.MyMessage.my_oneof.variant"`; the
+    /// struct field holding the oneof is not reached, see
+    /// `oneof_field_attributes`.
     pub field_attributes: Vec<(String, String)>,
     /// Custom attributes to inject on generated message structs only (not enums).
     ///
@@ -1507,6 +1510,15 @@ pub struct CodeGenConfig {
     /// separate `enum_attributes` entry puts a different serde derive on the
     /// regular enums.
     pub oneof_attributes: Vec<(String, String)>,
+    /// Custom attributes to inject on a message struct's field holding a
+    /// oneof (the `Option<OneofEnum>` member), not on the oneof's variants or
+    /// the oneof enum.
+    ///
+    /// Same path-matching semantics as `type_attributes`, matched against the
+    /// oneof's fully-qualified path (`.pkg.Message.oneof_name`).
+    /// `field_attributes` never reaches this field: on the oneof's path it
+    /// matches only the variants (`.pkg.Message.oneof_name.variant`).
+    pub oneof_field_attributes: Vec<(String, String)>,
     /// Wrap generated `impl`s in `#[cfg(feature = "...")]` instead of
     /// emitting them unconditionally.
     ///
@@ -1966,6 +1978,7 @@ impl Default for CodeGenConfig {
             message_attributes: Vec::new(),
             enum_attributes: Vec::new(),
             oneof_attributes: Vec::new(),
+            oneof_field_attributes: Vec::new(),
             gate_impls_on_crate_features: false,
             generate_with_setters: true,
             generate_reflection: false,
@@ -5242,8 +5255,9 @@ pub enum CodeGenError {
     MessageSetNotSupported { message_name: String },
     /// A custom attribute string configured via [`CodeGenConfig::type_attributes`],
     /// [`CodeGenConfig::field_attributes`], [`CodeGenConfig::message_attributes`],
-    /// [`CodeGenConfig::enum_attributes`], or [`CodeGenConfig::oneof_attributes`]
-    /// could not be parsed as a Rust attribute.
+    /// [`CodeGenConfig::enum_attributes`], [`CodeGenConfig::oneof_attributes`],
+    /// or [`CodeGenConfig::oneof_field_attributes`] could not be parsed as a
+    /// Rust attribute.
     #[error(
         "invalid custom attribute for path '{path}': '{attribute}' is not a valid \
          Rust attribute ({detail})"

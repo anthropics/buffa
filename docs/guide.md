@@ -231,7 +231,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.file_per_package(bool)` | `false` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a stitcher |
 | `.idiomatic_imports(bool)` | `false` | **Experimental.** Emit `use`-backed short type names at the package root (struct fields read `MessageField<Timestamp>` instead of fully-qualified paths). Requires `.file_per_package(true)`. Only type declarations are shortened — impl bodies and nested modules stay fully qualified — and the generated file must keep its `#[allow]` wrapper (the short names coexist with qualified impl-body paths, which `unused_qualifications` would otherwise flag) |
 | `.type_attribute(path, attr)` / `.message_attribute` / `.enum_attribute` / `.oneof_attribute` | — | Attach a Rust attribute (e.g. an extra `#[derive(...)]`) to generated types matching a proto path prefix (`oneof_attribute` matches the oneof's own path, `.pkg.Msg.oneof_name`) |
-| `.field_attribute(path, attr)` | — | Attach a Rust attribute to generated fields matching a proto path prefix |
+| `.field_attribute(path, attr)` / `.oneof_field_attribute` | — | Attach a Rust attribute to generated fields matching a proto path prefix (`field_attribute` reaches oneof variants as `.pkg.Msg.oneof_name.variant`; `oneof_field_attribute` reaches the struct field holding the oneof, `.pkg.Msg.oneof_name`) |
 | `.use_buf()` | — | Use `buf build` instead of `protoc` for descriptor generation |
 | `.include_file(name)` | — | Generate a module tree file for `include!` (recommended) |
 | `.descriptor_set(path)` | — | Use a pre-compiled `FileDescriptorSet` file |
