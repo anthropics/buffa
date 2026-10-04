@@ -567,9 +567,8 @@ impl<T: Default + Clone, P: ProtoBox<T> + Clone> Clone for MessageField<T, P> {
 
 // The mixed set/unset arms of `PartialEq::eq`. The set side is compared against
 // `T::default_instance()`, so no temporary `T` is allocated. They are out of
-// line to keep `default_instance()`'s one-time initialisation out of `eq`: with
-// it inlined there, `eq` was not inlined into its callers even when marked
-// `#[inline]`, and a loop comparing message fields paid for a call each time.
+// line to keep `default_instance()`'s cold one-time initialisation out of every
+// call site `eq` is inlined into.
 //
 // There are two functions because each keeps the operand order of the `eq`
 // arm it serves, which matters when `T`'s `PartialEq` is not symmetric. They
@@ -585,7 +584,11 @@ fn default_instance_eq_value<T: DefaultInstance + PartialEq>(value: &T) -> bool 
 }
 
 impl<T: DefaultInstance + PartialEq, P: ProtoBox<T>> PartialEq for MessageField<T, P> {
-    #[inline]
+    // `always`: with plain `#[inline]`, LLVM inlines `T::eq` into this body
+    // first, and for a larger `T` the grown body then stays a call in the
+    // caller, paid even when both sides are unset. The dispatch is four arms;
+    // `T::eq` and the helpers above keep their own inlining decisions.
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         // Compare the pointed-to `T` values (via `**`), not the pointers, so no
         // `P: PartialEq` bound is needed and a set-to-default field equals an
