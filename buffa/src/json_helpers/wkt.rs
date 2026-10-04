@@ -14,7 +14,6 @@
 
 use crate::alloc::format;
 use crate::alloc::string::String;
-use crate::alloc::vec::Vec;
 
 // ── Bounds ──────────────────────────────────────────────────────────────────
 
@@ -281,24 +280,19 @@ fn fmt_nanos_min(nanos: i32) -> String {
 /// `field_mask_path_round_trips` check before serializing per the spec.
 #[must_use]
 pub fn snake_to_camel(path: &str) -> String {
-    path.split('.')
-        .map(|component| {
-            let mut out = String::with_capacity(component.len());
-            let mut capitalize_next = false;
-            for ch in component.chars() {
-                if ch == '_' {
-                    capitalize_next = true;
-                } else if capitalize_next {
-                    out.extend(ch.to_uppercase());
-                    capitalize_next = false;
-                } else {
-                    out.push(ch);
-                }
-            }
-            out
-        })
-        .collect::<Vec<_>>()
-        .join(".")
+    let mut out = String::with_capacity(path.len());
+    let mut capitalize_next = false;
+    for ch in path.chars() {
+        if ch == '_' {
+            capitalize_next = true;
+        } else if capitalize_next {
+            out.extend(ch.to_uppercase());
+            capitalize_next = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 /// Convert a lowerCamelCase field-mask path to snake_case, handling dotted
@@ -309,21 +303,16 @@ pub fn snake_to_camel(path: &str) -> String {
 /// first character in a proto field name.
 #[must_use]
 pub fn camel_to_snake(path: &str) -> String {
-    path.split('.')
-        .map(|component| {
-            let mut out = String::with_capacity(component.len() + 4);
-            for ch in component.chars() {
-                if ch.is_uppercase() {
-                    out.push('_');
-                    out.extend(ch.to_lowercase());
-                } else {
-                    out.push(ch);
-                }
-            }
-            out
-        })
-        .collect::<Vec<_>>()
-        .join(".")
+    let mut out = String::with_capacity(path.len() + 4);
+    for ch in path.chars() {
+        if ch.is_uppercase() {
+            out.push('_');
+            out.extend(ch.to_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 /// Whether a snake_case `FieldMask` path is valid in proto3 JSON.
@@ -505,6 +494,69 @@ mod tests {
         assert!(parse_duration("--5s").is_err()); // double sign
         assert!(parse_duration("1.5").is_err()); // no suffix
         assert!(parse_duration("1.5e9s").is_err()); // exponent
+    }
+
+    #[test]
+    fn snake_to_camel_preserves_conversion_edges() {
+        for (path, expected) in [
+            ("", ""),
+            ("plain", "plain"),
+            ("*", "*"),
+            ("foo_bar_baz", "fooBarBaz"),
+            ("_foo", "Foo"),
+            ("foo_", "foo"),
+            ("foo__bar", "fooBar"),
+            ("foo_3_bar", "foo3Bar"),
+            (".", "."),
+            ("..", ".."),
+            (".foo_bar.", ".fooBar."),
+            ("foo_.bar_baz", "foo.barBaz"),
+            ("_._foo", ".Foo"),
+            ("foo_.._bar", "foo..Bar"),
+            ("café_au_lait", "caféAuLait"),
+            ("foo_ß._é", "fooSS.É"),
+            ("İ_σ", "İΣ"),
+            ("😀_foo.日_本", "😀Foo.日本"),
+        ] {
+            assert_eq!(snake_to_camel(path), expected, "path: {path:?}");
+        }
+    }
+
+    #[test]
+    fn camel_to_snake_preserves_conversion_edges() {
+        for (path, expected) in [
+            ("", ""),
+            ("plain", "plain"),
+            ("*", "*"),
+            ("fooBarBaz", "foo_bar_baz"),
+            ("Foo", "_foo"),
+            ("URLValue", "_u_r_l_value"),
+            ("fooBar3", "foo_bar3"),
+            ("_fooBar", "_foo_bar"),
+            ("foo_bar", "foo_bar"),
+            (".", "."),
+            ("..", ".."),
+            (".FooBar.", "._foo_bar."),
+            ("Foo..Bar", "_foo.._bar"),
+            ("caféAuLait", "café_au_lait"),
+            ("İstanbul.Σ", "_i\u{307}stanbul._σ"),
+            ("😀Foo.日本", "😀_foo.日本"),
+        ] {
+            assert_eq!(camel_to_snake(path), expected, "path: {path:?}");
+        }
+    }
+
+    #[test]
+    fn field_mask_nested_paths_round_trip() {
+        for path in [
+            "a.b.c.d",
+            "user.profile.display_name",
+            "_user._profile._display_name",
+            "foo1.bar2.baz3_qux4",
+        ] {
+            assert!(field_mask_path_round_trips(path), "path: {path:?}");
+            assert_eq!(camel_to_snake(&snake_to_camel(path)), path);
+        }
     }
 
     #[test]
