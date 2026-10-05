@@ -1079,6 +1079,177 @@ fn duplicate_oneof_names_are_rejected_transactionally() {
 }
 
 #[test]
+fn field_oneof_name_collisions_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
+    };
+
+    for (syntax, edition) in [
+        ("proto2", None),
+        ("proto3", None),
+        ("editions", Some(Edition::EDITION_2023)),
+        ("editions", Some(Edition::EDITION_2024)),
+    ] {
+        for member in [false, true] {
+            for nested in [false, true] {
+                let mut fields = vec![FieldDescriptorProto {
+                    oneof_index: member.then_some(0),
+                    ..scalar_field("choice", 1, Type::TYPE_INT32)
+                }];
+                if !member {
+                    fields.push(FieldDescriptorProto {
+                        oneof_index: Some(0),
+                        ..scalar_field("value", 2, Type::TYPE_INT32)
+                    });
+                }
+                let message = DescriptorProto {
+                    name: Some("Collision".into()),
+                    field: fields,
+                    oneof_decl: vec![OneofDescriptorProto {
+                        name: Some("choice".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                };
+                let (message, symbol) = if nested {
+                    (
+                        DescriptorProto {
+                            name: Some("Outer".into()),
+                            nested_type: vec![message],
+                            ..Default::default()
+                        },
+                        "invalid.test.Outer.Collision.choice",
+                    )
+                } else {
+                    (message, "invalid.test.Collision.choice")
+                };
+                assert_set_rejected_without_mutating_pool(
+                    "field-oneof-collision.proto",
+                    symbol,
+                    FileDescriptorSet {
+                        file: vec![FileDescriptorProto {
+                            name: Some("field-oneof-collision.proto".into()),
+                            package: Some("invalid.test".into()),
+                            syntax: Some(syntax.into()),
+                            edition,
+                            message_type: vec![message],
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                    |err| {
+                        assert!(matches!(err, PoolError::DuplicateName(name) if name == symbol));
+                        assert_eq!(err.to_string(), format!("duplicate symbol name {symbol:?}"));
+                    },
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn synthetic_oneof_name_collisions_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, OneofDescriptorProto,
+    };
+
+    assert_rejected_without_mutating_pool(
+        "synthetic-oneof-name-collision.proto",
+        "invalid.test.Collision",
+        DescriptorProto {
+            name: Some("Collision".into()),
+            field: vec![
+                FieldDescriptorProto {
+                    oneof_index: Some(0),
+                    proto3_optional: Some(true),
+                    ..scalar_field("value", 1, Type::TYPE_INT32)
+                },
+                scalar_field("_value", 2, Type::TYPE_INT32),
+            ],
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("_value".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateName(name) if name == "invalid.test.Collision._value"
+            ));
+        },
+    );
+}
+
+#[test]
+fn oneof_names_do_not_conflict_with_json_names_or_other_message_scopes() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
+    };
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    p.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("valid-oneof-name-overlap.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("WithOneof".into()),
+                    field: vec![
+                        FieldDescriptorProto {
+                            oneof_index: Some(0),
+                            json_name: Some("choice".into()),
+                            ..scalar_field("value", 1, Type::TYPE_INT32)
+                        },
+                        scalar_field("choice_suffix", 2, Type::TYPE_INT32),
+                        scalar_field("Choice", 3, Type::TYPE_INT32),
+                    ],
+                    oneof_decl: vec![OneofDescriptorProto {
+                        name: Some("choice".into()),
+                        ..Default::default()
+                    }],
+                    nested_type: vec![DescriptorProto {
+                        name: Some("Inner".into()),
+                        field: vec![scalar_field("choice", 1, Type::TYPE_INT32)],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Sibling".into()),
+                    field: vec![scalar_field("choice", 1, Type::TYPE_INT32)],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .unwrap();
+
+    let message = p.message_by_name("valid.test.WithOneof").unwrap();
+    assert_eq!(message.oneofs()[0].name(), "choice");
+    assert_eq!(message.field_by_name("choice").unwrap().name(), "value");
+    assert_eq!(message.fields().len(), 3);
+    for name in ["valid.test.WithOneof.Inner", "valid.test.Sibling"] {
+        assert_eq!(
+            p.message_by_name(name)
+                .unwrap()
+                .field_by_name("choice")
+                .unwrap()
+                .name(),
+            "choice"
+        );
+    }
+}
+
+#[test]
 fn distinct_oneof_names_are_accepted() {
     use buffa_descriptor::generated::descriptor::{
         DescriptorProto, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,

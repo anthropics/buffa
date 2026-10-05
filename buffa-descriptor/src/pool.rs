@@ -1745,6 +1745,9 @@ impl DescriptorPool {
                     name: fd.name.clone(),
                 });
             }
+            if oneof_names.contains(fd.name.as_str()) {
+                return Err(PoolError::DuplicateName(format!("{fqn}.{}", fd.name)));
+            }
             if enforce_json_names
                 && fd.json_name != fd.name
                 && field_names.insert(fd.json_name.clone(), i).is_some()

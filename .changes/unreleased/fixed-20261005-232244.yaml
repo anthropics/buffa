@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Reject field and oneof name collisions in descriptor pools.** A field cannot reuse a oneof name in the same message. Report the duplicate symbol, matching protoc.'
+time: 2026-10-05T23:22:44.675048+02:00
