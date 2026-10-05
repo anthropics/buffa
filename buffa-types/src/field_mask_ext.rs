@@ -24,44 +24,74 @@ impl FieldMask {
 
     /// Returns `true` if `path` is present in this field mask.
     ///
-    /// Comparison is exact (case-sensitive, no wildcard expansion).
+    /// Comparison is exact (case-sensitive, no wildcard expansion), so a mask
+    /// of `user` does not contain `user.name`. [`covers`](Self::covers) also
+    /// returns `true` for a path whose ancestor is in the mask.
     /// Runs in O(n) time where n is the number of paths.
     pub fn contains(&self, path: &str) -> bool {
         self.paths.iter().any(|p| p == path)
     }
 
-    /// Returns `true` if this mask selects `path` or one of its ancestors.
+    /// Returns `true` if this mask contains `path` or an ancestor of `path`.
     ///
     /// For example, `user` covers `user.name`, but does not cover `username`.
     /// Comparison is case-sensitive and uses dots as component boundaries.
-    /// Paths are not validated against a message descriptor, and `*` has no
-    /// special meaning. An empty mask covers no paths.
     /// Runs in O(n) path comparisons where n is the number of mask paths.
     ///
-    /// ```
-    /// use buffa_types::FieldMask;
+    /// The mask is read as a plain list of paths:
+    ///
+    /// - Coverage runs from ancestor to descendant only. A mask that contains
+    ///   `settings.theme` does not cover `settings`, so a handler that updates
+    ///   `settings` as a unit must call `covers` for each field of `settings`
+    ///   that it writes.
+    /// - An empty mask does not cover any path, and an unset mask field reads
+    ///   as an empty mask. `google.protobuf.FieldMask` defines an absent
+    ///   update mask as every field. A handler that follows that rule must
+    ///   check [`is_empty`](Self::is_empty) before it calls `covers`.
+    /// - `*` is an ordinary path: a mask that contains `*` does not cover
+    ///   `user`.
+    /// - Paths are compared byte for byte and are not validated against a
+    ///   message descriptor. A mask deserialized from JSON contains proto
+    ///   field names (`user.display_name`), not JSON names
+    ///   (`user.displayName`), so `path` must use proto field names.
+    ///   [`from_paths`](Self::from_paths) stores its input unchanged.
+    /// - Backtick quoting is not parsed. Where an API writes a map key that
+    ///   contains a dot as `` labels.`a.b` ``, the dot inside the backticks is
+    ///   a component boundary here: a mask that contains `` labels.`a ``
+    ///   covers that path.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::google::protobuf::FieldMask;
     ///
     /// let mask = FieldMask::from_paths(["user", "settings.theme"]);
+    /// assert!(mask.covers("user"));
     /// assert!(mask.covers("user.name"));
     /// assert!(!mask.covers("username"));
     /// assert!(!mask.covers("settings"));
+    /// assert!(!FieldMask::default().covers("user"));
     /// ```
     pub fn covers(&self, path: &str) -> bool {
         self.paths
             .iter()
-            .any(|parent| path_is_covered(path, parent))
+            .any(|ancestor| path_is_covered(path, ancestor))
     }
 
-    /// Sorts paths by their dot-separated components and removes duplicates
-    /// and paths already covered by a parent path.
+    /// Sorts the paths component by component, comparing each component as a
+    /// `str`, and removes duplicates and paths that an ancestor in the mask
+    /// already covers.
     ///
-    /// This preserves the mask's coverage and leaves unknown protobuf fields
-    /// untouched. It does not validate paths against a message descriptor or
-    /// interpret wildcards. Runs in O(n log n) path comparisons and operates
-    /// in place without allocating new path strings.
+    /// The normalized mask [`covers`](Self::covers) exactly the paths it
+    /// covered before, and paths are compared as `covers` compares them. For
+    /// paths made of field names, the order is the same as sorting the paths
+    /// as strings. Runs in O(n log n) path comparisons and operates in place
+    /// without allocating new path strings.
     ///
-    /// ```
-    /// use buffa_types::FieldMask;
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::google::protobuf::FieldMask;
     ///
     /// let mut mask = FieldMask::from_paths(["user.name", "settings.theme", "user", "user"]);
     /// mask.normalize();
@@ -74,7 +104,7 @@ impl FieldMask {
         self.paths
             .sort_unstable_by(|a, b| a.split('.').cmp(b.split('.')));
         self.paths
-            .dedup_by(|path, parent| path_is_covered(path, parent));
+            .dedup_by(|path, ancestor| path_is_covered(path, ancestor));
     }
 
     /// Returns the number of paths in the field mask.
@@ -96,8 +126,9 @@ impl FieldMask {
     }
 }
 
-fn path_is_covered(path: &str, parent: &str) -> bool {
-    path.strip_prefix(parent)
+/// Whether `ancestor` is `path` or one of its ancestors.
+fn path_is_covered(path: &str, ancestor: &str) -> bool {
+    path.strip_prefix(ancestor)
         .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
 }
 
@@ -289,6 +320,46 @@ mod tests {
     }
 
     #[test]
+    fn covers_treats_every_dot_as_a_component_boundary() {
+        // An empty path, a trailing dot and a backtick-quoted map key get no
+        // special handling: a path is its text, split at each dot.
+        let mask = FieldMask::from_paths(["user", "labels.`a.b`"]);
+        assert!(mask.covers("user."));
+        assert!(mask.covers("user..name"));
+        assert!(!mask.covers("user`"));
+        assert!(mask.covers("labels.`a.b`"));
+        assert!(mask.covers("labels.`a.b`.c"));
+        assert!(!mask.covers("labels.`a"));
+        assert!(!mask.covers("labels.`a.b"));
+        assert!(FieldMask::from_paths(["labels.`a"]).covers("labels.`a.b`"));
+
+        let trailing = FieldMask::from_paths(["user."]);
+        assert!(trailing.covers("user."));
+        assert!(trailing.covers("user..name"));
+        assert!(!trailing.covers("user"));
+        assert!(!trailing.covers("user.name"));
+
+        let empty_path = FieldMask::from_paths([""]);
+        assert!(empty_path.covers(""));
+        assert!(empty_path.covers(".user"));
+        assert!(!empty_path.covers("user"));
+    }
+
+    #[test]
+    fn normalize_reads_empty_components_and_backticks_as_plain_text() {
+        let mut mask =
+            FieldMask::from_paths(["user.", "user", "", "labels.`a.b`.c", "labels.`a.b`", "*"]);
+        mask.normalize();
+        assert_eq!(mask.paths, ["", "*", "labels.`a.b`", "user"]);
+
+        // `user.` is a child of `user` with an empty name, not a parent of
+        // `user.name`.
+        let mut mask = FieldMask::from_paths(["user.name", "user."]);
+        mask.normalize();
+        assert_eq!(mask.paths, ["user.", "user.name"]);
+    }
+
+    #[test]
     fn normalize_removes_duplicates_and_redundant_descendants() {
         let mut mask = FieldMask::from_paths([
             "user.name.first",
@@ -349,8 +420,11 @@ mod tests {
     }
 
     #[test]
-    fn normalize_preserves_coverage_for_every_subset() {
-        let paths = ["a", "a.b", "a.b.c", "a.bc", "a_b", "b", "b.c"];
+    fn normalize_preserves_coverage_and_leaves_no_covered_path_for_every_subset() {
+        // In reverse component order, so that every subset needs the sort.
+        let paths = [
+            "b.c", "b", "a_b", "a-b", "a.bc", "a.b.c", "a.b", "a.", "a", "",
+        ];
         for subset in 0..(1 << paths.len()) {
             let original = FieldMask::from_paths(
                 paths
@@ -363,7 +437,7 @@ mod tests {
             normalized.normalize();
             for query in paths
                 .into_iter()
-                .chain(["a.b.c.d", "a.bcd", "b.c.d", "c", ""])
+                .chain(["a.b.c.d", "a.bcd", "b.c.d", "c", ".a"])
             {
                 assert_eq!(
                     normalized.covers(query),
@@ -371,6 +445,22 @@ mod tests {
                     "subset {subset}, query {query}"
                 );
             }
+            for (i, path) in normalized.paths.iter().enumerate() {
+                for (j, other) in normalized.paths.iter().enumerate() {
+                    assert!(
+                        i == j || !path_is_covered(path, other),
+                        "subset {subset}: {other} covers {path}"
+                    );
+                }
+            }
+            assert!(
+                normalized
+                    .paths
+                    .windows(2)
+                    .all(|w| w[0].split('.').lt(w[1].split('.'))),
+                "subset {subset}: {:?} is not in component order",
+                normalized.paths
+            );
         }
     }
 
