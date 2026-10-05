@@ -512,4 +512,84 @@ mod tests {
         assert!(loc.line >= 1, "line is 1-based: {loc:?}");
         assert!(loc.column >= 1, "column is 1-based: {loc:?}");
     }
+
+    #[test]
+    fn malformed_yaml_error_has_no_source() {
+        use buffa_test::json_types::Scalar;
+        let err = from_str::<Scalar>("int32Val: [\n  - broken").expect_err("should fail");
+        // The message is already the carrier's, so the carrier is not repeated
+        // as a source.
+        assert!(std::error::Error::source(&err).is_none());
+    }
+
+    /// An I/O error payload that has a source, [`IoRoot`].
+    #[derive(Debug)]
+    struct IoFailed(IoRoot);
+
+    #[derive(Debug)]
+    struct IoRoot;
+
+    impl std::fmt::Display for IoFailed {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("i/o failed")
+        }
+    }
+
+    impl std::error::Error for IoFailed {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.0)
+        }
+    }
+
+    impl std::fmt::Display for IoRoot {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("disk unplugged")
+        }
+    }
+
+    impl std::error::Error for IoRoot {}
+
+    /// Fails every read and write with an [`IoFailed`] payload.
+    struct FailingIo;
+
+    impl std::io::Read for FailingIo {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other(IoFailed(IoRoot)))
+        }
+    }
+
+    impl std::io::Write for FailingIo {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other(IoFailed(IoRoot)))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[track_caller]
+    fn assert_forwards_io_source(err: &Error) {
+        assert_eq!(err.to_string(), "i/o failed");
+        let source = std::error::Error::source(err).expect("the payload's source is forwarded");
+        assert!(source.is::<IoRoot>(), "got: {source}");
+    }
+
+    #[test]
+    fn reader_error_forwards_its_source() {
+        use buffa_test::json_types::Scalar;
+        let err = from_reader::<_, Scalar>(FailingIo).expect_err("should fail");
+        assert_forwards_io_source(&err);
+    }
+
+    #[test]
+    fn writer_error_forwards_its_source() {
+        use buffa_test::json_types::Scalar;
+        let msg = Scalar {
+            int32_val: 7,
+            ..Default::default()
+        };
+        let err = to_writer(FailingIo, &msg).expect_err("should fail");
+        assert_forwards_io_source(&err);
+    }
 }

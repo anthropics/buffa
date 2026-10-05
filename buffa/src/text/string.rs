@@ -28,13 +28,18 @@ use alloc::vec::Vec;
 use core::fmt::Write;
 
 /// Error returned by [`unescape`] and [`unescape_str`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Its `Display` text is the [`BadEscape`](Self::BadEscape) string, or
+/// `unescaped bytes are not valid UTF-8`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum UnescapeError {
     /// The unescaped bytes are not valid UTF-8. Only produced by
     /// [`unescape_str`]; [`unescape`] is byte-level and never returns this.
+    #[error("unescaped bytes are not valid UTF-8")]
     InvalidUtf8,
     /// A malformed escape sequence or structural problem in the literal.
     /// The string describes the specific failure.
+    #[error("{0}")]
     BadEscape(&'static str),
 }
 
@@ -317,6 +322,25 @@ mod tests {
     use alloc::string::String;
 
     // ── unescape ────────────────────────────────────────────────────────────
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn unescape_error_is_a_std_error() {
+        fn assert_error<E: std::error::Error>() {}
+        assert_error::<UnescapeError>();
+    }
+
+    #[test]
+    fn unescape_error_display() {
+        assert_eq!(
+            alloc::format!("{}", unescape_str(r#""\xff""#).unwrap_err()),
+            "unescaped bytes are not valid UTF-8"
+        );
+        assert_eq!(
+            alloc::format!("{}", unescape(r#""\xzz""#).unwrap_err()),
+            r"invalid \x escape"
+        );
+    }
 
     #[test]
     fn unescape_table() {
