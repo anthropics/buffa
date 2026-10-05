@@ -1,6 +1,7 @@
 //! Ergonomic helpers for [`google::protobuf::FieldMask`](crate::google::protobuf::FieldMask).
 
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use crate::google::protobuf::FieldMask;
 
@@ -107,6 +108,75 @@ impl FieldMask {
             .dedup_by(|path, ancestor| path_is_covered(path, ancestor));
     }
 
+    /// Returns a normalized mask covering every path covered by either mask.
+    ///
+    /// Uses the same path rules as [`covers`](Self::covers): an empty mask
+    /// covers nothing, `*` is literal, and paths are not validated against a
+    /// descriptor. Neither input is modified. The result contains only the
+    /// combined paths, without unknown protobuf fields from either input.
+    /// Runs in O((n + m) log(n + m)) path comparisons.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::FieldMask;
+    ///
+    /// let left = FieldMask::from_paths(["user.name", "settings.theme"]);
+    /// let right = FieldMask::from_paths(["user", "settings.locale"]);
+    /// assert_eq!(left.union(&right).paths, ["settings.locale", "settings.theme", "user"]);
+    /// ```
+    #[must_use]
+    pub fn union(&self, other: &Self) -> Self {
+        let mut mask = Self::from_paths(self.paths.iter().chain(&other.paths).cloned());
+        mask.normalize();
+        mask
+    }
+
+    /// Returns a normalized mask covering only paths covered by both masks.
+    ///
+    /// When one mask selects an ancestor of a path in the other, the result
+    /// selects the more specific path: `user` intersected with `user.name`
+    /// is `user.name`.
+    ///
+    /// Uses the same path rules as [`covers`](Self::covers): an empty mask
+    /// covers nothing, `*` is literal, and paths are not validated against a
+    /// descriptor. Neither input is modified. The result contains only the
+    /// shared paths, without unknown protobuf fields from either input.
+    /// Runs in O(n log n + m log m) path comparisons.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::FieldMask;
+    ///
+    /// let left = FieldMask::from_paths(["user", "settings.theme"]);
+    /// let right = FieldMask::from_paths(["user.name", "settings"]);
+    /// assert_eq!(left.intersection(&right).paths, ["settings.theme", "user.name"]);
+    /// ```
+    #[must_use]
+    pub fn intersection(&self, other: &Self) -> Self {
+        if self.is_empty() || other.is_empty() {
+            return Self::default();
+        }
+        let mut left = normalized_paths(&self.paths).into_iter().peekable();
+        let mut right = normalized_paths(&other.paths).into_iter().peekable();
+        let mut mask = Self::default();
+        while let (Some(&a), Some(&b)) = (left.peek(), right.peek()) {
+            if path_is_covered(a, b) {
+                mask.paths.push(a.into());
+                left.next();
+            } else if path_is_covered(b, a) {
+                mask.paths.push(b.into());
+                right.next();
+            } else if a.split('.').lt(b.split('.')) {
+                left.next();
+            } else {
+                right.next();
+            }
+        }
+        mask
+    }
+
     /// Returns the number of paths in the field mask.
     #[inline]
     pub fn len(&self) -> usize {
@@ -130,6 +200,13 @@ impl FieldMask {
 fn path_is_covered(path: &str, ancestor: &str) -> bool {
     path.strip_prefix(ancestor)
         .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))
+}
+
+fn normalized_paths(paths: &[String]) -> Vec<&str> {
+    let mut paths: Vec<_> = paths.iter().map(String::as_str).collect();
+    paths.sort_unstable_by(|a, b| a.split('.').cmp(b.split('.')));
+    paths.dedup_by(|path, ancestor| path_is_covered(path, ancestor));
+    paths
 }
 
 impl<'a> IntoIterator for &'a FieldMask {
@@ -157,8 +234,6 @@ impl IntoIterator for FieldMask {
 // into the same code, so the two paths can't drift on edge cases the
 // conformance suite exercises.
 
-#[cfg(feature = "json")]
-use alloc::vec::Vec;
 #[cfg(feature = "json")]
 use buffa::json_helpers::wkt::{camel_to_snake, field_mask_path_round_trips, snake_to_camel};
 
