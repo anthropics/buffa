@@ -1,0 +1,3 @@
+kind: Fixed
+body: buffa-descriptor rejects repeated fields and extensions with explicit default values, including empty defaults, matching protoc.
+time: 2026-10-05T23:28:48.727755+02:00

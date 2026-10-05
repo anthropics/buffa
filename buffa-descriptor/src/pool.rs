@@ -238,6 +238,8 @@ pub enum PoolError {
     DuplicateFieldNumber { message: String, number: u32 },
     /// Two fields in one message claim the same proto or JSON name.
     DuplicateFieldName { message: String, name: String },
+    /// A repeated field declares an explicit default value.
+    RepeatedFieldWithDefault { field: String },
     /// A field refers to a oneof declaration that does not exist in its
     /// containing message.
     InvalidOneofIndex {
@@ -465,6 +467,9 @@ impl core::fmt::Display for PoolError {
                     f,
                     "message {message} declares field name {name:?} more than once"
                 )
+            }
+            Self::RepeatedFieldWithDefault { field } => {
+                write!(f, "repeated field {field} declares a default value")
             }
             Self::InvalidOneofIndex {
                 message,
@@ -854,8 +859,8 @@ impl DescriptorPool {
     /// range, a message or enum declares a reserved name twice, an open enum's
     /// first value is non-zero, an enum value reuses a reserved name or number
     /// or a duplicate number without `allow_alias`, a oneof index is invalid,
-    /// a `proto3_optional` field is malformed, a message exceeds 65 535
-    /// fields, or a map entry is malformed.
+    /// a `proto3_optional` field is malformed, a repeated field declares a
+    /// default value, a message exceeds 65 535 fields, or a map entry is malformed.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -878,8 +883,8 @@ impl DescriptorPool {
     /// overlapping extension range, duplicate symbols or field identities,
     /// duplicate reserved names, an open enum whose first value is non-zero,
     /// reserved enum values, duplicate enum numbers without `allow_alias`,
-    /// invalid oneof indices, malformed `proto3_optional` fields, or malformed
-    /// map entries).
+    /// invalid oneof indices, malformed `proto3_optional` fields, defaults on
+    /// repeated fields, or malformed map entries).
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -2243,6 +2248,9 @@ impl DescriptorPool {
             }
         }
         let is_repeated = label == Label::LABEL_REPEATED;
+        if is_repeated && f.default_value.is_some() {
+            return Err(PoolError::RepeatedFieldWithDefault { field: field_fqn });
+        }
 
         // Resolve the singular kind (element type).
         let element = self.resolve_singular(f.r#type, f.type_name.as_deref(), &field_fqn, scope)?;

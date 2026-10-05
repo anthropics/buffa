@@ -2378,6 +2378,230 @@ fn proto3_optional_fields_require_optional_cardinality() {
     }
 }
 
+mod repeated_field_defaults {
+    use super::*;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        descriptor_proto::ExtensionRange, DescriptorProto, Edition, FieldDescriptorProto,
+        FileDescriptorProto, FileDescriptorSet,
+    };
+
+    fn file(syntax: Option<&str>, edition: Option<Edition>) -> FileDescriptorProto {
+        FileDescriptorProto {
+            name: Some("repeated-default.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: syntax.map(str::to_owned),
+            edition,
+            message_type: vec![DescriptorProto {
+                name: Some("Defaults".into()),
+                field: vec![FieldDescriptorProto {
+                    label: Some(Label::LABEL_REPEATED),
+                    ..scalar_field("values", 1, Type::TYPE_INT32)
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn syntaxes() -> [(Option<&'static str>, Option<Edition>); 5] {
+        [
+            (None, None),
+            (Some("proto2"), None),
+            (Some("proto3"), None),
+            (Some("editions"), Some(Edition::EDITION_2023)),
+            (Some("editions"), Some(Edition::EDITION_2024)),
+        ]
+    }
+
+    fn assert_default_error(err: &PoolError, expected_field: &str) {
+        assert!(
+            matches!(err, PoolError::RepeatedFieldWithDefault { field } if field == expected_field),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            format!("repeated field {expected_field} declares a default value")
+        );
+    }
+
+    #[test]
+    fn repeated_scalar_defaults_are_rejected_transactionally() {
+        for (syntax, edition) in syntaxes() {
+            for (ty, default) in [
+                (Type::TYPE_INT32, "0"),
+                (Type::TYPE_DOUBLE, "1.5"),
+                (Type::TYPE_BOOL, "false"),
+                (Type::TYPE_STRING, ""),
+                (Type::TYPE_STRING, "text"),
+                (Type::TYPE_BYTES, ""),
+            ] {
+                let mut file = file(syntax, edition);
+                let field = &mut file.message_type[0].field[0];
+                field.r#type = Some(ty);
+                field.default_value = Some(default.into());
+                assert_set_rejected_without_mutating_pool(
+                    "repeated-default.proto",
+                    "invalid.test.Defaults",
+                    FileDescriptorSet {
+                        file: vec![file],
+                        ..Default::default()
+                    },
+                    |err| assert_default_error(err, "invalid.test.Defaults.values"),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn nested_repeated_defaults_are_rejected_transactionally() {
+        let mut file = file(Some("proto2"), None);
+        file.message_type[0].field[0].default_value = Some("0".into());
+        file.message_type = vec![DescriptorProto {
+            name: Some("Outer".into()),
+            nested_type: file.message_type,
+            ..Default::default()
+        }];
+        assert_set_rejected_without_mutating_pool(
+            "repeated-default.proto",
+            "invalid.test.Outer.Defaults",
+            FileDescriptorSet {
+                file: vec![file],
+                ..Default::default()
+            },
+            |err| assert_default_error(err, "invalid.test.Outer.Defaults.values"),
+        );
+    }
+
+    #[test]
+    fn repeated_extension_defaults_are_rejected_transactionally() {
+        for message_scoped in [false, true] {
+            for (ty, default) in [(Type::TYPE_INT32, "0"), (Type::TYPE_STRING, "")] {
+                let mut file = file(Some("proto2"), None);
+                file.message_type[0].field.clear();
+                file.message_type[0].extension_range = vec![ExtensionRange {
+                    start: Some(100),
+                    end: Some(101),
+                    ..Default::default()
+                }];
+                let extension = FieldDescriptorProto {
+                    label: Some(Label::LABEL_REPEATED),
+                    extendee: Some(".invalid.test.Defaults".into()),
+                    default_value: Some(default.into()),
+                    ..scalar_field("values", 100, ty)
+                };
+                let symbol = if message_scoped {
+                    file.message_type.push(DescriptorProto {
+                        name: Some("Scope".into()),
+                        extension: vec![extension],
+                        ..Default::default()
+                    });
+                    "invalid.test.Scope.values"
+                } else {
+                    file.extension.push(extension);
+                    "invalid.test.values"
+                };
+                assert_set_rejected_without_mutating_pool(
+                    "repeated-default.proto",
+                    symbol,
+                    FileDescriptorSet {
+                        file: vec![file],
+                        ..Default::default()
+                    },
+                    |err| assert_default_error(err, symbol),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn repeated_fields_without_defaults_link_in_every_syntax() {
+        for (syntax, edition) in syntaxes() {
+            let pool = DescriptorPool::new(FileDescriptorSet {
+                file: vec![file(syntax, edition)],
+                ..Default::default()
+            })
+            .unwrap();
+            let field = pool
+                .message_by_name("invalid.test.Defaults")
+                .unwrap()
+                .field(1)
+                .unwrap();
+            assert!(matches!(field.kind(), FieldKind::List(_)));
+        }
+    }
+
+    #[test]
+    fn singular_proto2_defaults_are_accepted() {
+        for label in [
+            None,
+            Some(Label::LABEL_OPTIONAL),
+            Some(Label::LABEL_REQUIRED),
+        ] {
+            let mut file = file(Some("proto2"), None);
+            file.message_type[0].field = vec![FieldDescriptorProto {
+                label,
+                default_value: Some("".into()),
+                ..scalar_field("value", 1, Type::TYPE_STRING)
+            }];
+            let pool = DescriptorPool::new(FileDescriptorSet {
+                file: vec![file],
+                ..Default::default()
+            })
+            .unwrap();
+            assert_eq!(
+                pool.file_by_name("repeated-default.proto")
+                    .unwrap()
+                    .message_type[0]
+                    .field[0]
+                    .default_value
+                    .as_deref(),
+                Some("")
+            );
+        }
+    }
+
+    #[test]
+    fn singular_extension_defaults_are_accepted() {
+        let mut file = file(Some("proto2"), None);
+        file.message_type[0].field.clear();
+        file.message_type[0].extension_range = vec![ExtensionRange {
+            start: Some(100),
+            end: Some(101),
+            ..Default::default()
+        }];
+        file.extension = vec![FieldDescriptorProto {
+            extendee: Some(".invalid.test.Defaults".into()),
+            default_value: Some("".into()),
+            ..scalar_field("value", 100, Type::TYPE_STRING)
+        }];
+        let pool = DescriptorPool::new(FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(pool.extension_by_name("invalid.test.value").is_some());
+    }
+
+    #[test]
+    fn decode_rejects_repeated_defaults() {
+        use buffa::Message;
+
+        for (ty, default) in [(Type::TYPE_INT32, "0"), (Type::TYPE_STRING, "")] {
+            let mut file = file(Some("proto2"), None);
+            file.message_type[0].field[0].r#type = Some(ty);
+            file.message_type[0].field[0].default_value = Some(default.into());
+            let bytes = FileDescriptorSet {
+                file: vec![file],
+                ..Default::default()
+            }
+            .encode_to_vec();
+            let err = DescriptorPool::decode(&bytes).unwrap_err();
+            assert_default_error(&err, "invalid.test.Defaults.values");
+        }
+    }
+}
+
 #[test]
 fn proto3_optional_fields_are_rejected_outside_proto3_files() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
