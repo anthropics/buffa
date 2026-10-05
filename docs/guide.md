@@ -1755,6 +1755,8 @@ let msg = with_json_parse_options(&opts, || {
 })?;
 ```
 
+The option covers enum values that the enum does not declare. A value that cannot be an enum value, such as `true` or `1.5`, is a parse error with the option on or off; the `buffa::json` module docs give the result for each kind of field.
+
 ## Text format (textproto)
 
 The protobuf text format is a human-readable debug representation — useful
