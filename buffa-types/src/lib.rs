@@ -36,7 +36,7 @@
 //!
 //! # Ergonomic helpers
 //!
-//! Common Rust type conversions are provided as trait impls:
+//! The crate adds conversions and helper methods to the generated types:
 //!
 //! - `Timestamp` ↔ [`std::time::SystemTime`] (requires `std` feature)
 //! - `Duration` ↔ [`std::time::Duration`] (requires `std` feature)
@@ -45,7 +45,8 @@
 //! - `Duration` ↔ [`chrono::TimeDelta`] (requires `chrono` feature)
 //! - `Timestamp` ↔ [`jiff::Timestamp`] (requires `jiff` feature)
 //! - `Duration` ↔ [`jiff::SignedDuration`] (requires `jiff` feature)
-//! - `Any::pack` / `Any::unpack` helpers
+//! - [`Any`] packing and unpacking: [`Any::pack_message`],
+//!   [`Any::unpack_message`], [`Any::is_message`]
 //! - `Value` constructors: [`Value::null`](google::protobuf::Value::null), `From<f64>`, `From<String>`, `From<bool>`, etc.
 //! - Wrapper type `From`/`Into` impls
 //!

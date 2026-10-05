@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`Timestamp::from(SystemTime)` keeps `i64::MIN` seconds** (#523). The conversion clamped a pre-epoch magnitude to `i64::MAX` seconds, so a time at `i64::MIN` seconds (2^63 seconds before the epoch) came back as `i64::MIN + 1`, and a `Timestamp` at that boundary did not survive a round trip through `SystemTime` on a platform whose `SystemTime` reaches that far (Unix targets). The whole negative range now converts exactly, and a time earlier than `i64::MIN` seconds saturates to `(i64::MIN, 0)`.
+time: 2026-10-02T12:00:00Z

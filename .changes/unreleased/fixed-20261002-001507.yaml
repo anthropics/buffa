@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **The reflective JSON parser decodes `bytes` with the base64 decoder generated messages use** (#501). `DynamicMessage::from_json`, `from_json_ignoring_unknown` and `DynamicMessageSeed` had their own decoder, which accepted three kinds of input that a generated message rejects. They now fail on it too: a string that mixes the standard and URL-safe alphabets (`"+_"`), padding beyond what the final group takes (`"Zg==="`, `"Zm9v="`), and padding with no data (`"="`, which parsed as empty). Every other string decodes to the same bytes as before, and reflective JSON output is unchanged.
+time: 2026-10-02T00:15:07.955637+02:00
