@@ -24,6 +24,7 @@ pub fn parse_default_value(
     features: &ResolvedFeatures,
     nesting: usize,
     string_repr: crate::StringRepr,
+    bytes_repr: &crate::BytesRepr,
 ) -> Result<Option<TokenStream>, CodeGenError> {
     use crate::generated::descriptor::field_descriptor_proto::Type;
 
@@ -140,7 +141,13 @@ pub fn parse_default_value(
         _ => return Ok(None),
     };
 
-    Ok(Some(expr))
+    if !bytes_repr.is_default()
+        && crate::impl_message::effective_type(ctx, field, features) == Type::TYPE_BYTES
+    {
+        Ok(Some(quote! { ::core::convert::Into::into(#expr) }))
+    } else {
+        Ok(Some(expr))
+    }
 }
 
 /// Generated default expression for a bare-stored enum field whose default
@@ -186,6 +193,7 @@ pub fn open_enum_bare_default_value(
         features,
         nesting,
         crate::StringRepr::String,
+        &crate::BytesRepr::Vec,
     )? {
         return Ok(Some(expr));
     }

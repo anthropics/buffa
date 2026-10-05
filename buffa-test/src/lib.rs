@@ -1045,6 +1045,22 @@ pub mod string_proto2 {
     ));
 }
 
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod bytes_proto2 {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/bytes_proto2_variant/test.proto2.mod.rs"
+    ));
+}
+
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod custom_bytes_proto2 {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/custom_bytes_proto2_variant/test.proto2.mod.rs"
+    ));
+}
+
 // Views + preserve_unknown_fields=false: covers the else-branches in view
 // codegen that omit the unknown-fields view field. Compilation IS the test.
 #[allow(

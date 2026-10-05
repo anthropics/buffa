@@ -831,6 +831,28 @@ fn main() {
         .compile()
         .expect("buffa_build failed for string_proto2.proto with string_type");
 
+    for (dir, custom) in [
+        ("bytes_proto2_variant", false),
+        ("custom_bytes_proto2_variant", true),
+    ] {
+        let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join(dir);
+        std::fs::create_dir_all(&out).expect("create proto2 bytes variant dir");
+        let config = buffa_build::Config::new();
+        let config = if custom {
+            config.bytes_type_custom("crate::vtable_bytes_repr::LocalBytes")
+        } else {
+            config.use_bytes_type()
+        };
+        config
+            .files(&["protos/proto2_defaults.proto"])
+            .includes(&["protos/"])
+            .generate_json(true)
+            .generate_text(true)
+            .out_dir(out)
+            .compile()
+            .expect("buffa_build failed for proto2 defaults with bytes_type");
+    }
+
     // Regression #88: bytes_fields + generate_arbitrary(true).
     // BytesContexts in basic.proto has singular, optional, repeated, and oneof
     // bytes fields — this compilation exercises all four shim paths.

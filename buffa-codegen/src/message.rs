@@ -2759,6 +2759,7 @@ fn generate_custom_default(
             &field_features,
             nesting,
             crate::impl_message::field_string_repr(ctx, proto_fqn, field_name),
+            &crate::impl_message::field_bytes_repr(ctx, proto_fqn, field_name),
         )? {
             field_inits.push(quote! { #field_ident: #expr, });
         } else if let Some(expr) = crate::defaults::open_enum_bare_default_value(
