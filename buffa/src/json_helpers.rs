@@ -986,9 +986,15 @@ fn parse_exact_decimal_int(v: &str) -> Option<i128> {
     if int_part.is_empty() && frac_part.is_empty() {
         return None;
     }
-    // Trailing fractional zeros do not affect integrality and would only
-    // inflate the significand before we re-scale it.
+    // Trailing zeros do not affect integrality and would only inflate the
+    // significand before we re-scale it. Integer zeros move into the exponent.
     let frac_part = frac_part.trim_end_matches('0');
+    let (int_part, trailing_zeros) = if frac_part.is_empty() {
+        let trimmed = int_part.trim_end_matches('0');
+        (trimmed, int_part.len() - trimmed.len())
+    } else {
+        (int_part, 0)
+    };
 
     let mut significand = 0i128;
     for digit in int_part.bytes().chain(frac_part.bytes()) {
@@ -1005,8 +1011,10 @@ fn parse_exact_decimal_int(v: &str) -> Option<i128> {
         return Some(0);
     }
 
-    // value = significand × 10^(exp − frac_len)
-    let scale = exp.checked_sub(frac_part.len() as i64)?;
+    // value = significand × 10^(exp + trailing_zeros − frac_len)
+    let scale = exp
+        .checked_add(trailing_zeros as i64)?
+        .checked_sub(frac_part.len() as i64)?;
     if scale >= 0 {
         let pow10 = 10i128.checked_pow(u32::try_from(scale).ok()?)?;
         significand = significand.checked_mul(pow10)?;

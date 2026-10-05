@@ -228,6 +228,37 @@ fn json_integer_parsing_matches_generated_messages() {
     }
 }
 
+#[test]
+fn json_quoted_integers_accept_large_rescaled_significands() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+    let zeros = "0".repeat(80);
+    let parsed = DynamicMessage::from_json(
+        Arc::clone(&p),
+        idx,
+        &format!(
+            r#"{{
+                "fInt32": "{}{zeros}e-80",
+                "fInt64": "{}{zeros}.000e-80",
+                "fUint32": "{}{zeros}E-80",
+                "fUint64": "{}{zeros}e-80"
+            }}"#,
+            i32::MIN,
+            i64::MIN,
+            u32::MAX,
+            u64::MAX
+        ),
+    )
+    .expect("large significands that rescale into range must parse exactly");
+    assert_eq!(parsed.field_by_number(3), Some(&Value::I32(i32::MIN)));
+    assert_eq!(parsed.field_by_number(4), Some(&Value::I64(i64::MIN)));
+    assert_eq!(parsed.field_by_number(5), Some(&Value::U32(u32::MAX)));
+    assert_eq!(parsed.field_by_number(6), Some(&Value::U64(u64::MAX)));
+    let canonical = parsed.to_json().unwrap();
+    let reparsed = DynamicMessage::from_json(p, idx, &canonical).unwrap();
+    assert_eq!(reparsed, parsed);
+}
+
 /// The quoted-string path covers the full range exactly and rejects the
 /// same inputs the generated decoders reject: overflow, negative values for
 /// unsigned fields, and non-integral forms.
