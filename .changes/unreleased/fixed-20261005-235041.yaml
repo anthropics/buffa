@@ -1,0 +1,3 @@
+kind: Fixed
+body: buffa-descriptor rejects explicit defaults in proto3 files, including empty and zero defaults on fields and extensions, matching protoc.
+time: 2026-10-05T23:50:41.293412+02:00

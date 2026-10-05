@@ -245,6 +245,8 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// A field or extension declares an explicit default in a proto3 file.
+    ExplicitDefaultInProto3 { field: String },
     /// A field marked `proto3_optional` is not declared in a proto3 file.
     Proto3OptionalOutsideProto3 { field: String },
     /// A field marked `proto3_optional` does not have optional cardinality.
@@ -473,6 +475,10 @@ impl core::fmt::Display for PoolError {
             } => write!(
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
+            ),
+            Self::ExplicitDefaultInProto3 { field } => write!(
+                f,
+                "field {field} declares an explicit default in a proto3 file"
             ),
             Self::Proto3OptionalOutsideProto3 { field } => write!(
                 f,
@@ -856,6 +862,8 @@ impl DescriptorPool {
     /// or a duplicate number without `allow_alias`, a oneof index is invalid,
     /// a `proto3_optional` field is malformed, a message exceeds 65 535
     /// fields, or a map entry is malformed.
+    /// An explicit default on a field or extension declared in a proto3 file
+    /// also returns an error, even if it equals the type's implicit default.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -880,6 +888,8 @@ impl DescriptorPool {
     /// reserved enum values, duplicate enum numbers without `allow_alias`,
     /// invalid oneof indices, malformed `proto3_optional` fields, or malformed
     /// map entries).
+    /// Explicit defaults on fields or extensions declared in proto3 files are
+    /// also rejected, including zero and empty defaults.
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -2229,6 +2239,9 @@ impl DescriptorPool {
         let resolved = features::resolve_child(parent_features, features::field_features(f));
 
         let label = f.label.unwrap_or_default();
+        if scope.proto3 && f.default_value.is_some() {
+            return Err(PoolError::ExplicitDefaultInProto3 { field: field_fqn });
+        }
         if f.proto3_optional == Some(true) {
             if !scope.proto3 {
                 return Err(PoolError::Proto3OptionalOutsideProto3 { field: field_fqn });
