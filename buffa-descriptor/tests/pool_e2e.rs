@@ -689,28 +689,337 @@ fn scalar_fields_with_an_empty_type_name_are_accepted() {
     );
 }
 
+/// A field with `type` unset and `type_name` set: the form whose kind the
+/// pool infers.
+fn typeless_field(
+    name: &str,
+    number: i32,
+    label: buffa_descriptor::generated::descriptor::field_descriptor_proto::Label,
+    type_name: &str,
+) -> buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+    buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+        name: Some(name.into()),
+        number: Some(number),
+        label: Some(label),
+        type_name: Some(type_name.into()),
+        ..Default::default()
+    }
+}
+
 #[test]
-fn type_name_check_applies_only_to_an_explicit_scalar_type() {
+fn type_name_infers_missing_message_and_enum_types() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+        FileDescriptorSet, OneofDescriptorProto,
+    };
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    p.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("inferred-field-type.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("Target".into()),
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Holder".into()),
+                    field: vec![
+                        typeless_field("target", 1, Label::LABEL_OPTIONAL, ".valid.test.Target"),
+                        typeless_field("kind", 2, Label::LABEL_OPTIONAL, ".valid.test.Kind"),
+                        FieldDescriptorProto {
+                            oneof_index: Some(0),
+                            ..typeless_field(
+                                "chosen",
+                                3,
+                                Label::LABEL_OPTIONAL,
+                                ".valid.test.Target",
+                            )
+                        },
+                    ],
+                    oneof_decl: vec![OneofDescriptorProto {
+                        name: Some("choice".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+            ],
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Kind".into()),
+                value: vec![enum_value("KIND_UNSPECIFIED", 0)],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .unwrap();
+
+    let holder = p.message_by_name("valid.test.Holder").unwrap();
+    assert_eq!(
+        holder.field(1).unwrap().kind(),
+        FieldKind::Singular(SingularKind::Message(
+            p.message_index("valid.test.Target").unwrap()
+        ))
+    );
+    assert_eq!(
+        holder.field(2).unwrap().kind(),
+        FieldKind::Singular(SingularKind::Enum(p.enum_index("valid.test.Kind").unwrap()))
+    );
+    assert_eq!(
+        holder.field(3).unwrap().kind(),
+        FieldKind::Singular(SingularKind::Message(
+            p.message_index("valid.test.Target").unwrap()
+        ))
+    );
+    // Presence follows the inferred kind: a proto3 message field has explicit
+    // presence, which a `double` would not have.
+    assert_eq!(holder.field(1).unwrap().presence(), FieldPresence::Explicit);
+    assert_eq!(holder.field(2).unwrap().presence(), FieldPresence::Implicit);
+}
+
+/// Only a non-empty `type_name` starts the inference: a field with `type`
+/// unset and nothing to resolve links as `double`, the proto default.
+#[test]
+fn fields_with_no_type_and_no_type_name_link_as_double() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
     use buffa_descriptor::generated::descriptor::FieldDescriptorProto;
 
-    // `type` unset, `type_name` naming a message that exists in the pool.
-    // protoc and protobuf-go infer the kind from the symbol. The pool does
-    // not: the unset `type` reads as the enum's default, `TYPE_DOUBLE`. That
-    // is a known divergence; this test pins only that the scalar `type_name`
-    // check does not turn such a field into a link error. With inference the
-    // kind here becomes a message.
-    let kind = linked_kind_of_single_field(FieldDescriptorProto {
-        name: Some("value".into()),
-        number: Some(1),
-        label: Some(Label::LABEL_OPTIONAL),
-        type_name: Some(".reflect.test.Scalars".into()),
+    for type_name in [None, Some(String::new())] {
+        let kind = linked_kind_of_single_field(FieldDescriptorProto {
+            name: Some("value".into()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            type_name: type_name.clone(),
+            ..Default::default()
+        });
+        assert_eq!(
+            kind,
+            FieldKind::Singular(SingularKind::Scalar(ScalarType::Double)),
+            "type_name: {type_name:?}"
+        );
+    }
+}
+
+#[test]
+fn inferred_kinds_cover_repeated_map_and_extension_fields() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+        FileDescriptorSet, MessageOptions,
+    };
+
+    let map_entry = |name: &str, key: Type, value_type_name: &str| DescriptorProto {
+        name: Some(name.into()),
+        field: vec![
+            scalar_field("key", 1, key),
+            typeless_field("value", 2, Label::LABEL_OPTIONAL, value_type_name),
+        ],
+        options: buffa::MessageField::some(MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }),
         ..Default::default()
-    });
+    };
+
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("inferred-containers.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("Target".into()),
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Extendable".into()),
+                    extension_range: vec![ExtensionRange {
+                        start: Some(100),
+                        end: Some(200),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Holder".into()),
+                    field: vec![
+                        typeless_field("kinds", 1, Label::LABEL_REPEATED, ".valid.test.Kind"),
+                        typeless_field(
+                            "by_id",
+                            2,
+                            Label::LABEL_REPEATED,
+                            ".valid.test.Holder.ByIdEntry",
+                        ),
+                        typeless_field(
+                            "by_name",
+                            3,
+                            Label::LABEL_REPEATED,
+                            ".valid.test.Holder.ByNameEntry",
+                        ),
+                        typeless_field("targets", 4, Label::LABEL_REPEATED, ".valid.test.Target"),
+                    ],
+                    nested_type: vec![
+                        map_entry("ByIdEntry", Type::TYPE_INT32, ".valid.test.Target"),
+                        map_entry("ByNameEntry", Type::TYPE_STRING, ".valid.test.Kind"),
+                    ],
+                    extension: vec![FieldDescriptorProto {
+                        extendee: Some(".valid.test.Extendable".into()),
+                        ..typeless_field("kind_ext", 101, Label::LABEL_OPTIONAL, ".valid.test.Kind")
+                    }],
+                    ..Default::default()
+                },
+            ],
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Kind".into()),
+                value: vec![enum_value("KIND_UNSPECIFIED", 0)],
+                ..Default::default()
+            }],
+            extension: vec![FieldDescriptorProto {
+                extendee: Some(".valid.test.Extendable".into()),
+                ..typeless_field(
+                    "target_ext",
+                    100,
+                    Label::LABEL_OPTIONAL,
+                    ".valid.test.Target",
+                )
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("fields with an inferred kind link");
+
+    let target = SingularKind::Message(pool.message_index("valid.test.Target").unwrap());
+    let kind = SingularKind::Enum(pool.enum_index("valid.test.Kind").unwrap());
+    let holder = pool.message_by_name("valid.test.Holder").unwrap();
+    assert_eq!(holder.field(1).unwrap().kind(), FieldKind::List(kind));
     assert_eq!(
-        kind,
-        FieldKind::Singular(SingularKind::Scalar(ScalarType::Double))
+        holder.field(2).unwrap().kind(),
+        FieldKind::Map {
+            key: ScalarType::Int32,
+            value: target,
+        }
     );
+    assert_eq!(
+        holder.field(3).unwrap().kind(),
+        FieldKind::Map {
+            key: ScalarType::String,
+            value: kind,
+        }
+    );
+    assert_eq!(holder.field(4).unwrap().kind(), FieldKind::List(target));
+    assert_eq!(
+        pool.extension_by_name("valid.test.target_ext")
+            .unwrap()
+            .field()
+            .kind(),
+        FieldKind::Singular(target)
+    );
+    assert_eq!(
+        pool.extension_by_name("valid.test.Holder.kind_ext")
+            .unwrap()
+            .field()
+            .kind(),
+        FieldKind::Singular(kind)
+    );
+}
+
+/// An inferred message field takes its wire encoding from the edition
+/// features, as a field with `TYPE_MESSAGE` does.
+#[test]
+fn inferred_message_fields_follow_the_message_encoding_feature() {
+    use buffa_descriptor::generated::descriptor::feature_set::MessageEncoding;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FeatureSet, FieldDescriptorProto, FieldOptions,
+        FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("inferred-delimited.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("editions".into()),
+            edition: Some(Edition::EDITION_2023),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("Target".into()),
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Holder".into()),
+                    field: vec![
+                        typeless_field("prefixed", 1, Label::LABEL_OPTIONAL, ".valid.test.Target"),
+                        FieldDescriptorProto {
+                            options: FieldOptions {
+                                features: buffa::MessageField::some(FeatureSet {
+                                    message_encoding: Some(MessageEncoding::DELIMITED),
+                                    ..Default::default()
+                                }),
+                                ..Default::default()
+                            }
+                            .into(),
+                            ..typeless_field(
+                                "delimited",
+                                2,
+                                Label::LABEL_OPTIONAL,
+                                ".valid.test.Target",
+                            )
+                        },
+                    ],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .expect("fields with an inferred kind link");
+
+    let target = SingularKind::Message(pool.message_index("valid.test.Target").unwrap());
+    let holder = pool.message_by_name("valid.test.Holder").unwrap();
+    let prefixed = holder.field(1).unwrap();
+    assert_eq!(prefixed.kind(), FieldKind::Singular(target));
+    assert!(!prefixed.is_delimited());
+    let delimited = holder.field(2).unwrap();
+    assert_eq!(delimited.kind(), FieldKind::Singular(target));
+    assert!(delimited.is_delimited());
+}
+
+/// The pool looks a `type_name` up as written. A name that is relative to the
+/// field's scope, here the field's own message, is unresolved like a name
+/// that no type has.
+#[test]
+fn unresolved_inferred_type_names_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    for type_name in [".invalid.test.Missing", "Holder"] {
+        assert_rejected_without_mutating_pool(
+            "inferred-unresolved.proto",
+            "invalid.test.Holder",
+            DescriptorProto {
+                name: Some("Holder".into()),
+                field: vec![typeless_field("value", 1, Label::LABEL_OPTIONAL, type_name)],
+                ..Default::default()
+            },
+            |err| {
+                assert!(
+                    matches!(
+                        err,
+                        PoolError::UnresolvedTypeName { type_name: got, field }
+                            if got == type_name && field == "invalid.test.Holder.value"
+                    ),
+                    "unexpected error: {err}"
+                );
+            },
+        );
+    }
 }
 
 #[test]
@@ -3208,6 +3517,14 @@ mod import_visibility {
             "field b.Holder.thing references \".a.Thing\", which is defined in a.proto \
              and not imported by b.proto; add a.proto to its dependency list"
         );
+    }
+
+    #[test]
+    fn reference_from_a_field_with_no_type_is_checked_for_its_import() {
+        let mut b = referrer("b", &[], &[], ".a.Thing");
+        b.message_type[0].field[0].r#type = None;
+        let err = DescriptorPool::new(set(vec![leaf("a"), b])).unwrap_err();
+        assert_not_imported(&err, "b.proto", ".a.Thing", "a.proto");
     }
 
     #[test]
