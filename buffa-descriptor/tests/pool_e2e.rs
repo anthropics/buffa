@@ -4142,3 +4142,313 @@ fn index_ordinals_survive_adding_a_file() {
     assert_eq!(late.index(), before.len());
     assert_eq!(pool.messages().len(), before.len() + 1);
 }
+
+mod message_field_defaults {
+    use super::*;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        descriptor_proto::ExtensionRange, DescriptorProto, Edition, EnumDescriptorProto,
+        FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+    };
+
+    fn file(syntax: Option<&str>, edition: Option<Edition>) -> FileDescriptorProto {
+        FileDescriptorProto {
+            name: Some("message-default.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: syntax.map(str::to_owned),
+            edition,
+            message_type: vec![DescriptorProto {
+                name: Some("Defaults".into()),
+                field: vec![FieldDescriptorProto {
+                    type_name: Some(".invalid.test.Defaults.Payload".into()),
+                    ..scalar_field("payload", 1, Type::TYPE_MESSAGE)
+                }],
+                nested_type: vec![DescriptorProto {
+                    name: Some("Payload".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn syntaxes() -> [(Option<&'static str>, Option<Edition>); 5] {
+        [
+            (None, None),
+            (Some("proto2"), None),
+            (Some("proto3"), None),
+            (Some("editions"), Some(Edition::EDITION_2023)),
+            (Some("editions"), Some(Edition::EDITION_2024)),
+        ]
+    }
+
+    fn extension_file(nested: bool, mut extension: FieldDescriptorProto) -> FileDescriptorProto {
+        let mut file = file(Some("proto2"), None);
+        let message = &mut file.message_type[0];
+        message.field.clear();
+        message.extension_range = vec![ExtensionRange {
+            start: Some(100),
+            end: Some(101),
+            ..Default::default()
+        }];
+        extension.extendee = Some(".invalid.test.Defaults".into());
+        if nested {
+            message.extension.push(extension);
+        } else {
+            file.extension.push(extension);
+        }
+        file
+    }
+
+    fn assert_default_error(err: &PoolError, expected_field: &str) {
+        assert!(
+            matches!(err, PoolError::MessageFieldWithDefault { field } if field == expected_field),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            format!("message field {expected_field} declares a default value")
+        );
+    }
+
+    #[test]
+    fn message_defaults_are_rejected_transactionally() {
+        for (syntax, edition) in syntaxes() {
+            for ty in [Some(Type::TYPE_MESSAGE), None] {
+                for default in ["", "payload"] {
+                    let mut file = file(syntax, edition);
+                    let field = &mut file.message_type[0].field[0];
+                    field.r#type = ty;
+                    field.default_value = Some(default.into());
+                    assert_set_rejected_without_mutating_pool(
+                        "message-default.proto",
+                        "invalid.test.Defaults",
+                        FileDescriptorSet {
+                            file: vec![file],
+                            ..Default::default()
+                        },
+                        |err| assert_default_error(err, "invalid.test.Defaults.payload"),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn group_defaults_are_rejected() {
+        for default in ["", "payload"] {
+            let mut file = file(Some("proto2"), None);
+            file.message_type[0].field[0].r#type = Some(Type::TYPE_GROUP);
+            file.message_type[0].field[0].default_value = Some(default.into());
+            let err = DescriptorPool::new(FileDescriptorSet {
+                file: vec![file],
+                ..Default::default()
+            })
+            .unwrap_err();
+            assert_default_error(&err, "invalid.test.Defaults.payload");
+        }
+    }
+
+    #[test]
+    fn message_extension_defaults_are_rejected() {
+        for nested in [false, true] {
+            for ty in [Some(Type::TYPE_MESSAGE), Some(Type::TYPE_GROUP), None] {
+                for default in ["", "payload"] {
+                    let file = extension_file(
+                        nested,
+                        FieldDescriptorProto {
+                            type_name: Some(".invalid.test.Defaults.Payload".into()),
+                            r#type: ty,
+                            default_value: Some(default.into()),
+                            ..scalar_field("payload", 100, Type::TYPE_MESSAGE)
+                        },
+                    );
+                    let expected_field = if nested {
+                        "invalid.test.Defaults.payload"
+                    } else {
+                        "invalid.test.payload"
+                    };
+                    assert_set_rejected_without_mutating_pool(
+                        "message-default.proto",
+                        expected_field,
+                        FileDescriptorSet {
+                            file: vec![file],
+                            ..Default::default()
+                        },
+                        |err| assert_default_error(err, expected_field),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn valid_extensions_are_accepted() {
+        for nested in [false, true] {
+            for ty in [Some(Type::TYPE_MESSAGE), Some(Type::TYPE_GROUP), None] {
+                let pool = DescriptorPool::new(FileDescriptorSet {
+                    file: vec![extension_file(
+                        nested,
+                        FieldDescriptorProto {
+                            r#type: ty,
+                            type_name: Some(".invalid.test.Defaults.Payload".into()),
+                            ..scalar_field("payload", 100, Type::TYPE_MESSAGE)
+                        },
+                    )],
+                    ..Default::default()
+                })
+                .unwrap();
+                let expected_field = if nested {
+                    "invalid.test.Defaults.payload"
+                } else {
+                    "invalid.test.payload"
+                };
+                assert!(pool.extension_by_name(expected_field).is_some());
+            }
+            let pool = DescriptorPool::new(FileDescriptorSet {
+                file: vec![extension_file(
+                    nested,
+                    FieldDescriptorProto {
+                        default_value: Some("".into()),
+                        ..scalar_field("payload", 100, Type::TYPE_STRING)
+                    },
+                )],
+                ..Default::default()
+            })
+            .unwrap();
+            let expected_field = if nested {
+                "invalid.test.Defaults.payload"
+            } else {
+                "invalid.test.payload"
+            };
+            assert!(pool.extension_by_name(expected_field).is_some());
+        }
+    }
+
+    #[test]
+    fn oneof_message_defaults_are_rejected() {
+        let mut file = file(Some("proto2"), None);
+        let message = &mut file.message_type[0];
+        message.oneof_decl = vec![OneofDescriptorProto {
+            name: Some("choice".into()),
+            ..Default::default()
+        }];
+        message.field[0].oneof_index = Some(0);
+        message.field[0].default_value = Some("".into());
+        let err = DescriptorPool::new(FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        })
+        .unwrap_err();
+        assert_default_error(&err, "invalid.test.Defaults.payload");
+    }
+
+    #[test]
+    fn decode_rejects_message_defaults() {
+        use buffa::Message;
+
+        for ty in [Some(Type::TYPE_MESSAGE), Some(Type::TYPE_GROUP), None] {
+            for default in ["", "payload"] {
+                let mut file = file(Some("proto2"), None);
+                file.message_type[0].field[0].r#type = ty;
+                file.message_type[0].field[0].default_value = Some(default.into());
+                let bytes = FileDescriptorSet {
+                    file: vec![file],
+                    ..Default::default()
+                }
+                .encode_to_vec();
+                let err = DescriptorPool::decode(&bytes).unwrap_err();
+                assert_default_error(&err, "invalid.test.Defaults.payload");
+            }
+        }
+    }
+
+    #[test]
+    fn message_fields_without_defaults_are_accepted() {
+        for (syntax, edition) in syntaxes() {
+            for ty in [Some(Type::TYPE_MESSAGE), None] {
+                let mut file = file(syntax, edition);
+                file.message_type[0].field[0].r#type = ty;
+                let pool = DescriptorPool::new(FileDescriptorSet {
+                    file: vec![file],
+                    ..Default::default()
+                })
+                .unwrap();
+                assert!(matches!(
+                    pool.message_by_name("invalid.test.Defaults")
+                        .unwrap()
+                        .field(1)
+                        .unwrap()
+                        .kind(),
+                    FieldKind::Singular(SingularKind::Message(_))
+                ));
+            }
+        }
+        let mut file = file(Some("proto2"), None);
+        file.message_type[0].field[0].r#type = Some(Type::TYPE_GROUP);
+        let pool = DescriptorPool::new(FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(pool
+            .message_by_name("invalid.test.Defaults")
+            .unwrap()
+            .field(1)
+            .unwrap()
+            .is_delimited());
+    }
+
+    #[test]
+    fn scalar_and_enum_defaults_are_accepted() {
+        for oneof in [false, true] {
+            for (ty, default) in [
+                (Type::TYPE_INT32, "0"),
+                (Type::TYPE_INT32, "7"),
+                (Type::TYPE_BOOL, "false"),
+                (Type::TYPE_STRING, ""),
+                (Type::TYPE_STRING, "text"),
+                (Type::TYPE_BYTES, ""),
+                (Type::TYPE_ENUM, "CHOICE_ZERO"),
+            ] {
+                let mut file = file(Some("proto2"), None);
+                let message = &mut file.message_type[0];
+                message.enum_type = vec![EnumDescriptorProto {
+                    name: Some("Choice".into()),
+                    value: vec![enum_value("CHOICE_ZERO", 0)],
+                    ..Default::default()
+                }];
+                message.field = vec![FieldDescriptorProto {
+                    type_name: (ty == Type::TYPE_ENUM)
+                        .then(|| ".invalid.test.Defaults.Choice".into()),
+                    default_value: Some(default.into()),
+                    ..scalar_field("value", 1, ty)
+                }];
+                if oneof {
+                    message.oneof_decl = vec![OneofDescriptorProto {
+                        name: Some("choice".into()),
+                        ..Default::default()
+                    }];
+                    message.field[0].oneof_index = Some(0);
+                } else {
+                    message.field[0].label = Some(Label::LABEL_REQUIRED);
+                }
+                let pool = DescriptorPool::new(FileDescriptorSet {
+                    file: vec![file],
+                    ..Default::default()
+                })
+                .unwrap();
+                assert_eq!(
+                    pool.file_by_name("message-default.proto")
+                        .unwrap()
+                        .message_type[0]
+                        .field[0]
+                        .default_value
+                        .as_deref(),
+                    Some(default)
+                );
+            }
+        }
+    }
+}

@@ -1,0 +1,3 @@
+kind: Fixed
+body: buffa-descriptor rejects explicit defaults on message and group fields, including extensions and fields with an inferred message type, matching protoc.
+time: 2026-10-05T23:40:55.918498+02:00
