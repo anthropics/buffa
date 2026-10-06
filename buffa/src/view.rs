@@ -1933,8 +1933,10 @@ impl<'s, 'a, V: LazyMessageView<'a>> IntoIterator for &'s LazyRepeatedView<'a, V
 
 /// Iterator over a [`LazyRepeatedView`], decoding each element on access.
 ///
-/// [`nth`](Iterator::nth) and [`nth_back`](DoubleEndedIterator::nth_back)
-/// advance past skipped elements without decoding them.
+/// [`nth`](Iterator::nth), [`nth_back`](DoubleEndedIterator::nth_back),
+/// [`count`](Iterator::count) and [`last`](Iterator::last) skip elements
+/// without decoding them, so a skipped element is not validated: a malformed
+/// element is reported only when it is yielded.
 #[derive(Clone, Debug)]
 pub struct LazyRepeatedIter<'s, 'a, V> {
     inner: core::slice::Iter<'s, &'a [u8]>,
@@ -1959,6 +1961,16 @@ impl<'a, V: LazyMessageView<'a>> Iterator for LazyRepeatedIter<'_, 'a, V> {
         self.inner
             .nth(n)
             .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
+    }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
     }
 
     #[inline]
@@ -4957,6 +4969,25 @@ mod tests {
             assert_eq!(decode_calls(), 2);
             assert!(iter.next().is_none());
             assert_eq!(decode_calls(), 2);
+        }
+
+        #[test]
+        fn count_and_last_decode_at_most_one_element() {
+            let rep = repeated(&[b"\x08\x01", b"\x08\x02", b"\x08\x03"]);
+            assert_eq!(rep.iter().count(), 3);
+            assert_eq!(decode_calls(), 0);
+            assert_eq!(rep.iter().last().unwrap().unwrap().0.id, 3);
+            assert_eq!(decode_calls(), 1);
+            assert!(repeated(&[]).iter().last().is_none());
+            assert_eq!(decode_calls(), 0);
+        }
+
+        #[test]
+        fn count_and_last_do_not_validate_skipped_elements() {
+            let rep = repeated(&[b"\xff", b"\x08\x02"]);
+            assert_eq!(rep.iter().count(), 2);
+            assert_eq!(rep.iter().last().unwrap().unwrap().0.id, 2);
+            assert_eq!(decode_calls(), 1);
         }
 
         #[test]
