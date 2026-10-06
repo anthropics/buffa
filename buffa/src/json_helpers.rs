@@ -1935,7 +1935,8 @@ impl<E: crate::Enumeration> serde::Serialize for EnumProtoNameRef<'_, E> {
 
 /// Predicates for `#[serde(skip_serializing_if = "...")]` on proto3 fields.
 ///
-/// In proto3 JSON, fields whose value equals the type default are omitted.
+/// In proto3 JSON, fields at their protobuf default are omitted. Floating-point
+/// defaults are positive zero; negative zero is preserved.
 /// Attach these to the appropriate field types in generated `#[derive(Serialize)]`
 /// structs to match that behaviour.
 pub mod skip_if {
@@ -1954,15 +1955,14 @@ pub mod skip_if {
     pub fn is_false(v: &bool) -> bool {
         !*v
     }
-    /// Treats `-0.0` as zero (IEEE 754: `-0.0 == 0.0`), so negative zero
-    /// is omitted from JSON output. Correct for proto3 JSON but a
-    /// round-trip through JSON will not preserve `-0.0`.
+    /// Omits only positive zero. Negative zero is a distinct protobuf value
+    /// and must be preserved in JSON output.
     pub fn is_zero_f32(v: &f32) -> bool {
-        *v == 0.0
+        v.to_bits() == 0
     }
-    /// See [`is_zero_f32`] — same `-0.0` behavior applies.
+    /// See [`is_zero_f32`] — negative zero is also preserved for doubles.
     pub fn is_zero_f64(v: &f64) -> bool {
-        *v == 0.0
+        v.to_bits() == 0
     }
     pub fn is_empty_str(v: &str) -> bool {
         v.is_empty()

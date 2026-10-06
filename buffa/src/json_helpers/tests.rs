@@ -623,6 +623,44 @@ fn skip_if_numeric_predicates() {
 }
 
 #[test]
+fn skip_if_float_only_omits_positive_zero() {
+    assert!(skip_if::is_zero_f32(&0.0));
+    for value in [
+        -0.0,
+        f32::from_bits(1),
+        -f32::from_bits(1),
+        1.0,
+        -1.0,
+        f32::MAX,
+        f32::MIN,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NAN,
+    ] {
+        assert!(!skip_if::is_zero_f32(&value), "value: {value:?}");
+    }
+}
+
+#[test]
+fn skip_if_double_only_omits_positive_zero() {
+    assert!(skip_if::is_zero_f64(&0.0));
+    for value in [
+        -0.0,
+        f64::from_bits(1),
+        -f64::from_bits(1),
+        1.0,
+        -1.0,
+        f64::MAX,
+        f64::MIN,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NAN,
+    ] {
+        assert!(!skip_if::is_zero_f64(&value), "value: {value:?}");
+    }
+}
+
+#[test]
 fn skip_if_bool_predicates() {
     assert!(skip_if::is_false(&false));
     assert!(!skip_if::is_false(&true));
