@@ -1,8 +1,9 @@
-//! Pre-pass for [`CodeGenConfig::idiomatic_field_names`]: plan the
-//! snake_case Rust source names for proto fields and oneofs, resolving
-//! collisions before any code is emitted.
+//! Pre-passes that plan the Rust source names of proto fields and oneofs
+//! before any code is emitted: the snake_case conversion for
+//! [`CodeGenConfig::idiomatic_field_names`], and the keyword-escape renames,
+//! which apply with the option on or off.
 //!
-//! The conversion itself ([`idiomatic_snake_case`]) is context-free and
+//! The snake_case conversion itself ([`idiomatic_snake_case`]) is context-free and
 //! applied at ident-construction time by
 //! [`CodeGenContext::field_rust_name`] /
 //! [`CodeGenContext::oneof_rust_name`]; this pass only records the
@@ -69,16 +70,38 @@
 //! only *originate* in a proto2 file — but a proto3 message compiled in the
 //! same run can still inherit its adjustment through the shared key.
 //!
+//! ## Keyword-escaped names
+//!
+//! A second plan, [`plan_keyword_escapes`], runs with the option on or off.
+//! `self`, `super`, `crate` and `Self` cannot be raw identifiers, so
+//! [`make_field_ident`] appends `_` to them. When that name is also the name
+//! of another member of the message (a field `self` next to a field `self_`,
+//! or a field and a oneof in either order), the keyword member takes more
+//! underscores until its name is free: `self__`. The member whose proto name
+//! is `self_` keeps its name.
+//!
+//! The plan covers the messages of the files that the run generates, and uses
+//! the keying described in [Cross-message keying](#cross-message-keying).
+//! Every one of those messages that declares the same `(name, number)` field,
+//! or a oneof of the same name, gets the same Rust name. The name is free in
+//! all of them, and each one records a
+//! [`CodeGenWarning::KeywordEscapedNamesAdjusted`]. A rename originates only
+//! in a message that has both members.
+//!
 //! [`IdiomaticFieldNamesAdjusted`]: crate::CodeGenWarning::IdiomaticFieldNamesAdjusted
+//! [`make_field_ident`]: crate::idents::make_field_ident
+//! [`CodeGenWarning::KeywordEscapedNamesAdjusted`]: crate::CodeGenWarning::KeywordEscapedNamesAdjusted
 //!
 //! [`CodeGenConfig::idiomatic_field_names`]: crate::CodeGenConfig::idiomatic_field_names
 //! [`CodeGenContext::field_rust_name`]: crate::context::CodeGenContext::field_rust_name
 //! [`CodeGenContext::oneof_rust_name`]: crate::context::CodeGenContext::oneof_rust_name
 //! [`CodeGenWarning::IdiomaticFieldNamesAdjusted`]: crate::CodeGenWarning::IdiomaticFieldNamesAdjusted
 
-use std::collections::{HashMap, HashSet};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::generated::descriptor::{DescriptorProto, FileDescriptorProto};
+use crate::idents::{is_suffix_escaped, SUFFIX_ESCAPED_KEYWORDS};
 use crate::impl_message::is_real_oneof_member;
 use crate::CodeGenWarning;
 
@@ -145,6 +168,245 @@ pub(crate) struct FieldNamePlan {
     pub warnings: Vec<CodeGenWarning>,
 }
 
+/// The Rust source name of a field under the `idiomatic_field_names` plan,
+/// before any keyword-escape rename: the proto name with the option off,
+/// otherwise the plan's entry for `(name, number)` or the snake_case
+/// conversion.
+pub(crate) fn planned_field_name<'n>(
+    idiomatic_field_names: bool,
+    field_renames: &'n HashMap<(String, i32), String>,
+    name: &'n str,
+    number: i32,
+) -> Cow<'n, str> {
+    if !idiomatic_field_names {
+        return Cow::Borrowed(name);
+    }
+    if !field_renames.is_empty() {
+        if let Some(renamed) = field_renames.get(&(name.to_string(), number)) {
+            return Cow::Borrowed(renamed);
+        }
+    }
+    snake_case_or_borrowed(name)
+}
+
+/// The oneof counterpart of [`planned_field_name`]: a oneof in
+/// `oneof_keep_verbatim` keeps its proto name.
+pub(crate) fn planned_oneof_name<'n>(
+    idiomatic_field_names: bool,
+    oneof_keep_verbatim: &HashSet<String>,
+    name: &'n str,
+) -> Cow<'n, str> {
+    if !idiomatic_field_names || oneof_keep_verbatim.contains(name) {
+        return Cow::Borrowed(name);
+    }
+    snake_case_or_borrowed(name)
+}
+
+fn snake_case_or_borrowed(name: &str) -> Cow<'_, str> {
+    let converted = idiomatic_snake_case(name);
+    if converted == name {
+        Cow::Borrowed(name)
+    } else {
+        Cow::Owned(converted)
+    }
+}
+
+/// Rust source names for the fields and oneofs that the keyword-escape plan
+/// renames; see the module docs.
+#[derive(Debug, Default)]
+pub(crate) struct KeywordEscapePlan {
+    /// `(proto_name, field_number)` → Rust source name.
+    pub field_renames: HashMap<(String, i32), String>,
+    /// Proto oneof name → Rust source name.
+    pub oneof_renames: HashMap<String, String>,
+    /// One warning per message that has a renamed member.
+    pub warnings: Vec<CodeGenWarning>,
+}
+
+/// One struct member of a message that has a suffix-escaped member.
+struct EscapeMember {
+    proto_name: String,
+    /// `Some(number)` for a field, `None` for a oneof.
+    number: Option<i32>,
+    /// The Rust source name before keyword escaping.
+    rust_name: String,
+}
+
+struct EscapeScope {
+    fqn: String,
+    members: Vec<EscapeMember>,
+}
+
+/// Plan the names of members that [`make_field_ident`] suffixes with `_`
+/// (`self`, `super`, `crate`, `Self`) where the suffixed name is also the
+/// name of another member of the message: `self` next to `self_` becomes
+/// `self__`.
+///
+/// `field_renames` and `oneof_keep_verbatim` are the `idiomatic_field_names`
+/// plan, empty when the option is off.
+///
+/// Only messages of the files in `generated_files` take part (every file
+/// when `None`). A message that this run does not emit has no Rust name to
+/// plan, and a collision in an imported file must not rename a member of a
+/// generated message.
+///
+/// [`make_field_ident`]: crate::idents::make_field_ident
+pub(crate) fn plan_keyword_escapes(
+    files: &[FileDescriptorProto],
+    idiomatic_field_names: bool,
+    field_renames: &HashMap<(String, i32), String>,
+    oneof_keep_verbatim: &HashSet<String>,
+    generated_files: Option<&HashSet<String>>,
+) -> KeywordEscapePlan {
+    let generated = files.iter().filter(|file| {
+        generated_files.map_or(true, |names| {
+            names.contains(file.name.as_deref().unwrap_or_default())
+        })
+    });
+    let mut scopes: Vec<EscapeScope> = Vec::new();
+    for_each_message(generated, |fqn, msg| {
+        if !has_keyword_named_member(msg) {
+            return;
+        }
+        let members: Vec<EscapeMember> = struct_members(msg)
+            .into_iter()
+            .map(|(name, number)| {
+                let rust_name = match number {
+                    Some(number) => {
+                        planned_field_name(idiomatic_field_names, field_renames, name, number)
+                    }
+                    None => planned_oneof_name(idiomatic_field_names, oneof_keep_verbatim, name),
+                };
+                EscapeMember {
+                    proto_name: name.to_string(),
+                    number,
+                    rust_name: rust_name.into_owned(),
+                }
+            })
+            .collect();
+        if members.iter().any(|m| is_suffix_escaped(&m.rust_name)) {
+            scopes.push(EscapeScope {
+                fqn: fqn.to_string(),
+                members,
+            });
+        }
+    });
+
+    // Keys whose escaped identifier is another member's name in some message,
+    // with the key's source name. Ordered, so the plan is deterministic.
+    let mut colliding: BTreeMap<(&str, Option<i32>), &str> = BTreeMap::new();
+    for scope in &scopes {
+        for member in &scope.members {
+            if !is_suffix_escaped(&member.rust_name) {
+                continue;
+            }
+            let escaped = format!("{}_", member.rust_name);
+            if scope.members.iter().any(|m| m.rust_name == escaped) {
+                colliding.insert((&member.proto_name, member.number), &member.rust_name);
+            }
+        }
+    }
+
+    let mut plan = KeywordEscapePlan::default();
+    for ((proto_name, number), rust_name) in colliding {
+        // The rename applies to every message that has this key, so the new
+        // name has to be free in all of them.
+        let taken = |candidate: &str| {
+            scopes
+                .iter()
+                .filter(|scope| {
+                    scope
+                        .members
+                        .iter()
+                        .any(|m| m.proto_name == proto_name && m.number == number)
+                })
+                .any(|scope| scope.members.iter().any(|m| m.rust_name == candidate))
+        };
+        let mut renamed = format!("{rust_name}__");
+        while taken(&renamed) {
+            renamed.push('_');
+        }
+        match number {
+            Some(number) => {
+                plan.field_renames
+                    .insert((proto_name.to_string(), number), renamed);
+            }
+            None => {
+                plan.oneof_renames.insert(proto_name.to_string(), renamed);
+            }
+        }
+    }
+
+    for scope in &scopes {
+        let mut assignments: Vec<(String, String)> = scope
+            .members
+            .iter()
+            .filter_map(|member| {
+                let renamed = match member.number {
+                    Some(number) => plan.field_renames.get(&(member.proto_name.clone(), number)),
+                    None => plan.oneof_renames.get(&member.proto_name),
+                }?;
+                Some((member.proto_name.clone(), renamed.clone()))
+            })
+            .collect();
+        if assignments.is_empty() {
+            continue;
+        }
+        assignments.sort();
+        plan.warnings
+            .push(CodeGenWarning::KeywordEscapedNamesAdjusted {
+                message_name: scope.fqn.clone(),
+                assignments,
+            });
+    }
+
+    plan
+}
+
+/// Whether a member of `msg` can have a suffix-escaped Rust source name (one
+/// of [`SUFFIX_ESCAPED_KEYWORDS`]). The snake_case conversion only inserts
+/// underscores and lowercases, so the proto name of such a member is one of
+/// those words in some letter case.
+fn has_keyword_named_member(msg: &DescriptorProto) -> bool {
+    let fields = msg.field.iter().filter_map(|field| field.name.as_deref());
+    let oneofs = msg.oneof_decl.iter().filter_map(|o| o.name.as_deref());
+    fields.chain(oneofs).any(|name| {
+        SUFFIX_ESCAPED_KEYWORDS
+            .iter()
+            .any(|keyword| name.eq_ignore_ascii_case(keyword))
+    })
+}
+
+/// The struct namespace of `msg`: each field that is not a member of a real
+/// oneof (a proto3 `optional` field is such a field), and each real oneof, as
+/// `(proto_name, field number)` with `None` for a oneof. The members of a real
+/// oneof are enum variants, and a synthetic oneof has no struct field.
+fn struct_members(msg: &DescriptorProto) -> Vec<(&str, Option<i32>)> {
+    let mut members = Vec::new();
+    let mut real_oneofs: HashSet<i32> = HashSet::new();
+    for field in &msg.field {
+        let Some(name) = field.name.as_deref() else {
+            continue;
+        };
+        if is_real_oneof_member(field) {
+            if let Some(idx) = field.oneof_index {
+                real_oneofs.insert(idx);
+            }
+            continue;
+        }
+        members.push((name, Some(field.number.unwrap_or(0))));
+    }
+    for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
+        let Some(name) = oneof.name.as_deref() else {
+            continue;
+        };
+        if real_oneofs.contains(&i32::try_from(idx).unwrap_or(i32::MAX)) {
+            members.push((name, None));
+        }
+    }
+    members
+}
+
 /// Rank of an exception entry, for the cross-message conservative merge.
 /// Higher rank wins: verbatim fallback (2) > suffix (1); plain conversion has
 /// no entry at all (rank 0).
@@ -177,7 +439,10 @@ pub(crate) fn plan_field_names(files: &[FileDescriptorProto]) -> FieldNamePlan {
 
 /// Apply `f` to every non-map-entry message in `files`, nested included,
 /// with its dotted FQN (no leading dot).
-fn for_each_message(files: &[FileDescriptorProto], mut f: impl FnMut(&str, &DescriptorProto)) {
+fn for_each_message<'a>(
+    files: impl IntoIterator<Item = &'a FileDescriptorProto>,
+    mut f: impl FnMut(&str, &DescriptorProto),
+) {
     fn recurse(fqn: &str, msg: &DescriptorProto, f: &mut impl FnMut(&str, &DescriptorProto)) {
         if msg
             .options
@@ -266,40 +531,14 @@ fn plan_message(
     plan: &mut FieldNamePlan,
     assigned: &mut HashSet<(String, String)>,
 ) {
-    // Build the struct namespace: non-oneof-member fields + real oneofs.
-    // Oneof member fields appear only as PascalCase enum variants and inside
-    // per-arm scopes, so they cannot collide with struct members.
-    let mut members: Vec<Member<'_>> = Vec::new();
-    let mut real_oneofs: HashSet<i32> = HashSet::new();
-    for field in &msg.field {
-        let Some(name) = field.name.as_deref() else {
-            continue;
-        };
-        if is_real_oneof_member(field) {
-            if let Some(idx) = field.oneof_index {
-                real_oneofs.insert(idx);
-            }
-            continue;
-        }
-        members.push(Member {
-            proto_name: name,
-            number: Some(field.number.unwrap_or(0)),
-            converted: idiomatic_snake_case(name),
-        });
-    }
-    for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
-        let Some(name) = oneof.name.as_deref() else {
-            continue;
-        };
-        if !real_oneofs.contains(&(i32::try_from(idx).unwrap_or(i32::MAX))) {
-            continue; // synthetic oneof (proto3 optional): no struct field
-        }
-        members.push(Member {
-            proto_name: name,
-            number: None,
-            converted: idiomatic_snake_case(name),
-        });
-    }
+    let members: Vec<Member<'_>> = struct_members(msg)
+        .into_iter()
+        .map(|(proto_name, number)| Member {
+            proto_name,
+            number,
+            converted: idiomatic_snake_case(proto_name),
+        })
+        .collect();
 
     // Group by converted candidate; resolve groups with more than one member.
     let mut groups: HashMap<&str, Vec<usize>> = HashMap::new();

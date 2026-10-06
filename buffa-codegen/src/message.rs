@@ -279,7 +279,11 @@ fn generate_message_with_nesting(
             let oneof_name = oneof.name.as_deref()?;
             let field_ident = ctx.oneof_ident(oneof_name);
             let opt = resolver.option_at(ctx, nesting);
+            let rename_note = ctx
+                .oneof_rename_note(oneof_name)
+                .map(|note| quote! { #[doc = #note] });
             let tokens = quote! {
+                #rename_note
                 #oneof_serde_attr
                 pub #field_ident: #opt<#oneof_prefix #enum_ident>,
             };

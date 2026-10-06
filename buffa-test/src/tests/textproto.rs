@@ -80,10 +80,9 @@ fn signed_special_floats_allow_comments_between_sign_and_literal() {
     let infinity: AllScalars = decode_from_str("f_double: -\n# comment\ninfinity").unwrap();
     assert!(infinity.f_double.is_infinite() && infinity.f_double.is_sign_negative());
 
-    let nan: AllScalars = decode_from_str("f_double: -\n# comment\nnan").unwrap();
-    // Sign bit is only guaranteed for the negation, so assert it on the
-    // f64 path rather than through the f32 cast.
+    let nan: AllScalars = decode_from_str("f_double: -\n# comment\nnan f_float: -nan").unwrap();
     assert!(nan.f_double.is_nan() && nan.f_double.is_sign_negative());
+    assert!(nan.f_float.is_nan() && nan.f_float.is_sign_negative());
 }
 
 #[test]

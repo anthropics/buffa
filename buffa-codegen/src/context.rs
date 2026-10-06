@@ -134,6 +134,13 @@ pub struct CodeGenContext<'a> {
     /// Oneof proto names that keep their verbatim spelling under
     /// `idiomatic_field_names` (their snake_case conversion collided).
     oneof_keep_verbatim: HashSet<String>,
+    /// `(proto_name, field_number)` → Rust source name, for a field whose
+    /// keyword-escaped identifier is also another member's name in at least
+    /// one message that declares the field (see [`crate::field_names`]).
+    keyword_field_renames: HashMap<(String, i32), String>,
+    /// Proto oneof name → Rust source name; the oneof counterpart of
+    /// `keyword_field_renames`.
+    keyword_oneof_renames: HashMap<String, String>,
     /// Package-root import phase for `CodeGenConfig::idiomatic_imports`
     /// (file_per_package mode only). [`ImportsPhase::Off`] outside the
     /// two-pass window, so every path resolver below is a no-op by default.
@@ -222,6 +229,17 @@ fn deconflict_package_modules(message_names: &[String], children: &HashSet<Strin
     out
 }
 
+/// The rustdoc note for a `kind` ("field" or "oneof") that the keyword-escape
+/// plan renamed to `resolved` (`self__`).
+fn keyword_rename_note(kind: &str, resolved: &str) -> String {
+    let stem = resolved.trim_end_matches('_');
+    format!(
+        " Note: `{stem}_`, the usual Rust name of this {kind}, is the name of another \
+         member of this message or of a message that declares the same {kind}, so this \
+         {kind} is `{resolved}`."
+    )
+}
+
 impl<'a> CodeGenContext<'a> {
     /// Build a context from file descriptors, populating the type map.
     ///
@@ -234,12 +252,15 @@ impl<'a> CodeGenContext<'a> {
     /// this constructor — use [`for_generate`](Self::for_generate), which
     /// computes and passes the file-level mappings, when generating code
     /// that may reference descriptor types.
+    ///
+    /// This constructor plans keyword-escaped member names over every file
+    /// in `files`. `for_generate` plans them over the generated files only.
     pub fn new(
         files: &'a [FileDescriptorProto],
         config: &'a CodeGenConfig,
         effective_extern_paths: &[(String, String)],
     ) -> Self {
-        Self::with_extern_resolution(files, config, effective_extern_paths, &[])
+        Self::with_extern_resolution(files, config, effective_extern_paths, &[], None)
     }
 
     /// Build a context with both package-level and file-level extern
@@ -264,11 +285,17 @@ impl<'a> CodeGenContext<'a> {
     /// auto-injected descriptor-types routing. They are not part of the
     /// public `CodeGenConfig` API; user-facing `extern_path` entries are keyed
     /// by proto package *or* type FQN.
+    ///
+    /// `generated_files` names the files that this run generates. Only their
+    /// messages take part in the keyword-escape plan
+    /// ([`crate::field_names::plan_keyword_escapes`]); `None` means every
+    /// file.
     pub(crate) fn with_extern_resolution(
         files: &'a [FileDescriptorProto],
         config: &'a CodeGenConfig,
         effective_extern_paths: &[(String, String)],
         file_extern_paths: &[(String, String)],
+        generated_files: Option<&HashSet<String>>,
     ) -> Self {
         let mut type_map = HashMap::new();
         let mut package_of = HashMap::new();
@@ -452,16 +479,24 @@ impl<'a> CodeGenContext<'a> {
             }
         }
 
-        // Plan the idiomatic field-name conversion up front so every
-        // emission site resolves the same Rust name for a field. The plan's
-        // collision warnings are seeded into the sink now and drained with
-        // the rest after generation.
-        let (field_renames, oneof_keep_verbatim, plan_warnings) = if config.idiomatic_field_names {
-            let plan = crate::field_names::plan_field_names(files);
-            (plan.field_renames, plan.oneof_keep_verbatim, plan.warnings)
-        } else {
-            (HashMap::new(), HashSet::new(), Vec::new())
-        };
+        // Plan field and oneof names up front so every emission site resolves
+        // the same Rust name for a member. Both plans' warnings are seeded
+        // into the sink now and drained with the rest after generation.
+        let (field_renames, oneof_keep_verbatim, mut plan_warnings) =
+            if config.idiomatic_field_names {
+                let plan = crate::field_names::plan_field_names(files);
+                (plan.field_renames, plan.oneof_keep_verbatim, plan.warnings)
+            } else {
+                (HashMap::new(), HashSet::new(), Vec::new())
+            };
+        let keyword_plan = crate::field_names::plan_keyword_escapes(
+            files,
+            config.idiomatic_field_names,
+            &field_renames,
+            &oneof_keep_verbatim,
+            generated_files,
+        );
+        plan_warnings.extend(keyword_plan.warnings);
 
         Self {
             files,
@@ -484,32 +519,34 @@ impl<'a> CodeGenContext<'a> {
             table_plan: std::cell::OnceCell::new(),
             field_renames,
             oneof_keep_verbatim,
+            keyword_field_renames: keyword_plan.field_renames,
+            keyword_oneof_renames: keyword_plan.oneof_renames,
             warnings: std::cell::RefCell::new(plan_warnings),
             imports: std::cell::RefCell::new(crate::imports::ImportsPhase::Off),
         }
     }
 
-    /// The Rust source name for a proto field (pre keyword escaping).
+    /// The Rust source name for a proto field, before
+    /// [`make_field_ident`](crate::idents::make_field_ident) escapes it.
     ///
     /// With `idiomatic_field_names` off this is the proto name verbatim.
     /// With it on, the name is snake_case-converted, unless the collision
-    /// plan recorded an exception for `(name, number)` (see
-    /// [`crate::field_names`]).
+    /// plan recorded an exception for `(name, number)`. In both modes, a
+    /// rename that the keyword-escape plan recorded for `(name, number)`
+    /// replaces the result; such a name (`self__`) needs no escaping. See
+    /// [`crate::field_names`].
     pub(crate) fn field_rust_name<'n>(&'n self, name: &'n str, number: i32) -> Cow<'n, str> {
-        if !self.config.idiomatic_field_names {
-            return Cow::Borrowed(name);
-        }
-        if !self.field_renames.is_empty() {
-            if let Some(renamed) = self.field_renames.get(&(name.to_string(), number)) {
+        if !self.keyword_field_renames.is_empty() {
+            if let Some(renamed) = self.keyword_field_renames.get(&(name.to_string(), number)) {
                 return Cow::Borrowed(renamed.as_str());
             }
         }
-        let converted = crate::field_names::idiomatic_snake_case(name);
-        if converted == name {
-            Cow::Borrowed(name)
-        } else {
-            Cow::Owned(converted)
-        }
+        crate::field_names::planned_field_name(
+            self.config.idiomatic_field_names,
+            &self.field_renames,
+            name,
+            number,
+        )
     }
 
     /// The Rust field identifier for a proto field:
@@ -518,20 +555,22 @@ impl<'a> CodeGenContext<'a> {
         crate::idents::make_field_ident(&self.field_rust_name(name, number))
     }
 
-    /// The Rust source name for a oneof (pre keyword escaping).
+    /// The Rust source name for a oneof, before
+    /// [`make_field_ident`](crate::idents::make_field_ident) escapes it.
     ///
     /// Mirrors [`field_rust_name`](Self::field_rust_name); a oneof whose
     /// conversion collided keeps its verbatim proto name.
     pub(crate) fn oneof_rust_name<'n>(&'n self, name: &'n str) -> Cow<'n, str> {
-        if !self.config.idiomatic_field_names || self.oneof_keep_verbatim.contains(name) {
-            return Cow::Borrowed(name);
+        if !self.keyword_oneof_renames.is_empty() {
+            if let Some(renamed) = self.keyword_oneof_renames.get(name) {
+                return Cow::Borrowed(renamed.as_str());
+            }
         }
-        let converted = crate::field_names::idiomatic_snake_case(name);
-        if converted == name {
-            Cow::Borrowed(name)
-        } else {
-            Cow::Owned(converted)
-        }
+        crate::field_names::planned_oneof_name(
+            self.config.idiomatic_field_names,
+            &self.oneof_keep_verbatim,
+            name,
+        )
     }
 
     /// The Rust field identifier for a oneof:
@@ -540,11 +579,15 @@ impl<'a> CodeGenContext<'a> {
         crate::idents::make_field_ident(&self.oneof_rust_name(name))
     }
 
-    /// Doc note for a field whose Rust name was *adjusted* by the
-    /// `idiomatic_field_names` collision plan (an `_f<number>` suffix or a
-    /// verbatim fallback). `None` for the plain conversion — there the
-    /// `Field N: `name`` doc tag already discloses the proto name.
+    /// Doc note for a field whose Rust name was adjusted to resolve a
+    /// collision. Returns `None` when neither plan adjusted the name; the
+    /// ``Field N: `name` `` doc tag then gives the proto name.
     pub(crate) fn field_rename_note(&self, name: &str, number: i32) -> Option<String> {
+        if !self.keyword_field_renames.is_empty() {
+            if let Some(resolved) = self.keyword_field_renames.get(&(name.to_string(), number)) {
+                return Some(keyword_rename_note("field", resolved));
+            }
+        }
         if !self.config.idiomatic_field_names || self.field_renames.is_empty() {
             return None;
         }
@@ -554,6 +597,13 @@ impl<'a> CodeGenContext<'a> {
              member of this message; the Rust name was adjusted to `{resolved}` \
              (`_f<n>` suffixes carry the field number)."
         ))
+    }
+
+    /// Doc note for a oneof that the keyword-escape plan renamed; `None` for
+    /// every other oneof.
+    pub(crate) fn oneof_rename_note(&self, name: &str) -> Option<String> {
+        let resolved = self.keyword_oneof_renames.get(name)?;
+        Some(keyword_rename_note("oneof", resolved))
     }
 
     /// `#[allow(non_snake_case)]` when any of `msg`'s emitted member names —
@@ -764,7 +814,8 @@ impl<'a> CodeGenContext<'a> {
     ) -> Self {
         let paths = crate::effective_extern_paths(files, files_to_generate, config);
         let file_paths = crate::effective_file_extern_paths(files_to_generate, config);
-        Self::with_extern_resolution(files, config, &paths, &file_paths)
+        let generated_files: HashSet<String> = files_to_generate.iter().cloned().collect();
+        Self::with_extern_resolution(files, config, &paths, &file_paths, Some(&generated_files))
     }
 
     /// Look up the Rust type path for a fully-qualified protobuf type name.
