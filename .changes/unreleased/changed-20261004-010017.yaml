@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`MapValue::from_entries` sorts and removes duplicate keys in place** (#540). Normalizing a reflective map built a second vector as large as the first; it now reuses the entry buffer. The last value for a duplicate key still wins.
+time: 2026-10-04T01:00:17.051579+02:00

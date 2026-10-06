@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **A repeated message field whose type shares its short name with a local map entry is a list** (#534). In `message Holder { map<string, int32> items = 1; repeated Other.ItemsEntry records = 2; }`, both `DescriptorPool` and the code generator matched `records` to `Holder`'s own `ItemsEntry` by the last segment of the type name and treated it as a `map<string, int32>`. The reflective binary and JSON codecs and the generated struct now use a list of `Other.ItemsEntry`. The code generator compares the containing message by its short name, so it still takes a regular message for the entry when that message is named like the entry and declared in another message, or in a package, whose last name segment is the same short name.
+time: 2026-10-04T00:27:37.656725+02:00

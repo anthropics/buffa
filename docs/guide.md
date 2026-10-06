@@ -26,7 +26,7 @@ This is **optional** — it does not install the library. It puts the `protoc-ge
 
 | Feature | Default | Enables |
 |---------|---------|---------|
-| `std` | Yes | `std::io::Read` decoders, `HashMap` for map fields, `JsonParseOptions` thread-local (`buffa`); `std::time::{SystemTime, Duration}` conversions (`buffa-types`) |
+| `std` | Yes | `std::io::Read` decoders, `HashMap` for map fields, `JsonParseOptions` thread-local (`buffa`); `std::time::SystemTime` conversions (`buffa-types`) |
 | `json` | No | Proto-canonical JSON via serde (works with `no_std` + `alloc`) |
 | `arbitrary` | No | `arbitrary::Arbitrary` derive on generated types, for fuzzing |
 | `text` (`buffa` only) | No | Text format (`textproto`) encode/decode — see [Text format](#text-format-textproto) |
@@ -348,6 +348,8 @@ buffa_build::Config::new()
 
 A representation is **any type that implements `buffa::ProtoString` / `buffa::ProtoBytes`**. Each trait requires a `from_wire(WirePayload<'_>) -> Result<Self, DecodeError>` decode constructor, plus the supertraits `Clone + PartialEq + Default + Debug + Send + Sync`, `Deref` to `str` / `[u8]`, `AsRef`, and `From<String>` / `From<Vec<u8>>`. `from_wire` lets the type decide validation and borrow-vs-own — an inline string type stores a short value with no heap allocation. buffa ships the built-in impls for `String`, `Vec<u8>`, and `bytes::Bytes`; for `bytes`, `bytes_type(BytesRepr::Bytes)` (and the `use_bytes_type` / `use_bytes_type_in` aliases) selects `bytes::Bytes`, which decodes zero-copy from a `Bytes`-backed buffer.
 
+A custom bytes type that wraps `bytes::Bytes` can decode without a copy: set `ProtoBytes::PREFERS_OWNED_PAYLOAD` to `true`, and build the value from `WirePayload::into_bytes()` in `from_wire`. When the input is a `bytes::Bytes`, each value then shares the input's allocation and keeps it allocated; from a `&[u8]` input each value is still a copy. The const's documentation has a complete example. The remote derive leaves the const at `false`, so such a type replaces the derive with hand-written impls.
+
 **A foreign type cannot implement these traits directly** (orphan rule), so wrap it in a small local newtype. The `buffa-remote-derive` crate generates the newtype's buffa-facing surface (the trait impl plus `Deref`/`AsRef`/`From`) from a single `#[buffa(remote = ...)]` annotation; the hand-written form below is what that derive replaces. The `buffa-smolstr` crate is the ready-made newtype for `smol_str::SmolStr`:
 
 ```rust,ignore
@@ -451,6 +453,12 @@ use proto::google::r#type::LatLng;
 This is the standard Rust mechanism for using keywords as identifiers. It applies to all Rust keywords (`type`, `match`, `async`, `mod`, etc.).
 
 **Rust keywords in field names** are also escaped. Most keywords use raw identifiers (`r#type`, `r#match`), but `self`, `super`, `Self`, and `crate` cannot be raw identifiers and are suffixed with `_` instead (`self_`, `super_`). This matches prost's convention.
+
+**A keyword member next to a member that has the escaped name** takes a second underscore. Next to a member named `self_`, the member named `self` is generated as `self__`, and as `self___` when that name is taken too. The member whose proto name is `self_` keeps its name. The view field, the `FooOwnedView` accessor and the setter (where the field has one) use the same name: `view.self__`, `with_self__`. Wire, JSON and text-format names do not change.
+
+The two members are a field and a oneof in either order, in any syntax, or two fields. protoc accepts the two fields `self` and `self_` only in proto2, or with `features.json_format = LEGACY_BEST_EFFORT` in an editions file. With `idiomatic_field_names`, a proto3 field `Self` next to `self_` is such a pair too. Two oneofs named `self` and `self_` are rejected instead; see [Naming](#naming) under oneofs.
+
+Each affected message produces a build warning (`CodeGenWarning::KeywordEscapedNamesAdjusted`). A field is matched by its name and number, and a oneof by its name, across the files that the run generates. Another generated message that declares the same member gets the same Rust name and the warning. So two edits to a schema change existing Rust names. Adding a member named `self_` to a message that has `self` gives the name `self_` to the new member. Adding such a pair to one message renames the matching member of the others.
 
 **Message and enum names** keep the spelling of the `.proto` file, unless the name is a Rust keyword or one of ten primitive type names. A strict or reserved keyword of any edition through 2024 (`type`, `match`, `Self`, `gen`, `final`), and the primitive type names that generated code uses (`bool`, `str`, `u8`, `usize`, `i32`, `i64`, `u32`, `u64`, `f32` and `f64`), get a trailing underscore: `message type` generates `pub struct type_`, and `message bool` generates `pub struct bool_`. Unlike a field name, a type name never becomes a raw identifier (`r#type`): a derive macro that builds an identifier from the type name, as `#[derive(Arbitrary)]` does, panics on one. With `type_name_prefix` set, the prefix is added first and the rule applies to the prefixed name, so prefix `Rpc` and `message bool` generate `pub struct Rpcbool`. View types append to the escaped name: `bool_View`, `type_View`. The module that holds a message's nested types is named from the proto name, not from the escaped type name, by the rule below: a message nested in `bool` is `bool::Inner`, and one nested in `type` is `r#type::Inner`. The proto name is unchanged in JSON, the text format, type URLs and reflection.
 
@@ -1771,6 +1779,8 @@ let msg = with_json_parse_options(&opts, || {
 })?;
 ```
 
+The option covers enum values that the enum does not declare. A value that cannot be an enum value, such as `true` or `1.5`, is a parse error with the option on or off; the `buffa::json` module docs give the result for each kind of field.
+
 ## Text format (textproto)
 
 The protobuf text format is a human-readable debug representation — useful
@@ -1864,7 +1874,7 @@ Import well-known types by name (`use buffa_types::google::protobuf::Timestamp;`
 
 ### Timestamp and Duration
 
-With the `std` feature, `Timestamp` and `Duration` convert to/from `std::time` types:
+With the `std` feature, `Timestamp` converts to/from `std::time::SystemTime`:
 
 ```rust,ignore
 use buffa_types::google::protobuf::Timestamp;
@@ -1879,6 +1889,16 @@ let time: std::time::SystemTime = ts.try_into()?;
 // From components
 let ts = Timestamp::from_unix(1_700_000_000, 500_000_000);
 let ts = Timestamp::from_unix_secs(1_700_000_000);
+```
+
+`Duration` converts to/from `core::time::Duration`, including without the `std` feature. `std::time::Duration` is the same type, so the conversions also accept it:
+
+```rust,ignore
+use buffa_types::google::protobuf::Duration;
+use core::time::Duration as CoreDuration;
+
+let duration = Duration::from(CoreDuration::new(3, 500_000_000));
+let time: CoreDuration = duration.try_into()?;
 ```
 
 ### Any
@@ -1979,7 +1999,7 @@ cargo add buffa-types --no-default-features
 In `no_std` mode:
 
 - Map fields use `hashbrown::HashMap` instead of `std::collections::HashMap`
-- `std::time` conversions on Timestamp/Duration are unavailable
+- `Timestamp` conversions to/from `std::time::SystemTime` are unavailable; `Duration` conversions to/from `core::time::Duration` remain available
 - Scoped [`with_json_parse_options`] is unavailable (requires thread-local); use [`set_global_json_parse_options`] to set options process-wide once at startup. The options cannot vary between individual parse calls. The `buffa::json` module docs list how `ignore_unknown_enum_values` treats each field shape, and the one shape where `no_std` differs.
 - JSON serialization via serde works fully (both `serde` and `serde_json` support `no_std` + `alloc`)
 
