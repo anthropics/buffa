@@ -2094,8 +2094,8 @@ pub(crate) fn is_debug_redacted(
 ///
 /// The parent is compared by `msg`'s short name, because the callers do not
 /// have its fully-qualified name. A regular message named like a local entry
-/// and nested in another message with this message's short name is taken
-/// for the entry.
+/// is taken for the entry when it is declared in another message, or in a
+/// package, whose last name segment is this message's short name.
 pub(crate) fn find_map_entry<'a>(
     msg: &'a DescriptorProto,
     field: &crate::generated::descriptor::FieldDescriptorProto,
