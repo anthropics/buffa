@@ -1,3 +1,4 @@
 kind: Added
-body: '**Field mask composition.** `FieldMask::union` and `FieldMask::intersection` return normalized masks using ancestor-aware path coverage. Both work without `std` and leave the input masks unchanged.'
+body: |-
+    **`FieldMask::union` and `FieldMask::intersection`** (#571). Each returns a normalized mask. A parent path covers its children, so the union of `a` and `a.b` is `a` and their intersection is `a.b`. Both work without `std` and leave their inputs unchanged; the result carries the paths only, without the inputs' unknown fields.
 time: 2026-10-06T00:38:23.760032+02:00
