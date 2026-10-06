@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**buffa-build accepts current-directory components in proto paths.** Requested files and include roots now match protoc descriptor names when paths contain leading or redundant `.` components.'
+time: 2026-10-07T00:05:56.467789+02:00
