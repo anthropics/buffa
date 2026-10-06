@@ -210,11 +210,18 @@ pub enum PoolError {
     },
     /// A field had no `type_name` for a `TYPE_MESSAGE`/`TYPE_GROUP`/`TYPE_ENUM`.
     MissingTypeName { field: String },
-    /// A field whose `type` is set to a scalar carries a non-empty
-    /// `type_name`, which is only valid for message, group, and enum fields.
+    /// A field whose `type` is set to a scalar type also has a non-empty
+    /// `type_name`. Only a message, group or enum field, or a field with
+    /// `type` unset, may have one.
     UnexpectedTypeName { field: String, type_name: String },
     /// A field's `type_name` did not resolve to any registered message or
     /// enum. Carries the dangling name and the field's fully-qualified name.
+    /// A field with `type` unset takes its kind from the type the name
+    /// resolves to, so it reports this error as well.
+    ///
+    /// The pool looks a `type_name` up as a fully-qualified name, with or
+    /// without the leading dot. A name relative to the field's scope, which
+    /// protoc resolves before it writes a descriptor, is reported here.
     UnresolvedTypeName { type_name: String, field: String },
     /// A field's `type_name` resolved to the wrong kind (e.g. a `TYPE_ENUM`
     /// field referencing a message). Carries the name and the field.
@@ -951,11 +958,15 @@ impl DescriptorPool {
     /// A file added here may reference types in files added by an earlier
     /// call, provided it lists them in `dependency` (see [`LinkOptions`]). A
     /// `dependency` not yet in the pool is tolerated by default; a reference
-    /// into it fails as [`PoolError::UnresolvedTypeName`], as it always has,
-    /// so a client streaming files one response at a time should add
-    /// dependencies before dependents or batch them into one set. Two files
-    /// with the same name in one set are rejected
-    /// ([`PoolError::DuplicateFileName`]).
+    /// into it fails as [`PoolError::UnresolvedTypeName`], so a client
+    /// streaming files one response at a time should add dependencies before
+    /// dependents or batch them into one set. Two files with the same name in
+    /// one set are rejected ([`PoolError::DuplicateFileName`]).
+    ///
+    /// A field that leaves `type` unset takes its kind from the message or
+    /// enum that its `type_name` resolves to. With `type_name` also unset or
+    /// empty, the field links as `double`. Every `type_name` must be fully
+    /// qualified; the leading dot is optional.
     ///
     /// # Errors
     ///
@@ -2231,7 +2242,6 @@ impl DescriptorPool {
                 return Err(PoolError::Proto3OptionalWithoutOneof { field: field_fqn });
             }
         }
-        let proto_ty = f.r#type.unwrap_or_default();
         let is_repeated = label == Label::LABEL_REPEATED;
 
         // Resolve the singular kind (element type).
@@ -2317,7 +2327,7 @@ impl DescriptorPool {
         // Resolve delimited (group) encoding.
         // proto2/proto3: TYPE_GROUP is delimited; TYPE_MESSAGE is length-prefixed.
         // editions: message_encoding feature controls it.
-        let delimited = if proto_ty == ProtoType::TYPE_GROUP {
+        let delimited = if f.r#type == Some(ProtoType::TYPE_GROUP) {
             true
         } else if matches!(element, SingularKind::Message(_)) {
             resolved.message_encoding == MessageEncoding::Delimited
@@ -2415,36 +2425,41 @@ impl DescriptorPool {
         field_fqn: &str,
         scope: LinkScope<'_>,
     ) -> Result<SingularKind, PoolError> {
-        let explicit_ty = ty.is_some();
-        let ty = ty.unwrap_or_default();
-        if let Some(scalar) = ScalarType::from_proto(ty) {
-            // A `type_name` is an error only beside an explicit scalar `type`,
-            // and an empty one counts as absent. protoc and protobuf-go infer
-            // the kind of a field with no `type` from its `type_name`; this
-            // pool does not, and links such a field as the default scalar.
-            if explicit_ty {
-                if let Some(type_name) = type_name.filter(|tn| !tn.is_empty()) {
+        // Beside a scalar or unset `type`, an empty `type_name` counts as
+        // absent.
+        let named = type_name.filter(|tn| !tn.is_empty());
+        if let Some(scalar) = ScalarType::from_proto(ty.unwrap_or_default()) {
+            match (ty, named) {
+                // An explicit scalar `type` cannot also name a type.
+                (Some(_), Some(type_name)) => {
                     return Err(PoolError::UnexpectedTypeName {
                         field: field_fqn.to_string(),
                         type_name: type_name.to_string(),
                     });
                 }
+                // No `type`: the symbol that `type_name` resolves to decides
+                // between message and enum below, as it does in protoc and
+                // protobuf-go.
+                (None, Some(_)) => {}
+                (_, None) => return Ok(SingularKind::Scalar(scalar)),
             }
-            return Ok(SingularKind::Scalar(scalar));
         }
-        // ENUM, MESSAGE, GROUP — resolve type_name.
+        // ENUM, MESSAGE, GROUP, or a kind to infer — resolve type_name.
         let tn = type_name.ok_or_else(|| PoolError::MissingTypeName {
             field: field_fqn.to_string(),
         })?;
         let lookup = tn.strip_prefix('.').unwrap_or(tn);
         match self.by_name.get(lookup) {
             Some(Definition::Message(midx))
-                if matches!(ty, ProtoType::TYPE_MESSAGE | ProtoType::TYPE_GROUP) =>
+                if matches!(
+                    ty,
+                    None | Some(ProtoType::TYPE_MESSAGE | ProtoType::TYPE_GROUP)
+                ) =>
             {
                 self.check_visible(scope, self.message_file[midx.0 as usize], tn, field_fqn)?;
                 Ok(SingularKind::Message(*midx))
             }
-            Some(Definition::Enum(eidx)) if ty == ProtoType::TYPE_ENUM => {
+            Some(Definition::Enum(eidx)) if matches!(ty, None | Some(ProtoType::TYPE_ENUM)) => {
                 self.check_visible(scope, self.enum_file[eidx.0 as usize], tn, field_fqn)?;
                 Ok(SingularKind::Enum(*eidx))
             }
@@ -2468,7 +2483,9 @@ impl DescriptorPool {
         if f.label.unwrap_or_default() != Label::LABEL_REPEATED {
             return None;
         }
-        if f.r#type.unwrap_or_default() != ProtoType::TYPE_MESSAGE {
+        // The caller has resolved the element to a message, so an unset `type`
+        // was inferred as one. A group is never a map.
+        if f.r#type.is_some_and(|ty| ty != ProtoType::TYPE_MESSAGE) {
             return None;
         }
         let tn = f.type_name.as_deref()?;

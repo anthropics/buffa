@@ -328,20 +328,14 @@ fn main() {
         .expect("buffa_build failed for map_type_custom.proto");
 
     // string_map: a crate-LOCAL `MapStr` newtype (a `ProtoString` impl) used for
-    // every `string` map key AND value, via `.string_type_custom`. `MapStr` is
-    // Hash + Eq + Ord + serde, so it is a valid HashMap key and serializes on
-    // every JSON path. The type is crate-local because vtable reflection emits
-    // `impl ReflectMapKey` (key) / `impl ReflectElement` (value) for it — a
-    // foreign type would be an orphan-rule error, exactly as for a custom
-    // `repeated` element. The crate compiling is most of the test — the
-    // `ProtoStringMap` codec (key + value), the binary/text merge `.into()`
-    // conversion, the JSON dispatch (derive / proto_str_key_map / string_key_map
-    // / map_enum), the view→owned `Into` conversion, vtable reflect, and the
-    // generic arbitrary map builder must all emit code that works for the custom
-    // string. Runtime round-trips live in `tests/string_map.rs`.
+    // every `string` map key AND value, via `.string_type_custom`, with
+    // `bytes::Bytes` for `bytes` values. The crate compiling is most of the
+    // test; `string_map.proto` says what each field exercises. Runtime
+    // round-trips live in `tests/string_map.rs`.
     buffa_build::Config::new()
         .files(&["protos/string_map.proto"])
         .includes(&["protos/"])
+        .bytes_type(buffa_build::BytesRepr::Bytes)
         .string_type_custom("crate::string_map::MapStr")
         .generate_json(true)
         .generate_text(true)
@@ -354,11 +348,19 @@ fn main() {
     // impl) used for every `repeated` field, via the `*`-templated knob. The
     // crate compiling is most of the test — the merge (`push`/`reserve`),
     // encode (`.iter()`), clear, and view→owned (`collect`) paths must all emit
-    // the generic `ProtoList` surface for the custom collection.
+    // the generic `ProtoList` surface for the custom collection, and under
+    // `generate_arbitrary` the builders for a custom string or `Bytes` element
+    // must return it.
     buffa_build::Config::new()
         .files(&["protos/repeated_type.proto"])
         .includes(&["protos/"])
         .repeated_type_custom("crate::repeated_type::CustomList<*>")
+        .string_type_custom_in("crate::reprs::EcoStr", &[".repeated_type.Lists.labels"])
+        .bytes_type_in(
+            buffa_build::BytesRepr::Bytes,
+            &[".repeated_type.Lists.blobs"],
+        )
+        .generate_arbitrary(true)
         .compile()
         .expect("buffa_build failed for repeated_type.proto");
 
@@ -815,7 +817,8 @@ fn main() {
 
     // proto2 `[default = "..."]` + string_type: a required string field is a
     // bare type, so its Default impl and clear() must build the literal via the
-    // configured repr's From<String>, not String::from.
+    // configured repr's From<String>, not String::from. `generate_arbitrary`
+    // type-checks the builders chosen for the repeated and optional strings.
     let string_p2_out =
         std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("string_proto2_variant");
     std::fs::create_dir_all(&string_p2_out).expect("create string_proto2_variant dir");
@@ -823,6 +826,7 @@ fn main() {
         .files(&["protos/string_proto2.proto"])
         .includes(&["protos/"])
         .string_type_custom("::buffa_smolstr::SmolStr")
+        .generate_arbitrary(true)
         .out_dir(string_p2_out)
         .compile()
         .expect("buffa_build failed for string_proto2.proto with string_type");

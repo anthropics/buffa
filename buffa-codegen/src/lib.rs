@@ -1273,9 +1273,7 @@ pub struct CodeGenConfig {
     /// non-default type, codegen emits `#[arbitrary(with = ...)]` using
     /// helpers in `::buffa::__private`, so the substituted type needs no
     /// `Arbitrary` impl. This covers singular, optional, repeated and oneof
-    /// fields, and `map<K, bytes>` values. A custom `string` type used as a
-    /// `map` key or value has no helper and must implement
-    /// `arbitrary::Arbitrary`.
+    /// fields, and the key and value of a `map` field.
     pub generate_arbitrary: bool,
     /// Proto paths of the messages and enums whose generated `Debug`
     /// implementation is omitted, so that the consuming crate can write its
@@ -2783,6 +2781,10 @@ fn rule_paths<R>(rules: &[(String, R)]) -> Vec<&String> {
 /// idiomatic CamelCase aliases were suppressed by a naming conflict) are
 /// **discarded** here. Use [`generate_with_diagnostics`] to receive them and
 /// surface them as build warnings.
+///
+/// # Errors
+///
+/// As [`generate_with_diagnostics`].
 pub fn generate(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
@@ -2791,29 +2793,6 @@ pub fn generate(
     Ok(generate_with_diagnostics(file_descriptors, files_to_generate, config)?.0)
 }
 
-/// Like [`generate`], but also returns the non-fatal [`CodeGenWarning`]s
-/// collected during generation (e.g. enums whose idiomatic CamelCase aliases
-/// were suppressed by a naming conflict).
-///
-/// Surface each warning via its [`Display`](core::fmt::Display) impl — e.g. as a
-/// `cargo:warning=...` from a `build.rs`, or on stderr from a standalone
-/// generator — or match on it for programmatic handling. [`generate`] discards
-/// them, so existing callers are unaffected.
-///
-/// Warnings are returned only on success. On error, any warnings already
-/// collected are dropped along with the partial output — the [`CodeGenError`]
-/// is the actionable signal.
-///
-/// # Errors
-///
-/// Returns [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has
-/// no matching descriptor, [`CodeGenError::InvalidTypeNamePrefix`] if
-/// [`CodeGenConfig::type_name_prefix`] is not empty or PascalCase,
-/// [`CodeGenError::Other`] if `generate_reflection_vtable`
-/// is set without `generate_reflection` or if an active feature-gate name in
-/// [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
-/// and other [`CodeGenError`] variants for malformed descriptors (e.g. a
-/// missing required field) encountered while generating.
 /// Whether a custom `repeated` element type holds proto `string` or `bytes` —
 /// selects `ValueRef::String`/`ValueRef::Bytes` and the JSON delegate module.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -3230,6 +3209,45 @@ fn warn_excluded_refs_msg(
     }
 }
 
+/// Like [`generate`], but also returns the non-fatal [`CodeGenWarning`]s
+/// collected during generation (e.g. enums whose idiomatic CamelCase aliases
+/// were suppressed by a naming conflict).
+///
+/// Report each warning through its [`Display`](core::fmt::Display) impl — e.g.
+/// as a `cargo:warning=...` from a `build.rs`, or on stderr from a standalone
+/// generator — or match on it for programmatic handling. [`generate`] discards
+/// them.
+///
+/// Warnings are returned only on success. On error, any warnings already
+/// collected are dropped along with the partial output — the [`CodeGenError`]
+/// is the actionable signal.
+///
+/// # Errors
+///
+/// - [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has no
+///   matching descriptor.
+/// - [`CodeGenError::InvalidTypeNamePrefix`] if
+///   [`CodeGenConfig::type_name_prefix`] is neither empty nor PascalCase.
+/// - [`CodeGenError::Other`] if `config` sets an option without the option
+///   it requires: `generate_reflection_vtable` or `shared_descriptor_pool`
+///   without `generate_reflection`, `shared_descriptor_pool_root` without
+///   `shared_descriptor_pool`, or `idiomatic_imports` without
+///   `file_per_package`.
+/// - [`CodeGenError::Other`] if an active feature-gate name in
+///   [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
+///   or if `shared_descriptor_pool_root` or an `exclude_packages` entry is
+///   malformed.
+/// - [`CodeGenError::SharedCorpusContextMismatch`] if
+///   [`CodeGenConfig::shared_corpus_context`] was built from a different
+///   corpus or different rules than this call uses.
+/// - For a valid schema whose names collide in the generated Rust:
+///   [`CodeGenError::OneofEnumNameConflict`],
+///   [`CodeGenError::ModuleNameConflict`],
+///   [`CodeGenError::ReservedFieldName`] or
+///   [`CodeGenError::ReservedModuleName`].
+/// - Other [`CodeGenError`] variants for a schema that generation does not
+///   support or a malformed descriptor, such as
+///   [`CodeGenError::MissingField`].
 pub fn generate_with_diagnostics(
     file_descriptors: &[FileDescriptorProto],
     files_to_generate: &[String],
@@ -4054,6 +4072,7 @@ fn validate_shared_root_name(
 ///
 /// Checks, in one walk of the message tree:
 ///
+/// - **Required type names**: every message and enum has a non-empty name.
 /// - **Reserved field names**: no field starts with `__buffa_` (would clash
 ///   with generated `__buffa_unknown_fields` / `__buffa_cached_size`).
 /// - **Module-name conflicts**: no two sibling messages snake_case to the
@@ -4081,7 +4100,7 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
     // enums live inside their owner message's module and cannot collide
     // with the package-root sentinel, so only file-level is checked.
     for enum_type in &file.enum_type {
-        let name = enum_type.name.as_deref().unwrap_or("");
+        let name = required_type_name(enum_type.name.as_deref(), "enum.name")?;
         if name == sentinel {
             return Err(CodeGenError::ReservedModuleName {
                 name: sentinel.to_string(),
@@ -4099,12 +4118,16 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
         let mut seen: HashMap<String, &str> = HashMap::new();
 
         for msg in messages {
-            let name = msg.name.as_deref().unwrap_or("");
+            let name = required_type_name(msg.name.as_deref(), "message.name")?;
             let fqn = if scope.is_empty() {
                 name.to_string()
             } else {
                 format!("{scope}.{name}")
             };
+
+            for enum_type in &msg.enum_type {
+                required_type_name(enum_type.name.as_deref(), "enum.name")?;
+            }
 
             for field in &msg.field {
                 if let Some(fname) = &field.name {
@@ -4140,6 +4163,19 @@ fn validate_file(file: &FileDescriptorProto) -> Result<(), CodeGenError> {
     }
 
     walk(&file.message_type, package, sentinel)
+}
+
+/// Returns the name of a message or enum descriptor, or
+/// [`CodeGenError::MissingField`]`(field)` if the name is absent or empty.
+///
+/// An empty name cannot be a Rust identifier, so it is rejected like an
+/// absent one.
+fn required_type_name<'a>(
+    name: Option<&'a str>,
+    field: &'static str,
+) -> Result<&'a str, CodeGenError> {
+    name.filter(|name| !name.is_empty())
+        .ok_or(CodeGenError::MissingField(field))
 }
 
 /// Per-proto content streams plus the file stem, ready to be formatted.
@@ -5119,9 +5155,11 @@ pub fn apply_companions(files: &mut Vec<GeneratedFile>, companions: Vec<Generate
 #[derive(Debug, Clone, thiserror::Error)]
 #[non_exhaustive]
 pub enum CodeGenError {
-    /// A required field was absent in a descriptor.
+    /// A required field was absent in a descriptor, or a message or enum name
+    /// was empty.
     ///
-    /// The `&'static str` names the missing field for diagnostics.
+    /// The string is the descriptor field, such as `message.name` or
+    /// `field.type_name`.
     #[error("missing required descriptor field: {0}")]
     MissingField(&'static str),
     /// A resolved type path string could not be parsed as a Rust type.
@@ -5174,6 +5212,27 @@ pub enum CodeGenError {
         name_a: String,
         name_b: String,
         module_name: String,
+    },
+    /// Two oneofs of one message produce the same Rust enum name after
+    /// PascalCase conversion and keyword escaping (e.g., `foo_bar` and
+    /// `foo__bar` both become `FooBar`; `self` and `self_` both become
+    /// `Self_`). Resolve by renaming one of the oneofs. A oneof's name is in
+    /// neither the wire format nor JSON, so the rename changes generated
+    /// code only.
+    #[error(
+        "oneof enum name conflict in message '{message_name}': oneofs \
+         '{first_oneof}' and '{second_oneof}' both map to Rust enum '{rust_name}'; \
+         rename one of them"
+    )]
+    OneofEnumNameConflict {
+        /// Fully-qualified proto name of the message, without a leading dot.
+        message_name: String,
+        /// Proto name of the oneof declared first.
+        first_oneof: String,
+        /// Proto name of the oneof declared second.
+        second_oneof: String,
+        /// The Rust enum name that both oneofs map to.
+        rust_name: String,
     },
     /// A proto package segment, message name, or file-level enum name
     /// would emit a Rust item matching the reserved sentinel `__buffa`.

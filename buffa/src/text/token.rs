@@ -215,13 +215,17 @@ impl<'a> Tokenizer<'a> {
 
     /// Convert a byte offset into the input into a 1-based (line, column).
     ///
-    /// Column counts Unicode scalar values, not bytes. `pos` past the end of
-    /// input clamps to the final position.
+    /// Column counts Unicode scalar values, not bytes. A `pos` past the end
+    /// of the input gives the position just after the last character. An
+    /// offset inside a UTF-8 character is treated as that character's start.
     ///
     /// Line and column use `u32`: inputs larger than ~4 GiB would wrap, but
     /// that is not a realistic textproto size and this is error-reporting only.
     pub fn line_col(&self, pos: usize) -> (u32, u32) {
-        let pos = pos.min(self.input.len());
+        let mut pos = pos.min(self.input.len());
+        while !self.input.is_char_boundary(pos) {
+            pos -= 1;
+        }
         let before = &self.input[..pos];
         let line = before.bytes().filter(|&b| b == b'\n').count() as u32 + 1;
         let line_start = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
@@ -1480,7 +1484,31 @@ mod tests {
         // 'é' is 2 bytes but 1 column.
         let t = Tokenizer::new("éx");
         assert_eq!(t.line_col(0), (1, 1));
+        assert_eq!(t.line_col(1), (1, 1));
         assert_eq!(t.line_col(2), (1, 2)); // byte 2 = 'x', column 2
+    }
+
+    #[test]
+    fn line_col_unicode_interior_offsets_and_eof() {
+        let t = Tokenizer::new("😀");
+        for pos in 1..4 {
+            assert_eq!(t.line_col(pos), (1, 1), "pos: {pos}");
+        }
+        assert_eq!(t.line_col(4), (1, 2));
+        assert_eq!(t.line_col(usize::MAX), (1, 2));
+
+        // '€' is 3 bytes; the offsets inside it and the one after it differ.
+        let t = Tokenizer::new("a€b");
+        assert_eq!(t.line_col(2), (1, 2));
+        assert_eq!(t.line_col(3), (1, 2));
+        assert_eq!(t.line_col(4), (1, 3));
+    }
+
+    #[test]
+    fn line_col_multiline_unicode_interior_offset() {
+        let t = Tokenizer::new("é\nx😀y");
+        let offset_inside_emoji = 6;
+        assert_eq!(t.line_col(offset_inside_emoji), (2, 2));
     }
 
     #[test]

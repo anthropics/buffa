@@ -835,6 +835,53 @@ fn map_enum_drops_unknown_entries_when_lenient() {
 }
 
 #[test]
+fn lenient_open_enum_containers_reject_malformed_values() {
+    use crate::json::{with_json_parse_options, JsonParseOptions};
+    let opts = JsonParseOptions {
+        ignore_unknown_enum_values: true,
+        ..Default::default()
+    };
+    with_json_parse_options(&opts, || {
+        for json in ["[1.5]", "[true]", "[{}]", "[[]]", "[2147483648]"] {
+            let result = repeated_enum::deserialize::<Color, _>(
+                &mut serde_json::Deserializer::from_str(json),
+            );
+            assert!(
+                result.is_err(),
+                "malformed input must remain an error: {json}"
+            );
+        }
+
+        for json in [
+            r#"{"a":1.5}"#,
+            r#"{"a":true}"#,
+            r#"{"a":{}}"#,
+            r#"{"a":[]}"#,
+            r#"{"a":2147483648}"#,
+            r#"{"a":-9999999999999}"#,
+        ] {
+            let result = map_enum::deserialize::<
+                crate::__private::HashMap<alloc::string::String, crate::EnumValue<Color>>,
+                _,
+            >(&mut serde_json::Deserializer::from_str(json));
+            assert!(
+                result.is_err(),
+                "malformed input must remain an error: {json}"
+            );
+        }
+
+        for json in ["1.5", "true", "{}", "[]", "2147483648"] {
+            let result =
+                opt_enum::deserialize::<Color, _>(&mut serde_json::Deserializer::from_str(json));
+            assert!(
+                result.is_err(),
+                "malformed input must remain an error: {json}"
+            );
+        }
+    });
+}
+
+#[test]
 fn map_enum_null_returns_empty_map() {
     let result: crate::__private::HashMap<alloc::string::String, crate::EnumValue<Color>> =
         map_enum::deserialize(&mut serde_json::Deserializer::from_str("null")).unwrap();
@@ -1570,42 +1617,89 @@ fn map_closed_enum_works_without_deserialize_impl() {
 }
 
 #[test]
-fn closed_enum_lenient_drops_unknown_without_deserialize_impl() {
-    // Lenient mode: any value that fails to decode is dropped from
-    // containers / left unset for optionals. Works for `Enumeration`-only
-    // enums because the decode goes through `from_proto_name` / `from_i32`
-    // directly — no inner `Deserialize` impl involved.
-    //
-    // The lenient catch-all is *all* errors, not just unknown-variant.
-    // That matches the open-enum (`EnumValue<E>`) container helpers, which
-    // also swallow every inner deserialize error under lenient mode. If
-    // either path is later tightened to only swallow unknown-variant
-    // errors, change both — the inputs below pin the current parity.
+fn closed_enum_lenient_drops_unknown_but_rejects_malformed_values() {
     let opts = crate::json::JsonParseOptions {
         ignore_unknown_enum_values: true,
         ..Default::default()
     };
     crate::json::with_json_parse_options(&opts, || {
-        // optional: unknown → None; type / range errors also → None
-        for json in [r#""UNKNOWN""#, "99", "1.5", "true", "9999999999999"] {
+        // Unknown names and in-range numbers are enum values, so lenient mode
+        // may skip them.
+        for json in [r#""UNKNOWN""#, "99", "-1"] {
             let mut d = serde_json::Deserializer::from_str(json);
             let opt = opt_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap();
-            assert_eq!(opt, None, "lenient must swallow {json}");
+            assert_eq!(opt, None, "lenient mode should skip {json}");
         }
 
-        // repeated: unknown / undecodable entries dropped
-        let mut d = serde_json::Deserializer::from_str(r#"["ZERO","UNKNOWN","ONE",99,1.5,true]"#);
-        let vec = repeated_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap();
-        assert_eq!(vec, vec![BareEnum::Zero, BareEnum::One]);
+        // Wrong JSON types and numbers that cannot be represented by the
+        // protobuf enum's i32 value must still fail.
+        for json in [
+            "1.5",
+            "true",
+            "{}",
+            "[]",
+            "9999999999999",
+            "-9999999999999",
+            "18446744073709551615",
+        ] {
+            let mut d = serde_json::Deserializer::from_str(json);
+            assert!(
+                opt_closed_enum::deserialize::<BareEnum, _>(&mut d).is_err(),
+                "malformed input must remain an error: {json}"
+            );
+        }
 
-        // map: unknown / undecodable entries dropped
+        // A string is a name whatever its text, and `null` is the default.
+        let mut d = serde_json::Deserializer::from_str(r#"["", "1", null]"#);
+        let values = repeated_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap();
+        assert_eq!(values, vec![BareEnum::Zero]);
+
+        // Repeated and map containers keep the same distinction.
+        let mut d = serde_json::Deserializer::from_str(r#"["ZERO","UNKNOWN","ONE",99,-1]"#);
+        let values = repeated_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap();
+        assert_eq!(values, vec![BareEnum::Zero, BareEnum::One]);
+
+        for json in [
+            "[1.5]",
+            "[true]",
+            "[{}]",
+            "[[]]",
+            "[9999999999999]",
+            "[-9999999999999]",
+            "[18446744073709551615]",
+        ] {
+            let mut d = serde_json::Deserializer::from_str(json);
+            assert!(
+                repeated_closed_enum::deserialize::<BareEnum, _>(&mut d).is_err(),
+                "malformed input must remain an error: {json}"
+            );
+        }
+
         let mut d =
-            serde_json::Deserializer::from_str(r#"{"a":"ZERO","b":"UNKNOWN","c":1.5,"d":true}"#);
+            serde_json::Deserializer::from_str(r#"{"a":"ZERO","b":"UNKNOWN","c":99,"d":-1}"#);
         let map =
             map_closed_enum::deserialize::<crate::__private::HashMap<String, BareEnum>, _>(&mut d)
                 .unwrap();
         assert_eq!(map.len(), 1);
         assert_eq!(map.get("a"), Some(&BareEnum::Zero));
+
+        for json in [
+            r#"{"a":1.5}"#,
+            r#"{"a":true}"#,
+            r#"{"a":{}}"#,
+            r#"{"a":[]}"#,
+            r#"{"a":2147483648}"#,
+            r#"{"a":-9999999999999}"#,
+        ] {
+            let mut d = serde_json::Deserializer::from_str(json);
+            assert!(
+                map_closed_enum::deserialize::<crate::__private::HashMap<String, BareEnum>, _>(
+                    &mut d
+                )
+                .is_err(),
+                "malformed input must remain an error: {json}"
+            );
+        }
     });
 }
 

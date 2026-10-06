@@ -46,6 +46,33 @@ fn all_scalars_golden() {
 }
 
 #[test]
+fn float_field_prints_f32_digits() {
+    let msg = AllScalars {
+        f_float: 0.1,
+        f_double: 0.1,
+        ..Default::default()
+    };
+    let text = encode_to_string(&msg);
+    assert_eq!(text, "f_float: 0.1 f_double: 0.1");
+    let back: AllScalars = decode_from_str(&text).unwrap();
+    assert_eq!(back, msg);
+}
+
+#[test]
+fn float_field_round_trips_where_short_digits_would_not() {
+    // The two `f32` values whose shortest digits a reader that narrows from
+    // `f64` takes to a neighbour. They are written with their `f64` digits.
+    for bits in [0x15ae_43fd_u32, 0x95ae_43fd] {
+        let msg = AllScalars {
+            f_float: f32::from_bits(bits),
+            ..Default::default()
+        };
+        let back: AllScalars = decode_from_str(&encode_to_string(&msg)).unwrap();
+        assert_eq!(back.f_float.to_bits(), bits);
+    }
+}
+
+#[test]
 fn signed_special_floats_allow_comments_between_sign_and_literal() {
     let inf: AllScalars = decode_from_str("f_float: - # comment\ninf").unwrap();
     assert!(inf.f_float.is_infinite() && inf.f_float.is_sign_negative());
@@ -53,10 +80,9 @@ fn signed_special_floats_allow_comments_between_sign_and_literal() {
     let infinity: AllScalars = decode_from_str("f_double: -\n# comment\ninfinity").unwrap();
     assert!(infinity.f_double.is_infinite() && infinity.f_double.is_sign_negative());
 
-    let nan: AllScalars = decode_from_str("f_double: -\n# comment\nnan").unwrap();
-    // Sign bit is only guaranteed for the negation, so assert it on the
-    // f64 path rather than through the f32 cast.
+    let nan: AllScalars = decode_from_str("f_double: -\n# comment\nnan f_float: -nan").unwrap();
     assert!(nan.f_double.is_nan() && nan.f_double.is_sign_negative());
+    assert!(nan.f_float.is_nan() && nan.f_float.is_sign_negative());
 }
 
 #[test]
