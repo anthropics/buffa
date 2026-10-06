@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**DescriptorPool** rejects overlapping message and enum reserved ranges while allowing adjacent ranges, matching protoc.'
+time: 2026-10-07T00:09:01.743554+02:00

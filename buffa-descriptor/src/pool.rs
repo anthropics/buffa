@@ -88,7 +88,7 @@ struct ReservedRanges(Vec<(i64, i64)>);
 impl ReservedRanges {
     /// Index a message's reserved ranges, validating each as protoc does: an
     /// unset bound reads as 0, and the half-open range must satisfy
-    /// `0 < start < end`.
+    /// `0 < start < end`. Ranges must not overlap; adjacent ranges are valid.
     fn for_message(
         message_fqn: &str,
         ranges: &[crate::generated::descriptor::descriptor_proto::ReservedRange],
@@ -105,12 +105,20 @@ impl ReservedRanges {
             }
             checked.push((i64::from(start), i64::from(end)));
         }
-        Ok(Self::from_half_open(checked.into_iter()))
+        Self::from_disjoint(checked).map_err(|[(other_start, other_end), (start, end)]| {
+            PoolError::OverlappingMessageReservedRange {
+                message: message_fqn.to_string(),
+                start: start as i32,
+                end: end as i32,
+                other_start: other_start as i32,
+                other_end: other_end as i32,
+            }
+        })
     }
 
     /// Index an enum's reserved ranges, validating each as protoc does: an
     /// unset bound reads as 0, the range is inclusive, may be negative, and
-    /// must satisfy `start <= end`.
+    /// must satisfy `start <= end`. Ranges must not overlap.
     fn for_enum(
         enum_fqn: &str,
         ranges: &[crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange],
@@ -127,7 +135,27 @@ impl ReservedRanges {
             }
             checked.push((i64::from(start), i64::from(end) + 1));
         }
-        Ok(Self::from_half_open(checked.into_iter()))
+        Self::from_disjoint(checked).map_err(|[(other_start, other_end), (start, end)]| {
+            PoolError::OverlappingEnumReservedRange {
+                enum_name: enum_fqn.to_string(),
+                start: start as i32,
+                end: (end - 1) as i32,
+                other_start: other_start as i32,
+                other_end: (other_end - 1) as i32,
+            }
+        })
+    }
+
+    /// Validate overlap before coalescing hides it. Once sorted by start,
+    /// any overlap is visible between neighboring ranges.
+    fn from_disjoint(mut ranges: Vec<(i64, i64)>) -> Result<Self, [(i64, i64); 2]> {
+        ranges.sort_unstable();
+        for pair in ranges.windows(2) {
+            if pair[1].0 < pair[0].1 {
+                return Err([pair[0], pair[1]]);
+            }
+        }
+        Ok(Self::from_sorted(ranges))
     }
 
     /// Sort and coalesce validated half-open ranges. Callers validate first;
@@ -135,6 +163,10 @@ impl ReservedRanges {
     fn from_half_open(ranges: impl Iterator<Item = (i64, i64)>) -> Self {
         let mut sorted: Vec<(i64, i64)> = ranges.filter(|&(start, end)| start < end).collect();
         sorted.sort_unstable();
+        Self::from_sorted(sorted)
+    }
+
+    fn from_sorted(sorted: Vec<(i64, i64)>) -> Self {
         let mut merged: Vec<(i64, i64)> = Vec::with_capacity(sorted.len());
         for (start, end) in sorted {
             match merged.last_mut() {
@@ -359,6 +391,17 @@ pub enum PoolError {
         start: Option<i32>,
         end: Option<i32>,
     },
+    /// Two reserved ranges declared by the same message overlap. Both ranges
+    /// have exclusive ends, as in `DescriptorProto.ReservedRange`.
+    /// The pair is ordered by `(start, end)`, with the second range in
+    /// `start`/`end`, independently of declaration order.
+    OverlappingMessageReservedRange {
+        message: String,
+        start: i32,
+        end: i32,
+        other_start: i32,
+        other_end: i32,
+    },
     /// An enum reserved range has `start > end`. Both bounds are inclusive,
     /// as in `EnumDescriptorProto.EnumReservedRange`, may be negative, and an
     /// unset bound reads as 0. The bounds are carried as declared.
@@ -366,6 +409,18 @@ pub enum PoolError {
         enum_name: String,
         start: Option<i32>,
         end: Option<i32>,
+    },
+    /// Two reserved ranges declared by the same enum overlap. Both ranges
+    /// have inclusive bounds, as in `EnumDescriptorProto.EnumReservedRange`.
+    /// Unset bounds are reported as 0.
+    /// The pair is ordered by `(start, end)`, with the second range in
+    /// `start`/`end`, independently of declaration order.
+    OverlappingEnumReservedRange {
+        enum_name: String,
+        start: i32,
+        end: i32,
+        other_start: i32,
+        other_end: i32,
     },
     /// An enum declares no values.
     EmptyEnum { enum_name: String },
@@ -628,6 +683,17 @@ impl core::fmt::Display for PoolError {
                 Bound(*start),
                 Bound(*end),
             ),
+            Self::OverlappingMessageReservedRange {
+                message,
+                start,
+                end,
+                other_start,
+                other_end,
+            } => write!(
+                f,
+                "message {message} reserved range {start}..{end} overlaps reserved range \
+                 {other_start}..{other_end}"
+            ),
             Self::InvalidEnumReservedRange {
                 enum_name,
                 start,
@@ -637,6 +703,17 @@ impl core::fmt::Display for PoolError {
                 "enum {enum_name} reserved range {} to {} is invalid; start must not exceed end",
                 Bound(*start),
                 Bound(*end),
+            ),
+            Self::OverlappingEnumReservedRange {
+                enum_name,
+                start,
+                end,
+                other_start,
+                other_end,
+            } => write!(
+                f,
+                "enum {enum_name} reserved range {start} to {end} overlaps reserved range \
+                 {other_start} to {other_end}"
             ),
             Self::EmptyEnum { enum_name } => {
                 write!(f, "enum {enum_name} declares no values")
@@ -851,8 +928,9 @@ impl DescriptorPool {
     /// identity is declared twice, a field number is out of range or in
     /// the implementation-reserved band (19000-19999), a field uses a name or
     /// number its message reserved, an extension range overlaps a reserved
-    /// range, a message or enum declares a reserved name twice, an open enum's
-    /// first value is non-zero, an enum value reuses a reserved name or number
+    /// range, a message or enum declares overlapping reserved ranges or a
+    /// reserved name twice, an open enum's first value is non-zero, an enum
+    /// value reuses a reserved name or number
     /// or a duplicate number without `allow_alias`, a oneof index is invalid,
     /// a `proto3_optional` field is malformed, a message exceeds 65 535
     /// fields, or a map entry is malformed.
@@ -876,8 +954,9 @@ impl DescriptorPool {
     /// validation failure (dangling or unimported type names, out-of-range or
     /// implementation-reserved field numbers, reserved message fields, an
     /// overlapping extension range, duplicate symbols or field identities,
-    /// duplicate reserved names, an open enum whose first value is non-zero,
-    /// reserved enum values, duplicate enum numbers without `allow_alias`,
+    /// overlapping reserved ranges, duplicate reserved names, an open enum
+    /// whose first value is non-zero, reserved enum values, duplicate enum
+    /// numbers without `allow_alias`,
     /// invalid oneof indices, malformed `proto3_optional` fields, or malformed
     /// map entries).
     ///
@@ -2694,13 +2773,9 @@ mod reserved_ranges_tests {
     #[test]
     fn coalesces_overlapping_and_adjacent_ranges_in_any_order() {
         // 9..12 and 12..15 are adjacent, 20..30 and 25..27 nest, 5..6 stands alone.
-        let r = ranges(&[
-            (Some(20), Some(30)),
-            (Some(12), Some(15)),
-            (Some(5), Some(6)),
-            (Some(25), Some(27)),
-            (Some(9), Some(12)),
-        ]);
+        let r = ReservedRanges::from_half_open(
+            [(20, 30), (12, 15), (5, 6), (25, 27), (9, 12)].into_iter(),
+        );
         assert_eq!(r.0, vec![(5, 6), (9, 15), (20, 30)]);
     }
 
@@ -2742,16 +2817,15 @@ mod reserved_ranges_tests {
             ..Default::default()
         };
         // `reserved 0 to 8`, `reserved -3 to 0`, and `reserved 0` respectively.
-        let r = ReservedRanges::for_enum(
-            "t.E",
-            &[
-                range(None, Some(8)),
-                range(Some(-3), None),
-                range(None, None),
-            ],
-        )
-        .expect("unset enum bounds read as 0 and are valid");
-        assert!(r.contains(-3) && r.contains(0) && r.contains(8) && !r.contains(9));
+        for (start, end, expected) in [
+            (None, Some(8), (0, 9)),
+            (Some(-3), None, (-3, 1)),
+            (None, None, (0, 1)),
+        ] {
+            let r = ReservedRanges::for_enum("t.E", &[range(start, end)])
+                .expect("unset enum bounds read as 0 and are valid");
+            assert_eq!(r.0, vec![expected]);
+        }
         assert!(matches!(
             ReservedRanges::for_enum("t.E", &[range(Some(5), Some(4))]),
             Err(PoolError::InvalidEnumReservedRange { .. })
@@ -2761,7 +2835,7 @@ mod reserved_ranges_tests {
     #[test]
     fn enum_ranges_are_inclusive_and_may_be_negative() {
         use crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
-        let raw: Vec<EnumReservedRange> = [(-5, -3), (7, 9), (9, 9), (i32::MAX, i32::MAX)]
+        let raw: Vec<EnumReservedRange> = [(-5, -3), (7, 9), (12, 12), (i32::MAX, i32::MAX)]
             .into_iter()
             .map(|(start, end)| EnumReservedRange {
                 start: Some(start),
@@ -2775,6 +2849,7 @@ mod reserved_ranges_tests {
             vec![
                 (-5, -2),
                 (7, 10),
+                (12, 13),
                 (i64::from(i32::MAX), i64::from(i32::MAX) + 1)
             ]
         );
@@ -2783,6 +2858,8 @@ mod reserved_ranges_tests {
         assert!(!r.contains(-2));
         assert!(r.contains(9));
         assert!(!r.contains(10));
+        assert!(r.contains(12));
+        assert!(!r.contains(13));
         assert!(r.contains(i32::MAX));
     }
 
