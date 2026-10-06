@@ -993,6 +993,7 @@ fn main() {
         .includes(&["protos/"])
         .generate_views(false)
         .generate_json(true)
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for ext_json.proto");
 
@@ -1027,6 +1028,7 @@ fn main() {
         .files(&["protos/group_ext.proto"])
         .includes(&["protos/"])
         .generate_views(false)
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for group_ext.proto");
 

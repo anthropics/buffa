@@ -689,6 +689,110 @@ fn oversized_message_error() -> crate::text::ParseError {
 // extensions. Scalar text helpers would mirror the JSON ones in
 // `extension_registry::helpers`; deferred until a use case appears.
 
+#[cfg(feature = "text")]
+use crate::extension::codecs;
+
+/// Textproto encode for a repeated message extension: write successfully decoded
+/// elements as a message list, preserving their boundaries and order.
+/// Malformed or mismatched records are skipped, as by [`codecs::Repeated`].
+///
+/// # Errors
+///
+/// Propagates [`core::fmt::Error`] from the underlying writer.
+#[cfg(feature = "text")]
+pub fn repeated_message_encode_text<M>(
+    n: u32,
+    f: &crate::unknown_fields::UnknownFields,
+    enc: &mut crate::text::TextEncoder<'_>,
+) -> core::fmt::Result
+where
+    M: crate::Message + crate::text::TextFormat + Default,
+{
+    repeated_encode_text::<codecs::MessageCodec<M>>(n, f, enc)
+}
+
+/// Textproto encode for a repeated group extension as a message list.
+/// Successfully decoded groups remain separate elements, in wire order.
+/// Malformed or mismatched records are skipped, as by [`codecs::Repeated`].
+///
+/// # Errors
+///
+/// Propagates [`core::fmt::Error`] from the underlying writer.
+#[cfg(feature = "text")]
+pub fn repeated_group_encode_text<M>(
+    n: u32,
+    f: &crate::unknown_fields::UnknownFields,
+    enc: &mut crate::text::TextEncoder<'_>,
+) -> core::fmt::Result
+where
+    M: crate::Message + crate::text::TextFormat + Default,
+{
+    repeated_encode_text::<codecs::GroupCodec<M>>(n, f, enc)
+}
+
+#[cfg(feature = "text")]
+fn repeated_encode_text<C: codecs::SingularCodec>(
+    n: u32,
+    f: &crate::unknown_fields::UnknownFields,
+    enc: &mut crate::text::TextEncoder<'_>,
+) -> core::fmt::Result
+where
+    C::Value: crate::text::TextFormat,
+{
+    use crate::extension::ExtensionCodec;
+    enc.write_message_list(&codecs::Repeated::<C>::decode(n, f))
+}
+
+/// Textproto merge for a repeated message extension. Accepts a message list
+/// or a single message and returns one length-delimited record per element.
+///
+/// # Errors
+///
+/// Returns a parse error for invalid text, an exceeded decode budget, or a
+/// message that exceeds the protobuf encode-size limit.
+#[cfg(feature = "text")]
+pub fn repeated_message_merge_text<M>(
+    dec: &mut crate::text::TextDecoder<'_>,
+    n: u32,
+) -> Result<alloc::vec::Vec<crate::unknown_fields::UnknownField>, crate::text::ParseError>
+where
+    M: crate::Message + crate::text::TextFormat + Default,
+{
+    repeated_merge_text(dec, n, message_merge_text::<M>)
+}
+
+/// Textproto merge for a repeated group extension. Accepts a message list
+/// or a single message and returns one group record per element.
+///
+/// # Errors
+///
+/// Returns a parse error for invalid text, an exceeded decode budget, or a
+/// message that exceeds the protobuf encode-size limit.
+#[cfg(feature = "text")]
+pub fn repeated_group_merge_text<M>(
+    dec: &mut crate::text::TextDecoder<'_>,
+    n: u32,
+) -> Result<alloc::vec::Vec<crate::unknown_fields::UnknownField>, crate::text::ParseError>
+where
+    M: crate::Message + crate::text::TextFormat + Default,
+{
+    repeated_merge_text(dec, n, group_merge_text::<M>)
+}
+
+#[cfg(feature = "text")]
+fn repeated_merge_text(
+    dec: &mut crate::text::TextDecoder<'_>,
+    n: u32,
+    merge_one: ExtTextMergeFn,
+) -> Result<alloc::vec::Vec<crate::unknown_fields::UnknownField>, crate::text::ParseError> {
+    let mut records = alloc::vec::Vec::new();
+    dec.read_repeated_into(&mut records, |dec| {
+        // Both singular helpers return exactly one record on success.
+        Ok(merge_one(dec, n)?.remove(0))
+    })?;
+    Ok(records)
+}
+
 /// Textproto encode for a message-typed extension: decode `M` from the
 /// unknown fields (merge semantics), write as a `{ ... }` message body.
 #[cfg(feature = "text")]

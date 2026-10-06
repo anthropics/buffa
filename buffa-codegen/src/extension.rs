@@ -465,23 +465,29 @@ fn text_helper_tokens(
     nesting: usize,
 ) -> Result<Option<(TokenStream, TokenStream)>, CodeGenError> {
     let h = quote! { ::buffa::type_registry };
-    match ty {
-        Type::TYPE_MESSAGE => {
-            let msg_ty = resolve_type_path(ctx, field, current_package, nesting, "message")?;
-            Ok(Some((
-                quote! { #h::message_encode_text::<#msg_ty> },
-                quote! { #h::message_merge_text::<#msg_ty> },
-            )))
-        }
-        Type::TYPE_GROUP => {
-            let msg_ty = resolve_type_path(ctx, field, current_package, nesting, "group")?;
-            Ok(Some((
-                quote! { #h::group_encode_text::<#msg_ty> },
-                quote! { #h::group_merge_text::<#msg_ty> },
-            )))
-        }
-        _ => Ok(None),
-    }
+    let repeated = field.label == Some(Label::LABEL_REPEATED);
+    let (kind, encode, merge) = match (ty, repeated) {
+        (Type::TYPE_MESSAGE, false) => ("message", "message_encode_text", "message_merge_text"),
+        (Type::TYPE_MESSAGE, true) => (
+            "message",
+            "repeated_message_encode_text",
+            "repeated_message_merge_text",
+        ),
+        (Type::TYPE_GROUP, false) => ("group", "group_encode_text", "group_merge_text"),
+        (Type::TYPE_GROUP, true) => (
+            "group",
+            "repeated_group_encode_text",
+            "repeated_group_merge_text",
+        ),
+        _ => return Ok(None),
+    };
+    let msg_ty = resolve_type_path(ctx, field, current_package, nesting, kind)?;
+    let encode = format_ident!("{encode}");
+    let merge = format_ident!("{merge}");
+    Ok(Some((
+        quote! { #h::#encode::<#msg_ty> },
+        quote! { #h::#merge::<#msg_ty> },
+    )))
 }
 
 /// Resolve `field.type_name` (a `.pkg.Type` proto FQN) to a Rust type path

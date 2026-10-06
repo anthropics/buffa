@@ -203,7 +203,30 @@ impl<'a> TextEncoder<'a> {
     ) -> core::fmt::Result {
         // No `:` before a message value — just a space before `{`.
         self.prepare(Last::Value)?;
-        self.w.write_str(" {")?;
+        self.w.write_char(' ')?;
+        self.write_message_body(f)
+    }
+
+    pub(crate) fn write_message_list<M: super::TextFormat>(
+        &mut self,
+        messages: &[M],
+    ) -> core::fmt::Result {
+        self.prepare(Last::Value)?;
+        self.w.write_str(": [")?;
+        for (index, message) in messages.iter().enumerate() {
+            if index > 0 {
+                self.w.write_str(", ")?;
+            }
+            self.write_message_body(|enc| message.encode_text(enc))?;
+        }
+        self.w.write_char(']')
+    }
+
+    fn write_message_body(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> core::fmt::Result,
+    ) -> core::fmt::Result {
+        self.w.write_char('{')?;
         self.depth += 1;
         let outer_last = self.last;
         self.last = Last::Open;
@@ -267,7 +290,8 @@ impl<'a> TextEncoder<'a> {
     }
 
     /// Write registered extensions from `fields` as `[full_name] { ... }`
-    /// entries. Unregistered field numbers are left for the caller's
+    /// entries, or `[full_name]: [{ ... }, ...]` for repeated messages and groups.
+    /// Unregistered field numbers are left for the caller's
     /// [`write_unknown_fields`](Self::write_unknown_fields) (debug-only,
     /// default off).
     ///

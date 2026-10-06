@@ -1,0 +1,3 @@
+kind: Fixed
+body: Preserve separate messages and groups in repeated extensions when writing textproto. Accept message-list syntax for these extensions without merging their elements.
+time: 2026-10-07T00:12:22.214611+02:00
