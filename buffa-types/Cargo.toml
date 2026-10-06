@@ -59,5 +59,10 @@ serde_json = { workspace = true, features = ["raw_value"] }
 criterion = "0.5"
 
 [[bench]]
+name = "field_mask_validation"
+harness = false
+required-features = ["json"]
+
+[[bench]]
 name = "any_clone"
 harness = false

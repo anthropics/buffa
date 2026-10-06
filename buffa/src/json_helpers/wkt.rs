@@ -331,20 +331,25 @@ pub fn camel_to_snake(path: &str) -> String {
 /// and it was accepted before the character check existed.
 ///
 /// The name predates the character check and is kept for compatibility.
+/// Validation does not allocate: an underscore must be followed by a
+/// lowercase ASCII letter to survive the camelCase round-trip.
 #[must_use]
 pub fn field_mask_path_round_trips(path: &str) -> bool {
     if path == "*" {
         return true;
     }
     path.split('.').all(|component| {
-        let Some((first, rest)) = component.as_bytes().split_first() else {
+        let bytes = component.as_bytes();
+        let Some(first) = bytes.first() else {
             return false;
         };
         (first.is_ascii_lowercase() || *first == b'_')
-            && rest
-                .iter()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_')
-    }) && camel_to_snake(&snake_to_camel(path)) == path
+            && bytes.iter().enumerate().all(|(i, b)| {
+                b.is_ascii_lowercase()
+                    || b.is_ascii_digit()
+                    || (*b == b'_' && bytes.get(i + 1).is_some_and(u8::is_ascii_lowercase))
+            })
+    })
 }
 
 // ── Civil calendar ──────────────────────────────────────────────────────────
@@ -627,6 +632,48 @@ mod tests {
             assert!(field_mask_path_round_trips(path), "path: {path:?}");
             assert_eq!(camel_to_snake(&snake_to_camel(path)), path);
         }
+    }
+
+    #[test]
+    fn field_mask_validation_preserves_identifier_and_underscore_rules() {
+        for path in ["a", "a0", "_a", "_a0", "a_b", "a0_b1", "_a._b", "*"] {
+            assert!(field_mask_path_round_trips(path), "path: {path:?}");
+        }
+        for path in [
+            "_", "__a", "_0", "a_", "a__b", "a_0", "a_.b", "a._", "0a", "a.0b", "a.*", "*.a",
+            "a\0b", "a\nb", "café", "日本", "a.É", "a_é", "a_😀",
+        ] {
+            assert!(!field_mask_path_round_trips(path), "path: {path:?}");
+        }
+        let long_path = "_a0.b_c1.".repeat(128) + "d_e2";
+        assert!(field_mask_path_round_trips(&long_path));
+        assert!(!field_mask_path_round_trips(&(long_path + "_")));
+    }
+
+    #[test]
+    fn field_mask_validation_matches_conversion_round_trip() {
+        fn check_paths(path: &mut String, remaining: u8) {
+            let identifiers = path.split('.').all(|component| {
+                let mut chars = component.chars();
+                matches!(chars.next(), Some('a'..='z' | '_'))
+                    && chars.all(|ch| matches!(ch, 'a'..='z' | '0'..='9' | '_'))
+            });
+            let expected =
+                path == "*" || (identifiers && camel_to_snake(&snake_to_camel(path)) == *path);
+            assert_eq!(
+                field_mask_path_round_trips(path),
+                expected,
+                "path: {path:?}"
+            );
+            if remaining > 0 {
+                for ch in ['a', 'z', '0', '9', '_', '.', 'A', '*', 'é', '\0'] {
+                    path.push(ch);
+                    check_paths(path, remaining - 1);
+                    path.pop();
+                }
+            }
+        }
+        check_paths(&mut String::new(), 5);
     }
 
     #[test]
