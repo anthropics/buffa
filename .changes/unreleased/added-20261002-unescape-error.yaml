@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`text::UnescapeError` implements `Display` and `Error`** (#518). An error from `text::unescape` or `text::unescape_str` can now be returned with `?` from a function whose error type is `Box<dyn Error>`, and wrapped by error libraries, without an adapter. The message is the text that `BadEscape` carries, or `unescaped bytes are not valid UTF-8`.
+time: 2026-10-02T13:07:00+02:00

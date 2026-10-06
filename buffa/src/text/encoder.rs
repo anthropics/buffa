@@ -429,7 +429,13 @@ impl<'a> TextEncoder<'a> {
         write!(self.w, ": {v}")
     }
 
-    /// Write an `f32` value. NaN → `nan`, infinities → `inf`/`-inf`.
+    /// Write an `f32` value as the shortest decimal that reads back as the
+    /// same `f32`, in positional notation (`0.1`, not `0.10000000149011612`).
+    /// NaN is `nan` and the infinities are `inf` and `-inf`.
+    ///
+    /// Where a reader that parses an `f64` and narrows it would take those
+    /// digits to a neighbouring `f32`, the value is written with its `f64`
+    /// digits instead.
     ///
     /// # Errors
     ///
@@ -437,7 +443,20 @@ impl<'a> TextEncoder<'a> {
     pub fn write_f32(&mut self, v: f32) -> core::fmt::Result {
         self.prepare(Last::Value)?;
         self.w.write_str(": ")?;
-        write_float(self.w, v as f64)
+        if v.is_finite() {
+            let mut digits = F32Digits::new();
+            if write!(digits, "{v}").is_ok() {
+                // A reader that parses a `float` as an `f64` and narrows it,
+                // as protobuf C++ and protobuf-go do, rounds twice. For two
+                // values, ±7.038531e-26, that takes the shortest `f32` digits
+                // one ulp away from `v`. They get the widened digits, which
+                // every reader takes back to `v`.
+                if let Some(short) = digits.as_str().filter(|s| narrows_to(s, v)) {
+                    return self.w.write_str(short);
+                }
+            }
+        }
+        write_float(self.w, f64::from(v))
     }
 
     /// Write an `f64` value. NaN → `nan`, infinities → `inf`/`-inf`.
@@ -505,6 +524,48 @@ impl<'a> TextEncoder<'a> {
     pub fn write_enum_number(&mut self, v: i32) -> core::fmt::Result {
         self.write_i32(v)
     }
+}
+
+/// The `Display` text of one finite `f32`, held on the stack.
+struct F32Digits {
+    buf: [u8; Self::CAPACITY],
+    len: usize,
+}
+
+impl F32Digits {
+    /// Buffer length in bytes. A finite `f32` prints as at most 48 bytes (a
+    /// sign and `0.` before 45 decimal places, for example the negative
+    /// subnormal nearest zero), so 64 leaves a margin. A longer text fails
+    /// the write, and `write_f32` then prints the `f64` digits.
+    const CAPACITY: usize = 64;
+
+    const fn new() -> Self {
+        Self {
+            buf: [0; Self::CAPACITY],
+            len: 0,
+        }
+    }
+
+    fn as_str(&self) -> Option<&str> {
+        core::str::from_utf8(self.buf.get(..self.len)?).ok()
+    }
+}
+
+impl Write for F32Digits {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let end = self.len + s.len();
+        let dst = self.buf.get_mut(self.len..end).ok_or(core::fmt::Error)?;
+        dst.copy_from_slice(s.as_bytes());
+        self.len = end;
+        Ok(())
+    }
+}
+
+/// Whether `digits`, parsed as an `f64` and narrowed, is exactly `v`.
+fn narrows_to(digits: &str, v: f32) -> bool {
+    digits
+        .parse::<f64>()
+        .is_ok_and(|wide| (wide as f32).to_bits() == v.to_bits())
 }
 
 /// Write a float with textproto conventions for non-finites.
@@ -616,6 +677,101 @@ mod tests {
             enc.write_f64(v).unwrap();
             assert_eq!(s, want, "value: {v}");
         }
+    }
+
+    fn f32_text(v: f32) -> String {
+        let mut s = String::new();
+        let mut enc = TextEncoder::new(&mut s);
+        enc.write_field_name("f").unwrap();
+        enc.write_f32(v).unwrap();
+        s
+    }
+
+    #[test]
+    fn f32_uses_its_own_shortest_digits() {
+        #[rustfmt::skip]
+        let cases: &[(f32, &str)] = &[
+            (0.1,               "f: 0.1"),
+            (-2.2,              "f: -2.2"),
+            (1.5,               "f: 1.5"),
+            (-0.0,              "f: -0"),
+            // Nine significant digits, the most an `f32` needs.
+            (10.000_010_5,      "f: 10.0000105"),
+            (f32::MAX,          "f: 340282350000000000000000000000000000000"),
+            (f32::NAN,          "f: nan"),
+            (f32::NEG_INFINITY, "f: -inf"),
+        ];
+        for &(v, want) in cases {
+            assert_eq!(f32_text(v), want, "value: {v}");
+        }
+    }
+
+    #[test]
+    fn f32_digits_hold_the_longest_values() {
+        // No `f32` is longer than the negative subnormal nearest zero, 48
+        // bytes. A value that outgrew the buffer would print its widened
+        // digits.
+        for v in [
+            -f32::from_bits(1),
+            -f32::MIN_POSITIVE,
+            f32::MIN,
+            -f32::from_bits(0x007f_ffff),
+        ] {
+            let short = alloc::format!("{v}");
+            assert!(short.len() <= F32Digits::CAPACITY, "value: {v}");
+            assert_eq!(f32_text(v), alloc::format!("f: {short}"), "value: {v}");
+        }
+        assert_eq!(alloc::format!("{}", -f32::from_bits(1)).len(), 48);
+    }
+
+    #[test]
+    fn f32_digits_reject_text_past_the_capacity() {
+        let mut digits = F32Digits::new();
+        for _ in 0..F32Digits::CAPACITY {
+            digits.write_str("1").unwrap();
+        }
+        assert!(digits.write_str("1").is_err());
+        assert_eq!(digits.as_str().map(str::len), Some(F32Digits::CAPACITY));
+    }
+
+    #[test]
+    fn f32_keeps_widened_digits_where_a_narrowing_reader_would_miss() {
+        // The shortest digits of this value are `7.038531e-26`. Read as an
+        // `f64` and narrowed, they give its neighbour 0x15ae_43fe.
+        // `f32_fallback_values_exhaustive` shows that this value and its
+        // negation are the only ones.
+        for v in [f32::from_bits(0x15ae_43fd), -f32::from_bits(0x15ae_43fd)] {
+            let short = alloc::format!("{v}");
+            assert!(!narrows_to(&short, v));
+
+            let text = f32_text(v);
+            let digits = text.strip_prefix("f: ").unwrap();
+            assert_ne!(digits, short);
+            assert_eq!(digits, alloc::format!("{}", f64::from(v)));
+            // Both kinds of reader take the widened digits back to `v`.
+            assert!(narrows_to(digits, v));
+            assert_eq!(digits.parse::<f32>().unwrap().to_bits(), v.to_bits());
+        }
+    }
+
+    #[test]
+    #[ignore = "visits every f32; run with --release"]
+    fn f32_fallback_values_exhaustive() {
+        let mut fallbacks = alloc::vec::Vec::new();
+        for bits in 0..=u32::MAX {
+            let v = f32::from_bits(bits);
+            if !v.is_finite() {
+                continue;
+            }
+            let mut digits = F32Digits::new();
+            write!(digits, "{v}").unwrap();
+            let short = digits.as_str().unwrap();
+            assert_eq!(short.parse::<f32>().unwrap().to_bits(), bits);
+            if !narrows_to(short, v) {
+                fallbacks.push(bits);
+            }
+        }
+        assert_eq!(fallbacks, [0x15ae_43fd, 0x95ae_43fd]);
     }
 
     #[test]

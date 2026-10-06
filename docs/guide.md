@@ -387,7 +387,7 @@ Key points:
 - **A rule is a fully-qualified proto path.** `.my.pkg.Msg.field`, `.my.pkg.Msg`, `.my.pkg`, or `.` for every field; the leading dot is optional. A rule that matches no field of a generated message produces a `cargo:warning`, so a typo or a prost-style bare name (`"field"`) does not pass silently. `map_type_in` and `repeated_type_in` take the same paths and warn the same way.
 - **Only the owned struct field type changes.** The wire format is identical regardless of representation, and view types still borrow `&str` / `&[u8]`.
 - **The rule also covers `map` `string` slots.** A `string_type` rule on a `map<string, V>` / `map<K, string>` field applies to the key and/or value — one rule on the field path covers both slots of a `map<string, string>`. The `map` container itself stays the configured type (the `map_type` knob); only the `string` element type changes. (`bytes` is value-only here, since proto forbids `bytes` map keys.) Because the rule is keyed on the field path, a `map<string, string>` is all-or-nothing: you cannot give the key a custom type and leave the value `String` (or vice versa) on the same field. Asymmetric cases where only one slot is `string` (`map<string, int64>`, `map<int32, string>`) are unaffected.
-- **A custom type needs no `Arbitrary` impl — except in a `map`.** Under `generate_arbitrary`, singular / optional / repeated fields get a generic builder. The `map` arbitrary path currently has no per-key shim, so a custom string used as a `map` key or value must itself implement `Arbitrary`: a one-line derive on a hand-written newtype, or `#[cfg_attr(feature = "arbitrary", buffa(arbitrary))]` on one made with `buffa-remote-derive`.
+- **A custom string needs no `Arbitrary` impl.** Under `generate_arbitrary`, codegen attaches a generic builder to a custom string field (singular, optional, repeated or oneof) and to a `map` field with a custom string key or value. The builder makes a `String` and converts it through `From<String>`.
 - **JSON of an `optional`, `repeated`, or `oneof` custom string, or any custom string in a `map`,** serializes through the element's native `serde`, so such a newtype must derive `Serialize` / `Deserialize` (`buffa-smolstr`'s `serde` feature does this). Non-optional singular string fields use buffa's `proto_string` with-module and need no `serde` impl.
 - **A custom string used as a `map` key needs `Hash + Eq`** (for the default / `HashMap` container) or `Ord` (for `map_type(BTreeMap)`). The bound is enforced at the generated map field type, so a missing impl is a clear compile error at that field.
 - **A custom type used as a `repeated` element, or as a `map` key/value, must be crate-local.** Codegen emits per-element `ReflectElement` (vtable reflection), `ReflectMapKey` (vtable, for a custom `string` map key), and base64 `ProtoElemJson` (JSON, bytes only) impls for it, which the orphan rule forbids for a foreign type — a local newtype satisfies this. Singular / optional / oneof uses have no such restriction.
@@ -1004,6 +1004,8 @@ pub mod contact {
 
 Adding or removing sibling types never changes the Rust name of an existing oneof enum.
 
+Two oneofs of one message can still collide with each other: `oneof foo_bar` and `oneof foo__bar` both map to `FooBar`, and `oneof self` and `oneof self_` both map to `Self_`. Code generation rejects such a message with `CodeGenError::OneofEnumNameConflict`, which names both oneofs. Rename one of them; a oneof's name is in neither the wire format nor JSON, so the rename changes generated code only.
+
 ### Nested types and module structure
 
 Nested proto messages are scoped in Rust modules named after the parent:
@@ -1232,7 +1234,7 @@ Every option above applies to the protobuf binary decoders — owned, view, and 
 
 The reflective JSON parser applies an element-memory limit of its own. `DynamicMessage::from_json` owns its `Deserializer`, so it carries the budget the way textproto does: 32 MiB by default, charged per repeated element, map entry, `Struct` member, `ListValue` element and `FieldMask` path, with the charges the reflective binary decoder applies, and shared across the whole parse rather than reset per nested message. To parse with another limit, call `DynamicMessageSeed::new(pool, index).with_element_memory_limit(n).parse_json(json)`. A parse that exceeds the limit fails with a `serde_json::Error`, and `DynamicMessageSeed::is_element_memory_limit_error(&err)` tells that error from a malformed-input one, for a server that answers the two differently. The recursion and message-size limits still do not reach this parser, and generated-message JSON is unbounded as described above.
 
-The limit does not bound the memory a `google.protobuf.Any` payload takes to read. `@type` can follow the fields it types, so the payload object is buffered as a `serde_json::Value` tree before any of it is charged, and only the message built from that tree draws on the budget. Peak memory for input that carries an `Any` therefore grows with the input length whatever the limit is; one measurement put it at about 27 times the input length for an `Any` full of empty objects. Cap the input length as well when an `Any` is reachable from the message type.
+A `google.protobuf.Any` payload costs more than the same message as a field of its own type. `@type` can follow the fields it types, so the parser buffers the payload object and decodes the message from the buffer. Until the payload is decoded, the buffer draws on the same budget: at every depth, each object member in it costs what a map entry costs and each array element what a repeated element costs (88 and 64 bytes on a 64-bit target with a current compiler). So a payload needs room for its buffer and its message together, on top of what the parse has kept when it reaches the `Any`, and an `Any` that follows a large repeated field has less room than one that precedes it. The documentation of `DynamicMessageSeed::with_element_memory_limit` gives the full rule and the capacities at the default.
 
 Textproto also bounds itself: `decode_from_str` applies the element-memory limit on its own. The amplification there is very nearly as large as on the wire — `{},` is three input bytes for the same element footprint that costs two encoded — so the parser needs the same bound, and carries its own because `DecodeContext` never reaches it. Raise it with `buffa::text::decode_from_str_with_element_memory_limit`. The recursion limit already applied there, enforced by the tokenizer.
 
@@ -1759,6 +1761,8 @@ let msg = with_json_parse_options(&opts, || {
     serde_json::from_str::<Person>(json)
 })?;
 ```
+
+The option covers enum values that the enum does not declare. A value that cannot be an enum value, such as `true` or `1.5`, is a parse error with the option on or off; the `buffa::json` module docs give the result for each kind of field.
 
 ## Text format (textproto)
 

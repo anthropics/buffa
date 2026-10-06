@@ -8,11 +8,18 @@ package repeated_type;
 // merge/encode paths differ: packed varint (`numbers`, reserve hint), packed
 // fixed-width (`fixed`, exact reserve), unpacked string (`names`), and
 // repeated message (`items`, view→owned via `to_owned_from_source`).
+//
+// `labels` (a custom string type) and `blobs` (`bytes::Bytes`) are the two
+// element kinds whose generated `Arbitrary` builder converts each element; the
+// fixture is compiled with `generate_arbitrary`, which type-checks that the
+// builder returns the custom collection.
 message Lists {
   repeated int32 numbers = 1;
   repeated string names = 2;
   repeated Inner items = 3;
   repeated sfixed32 fixed = 4;
+  repeated string labels = 5;
+  repeated bytes blobs = 6;
 }
 
 message Inner {

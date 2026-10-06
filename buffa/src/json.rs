@@ -60,25 +60,36 @@
 //! in debug builds; the second call is silently ignored in release). Treat the
 //! first successful call as locking in behaviour for the process lifetime.
 //!
-//! # Unknown enum names by field shape
+//! # What `ignore_unknown_enum_values` changes for each kind of field
 //!
-//! For these field shapes, `ignore_unknown_enum_values` treats an unknown enum
-//! name the same way in `std` and `no_std` builds:
+//! The option covers enum values that the enum does not declare. With the
+//! option set, a generated message type handles such a value as the table
+//! says, in `std` and `no_std` builds alike unless a cell names the build:
 //!
-//! - a singular enum field takes the enum's default value (0 for an open
-//!   enum);
-//! - an `optional` enum field is left unset;
-//! - an unknown entry in a `repeated enum` or `map<_, enum>` field is dropped
-//!   from the container.
+//! | Field | Unknown name | Undeclared number, closed enum |
+//! |---|---|---|
+//! | implicit presence, or `required` | default value (0 for an open enum) | parse error |
+//! | explicit presence (the Rust type is `Option`) | left unset | left unset |
+//! | `repeated` or `map` | element or entry dropped | element or entry dropped |
+//! | `oneof` member, open enum | member set, with value 0 (`std`); parse error (`no_std`) | does not apply |
+//! | `oneof` member, closed enum | parse error | parse error |
+//! | extension | parse error | kept |
 //!
-//! An enum member of a `oneof` and an enum-typed extension are read by the
-//! enum's own decoder, which this list does not cover. An unknown name in an
-//! open-enum `oneof` member takes the default value with `std` and is a
-//! parse error without it. In a closed-enum `oneof` member or an enum-typed
-//! extension it is a parse error whether or not the option is set.
+//! An undeclared number is an integer in the `i32` range that the enum does
+//! not declare. An open enum keeps one as
+//! [`EnumValue::Unknown`](crate::EnumValue::Unknown) in every kind of field.
+//! With the option off, each cell is a parse error, and an extension still
+//! keeps the number.
 //!
-//! An unknown number in an open-enum field is kept as
-//! `EnumValue::Unknown(n)` whether or not the option is set.
+//! A value that cannot be an enum value is a parse error in every kind of
+//! field, with the option on or off. Such a value is a bool, an object, an
+//! array, a number written with a fraction or an exponent (such as `1.0`), or
+//! an integer outside the `i32` range. A `null` element of a `repeated` or
+//! `map` field is read as the enum's default value.
+//!
+//! The option applies to generated message types. JSON parsing of a
+//! `DynamicMessage` in `buffa-descriptor` does not read the option, and an
+//! unknown enum name is a parse error there.
 
 /// Options controlling protobuf JSON parsing behavior.
 ///
@@ -92,9 +103,13 @@
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct JsonParseOptions {
-    /// When `true`, an unknown enum string value is replaced with the default
-    /// value, left unset, or skipped, depending on the field's shape, instead
-    /// of producing an error. See the [module docs](self) for each shape.
+    /// When `true`, an enum name that the enum does not declare is replaced
+    /// with the default value, left unset, or dropped, depending on the kind
+    /// of field. In an `optional`, `repeated` or `map` field of a closed
+    /// enum, a number in the `i32` range that the enum does not declare is
+    /// left unset or dropped too. A value that cannot be an enum value, such
+    /// as a bool or `1.5`, is a parse error with the option on or off. See
+    /// the [module docs](self) for each kind of field. Default: `false`.
     pub ignore_unknown_enum_values: bool,
     /// When `true`, `"[pkg.ext]"` JSON keys that are not in the extension
     /// registry produce a parse error instead of being silently dropped.
@@ -124,9 +139,9 @@ impl JsonParseOptions {
         Self::default()
     }
 
-    /// Set whether unknown enum string values are ignored instead of
-    /// producing a parse error. See the [module docs](self) for what
-    /// "ignored" means for each field shape.
+    /// Set whether enum values that the enum does not declare are ignored
+    /// instead of producing a parse error. See the [module docs](self) for
+    /// what "ignored" means for each kind of field.
     #[must_use]
     pub fn ignore_unknown_enum_values(mut self, ignore: bool) -> Self {
         self.ignore_unknown_enum_values = ignore;
