@@ -1,3 +1,8 @@
+//! Reflective JSON for wrapper messages against a protoc-compiled schema.
+//!
+//! Regenerate the fixture from `tests/protos/` with:
+//! `protoc --include_imports --descriptor_set_out=json_wrappers_test.fds json_wrappers_test.proto`.
+
 #![cfg(all(feature = "reflect", feature = "json"))]
 
 use std::sync::Arc;
