@@ -556,6 +556,11 @@ pub mod keywords {
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod keyword_collisions {
+    buffa::include_proto!("test.keyword_collisions");
+}
+
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod nested {
     buffa::include_proto!("test.nested");
 }

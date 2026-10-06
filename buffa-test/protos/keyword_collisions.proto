@@ -1,0 +1,55 @@
+// Fixture for members that share a name after keyword escaping. `self`,
+// `super`, `crate` and `Self` cannot be raw identifiers, so the generated
+// member is `self_` and so on. Every message but `SameField` gives that name
+// to another member, and `SameField` inherits the rename. proto2, because
+// proto3 rejects the fields `self` and `self_` in one message (their default
+// JSON names are equal).
+syntax = "proto2";
+
+package test.keyword_collisions;
+
+message FieldPair {
+  optional int32 self = 1;
+  optional string self_ = 2 [json_name = "selfUnderscore"];
+  repeated int32 super = 3;
+  optional bytes super_ = 4 [json_name = "superUnderscore"];
+  map<string, int32> crate = 5;
+  optional bool crate_ = 6 [json_name = "crateUnderscore"];
+  optional FieldPair Self = 7;
+  optional int32 Self_ = 8 [json_name = "SelfUnderscore"];
+}
+
+// The struct field of `oneof self` is `self_` as well.
+message FieldBesideOneof {
+  optional string self_ = 1;
+  oneof self {
+    int32 number = 2;
+    string text = 3;
+  }
+}
+
+// The mirror shape, which proto3 accepts too: the oneof is `self_`, so the
+// field takes the second underscore.
+message KeywordBesideOneof {
+  optional int32 self = 5;
+  oneof self_ {
+    int32 number = 2;
+    string text = 3;
+  }
+}
+
+// A required member with an explicit default, and a oneof: the generated
+// `Default` impl and the presence check name the renamed members.
+message RequiredAndDefaults {
+  required int32 crate = 1 [default = 5];
+  optional string crate_ = 2 [json_name = "crateUnderscore"];
+  optional string super_ = 3;
+  oneof super {
+    int32 pick = 4;
+  }
+}
+
+// Declares the same field as `FieldPair` and has no `self_` member.
+message SameField {
+  optional int32 self = 1;
+}

@@ -95,6 +95,7 @@ mod inline_field;
 mod json;
 mod json_private_key;
 mod keyword;
+mod keyword_collisions;
 mod lazy_views;
 mod map_type;
 mod map_type_custom;

@@ -380,6 +380,19 @@ fn main() {
         .compile()
         .expect("buffa_build failed for keywords.proto");
 
+    // Members that share a name after keyword escaping (`self` next to
+    // `self_`). JSON, text, lazy views and vtable reflection each resolve
+    // the member name separately, so all four are on.
+    buffa_build::Config::new()
+        .files(&["protos/keyword_collisions.proto"])
+        .includes(&["protos/"])
+        .generate_json(true)
+        .generate_text(true)
+        .lazy_views(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for keyword_collisions.proto");
+
     // Deep nesting — 3+ levels, oneof with same-package message variants,
     // direct and mutual recursion through a oneof. Views enabled to test
     // boxed view-enum variants.

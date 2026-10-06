@@ -1055,7 +1055,7 @@ pub(crate) fn field_bytes_repr(
 /// The "replace" decode expression for a `bytes` field of the given
 /// representation: reads a length-delimited value and produces a fresh owned
 /// value (no in-place buffer reuse). `Vec<u8>` allocates, `bytes::Bytes`
-/// decodes zero-copy, and a custom type is constructed via `From<Vec<u8>>`.
+/// decodes zero-copy, and a custom type is constructed by its `from_wire`.
 fn bytes_decode_expr(repr: &crate::BytesRepr) -> TokenStream {
     match repr {
         crate::BytesRepr::Vec => quote! { ::buffa::types::decode_bytes(buf)? },

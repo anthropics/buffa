@@ -2243,6 +2243,28 @@ pub enum CodeGenWarning {
         /// by proto name.
         assignments: Vec<(String, String)>,
     },
+    /// A member's keyword-escaped Rust name is also the name of another
+    /// member, and the keyword member was renamed.
+    ///
+    /// A field or oneof whose Rust name is `self`, `super`, `crate` or `Self`
+    /// (after any `idiomatic_field_names` conversion) is generated as `self_`.
+    /// Next to a member named `self_`, it is generated as `self__`, with more
+    /// underscores while that name is taken too. Wire, JSON and text-format
+    /// names are unaffected. Two oneofs named `self` and `self_` fail with
+    /// [`CodeGenError::OneofEnumNameConflict`] instead.
+    ///
+    /// A field is identified by its name and number, and a oneof by its
+    /// name, across the messages of every generated file. A message that
+    /// declares the same member gets the same Rust name and this warning,
+    /// even when it has no `self_` member of its own.
+    #[non_exhaustive]
+    KeywordEscapedNamesAdjusted {
+        /// Fully-qualified proto name of the affected message.
+        message_name: String,
+        /// `(proto_name, final_rust_name)` for each adjusted member, sorted by
+        /// proto name.
+        assignments: Vec<(String, String)>,
+    },
     /// A field in a kept file references a type from a package that is neither
     /// being generated nor covered by an [`extern_path`](CodeGenConfig::extern_paths)
     /// mapping. The generated code will emit a dangling type path that fails to
@@ -2485,6 +2507,22 @@ impl core::fmt::Display for CodeGenWarning {
                     f,
                     "message `{message_name}`: idiomatic snake_case field names collide; \
                      adjusted: {} (wire/JSON/text names are unaffected)",
+                    parts.join(", ")
+                )
+            }
+            Self::KeywordEscapedNamesAdjusted {
+                message_name,
+                assignments,
+            } => {
+                let parts: Vec<String> = assignments
+                    .iter()
+                    .map(|(proto, rust)| format!("`{proto}` → `{rust}`"))
+                    .collect();
+                write!(
+                    f,
+                    "message `{message_name}`: a member's keyword-escaped Rust name is the \
+                     name of another member, in this message or in one that declares the \
+                     same member; adjusted: {} (wire/JSON/text names are unaffected)",
                     parts.join(", ")
                 )
             }
