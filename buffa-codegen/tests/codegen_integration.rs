@@ -282,10 +282,10 @@ fn codegen_name_collisions() {
 }
 
 #[test]
-fn codegen_disambiguates_keyword_escaped_field_and_oneof_names() {
+fn codegen_renames_keyword_members_that_collide_after_escaping() {
     let proto = r#"
         syntax = "proto2";
-        package repro;
+        package test;
 
         message FieldCollision {
             optional int32 self = 1;
@@ -307,14 +307,14 @@ fn codegen_disambiguates_keyword_escaped_field_and_oneof_names() {
         config.idiomatic_field_names = idiomatic_field_names;
         let content = generate_proto(proto, &config);
         let field_body = struct_body(&content, "FieldCollision");
-        assert!(field_body.contains("pub self_f1:"), "{field_body}");
+        assert!(field_body.contains("pub self__:"), "{field_body}");
         assert!(field_body.contains("pub self_:"), "{field_body}");
-        assert!(field_body.contains("pub crate_f3:"), "{field_body}");
+        assert!(field_body.contains("pub crate__:"), "{field_body}");
         assert!(field_body.contains("pub crate_:"), "{field_body}");
 
         let oneof_body = struct_body(&content, "OneofCollision");
         assert!(oneof_body.contains("pub self_:"), "{oneof_body}");
-        assert!(oneof_body.contains("pub self_oneof:"), "{oneof_body}");
+        assert!(oneof_body.contains("pub self__:"), "{oneof_body}");
     }
 }
 

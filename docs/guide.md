@@ -452,6 +452,12 @@ This is the standard Rust mechanism for using keywords as identifiers. It applie
 
 **Rust keywords in field names** are also escaped. Most keywords use raw identifiers (`r#type`, `r#match`), but `self`, `super`, `Self`, and `crate` cannot be raw identifiers and are suffixed with `_` instead (`self_`, `super_`). This matches prost's convention.
 
+**A keyword member next to a member that has the escaped name** takes a second underscore. Next to a member named `self_`, the member named `self` is generated as `self__`, and as `self___` when that name is taken too. The member whose proto name is `self_` keeps its name. The view field, the `FooOwnedView` accessor and the setter (where the field has one) use the same name: `view.self__`, `with_self__`. Wire, JSON and text-format names do not change.
+
+The two members are a field and a oneof in either order, in any syntax, or two fields. protoc accepts the two fields `self` and `self_` only in proto2, or with `features.json_format = LEGACY_BEST_EFFORT` in an editions file. With `idiomatic_field_names`, a proto3 field `Self` next to `self_` is such a pair too. Two oneofs named `self` and `self_` are rejected instead; see [Naming](#naming) under oneofs.
+
+Each affected message produces a build warning (`CodeGenWarning::KeywordEscapedNamesAdjusted`). A field is matched by its name and number, and a oneof by its name, across the files that the run generates. Another generated message that declares the same member gets the same Rust name and the warning. So two edits to a schema change existing Rust names. Adding a member named `self_` to a message that has `self` gives the name `self_` to the new member. Adding such a pair to one message renames the matching member of the others.
+
 **Generated files are named by proto file path, not package.** The file `proto/api/v1/service.proto` produces `api.v1.service.rs` regardless of the `package` declaration. The module tree generator uses the package from the file descriptor (not the file name) to build the `pub mod` nesting. This means the file name and module path may not correspond — the file `api.v1.service.rs` might be included inside `pub mod myapp { pub mod api { pub mod v1 { ... } } }` if the package is `myapp.api.v1`.
 
 **Recursive message types** work automatically: singular message fields use `MessageField<T>` (which is `Option<Box<T>>` internally), and message-typed oneof variants are boxed by default. Both direct recursion (`message T { oneof k { T self = 1; } }`) and mutual recursion (`A ↔ B`) compile without workarounds.
