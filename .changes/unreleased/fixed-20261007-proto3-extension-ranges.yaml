@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **DescriptorPool rejects extension ranges declared by proto3 messages**, matching protoc. The error is `PoolError::ExtensionRangeInProto3` and names the message, including nested messages.
+time: 2026-10-07T00:00:00+02:00

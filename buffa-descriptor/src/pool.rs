@@ -308,6 +308,8 @@ pub enum PoolError {
         start: Option<i32>,
         end: Option<i32>,
     },
+    /// A message in a proto3 file declares an extension range.
+    ExtensionRangeInProto3 { message: String },
     /// Two extension ranges declared by the same message overlap. `end` is
     /// exclusive, as in `DescriptorProto.ExtensionRange`. Carries both ranges
     /// as declared: `start..end` is the later of the two in declaration
@@ -566,6 +568,9 @@ impl core::fmt::Display for PoolError {
                 Bound(*start),
                 Bound(*end),
             ),
+            Self::ExtensionRangeInProto3 { message } => {
+                write!(f, "message {message} declares an extension range in proto3")
+            }
             Self::OverlappingExtensionRange {
                 message,
                 start,
@@ -851,8 +856,9 @@ impl DescriptorPool {
     /// identity is declared twice, a field number is out of range or in
     /// the implementation-reserved band (19000-19999), a field uses a name or
     /// number its message reserved, an extension range overlaps a reserved
-    /// range, a message or enum declares a reserved name twice, an open enum's
-    /// first value is non-zero, an enum value reuses a reserved name or number
+    /// range or is declared in proto3, a message or enum declares a reserved
+    /// name twice, an open enum's first value is non-zero, an enum value
+    /// reuses a reserved name or number
     /// or a duplicate number without `allow_alias`, a oneof index is invalid,
     /// a `proto3_optional` field is malformed, a message exceeds 65 535
     /// fields, or a map entry is malformed.
@@ -875,8 +881,9 @@ impl DescriptorPool {
     /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
     /// validation failure (dangling or unimported type names, out-of-range or
     /// implementation-reserved field numbers, reserved message fields, an
-    /// overlapping extension range, duplicate symbols or field identities,
-    /// duplicate reserved names, an open enum whose first value is non-zero,
+    /// overlapping extension range or one declared in proto3, duplicate
+    /// symbols or field identities, duplicate reserved names, an open enum
+    /// whose first value is non-zero,
     /// reserved enum values, duplicate enum numbers without `allow_alias`,
     /// invalid oneof indices, malformed `proto3_optional` fields, or malformed
     /// map entries).
@@ -1646,6 +1653,9 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        if scope.proto3 && !msg.extension_range.is_empty() {
+            return Err(PoolError::ExtensionRangeInProto3 { message: fqn });
+        }
         let msg_features =
             features::resolve_child(parent_features, features::message_features(msg));
 
