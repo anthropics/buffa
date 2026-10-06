@@ -1,3 +1,4 @@
 kind: Changed
-body: '**Reuse the entry buffer when normalizing reflective maps.** Sort and remove duplicate keys in place while keeping the last value for each key, avoiding a second full-size entry allocation.'
+body: |-
+    **`MapValue::from_entries` sorts and removes duplicate keys in place** (#540). Normalizing a reflective map built a second vector as large as the first; it now reuses the entry buffer. The last value for a duplicate key still wins.
 time: 2026-10-04T01:00:17.051579+02:00
