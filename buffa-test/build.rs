@@ -617,6 +617,8 @@ fn main() {
             ".test.openenums.RequiredImplicitDefault.level",
             ".test.openenums.LazyChild.opt",
             ".test.openenums.LazyChild.level",
+            ".test.openenums.AbsentEnums.opened",
+            ".test.openenums.AbsentEnums.opened_member",
         ])
         .generate_json(true)
         .generate_text(true)
