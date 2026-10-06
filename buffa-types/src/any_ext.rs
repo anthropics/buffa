@@ -530,7 +530,11 @@ impl<'de> serde::Deserialize<'de> for Any {
 
         let value = match lookup {
             Some((from_json, true)) => {
-                let json_val = obj.remove("value").unwrap_or(serde_json::Value::Null);
+                let json_val = obj.remove("value").ok_or_else(|| {
+                    serde::de::Error::custom(alloc::format!(
+                        "Any with WKT type {type_url:?} requires a \"value\" key"
+                    ))
+                })?;
                 from_json(json_val).map_err(serde::de::Error::custom)?
             }
             Some((from_json, false)) => {

@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+  **Require the `value` key for registered `Any` types with special JSON mappings.** A missing payload previously became a default scalar wrapper or a null `Value`. The typed parser now returns an error, matching the reflective parser. An explicit `null` remains valid where the contained type accepts it.
+time: 2026-10-06T21:26:50Z
