@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`ProtoList` derives avoid iterator type name collisions**. The generated `FromIterator::from_iter` type parameter no longer shadows an element parameter, const parameter, or remote type named `__BuffaIter`. An unused name is chosen from the derive input, including raw names and names with trailing underscores.
+time: 2026-10-07T00:42:26+02:00

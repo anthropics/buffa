@@ -1,4 +1,4 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::quote;
 use syn::{parse_quote, DeriveInput};
 
@@ -17,6 +17,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
 
     let element_ty = remote_field::single_type_param(generics)?;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let iterator_ty = iterator_type_name(&input);
 
     let from_iter = remote_field::qualified_call(
         field_ty,
@@ -84,8 +85,8 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
 
         impl #impl_generics ::core::iter::FromIterator<#element_ty> for #ident #ty_generics #where_clause {
             #[inline]
-            fn from_iter<__BuffaIter: ::core::iter::IntoIterator<Item = #element_ty>>(
-                iter: __BuffaIter,
+            fn from_iter<#iterator_ty: ::core::iter::IntoIterator<Item = #element_ty>>(
+                iter: #iterator_ty,
             ) -> Self {
                 #ctor_from_iter
             }
@@ -119,5 +120,22 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         }
 
         #arbitrary_impl
+    })
+}
+
+fn iterator_type_name(input: &DeriveInput) -> syn::Ident {
+    let tokens = quote! { #input };
+    let mut name = "__BuffaIter".to_owned();
+    while contains_ident(tokens.clone(), &name) {
+        name.push('_');
+    }
+    syn::Ident::new(&name, Span::call_site())
+}
+
+fn contains_ident(tokens: TokenStream, name: &str) -> bool {
+    tokens.into_iter().any(|token| match token {
+        TokenTree::Ident(ident) => ident.to_string().trim_start_matches("r#") == name,
+        TokenTree::Group(group) => contains_ident(group.stream(), name),
+        _ => false,
     })
 }
