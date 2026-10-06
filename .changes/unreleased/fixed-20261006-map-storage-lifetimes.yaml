@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+  **`MapStorage` derives support lifetime parameters named `'a`**. The generated iterator method now avoids lifetime names in the newtype's parameters, field type, and iterator override, including raw names and higher-ranked bounds.
+time: 2026-10-06T21:52:20.000000Z
