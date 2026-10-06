@@ -8,12 +8,14 @@
 # and discovered missing from crates.io after a release.
 #
 # Order is dependency order and is maintained by hand. cargo publish blocks
-# until each crate is indexed, so a sequential walk needs no delays. Two
+# until each crate is indexed, so a sequential walk needs no delays. These
 # constraints are not obvious from the dependency graph at a glance:
 #
 #   - buffa-descriptor precedes buffa-types, because buffa-types' `reflect`
 #     feature has an optional buffa-descriptor dependency and cargo publish
 #     requires optional deps to resolve from the index too.
+#   - buffa-descriptor precedes buffa-proto-options, whose `reflect` feature
+#     has the same optional dependency.
 #   - buffa is first: everything else depends on it.
 #
 # A crate deliberately not released sets `publish = false` in its Cargo.toml
@@ -22,6 +24,7 @@
 buffa
 buffa-descriptor
 buffa-types
+buffa-proto-options
 buffa-codegen
 buffa-build
 buffa-remote-derive
