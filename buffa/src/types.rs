@@ -1534,18 +1534,17 @@ pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
 ///
 /// - `from_wire` (the required method, below) — the binary decode constructor.
 /// - `Clone + PartialEq + Default + Debug` — for the `#[derive(...)]` and the
-///   hand-written `Debug` impl on message structs, and for `clear()` (which
-///   resets the field to [`Default`] rather than relying on a `Vec`-specific
-///   `clear`, since a substituted type may be immutable).
+///   hand-written `Debug` impl on message structs, and for `clear()` when the
+///   field has no declared default (a substituted type may be immutable).
 /// - `Send + Sync` — so a message owning such a field stays `Send + Sync`.
 /// - `Deref<Target = [u8]>` and [`AsRef<[u8]>`](AsRef) — generated code
 ///   reads the field's bytes through these bounds: the size pass borrows
 ///   `&[u8]` where [`bytes_encoded_len`] expects it, and the write pass goes
 ///   through [`put_shared_bytes_field`] / [`AsSharedBytes`], whose blanket
 ///   impl reads via `AsRef<[u8]>`.
-/// - `From<Vec<u8>>` — used by the JSON and view→owned paths to construct the
-///   field from freshly decoded bytes (binary decode uses
-///   [`from_wire`](ProtoBytes::from_wire) instead). Note that `From<&[u8]>` is
+/// - `From<Vec<u8>>` — used by the JSON and view→owned paths, and by `Default`
+///   and `clear()` to construct declared field defaults. Binary decode uses
+///   [`from_wire`](ProtoBytes::from_wire) instead. Note that `From<&[u8]>` is
 ///   deliberately *not* required: `bytes::Bytes` implements it only for
 ///   `&'static [u8]`, so requiring it would exclude `Bytes` itself.
 ///
@@ -1691,7 +1690,8 @@ pub trait ProtoBytes:
     /// [`PREFERS_OWNED_PAYLOAD`](Self::PREFERS_OWNED_PAYLOAD).
     ///
     /// Only binary decode calls `from_wire`. JSON, text format, view→owned
-    /// conversion and `arbitrary` build the value through `From<Vec<u8>>`.
+    /// conversion, declared field defaults and `arbitrary` build the value
+    /// through `From<Vec<u8>>`.
     ///
     /// # Errors
     ///

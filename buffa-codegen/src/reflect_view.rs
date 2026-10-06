@@ -22,10 +22,10 @@ use std::collections::HashMap;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::context::{MessageScope, SENTINEL_MOD};
+use crate::context::{CodeGenContext, MessageScope, SENTINEL_MOD};
 use crate::features::resolve_field;
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
-use crate::generated::descriptor::DescriptorProto;
+use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto};
 use crate::idents::make_field_ident;
 use crate::impl_message::{
     effective_type, is_explicit_presence_scalar, is_real_oneof_member, is_required_field,
@@ -62,6 +62,22 @@ pub(crate) fn scalar_default(ty: Type) -> TokenStream {
         Type::TYPE_FLOAT | Type::TYPE_DOUBLE => quote! { 0.0 },
         _ => quote! { 0 },
     }
+}
+
+/// The number an absent enum field reads as: the enum's first declared value.
+/// A descriptor-driven `DynamicMessage` returns the same number.
+pub(crate) fn enum_default_number(
+    ctx: &CodeGenContext,
+    field: &FieldDescriptorProto,
+    current_package: &str,
+    nesting: usize,
+) -> Result<TokenStream, CodeGenError> {
+    let type_name = field
+        .type_name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.type_name"))?;
+    let first = crate::defaults::enum_first_value_expr(ctx, type_name, current_package, nesting)?;
+    Ok(quote! { ::buffa::Enumeration::to_i32(&#first) })
 }
 
 /// Generate the vtable reflection impls for a single view type.
@@ -129,10 +145,20 @@ pub(crate) fn reflect_view_impls(
                     quote! { #vr::Bytes(self.#id.unwrap_or(&[])) },
                     quote! { self.#id.is_some() },
                 ),
-                Type::TYPE_ENUM => (
-                    quote! { #vr::EnumNumber(self.#id.map_or(0, |e| e.to_i32())) },
-                    quote! { self.#id.is_some() },
-                ),
+                Type::TYPE_ENUM => {
+                    let default = enum_default_number(
+                        ctx,
+                        field,
+                        view_scope.current_package,
+                        view_scope.nesting,
+                    )?;
+                    (
+                        quote! {
+                            #vr::EnumNumber(self.#id.map_or_else(|| #default, |e| e.to_i32()))
+                        },
+                        quote! { self.#id.is_some() },
+                    )
+                }
                 _ => {
                     let variant = scalar_variant(ty);
                     let def = scalar_default(ty);
@@ -241,10 +267,18 @@ pub(crate) fn reflect_view_impls(
                         },
                     )
                 }
-                Type::TYPE_ENUM => (
-                    quote! { #vr::EnumNumber(v.to_i32()) },
-                    quote! { #vr::EnumNumber(0) },
-                ),
+                Type::TYPE_ENUM => {
+                    let default = enum_default_number(
+                        ctx,
+                        field,
+                        view_scope.current_package,
+                        view_scope.nesting,
+                    )?;
+                    (
+                        quote! { #vr::EnumNumber(v.to_i32()) },
+                        quote! { #vr::EnumNumber(#default) },
+                    )
+                }
                 _ => {
                     let variant_v = scalar_variant(ty);
                     let def = scalar_default(ty);

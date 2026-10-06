@@ -1204,6 +1204,7 @@ fn scalar_clear_stmt(
         features,
         nesting,
         field_string_repr(ctx, proto_fqn, field_name),
+        &bytes_repr,
     )? {
         return Ok(quote! { self.#ident = #default_expr; });
     }

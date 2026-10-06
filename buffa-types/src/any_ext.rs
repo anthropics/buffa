@@ -927,8 +927,12 @@ mod tests {
 
     #[cfg(feature = "json")]
     mod serde_tests {
+        #[cfg(not(feature = "std"))]
+        extern crate std;
+
         use super::*;
         use crate::google::protobuf::Duration;
+        use alloc::{string::ToString, vec};
         use buffa::any_registry::clear_any_registry;
         use buffa::type_registry::{
             clear_text_registry, set_type_registry, TypeRegistry, MAX_ANY_EXPANSION_DEPTH,
