@@ -89,6 +89,22 @@ impl TryFrom<Timestamp> for jiff::Timestamp {
     /// outside [`jiff::Timestamp`]'s representable range (≈ years -9999 through
     /// 9999 — proto permits a far wider second range).
     fn try_from(ts: Timestamp) -> Result<Self, Self::Error> {
+        Self::try_from(&ts)
+    }
+}
+
+#[cfg_attr(docsrs, doc(cfg(feature = "jiff")))]
+impl TryFrom<&Timestamp> for jiff::Timestamp {
+    type Error = TimestampError;
+
+    /// Convert a borrowed protobuf [`Timestamp`] without cloning or consuming it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TimestampError::InvalidNanos`] for invalid nanoseconds, or
+    /// [`TimestampError::Overflow`] if the instant is outside
+    /// [`jiff::Timestamp`]'s representable range.
+    fn try_from(ts: &Timestamp) -> Result<Self, Self::Error> {
         if ts.nanos < 0 || ts.nanos > NANOS_MAX {
             return Err(TimestampError::InvalidNanos);
         }

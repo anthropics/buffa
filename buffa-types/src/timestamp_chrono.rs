@@ -83,6 +83,22 @@ impl TryFrom<Timestamp> for chrono::DateTime<chrono::Utc> {
     /// `[0, 999_999_999]`, or [`TimestampError::Overflow`] if the value is
     /// outside the range `chrono::DateTime<Utc>` can represent.
     fn try_from(ts: Timestamp) -> Result<Self, Self::Error> {
+        Self::try_from(&ts)
+    }
+}
+
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
+impl TryFrom<&Timestamp> for chrono::DateTime<chrono::Utc> {
+    type Error = TimestampError;
+
+    /// Convert a borrowed protobuf [`Timestamp`] without cloning or consuming it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TimestampError::InvalidNanos`] for invalid nanoseconds, or
+    /// [`TimestampError::Overflow`] if the instant is outside the range
+    /// [`chrono::DateTime<Utc>`](chrono::DateTime) can represent.
+    fn try_from(ts: &Timestamp) -> Result<Self, Self::Error> {
         if ts.nanos < 0 || ts.nanos > NANOS_MAX {
             return Err(TimestampError::InvalidNanos);
         }
