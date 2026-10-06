@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Reject required extension labels in descriptor pools.** Extensions may only be optional or repeated, even in proto2. File-level and nested extension declarations now report RequiredExtension.'
+time: 2026-10-07T00:41:29.521513+02:00

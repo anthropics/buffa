@@ -276,6 +276,9 @@ pub enum PoolError {
     /// protoc rejects this within one compilation unit, but it can arise
     /// when merging independently-compiled `FileDescriptorSet`s.
     DuplicateExtensionNumber { extendee: String, number: u32 },
+    /// An extension uses a `required` label. Extensions may only be optional
+    /// or repeated, even in proto2 files.
+    RequiredExtension { field: String },
     /// Two methods in one service have the same proto name.
     DuplicateMethodName { service: String, name: String },
     /// Two enum values in the same symbol scope have the same proto name.
@@ -521,6 +524,9 @@ impl core::fmt::Display for PoolError {
                     f,
                     "more than one extension claims field number {number} on {extendee}"
                 )
+            }
+            Self::RequiredExtension { field } => {
+                write!(f, "extension {field} cannot be required")
             }
             Self::DuplicateMethodName { service, name } => {
                 write!(
@@ -2116,6 +2122,9 @@ impl DescriptorPool {
         // synthetic MapEntry message nested in the declaring message, which
         // an `extend` block cannot contain).
         let mut field = self.link_field(scope_fqn, ext, parent_features, None, scope)?;
+        if ext.label == Some(Label::LABEL_REQUIRED) {
+            return Err(PoolError::RequiredExtension { field: fqn });
+        }
         // Extensions cannot be oneof members. A malformed FieldDescriptorProto
         // carrying `oneof_index` would otherwise make `set()` clear the
         // *extendee's* declared oneof members (the index would be interpreted
