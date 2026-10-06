@@ -1068,16 +1068,16 @@ pub fn merge_string(value: &mut String, buf: &mut impl Buf) -> Result<(), Decode
 /// construct itself directly from the wire — validating (or skipping validation)
 /// and choosing borrow-vs-own on its own terms.
 ///
-/// The decoder normally hands over a borrowed payload when the field's bytes
-/// are contiguous in the current input chunk (the common case for slice- and
-/// `Bytes`-backed sources) and an owned [`Bytes`] only otherwise (e.g. a field
-/// straddling a `Chain` boundary). A [`ProtoBytes`] implementation can request
-/// an owned payload even for contiguous bytes fields with
-/// [`PREFERS_OWNED_BYTES`](ProtoBytes::PREFERS_OWNED_BYTES). A representation
-/// validates-and-borrows with [`to_str`](Self::to_str), reads the raw bytes with
-/// [`as_slice`](Self::as_slice) (always zero-copy), or takes ownership with
-/// [`into_bytes`](Self::into_bytes) (zero-copy only for an owned payload — see
-/// that method).
+/// By default the decoder hands over a borrowed payload when the field's
+/// bytes are contiguous in the current input chunk (the common case for slice-
+/// and `Bytes`-backed sources) and an owned [`Bytes`] otherwise (e.g. a field
+/// straddling a `Chain` boundary). The exception is a [`ProtoBytes`] type that
+/// sets [`PREFERS_OWNED_PAYLOAD`](ProtoBytes::PREFERS_OWNED_PAYLOAD):
+/// [`decode_bytes_to`] hands it an owned payload for every `bytes` field. A
+/// representation validates-and-borrows with [`to_str`](Self::to_str), reads
+/// the raw bytes with [`as_slice`](Self::as_slice) (always zero-copy), or takes
+/// ownership with [`into_bytes`](Self::into_bytes) (zero-copy only for an owned
+/// payload).
 ///
 /// Opaque so that a borrowed payload can carry the surrounding wire-buffer tail
 /// for the slack-aware UTF-8 validator without exposing it to consumers; use the
@@ -1204,12 +1204,11 @@ impl<'a> WirePayload<'a> {
 
     /// Take ownership of the field's bytes as [`Bytes`].
     ///
-    /// Zero-copy only for an owned payload. By default, the decoder produces
-    /// one only for multi-chunk sources; a [`ProtoBytes`] implementation can
-    /// request an owned payload for contiguous fields with
-    /// [`PREFERS_OWNED_BYTES`](ProtoBytes::PREFERS_OWNED_BYTES). Hand-built
-    /// borrowed payloads still copy here. For the built-in `bytes::Bytes`
-    /// representation, see [`decode_bytes_to_bytes`].
+    /// Zero-copy for an owned payload; a borrowed payload is copied. A
+    /// [`ProtoBytes`] type that keeps this `Bytes` sets
+    /// [`PREFERS_OWNED_PAYLOAD`](ProtoBytes::PREFERS_OWNED_PAYLOAD), so that
+    /// the decoder hands it an owned payload. With the const at `false`, every
+    /// contiguous field is copied here.
     #[inline]
     #[must_use]
     pub fn into_bytes(self) -> Bytes {
@@ -1225,9 +1224,9 @@ impl<'a> WirePayload<'a> {
 ///
 /// When `prefer_owned` is false, the payload is `Borrowed` if the whole field
 /// is contiguous in the current chunk (zero-copy), and `Owned` otherwise. When
-/// it is true, the payload is always `Owned` via [`Buf::copy_to_bytes`], which
-/// can share a `Bytes`-backed `buf`. `f` returns an owned value, so no borrow
-/// escapes and the function advances `buf` past the field before it returns.
+/// it is true, the payload is always `Owned`. An `Owned` payload comes from
+/// [`Buf::copy_to_bytes`], which shares the allocation of a `Bytes` input. `f`
+/// returns an owned value, so its borrow of `buf` ends with the call.
 ///
 /// # Errors
 ///
@@ -1257,9 +1256,15 @@ pub(crate) fn read_field_payload<R>(
         buf.advance(len);
         Ok(r)
     } else {
-        // Field straddles chunk boundaries: take an owned `Bytes` (zero-copy
-        // when `buf` is `Bytes`-backed, a copy otherwise).
-        f(WirePayload::owned(buf.copy_to_bytes(len)))
+        // The field spans chunks, or the caller prefers an owned payload. An
+        // empty field gets a fresh `Bytes`: splitting zero bytes off the end
+        // of a `Bytes` input returns a handle that keeps the input allocated.
+        let bytes = if len == 0 {
+            Bytes::new()
+        } else {
+            buf.copy_to_bytes(len)
+        };
+        f(WirePayload::owned(bytes))
     }
 }
 
@@ -1505,6 +1510,11 @@ pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
     if buf.remaining() < len {
         return Err(DecodeError::UnexpectedEof);
     }
+    if len == 0 {
+        // Splitting zero bytes off the end of a `Bytes` input returns a handle
+        // that keeps the input allocated.
+        return Ok(Bytes::new());
+    }
     Ok(buf.copy_to_bytes(len))
 }
 
@@ -1591,28 +1601,97 @@ pub trait ProtoBytes:
     + AsRef<[u8]>
     + From<Vec<u8>>
 {
-    /// Whether [`decode_bytes_to`] should hand `from_wire` an owned
-    /// [`WirePayload`] even when the field is contiguous in the input buffer.
+    /// Whether [`decode_bytes_to`] hands [`from_wire`](Self::from_wire) an
+    /// owned [`WirePayload`] for every field, including a field that is
+    /// contiguous in the input.
     ///
-    /// The default `false` preserves the borrowed fast path, which suits inline
-    /// containers and types that copy from [`WirePayload::as_slice`]. Set this
-    /// to `true` when `from_wire` can efficiently consume
-    /// [`WirePayload::into_bytes`], such as a reference-counted bytes wrapper.
-    /// For a `Bytes`-backed input, `Buf::copy_to_bytes` can share the source
-    /// allocation; other `Buf` implementations may copy. Sharing can keep the
-    /// full source allocation alive until the returned value is dropped.
+    /// Set it to `true` for a type that keeps the [`Bytes`] from
+    /// [`WirePayload::into_bytes`], such as a wrapper around `Bytes`. The
+    /// decoder then takes each payload with [`Buf::copy_to_bytes`]: a `Bytes`
+    /// input shares its allocation with the payload, while a `&[u8]` input,
+    /// and a field that spans two chunks of a `Chain`, are copied.
     ///
-    /// Defaults to `false`.
-    const PREFERS_OWNED_BYTES: bool = false;
+    /// Leave it `false` for a type that copies the bytes from
+    /// [`WirePayload::as_slice`], such as one that stores short values inline.
+    /// With `true`, such a type copies twice from an input that cannot share:
+    /// once into a temporary `Bytes` and once into the value.
+    ///
+    /// The const changes only what [`decode_bytes_to`] passes. `from_wire`
+    /// still has to accept a borrowed payload, which any caller can build with
+    /// [`WirePayload::borrowed`].
+    ///
+    /// # Memory retention
+    ///
+    /// A value that shares the input keeps the whole input buffer allocated
+    /// until every `Bytes` that shares it, including each clone of the value,
+    /// is dropped. To detach a value from a large input, replace it with a
+    /// copy, for example `B::from(value.to_vec())`. Users of the type meet this
+    /// cost, so repeat it in the type's own documentation.
+    ///
+    /// # Example
+    ///
+    /// A wrapper around `Bytes` that shares the input on decode, and that a
+    /// segmented sink splices by reference count on encode:
+    ///
+    /// ```
+    /// use buffa::bytes::Bytes;
+    /// use buffa::types::{decode_bytes_to, encode_bytes, ProtoBytes, WirePayload};
+    /// use buffa::DecodeError;
+    ///
+    /// #[derive(Clone, Debug, Default, PartialEq)]
+    /// struct Shared(Bytes);
+    ///
+    /// impl core::ops::Deref for Shared {
+    ///     type Target = [u8];
+    ///     fn deref(&self) -> &[u8] {
+    ///         &self.0
+    ///     }
+    /// }
+    /// impl AsRef<[u8]> for Shared {
+    ///     fn as_ref(&self) -> &[u8] {
+    ///         &self.0
+    ///     }
+    /// }
+    /// impl From<Vec<u8>> for Shared {
+    ///     fn from(bytes: Vec<u8>) -> Self {
+    ///         Self(Bytes::from(bytes))
+    ///     }
+    /// }
+    /// impl ProtoBytes for Shared {
+    ///     const PREFERS_OWNED_PAYLOAD: bool = true;
+    ///
+    ///     fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError> {
+    ///         Ok(Self(payload.into_bytes()))
+    ///     }
+    ///
+    ///     fn as_shared(&self) -> Option<Bytes> {
+    ///         Some(self.0.clone())
+    ///     }
+    /// }
+    ///
+    /// let mut wire = Vec::new();
+    /// encode_bytes(b"payload", &mut wire);
+    /// let mut input = Bytes::from(wire);
+    /// let payload_start = input.as_ptr() as usize + 1; // after the length prefix
+    ///
+    /// let value: Shared = decode_bytes_to(&mut input)?;
+    /// assert_eq!(&value[..], b"payload");
+    /// // The value points into the input: decoding copied no bytes.
+    /// assert_eq!(value.0.as_ptr() as usize, payload_start);
+    /// # Ok::<(), DecodeError>(())
+    /// ```
+    const PREFERS_OWNED_PAYLOAD: bool = false;
 
     /// Construct the representation from a decoded `bytes` field's wire payload.
     ///
-    /// This is the decode constructor: it decides how to build the value from
-    /// the payload. The default [`PREFERS_OWNED_BYTES`](Self::PREFERS_OWNED_BYTES)
-    /// setting hands it borrowed contiguous input; setting that constant to
-    /// `true` hands it an owned [`Bytes`] payload instead. There is intentionally
-    /// no blanket impl; the `From<Vec<u8>>` supertrait remains for the JSON and
-    /// view→owned paths.
+    /// The decode constructor: it chooses between borrowing the payload
+    /// ([`WirePayload::as_slice`]) and taking ownership
+    /// ([`WirePayload::into_bytes`]). A contiguous field arrives borrowed
+    /// unless the type sets
+    /// [`PREFERS_OWNED_PAYLOAD`](Self::PREFERS_OWNED_PAYLOAD).
+    ///
+    /// Only binary decode calls `from_wire`. JSON, text format, view→owned
+    /// conversion and `arbitrary` build the value through `From<Vec<u8>>`.
     ///
     /// # Errors
     ///
@@ -1656,13 +1735,10 @@ impl ProtoBytes for Vec<u8> {
 }
 
 impl ProtoBytes for Bytes {
-    const PREFERS_OWNED_BYTES: bool = true;
+    const PREFERS_OWNED_PAYLOAD: bool = true;
 
     #[inline]
     fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError> {
-        // The generic helper requests an owned payload, so `into_bytes` can
-        // share a `Bytes`-backed source even when the field is contiguous. The
-        // default `bytes::Bytes` field path uses `decode_bytes_to_bytes`.
         Ok(payload.into_bytes())
     }
 
@@ -1684,12 +1760,15 @@ const _: fn() = || {
 /// type.
 ///
 /// This is the generic counterpart to [`decode_bytes`]: it hands the field's
-/// wire payload to [`ProtoBytes::from_wire`]. By default, contiguous payloads
-/// are borrowed. Set [`ProtoBytes::PREFERS_OWNED_BYTES`] to `true` when the
-/// representation can consume an owned [`Bytes`] payload; on a `Bytes`-backed
-/// input this can share the source allocation. Generated code uses the
-/// in-place [`merge_bytes`] for default `Vec<u8>` fields (allocation reuse) and
-/// this helper for every other [`ProtoBytes`] type (including custom types).
+/// wire payload to [`ProtoBytes::from_wire`]. A contiguous payload is borrowed
+/// unless `B` sets [`ProtoBytes::PREFERS_OWNED_PAYLOAD`], as `Bytes` does. With
+/// the const set, the payload is an owned [`Bytes`] that shares a `Bytes`
+/// input, and the value keeps that input allocated; see the const.
+///
+/// Generated code calls this function for custom [`ProtoBytes`] fields and map
+/// values. `Vec<u8>` fields use [`merge_bytes`] (singular and optional fields,
+/// which reuse the allocation) or [`decode_bytes`], and `bytes::Bytes` fields
+/// use [`decode_bytes_to_bytes`].
 ///
 /// # Errors
 ///
@@ -1700,7 +1779,7 @@ const _: fn() = || {
 ///   [`from_wire`](ProtoBytes::from_wire).
 #[inline]
 pub fn decode_bytes_to<B: ProtoBytes>(buf: &mut impl Buf) -> Result<B, DecodeError> {
-    read_field_payload(buf, B::PREFERS_OWNED_BYTES, B::from_wire)
+    read_field_payload(buf, B::PREFERS_OWNED_PAYLOAD, B::from_wire)
 }
 
 // ---------------------------------------------------------------------------
@@ -2080,7 +2159,7 @@ mod tests {
     }
 
     impl ProtoBytes for SharedBytes {
-        const PREFERS_OWNED_BYTES: bool = true;
+        const PREFERS_OWNED_PAYLOAD: bool = true;
 
         fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError> {
             Ok(Self(payload.into_bytes()))
@@ -3086,6 +3165,67 @@ mod tests {
             decode_bytes_to::<SharedBytes>(&mut input),
             Err(DecodeError::UnexpectedEof)
         ));
+    }
+
+    #[test]
+    fn decode_bytes_to_owned_preference_reads_chained_input() {
+        let mut wire = Vec::new();
+        encode_bytes(b"first", &mut wire);
+        encode_bytes(b"straddles", &mut wire);
+        let split = 1 + b"first".len() + 4;
+        let head = Bytes::copy_from_slice(&wire[..split]);
+        let tail = Bytes::copy_from_slice(&wire[split..]);
+        let first_ptr = head.as_ptr() as usize + 1;
+        let mut input = head.chain(tail);
+
+        // A field inside one chunk shares that chunk.
+        let first = decode_bytes_to::<SharedBytes>(&mut input).unwrap();
+        assert_eq!(&first.0[..], b"first");
+        assert_eq!(first.0.as_ptr() as usize, first_ptr);
+
+        // A field that spans two chunks is copied into one `Bytes`.
+        let second = decode_bytes_to::<SharedBytes>(&mut input).unwrap();
+        assert_eq!(&second.0[..], b"straddles");
+        assert!(!input.has_remaining());
+    }
+
+    #[test]
+    fn custom_bytes_map_value_shares_the_input() {
+        use crate::map_codec::{merge_entry, Int32, ProtoBytesMap};
+
+        // One length-prefixed map entry: key 1, value "value".
+        let entry = [&[0x08, 0x01, 0x12, 0x05][..], b"value"].concat();
+        let mut wire = Vec::new();
+        encode_bytes(&entry, &mut wire);
+        let mut input = Bytes::from(wire);
+        let input_range = input.as_ptr() as usize..input.as_ptr() as usize + input.len();
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit);
+
+        let mut map = std::collections::HashMap::<i32, SharedBytes>::new();
+        merge_entry::<Int32, ProtoBytesMap<SharedBytes>, _>(&mut map, &mut input, ctx).unwrap();
+
+        let value = &map[&1];
+        assert_eq!(&value.0[..], b"value");
+        assert!(input_range.contains(&(value.0.as_ptr() as usize)));
+    }
+
+    #[test]
+    fn empty_bytes_field_at_the_end_of_the_input_does_not_retain_it() {
+        // One field of length zero, which is also the end of the input.
+        let whole = Bytes::from(vec![0u8]);
+
+        let mut input = whole.clone();
+        let custom = decode_bytes_to::<SharedBytes>(&mut input).unwrap();
+        drop(input);
+        assert!(custom.0.is_empty());
+        assert!(whole.is_unique(), "the empty value holds the input");
+
+        let mut input = whole.clone();
+        let builtin = decode_bytes_to_bytes(&mut input).unwrap();
+        drop(input);
+        assert!(builtin.is_empty());
+        assert!(whole.is_unique(), "the empty value holds the input");
     }
 
     #[test]

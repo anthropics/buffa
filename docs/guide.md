@@ -348,12 +348,7 @@ buffa_build::Config::new()
 
 A representation is **any type that implements `buffa::ProtoString` / `buffa::ProtoBytes`**. Each trait requires a `from_wire(WirePayload<'_>) -> Result<Self, DecodeError>` decode constructor, plus the supertraits `Clone + PartialEq + Default + Debug + Send + Sync`, `Deref` to `str` / `[u8]`, `AsRef`, and `From<String>` / `From<Vec<u8>>`. `from_wire` lets the type decide validation and borrow-vs-own — an inline string type stores a short value with no heap allocation. buffa ships the built-in impls for `String`, `Vec<u8>`, and `bytes::Bytes`; for `bytes`, `bytes_type(BytesRepr::Bytes)` (and the `use_bytes_type` / `use_bytes_type_in` aliases) selects `bytes::Bytes`, which decodes zero-copy from a `Bytes`-backed buffer.
 
-For a custom bytes type backed by reference-counted storage, set
-`ProtoBytes::PREFERS_OWNED_BYTES` to `true` and consume
-`WirePayload::into_bytes()` in `from_wire`; decoding a `Bytes`-backed input can
-then share the source allocation. Keep the default `false` for inline types or
-implementations that copy from `WirePayload::as_slice()`. The remote derive
-keeps the default path, so opt-in types need a hand-written `ProtoBytes` impl.
+A custom bytes type that wraps `bytes::Bytes` can decode without a copy: set `ProtoBytes::PREFERS_OWNED_PAYLOAD` to `true`, and build the value from `WirePayload::into_bytes()` in `from_wire`. When the input is a `bytes::Bytes`, each value then shares the input's allocation and keeps it allocated; from a `&[u8]` input each value is still a copy. The const's documentation has a complete example. The remote derive leaves the const at `false`, so such a type replaces the derive with hand-written impls.
 
 **A foreign type cannot implement these traits directly** (orphan rule), so wrap it in a small local newtype. The `buffa-remote-derive` crate generates the newtype's buffa-facing surface (the trait impl plus `Deref`/`AsRef`/`From`) from a single `#[buffa(remote = ...)]` annotation; the hand-written form below is what that derive replaces. The `buffa-smolstr` crate is the ready-made newtype for `smol_str::SmolStr`:
 
