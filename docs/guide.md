@@ -26,7 +26,7 @@ This is **optional** — it does not install the library. It puts the `protoc-ge
 
 | Feature | Default | Enables |
 |---------|---------|---------|
-| `std` | Yes | `std::io::Read` decoders, `HashMap` for map fields, `JsonParseOptions` thread-local (`buffa`); `std::time::{SystemTime, Duration}` conversions (`buffa-types`) |
+| `std` | Yes | `std::io::Read` decoders, `HashMap` for map fields, `JsonParseOptions` thread-local (`buffa`); `std::time::SystemTime` conversions (`buffa-types`) |
 | `json` | No | Proto-canonical JSON via serde (works with `no_std` + `alloc`) |
 | `arbitrary` | No | `arbitrary::Arbitrary` derive on generated types, for fuzzing |
 | `text` (`buffa` only) | No | Text format (`textproto`) encode/decode — see [Text format](#text-format-textproto) |
@@ -1850,7 +1850,7 @@ Import well-known types by name (`use buffa_types::google::protobuf::Timestamp;`
 
 ### Timestamp and Duration
 
-With the `std` feature, `Timestamp` and `Duration` convert to/from `std::time` types:
+With the `std` feature, `Timestamp` converts to/from `std::time::SystemTime`:
 
 ```rust,ignore
 use buffa_types::google::protobuf::Timestamp;
@@ -1865,6 +1865,16 @@ let time: std::time::SystemTime = ts.try_into()?;
 // From components
 let ts = Timestamp::from_unix(1_700_000_000, 500_000_000);
 let ts = Timestamp::from_unix_secs(1_700_000_000);
+```
+
+`Duration` converts to/from `core::time::Duration`, including without the `std` feature. `std::time::Duration` is the same type, so the conversions also accept it:
+
+```rust,ignore
+use buffa_types::google::protobuf::Duration;
+use core::time::Duration as CoreDuration;
+
+let duration = Duration::from(CoreDuration::new(3, 500_000_000));
+let time: CoreDuration = duration.try_into()?;
 ```
 
 ### Any
@@ -1965,7 +1975,7 @@ cargo add buffa-types --no-default-features
 In `no_std` mode:
 
 - Map fields use `hashbrown::HashMap` instead of `std::collections::HashMap`
-- `std::time` conversions on Timestamp/Duration are unavailable
+- `Timestamp` conversions to/from `std::time::SystemTime` are unavailable; `Duration` conversions to/from `core::time::Duration` remain available
 - Scoped [`with_json_parse_options`] is unavailable (requires thread-local); use [`set_global_json_parse_options`] to set options process-wide once at startup. The options cannot vary between individual parse calls. The `buffa::json` module docs list how `ignore_unknown_enum_values` treats each field shape, and the one shape where `no_std` differs.
 - JSON serialization via serde works fully (both `serde` and `serde_json` support `no_std` + `alloc`)
 
