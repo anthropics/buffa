@@ -1,0 +1,3 @@
+kind: Fixed
+body: Singular string extensions now return `None` when the last length-delimited record contains invalid UTF-8, instead of returning an earlier value. Records with other wire types are still skipped.
+time: 2026-10-06T23:44:46.830575+02:00
