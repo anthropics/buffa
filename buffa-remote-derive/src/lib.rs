@@ -12,43 +12,48 @@
 //! in shape every time; these derives generate it from one annotation,
 //! mirroring `serde`'s `remote` attribute pattern.
 //!
-//! # Scope: the binary codec, plus an opt-in `Arbitrary`
+//! # Optional serde, arbitrary, and reflection support
 //!
-//! **These derives cover the binary wire format and, with the
-//! [`arbitrary` key](#the-arbitrary-key), the `arbitrary::Arbitrary` impl a
-//! fuzzed build needs.** A pluggable owned-type trait's own supertraits don't
-//! mention `serde::Serialize` / `Deserialize`, `arbitrary::Arbitrary`, or
-//! `buffa_descriptor`'s `ReflectList`/`ReflectMap` — those are pulled in
-//! separately, by whichever optional feature needs them (`json`,
-//! `arbitrary`, `reflect`), and the reference newtypes in
-//! `examples/custom-types/src/types/` add them as ordinary extra
-//! `#[derive(..)]`s alongside the buffa-trait impl.
+//! The derives implement the binary storage traits by default. Bare
+//! `#[buffa(serde)]` and `#[buffa(arbitrary)]` keys opt individual newtypes
+//! into the corresponding additional impls. Reflection impls remain
+//! hand-written; see `examples/custom-types/src/types/` for examples.
 //!
-//! ## serde and reflection are hand-written
+//! ## The `serde` key
 //!
-//! Nothing serde- or reflection-related is generated, so a newtype used as a
-//! message field in a JSON-enabled or reflection/vtable build needs those
-//! impls added by hand, exactly as the hand-written reference newtypes do. For
-//! serde, what "by hand" means depends on where the storage type's own serde
-//! is actually consulted:
+//! `#[buffa(remote = ..., serde)]` emits `serde::Serialize` and
+//! `serde::Deserialize` impls. The consumer must depend on `serde` under
+//! that name. `ProtoString` and `ProtoBytes` use buffa's protobuf JSON
+//! helpers, so they also require `buffa/json`. Strings serialize as strings,
+//! bytes as base64 strings, and JSON `null` deserializes to empty storage.
+//! The remote string/bytes type needs no serde support of its own.
 //!
-//! - **Singular and oneof `string` fields, and `bytes` fields in every
-//!   position**, are handled by buffa's own `#[serde(with = ...)]` modules
-//!   (`proto_string`, base64 `bytes`), which use only the `AsRef`/`From`
-//!   surface these derives already generate — the newtype needs no serde
-//!   impls for them. Don't add `#[serde(transparent)]` to a bytes newtype
-//!   in particular: it is dead weight in message context, and if the
-//!   newtype is ever serialized standalone it produces a JSON array of
-//!   numbers instead of base64. (Compare `SmallBytes` in
-//!   `examples/custom-types`, which derives no serde and documents why.)
-//! - **A string newtype that appears as a repeated element, an `optional`
-//!   (explicit-presence) field, or a map value** serializes through its
-//!   own serde, so it needs `#[derive(serde::Serialize,
-//!   serde::Deserialize)]` — `#[serde(transparent)]` suffices when the
-//!   remote type itself supports serde, since the newtype is a single-field
-//!   wrapper. The full per-trait matrix, including list, map, and box
-//!   container newtypes, is tabulated in `examples/custom-types/README.md`
-//!   in the buffa repository.
+//! `ProtoList`, `ProtoBox`, and `MapStorage` transparently delegate to the
+//! wrapped type's serde impls. Enable the remote crate's serde feature when
+//! required. Their generated bounds apply only to the serde impls, so a
+//! container with non-serde elements can still be used by the binary codec.
+//! These forwarders use the remote representation's serde semantics; they
+//! do not implement protobuf-specific integer, enum, or message mappings.
+//! Generated messages still use their field-specific JSON helpers.
+//!
+//! For an optional dependency, put the key behind the consumer's feature:
+//!
+//! ```rust
+//! #[derive(Clone, PartialEq, Default, Debug, buffa_remote_derive::ProtoString)]
+//! #[buffa(remote = ecow::EcoString)]
+//! #[cfg_attr(feature = "json", buffa(serde))]
+//! pub struct MyEcoString(pub ecow::EcoString);
+//! ```
+//!
+//! Define `json = ["dep:serde", "buffa/json"]` in that crate. No feature
+//! on the proc-macro crate controls the emitted impls, so another dependency
+//! cannot accidentally enable them through Cargo feature unification.
+//! Do not also derive serde on the same type: that creates conflicting impls.
+//!
+//! The opt-in is useful for string newtypes in repeated, optional, and map
+//! value positions, where generated messages need the newtype's serde impls.
+//! Singular/oneof strings and bytes in all field positions already use
+//! buffa's field helpers and do not require standalone serde impls.
 //!
 //! Skipping a *required* impl on a JSON/reflect/fuzz build surfaces as a
 //! trait-bound error deep in *generated message code*
@@ -243,7 +248,7 @@
 //! `#[buffa(remote = ..., into_inner = MyType::unwrap)]` for `ProtoBox`, or
 //! any of `len`/`insert`/`clear`/`iter` for `MapStorage`. (The full key
 //! catalog is these plus `ProtoBytes`'s `as_shared`, covered earlier, and the
-//! bare `arbitrary` key every derive accepts; there are no others.) The
+//! bare `arbitrary` and `serde` keys every derive accepts; there are no others.) The
 //! override path is
 //! called the same way the default is — as a free function taking the
 //! receiver as its first argument (`Type::method(&self.0, ...)`) — so it
@@ -284,6 +289,8 @@ mod string;
 /// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
 /// the `arbitrary` crate wherever the key is active; the crate docs' section
 /// on the key shows how to make it conditional.
+/// The bare `serde` key adds serde impls; see the [serde key](crate#the-serde-key)
+/// for mappings, dependency requirements, and feature gating.
 #[proc_macro_derive(ProtoString, attributes(buffa))]
 pub fn derive_proto_string(input: TokenStream) -> TokenStream {
     expand(input, string::derive)
@@ -301,6 +308,8 @@ pub fn derive_proto_string(input: TokenStream) -> TokenStream {
 /// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
 /// the `arbitrary` crate wherever the key is active; the crate docs' section
 /// on the key shows how to make it conditional.
+/// The bare `serde` key adds serde impls; see the [serde key](crate#the-serde-key)
+/// for mappings, dependency requirements, and feature gating.
 #[proc_macro_derive(ProtoBytes, attributes(buffa))]
 pub fn derive_proto_bytes(input: TokenStream) -> TokenStream {
     expand(input, bytes::derive)
@@ -315,6 +324,8 @@ pub fn derive_proto_bytes(input: TokenStream) -> TokenStream {
 /// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
 /// the `arbitrary` crate wherever the key is active; the crate docs' section
 /// on the key shows how to make it conditional.
+/// The bare `serde` key adds serde impls; see the [serde key](crate#the-serde-key)
+/// for mappings, dependency requirements, and feature gating.
 #[proc_macro_derive(ProtoList, attributes(buffa))]
 pub fn derive_proto_list(input: TokenStream) -> TokenStream {
     expand(input, list::derive)
@@ -329,6 +340,8 @@ pub fn derive_proto_list(input: TokenStream) -> TokenStream {
 /// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
 /// the `arbitrary` crate wherever the key is active; the crate docs' section
 /// on the key shows how to make it conditional.
+/// The bare `serde` key adds serde impls; see the [serde key](crate#the-serde-key)
+/// for mappings, dependency requirements, and feature gating.
 #[proc_macro_derive(ProtoBox, attributes(buffa))]
 pub fn derive_proto_box(input: TokenStream) -> TokenStream {
     expand(input, box_ptr::derive)
@@ -344,6 +357,8 @@ pub fn derive_proto_box(input: TokenStream) -> TokenStream {
 /// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
 /// the `arbitrary` crate wherever the key is active; the crate docs' section
 /// on the key shows how to make it conditional.
+/// The bare `serde` key adds serde impls; see the [serde key](crate#the-serde-key)
+/// for mappings, dependency requirements, and feature gating.
 #[proc_macro_derive(MapStorage, attributes(buffa))]
 pub fn derive_map_storage(input: TokenStream) -> TokenStream {
     expand(input, map::derive)

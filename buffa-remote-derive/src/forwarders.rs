@@ -2,8 +2,7 @@
 //!
 //! A family is selected with a bare `#[buffa(<name>)]` key and its impl is
 //! emitted unconditionally. The crate docs show how a consumer makes it
-//! conditional with `cfg_attr`. `arbitrary` is the only family; serde and
-//! `ReflectList`/`ReflectMap` impls are written by hand.
+//! conditional with `cfg_attr`. Reflection impls are written by hand.
 
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -17,6 +16,94 @@ pub struct Flags {
     /// The span of the `arbitrary` key, when the newtype carries
     /// `#[buffa(arbitrary)]` — see [`arbitrary`].
     pub arbitrary: Option<Span>,
+    /// Opt-in serde implementations, with the key's span for diagnostics.
+    pub serde: Option<Span>,
+}
+
+/// Emit serde impls. Strings and bytes use protobuf JSON helpers; containers
+/// transparently delegate to the wrapped type's own serde representation.
+pub fn serde(remote: &RemoteField, json_helper: Option<&str>) -> TokenStream {
+    let Some(span) = remote.flags.serde else {
+        return quote! {};
+    };
+    let RemoteField {
+        ident,
+        generics,
+        field_ty,
+        accessor,
+        ..
+    } = remote;
+    let krate = Ident::new("serde", span);
+    // Scan nested tokens too: HRTB lifetimes in bounds/where clauses can
+    // shadow a new impl lifetime even when not declared as outer parameters.
+    fn contains_ident(tokens: TokenStream, name: &str) -> bool {
+        tokens.into_iter().any(|token| match token {
+            proc_macro2::TokenTree::Ident(ident) => ident == name,
+            proc_macro2::TokenTree::Group(group) => contains_ident(group.stream(), name),
+            _ => false,
+        })
+    }
+    let where_clause = &generics.where_clause;
+    let fresh = |base: &str| {
+        let mut name = base.to_owned();
+        while contains_ident(quote! { #generics }, &name)
+            || contains_ident(quote! { #where_clause }, &name)
+        {
+            name.push('_');
+        }
+        name
+    };
+    let serializer = Ident::new(&fresh("__BuffaSerializer"), span);
+    let deserializer = Ident::new(&fresh("__BuffaDeserializer"), span);
+    let lifetime = Lifetime::new(&format!("'{}", fresh("__buffa_de")), span);
+    let mut ser_generics = generics.clone();
+    let mut de_generics = generics.clone();
+    de_generics.params.insert(
+        0,
+        GenericParam::Lifetime(LifetimeParam::new(lifetime.clone())),
+    );
+
+    let (serialize, deserialize) = if let Some(helper) = json_helper {
+        let helper = Ident::new(helper, span);
+        (
+            quote! { ::buffa::json_helpers::#helper::serialize(self, serializer) },
+            quote! { ::buffa::json_helpers::#helper::deserialize(deserializer) },
+        )
+    } else {
+        ser_generics
+            .make_where_clause()
+            .predicates
+            .push(parse_quote! { #field_ty: ::#krate::Serialize });
+        de_generics
+            .make_where_clause()
+            .predicates
+            .push(parse_quote! { #field_ty: ::#krate::Deserialize<#lifetime> });
+        let construct = remote.construct(
+            quote! { <#field_ty as ::#krate::Deserialize<#lifetime>>::deserialize(deserializer)? },
+        );
+        (
+            quote! { ::#krate::Serialize::serialize(&#accessor, serializer) },
+            quote! { ::core::result::Result::Ok(#construct) },
+        )
+    };
+    let (ser_impl, ty_generics, ser_where) = ser_generics.split_for_impl();
+    let (de_impl, _, de_where) = de_generics.split_for_impl();
+    quote! {
+        impl #ser_impl ::#krate::Serialize for #ident #ty_generics #ser_where {
+            fn serialize<#serializer: ::#krate::Serializer>(&self, serializer: #serializer)
+                -> ::core::result::Result<#serializer::Ok, #serializer::Error>
+            {
+                #serialize
+            }
+        }
+        impl #de_impl ::#krate::Deserialize<#lifetime> for #ident #ty_generics #de_where {
+            fn deserialize<#deserializer: ::#krate::Deserializer<#lifetime>>(deserializer: #deserializer)
+                -> ::core::result::Result<Self, #deserializer::Error>
+            {
+                #deserialize
+            }
+        }
+    }
 }
 
 /// Whether the impl overrides `arbitrary_take_rest`, chosen per family so
@@ -126,6 +213,50 @@ pub fn arbitrary(
 #[cfg(test)]
 mod tests {
     use syn::parse_quote;
+
+    #[test]
+    fn serde_opt_in_is_per_type_and_repeatable() {
+        let plain: syn::DeriveInput = parse_quote! {
+            #[buffa(remote = Remote)]
+            struct S(Remote);
+        };
+        assert!(!crate::string::derive(plain)
+            .unwrap()
+            .to_string()
+            .contains("serde"));
+        let keyed: syn::DeriveInput = parse_quote! {
+            #[buffa(remote = Remote, serde)]
+            #[buffa(serde)]
+            struct S(Remote);
+        };
+        let output = crate::string::derive(keyed).unwrap().to_string();
+        assert_eq!(output.matches(":: serde :: Serialize for").count(), 1);
+        assert!(!output.contains("cfg"));
+    }
+
+    #[test]
+    fn serde_rejects_a_value() {
+        let input = parse_quote! {
+            #[buffa(remote = Remote, serde = true)]
+            struct S(Remote);
+        };
+        assert!(crate::string::derive(input)
+            .unwrap_err()
+            .to_string()
+            .contains("takes no value"));
+    }
+
+    #[test]
+    fn serde_deserialize_lifetime_avoids_outer_lifetime() {
+        let input = parse_quote! {
+            #[buffa(remote = Remote, serde)]
+            struct S<'__buffa_de, T: '__buffa_de>(Remote<'__buffa_de, T>);
+        };
+        let remote = crate::remote_field::parse(&input).unwrap();
+        let output = super::serde(&remote, None);
+        syn::parse2::<syn::File>(output.clone()).unwrap();
+        assert!(output.to_string().contains("Deserialize < '__buffa_de_ >"));
+    }
 
     /// Expands every derive over the same newtype shapes the integration tests
     /// use. Returns `(family, without_key, with_key)` per derive.

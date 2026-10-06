@@ -1,0 +1,3 @@
+kind: Added
+body: '**Optional serde support for remote storage derives** (part of #290). All five `buffa-remote-derive` macros accept a bare `serde` key, which can be feature-gated with `cfg_attr` in the consumer. String and byte newtypes use protobuf JSON string/base64 helpers without requiring serde support on the remote type; list, box, and map newtypes transparently forward to remote serde implementations with conditional bounds.'
+time: 2026-10-06T19:21:14.72406-04:00

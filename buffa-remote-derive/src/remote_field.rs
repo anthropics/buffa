@@ -132,6 +132,12 @@ fn parse_attrs(
                 let _: syn::Type = meta.value()?.parse()?;
                 has_remote = true;
                 Ok(())
+            } else if meta.path.is_ident("serde") {
+                if meta.input.peek(syn::Token![=]) {
+                    return Err(meta.error("`serde` takes no value; use `#[buffa(serde)]` or `#[cfg_attr(<condition>, buffa(serde))]`"));
+                }
+                flags.serde.get_or_insert(meta.path.span());
+                Ok(())
             } else if meta.path.is_ident("arbitrary") {
                 if meta.input.peek(syn::Token![=]) {
                     return Err(meta.error(
@@ -154,7 +160,7 @@ fn parse_attrs(
                 Ok(())
             } else {
                 Err(meta.error(format!(
-                    "unsupported `buffa` attribute key, expected `remote` or `arbitrary`{}",
+                    "unsupported `buffa` attribute key, expected `remote`, `arbitrary` or `serde`{}",
                     allowed_overrides
                         .iter()
                         .map(|k| format!(" or `{k}`"))

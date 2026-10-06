@@ -41,6 +41,8 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         &[parse_quote! { Self: ::core::iter::FromIterator<(#key_ty, #value_ty)> }],
     );
 
+    let serde_impl = forwarders::serde(&remote, None);
+
     Ok(quote! {
         impl #impl_generics ::buffa::MapStorage for #ident #ty_generics #where_clause {
             type Key = #key_ty;
@@ -74,5 +76,6 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         }
 
         #arbitrary_impl
+        #serde_impl
     })
 }

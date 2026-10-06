@@ -133,9 +133,12 @@ dependencies = [
  "indexmap",
  "proc-macro2",
  "quote",
+ "serde",
+ "serde_json",
  "smallbox",
  "smallvec",
  "syn",
+ "tempfile",
 ]
 
 [[package]]
