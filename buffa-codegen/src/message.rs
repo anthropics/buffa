@@ -2087,25 +2087,34 @@ pub(crate) fn is_debug_redacted(
 /// with `map_entry = true`).  Used by all map-related helpers to avoid
 /// duplicating the lookup predicate.
 ///
-/// The match uses suffix comparison (`type_name.ends_with(".{name}")`)
-/// rather than full FQN equality. This is safe because `msg.nested_type`
-/// only contains types nested within this message, and protobuf does not
-/// allow duplicate type names within a single message scope.
+/// The entry is the nested `map_entry` message that `type_name` names as
+/// `<this message>.<entry>`. A repeated field whose type is an unrelated
+/// message with the same short name as a local entry (`Other.ItemsEntry`
+/// next to a map field `items`) is a list, not a map.
+///
+/// The parent is compared by `msg`'s short name, because the callers do not
+/// have its fully-qualified name. A regular message named like a local entry
+/// and nested in another message with this message's short name is taken
+/// for the entry.
 pub(crate) fn find_map_entry<'a>(
     msg: &'a DescriptorProto,
     field: &crate::generated::descriptor::FieldDescriptorProto,
 ) -> Option<&'a DescriptorProto> {
     let type_name = field.type_name.as_deref()?;
+    let msg_name = msg.name.as_deref()?;
     msg.nested_type.iter().find(|nested| {
         nested
             .options
             .as_option()
             .and_then(|o| o.map_entry)
             .unwrap_or(false)
-            && nested
-                .name
-                .as_deref()
-                .is_some_and(|n| type_name.ends_with(&format!(".{n}")))
+            && nested.name.as_deref().is_some_and(|entry_name| {
+                type_name
+                    .strip_suffix(entry_name)
+                    .and_then(|rest| rest.strip_suffix('.'))
+                    .and_then(|parent| parent.strip_suffix(msg_name))
+                    .is_some_and(|scope| scope.is_empty() || scope.ends_with('.'))
+            })
     })
 }
 

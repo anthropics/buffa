@@ -3142,11 +3142,10 @@ fn warn_excluded_refs_msg(
         // may be from an excluded package. Attribute the warning to the outer
         // map field name (e.g. "prices"), not the entry's "value" slot.
         //
-        // The LABEL_REPEATED gate mirrors every other is_map_field call site.
-        // find_map_entry matches on the type_name suffix, so a singular
-        // `dep.PricesEntry legacy` field would otherwise be taken for the
-        // same-named synthetic entry and get a redundant value-slot check;
-        // the field itself is already checked above either way.
+        // The LABEL_REPEATED gate mirrors every other is_map_field call site:
+        // is_map_field looks at the type, not the label, so a singular field
+        // typed as the synthetic entry would otherwise get the value-slot
+        // check. The field itself is already checked above either way.
         let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
         if is_repeated && crate::message::is_map_field(msg, field) {
             // Malformed entries (no key/value) are silently skipped — this is a
