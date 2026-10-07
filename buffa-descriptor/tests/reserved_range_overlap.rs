@@ -1,16 +1,21 @@
+//! Reserved-range overlap validation in [`DescriptorPool`] linking, for messages and enums.
+
 #![cfg(feature = "reflect")]
 
 use buffa::Message;
 use buffa_descriptor::generated::descriptor::{
-    descriptor_proto::ReservedRange, enum_descriptor_proto::EnumReservedRange, DescriptorProto,
-    Edition, EnumDescriptorProto, EnumValueDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    descriptor_proto::ReservedRange,
+    enum_descriptor_proto::EnumReservedRange,
+    field_descriptor_proto::{Label, Type},
+    DescriptorProto, Edition, EnumDescriptorProto, EnumValueDescriptorProto, FieldDescriptorProto,
+    FileDescriptorProto, FileDescriptorSet,
 };
 use buffa_descriptor::{DescriptorPool, PoolError};
 
 /// A reserved range as `(start, end)`.
 type Range = (i32, i32);
 
-fn message(name: &str, ranges: &[(i32, i32)]) -> DescriptorProto {
+fn message(name: &str, ranges: &[Range]) -> DescriptorProto {
     DescriptorProto {
         name: Some(name.into()),
         reserved_range: ranges
@@ -25,7 +30,7 @@ fn message(name: &str, ranges: &[(i32, i32)]) -> DescriptorProto {
     }
 }
 
-fn enumeration(name: &str, ranges: &[(i32, i32)]) -> EnumDescriptorProto {
+fn enumeration(name: &str, ranges: &[Range]) -> EnumDescriptorProto {
     EnumDescriptorProto {
         name: Some(name.into()),
         value: vec![EnumValueDescriptorProto {
@@ -99,43 +104,32 @@ fn assert_message_error(set: FileDescriptorSet, name: &str, [earlier, later]: [R
 }
 
 /// Asserts that `set` is rejected for the overlapping enum ranges
-/// `[earlier, later]`, named in declaration order with every bound set.
-fn assert_enum_error(set: FileDescriptorSet, name: &str, declared: [Range; 2]) {
-    let [(other_start, other_end), (start, end)] = declared;
-    assert_enum_error_as_declared(
-        set,
-        name,
-        declared.map(|(start, end)| (Some(start), Some(end))),
-        &format!(
-            "enum {name} reserved range {start} to {end} overlaps reserved range {other_start} to {other_end}"
-        ),
-    );
-}
-
-/// As [`assert_enum_error`], for ranges that may leave a bound unset.
-fn assert_enum_error_as_declared(
-    set: FileDescriptorSet,
-    name: &str,
-    [earlier, later]: [(Option<i32>, Option<i32>); 2],
-    display: &str,
-) {
+/// `[earlier, later]`, named in declaration order. Each bound is the value
+/// it reads as, so 0 for one the descriptor leaves unset.
+fn assert_enum_error(set: FileDescriptorSet, name: &str, [earlier, later]: [Range; 2]) {
+    let ((start, end), (other_start, other_end)) = (later, earlier);
     let err = DescriptorPool::new(set).expect_err("overlapping enum ranges must be rejected");
     assert!(
         matches!(
             &err,
             PoolError::OverlappingEnumReservedRange {
                 enum_name,
-                start,
-                end,
-                other_start,
-                other_end,
+                start: actual_start,
+                end: actual_end,
+                other_start: actual_other_start,
+                other_end: actual_other_end,
             } if enum_name == name
-                && (*start, *end) == later
-                && (*other_start, *other_end) == earlier
+                && (*actual_start, *actual_end, *actual_other_start, *actual_other_end)
+                    == (start, end, other_start, other_end)
         ),
         "{err:?}"
     );
-    assert_eq!(err.to_string(), display);
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "enum {name} reserved range {start} to {end} overlaps reserved range {other_start} to {other_end}"
+        )
+    );
 }
 
 #[test]
@@ -234,10 +228,10 @@ fn enum_error_names_the_later_declared_range_first() {
         matches!(
             err,
             PoolError::OverlappingEnumReservedRange {
-                start: Some(3),
-                end: Some(7),
-                other_start: Some(1),
-                other_end: Some(5),
+                start: 3,
+                end: 7,
+                other_start: 1,
+                other_end: 5,
                 ..
             }
         ),
@@ -253,10 +247,10 @@ fn enum_error_names_the_later_declared_range_first() {
         matches!(
             err,
             PoolError::OverlappingEnumReservedRange {
-                start: Some(1),
-                end: Some(5),
-                other_start: Some(3),
-                other_end: Some(7),
+                start: 1,
+                end: 5,
+                other_start: 3,
+                other_end: 7,
                 ..
             }
         ),
@@ -264,16 +258,23 @@ fn enum_error_names_the_later_declared_range_first() {
     );
 }
 
-/// `1..10`, `5..20` and `8..15` overlap pairwise under both the half-open
-/// message reading and the inclusive enum reading. Ordered by `start`, the
-/// first two neighbors that overlap are `1..10` and `5..20`, so every
-/// declaration order reports that pair, and the roles follow the order.
-/// Each row is the declared ranges, then the reported `[earlier, later]`.
-const THREE_OVERLAPPING: [([Range; 3], [Range; 2]); 4] = [
+/// Three ranges that overlap pairwise under both the half-open message
+/// reading and the inclusive enum reading. Each row is the declared ranges,
+/// then the reported `[earlier, later]`.
+///
+/// The first four rows declare `1..10`, `5..20` and `8..15`. Sorted by
+/// `start`, the first overlapping adjacent pair is `1..10` and `5..20`, so
+/// every declaration order reports that pair, and the roles follow the order.
+///
+/// The last two rows declare `1..10`, `1..5` and `1..7`, whose starts are
+/// equal, so `end` decides the sort and the pair is `1..5` and `1..7`.
+const THREE_OVERLAPPING: [([Range; 3], [Range; 2]); 6] = [
     ([(1, 10), (5, 20), (8, 15)], [(1, 10), (5, 20)]),
     ([(1, 10), (8, 15), (5, 20)], [(1, 10), (5, 20)]),
     ([(8, 15), (5, 20), (1, 10)], [(5, 20), (1, 10)]),
     ([(5, 20), (8, 15), (1, 10)], [(5, 20), (1, 10)]),
+    ([(1, 10), (1, 5), (1, 7)], [(1, 5), (1, 7)]),
+    ([(1, 7), (1, 10), (1, 5)], [(1, 7), (1, 5)]),
 ];
 
 #[test]
@@ -374,19 +375,11 @@ fn ranges_are_validated_within_each_declaration() {
 
 #[test]
 fn missing_enum_bounds_still_participate_in_overlap_checks() {
-    for (declared, display) in [
-        (
-            [(None, None), (Some(0), Some(0))],
-            "reserved range 0 to 0 overlaps reserved range unset to unset",
-        ),
-        (
-            [(None, Some(5)), (Some(5), Some(8))],
-            "reserved range 5 to 8 overlaps reserved range unset to 5",
-        ),
-        (
-            [(Some(-5), None), (None, Some(0))],
-            "reserved range unset to 0 overlaps reserved range -5 to unset",
-        ),
+    for (declared, reported) in [
+        ([(None, None), (Some(0), Some(0))], [(0, 0), (0, 0)]),
+        ([(None, Some(5)), (Some(5), Some(8))], [(0, 5), (5, 8)]),
+        ([(Some(-5), None), (None, Some(0))], [(-5, 0), (0, 0)]),
+        ([(Some(-2), Some(3)), (Some(-5), None)], [(-2, 3), (-5, 0)]),
     ] {
         let mut e = enumeration("E", &[]);
         e.value[0].number = Some(100);
@@ -398,13 +391,81 @@ fn missing_enum_bounds_still_participate_in_overlap_checks() {
                 ..Default::default()
             })
             .collect();
-        assert_enum_error_as_declared(
-            set("proto2", vec![], vec![e]),
-            "overlap.test.E",
-            declared,
-            &format!("enum overlap.test.E {display}"),
-        );
+        assert_enum_error(set("proto2", vec![], vec![e]), "overlap.test.E", reported);
     }
+}
+
+/// The first two ranges overlap and the third is invalid on its own: the
+/// invalid range is the error, because every range is validated before any
+/// pair is compared.
+const OVERLAP_THEN_INVALID: [Range; 3] = [(1, 5), (3, 7), (9, 5)];
+
+#[test]
+fn an_invalid_message_range_is_reported_before_an_overlap() {
+    let err = DescriptorPool::new(set(
+        "proto3",
+        vec![message("M", &OVERLAP_THEN_INVALID)],
+        vec![],
+    ))
+    .unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            PoolError::InvalidMessageReservedRange {
+                message,
+                start: Some(9),
+                end: Some(5),
+            } if message == "overlap.test.M"
+        ),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn an_invalid_enum_range_is_reported_before_an_overlap() {
+    let err = DescriptorPool::new(set(
+        "proto3",
+        vec![],
+        vec![enumeration("E", &OVERLAP_THEN_INVALID)],
+    ))
+    .unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            PoolError::InvalidEnumReservedRange {
+                enum_name,
+                start: Some(9),
+                end: Some(5),
+            } if enum_name == "overlap.test.E"
+        ),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn a_field_on_a_number_reserved_by_an_out_of_order_range_is_rejected() {
+    // Declared highest first, so the reserved-number lookup finds 5 only in
+    // an index sorted by start.
+    let mut m = message("M", &[(20, 30), (12, 15), (5, 6), (9, 12)]);
+    m.field.push(FieldDescriptorProto {
+        name: Some("value".into()),
+        number: Some(5),
+        label: Some(Label::LABEL_OPTIONAL),
+        r#type: Some(Type::TYPE_INT32),
+        ..Default::default()
+    });
+    let err = DescriptorPool::new(set("proto3", vec![m], vec![])).unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            PoolError::ReservedMessageFieldNumber {
+                message,
+                name,
+                number: 5,
+            } if message == "overlap.test.M" && name == "value"
+        ),
+        "{err:?}"
+    );
 }
 
 #[test]
