@@ -12,81 +12,13 @@
 //! in shape every time; these derives generate it from one annotation,
 //! mirroring `serde`'s `remote` attribute pattern.
 //!
-//! # Optional serde, arbitrary, and reflection support
+//! # Optional serde and arbitrary impls
 //!
-//! The derives implement the binary storage traits by default. Bare
-//! `#[buffa(serde)]` and `#[buffa(arbitrary)]` keys opt individual newtypes
-//! into the corresponding additional impls. Reflection impls remain
-//! hand-written; see `examples/custom-types/src/types/` for examples.
-//!
-//! ## The `serde` key
-//!
-//! `#[buffa(remote = ..., serde)]` emits `serde::Serialize` and
-//! `serde::Deserialize` impls for the newtype. The crate that defines the
-//! newtype must depend on `serde` under that name. The JSON form depends on
-//! the derive:
-//!
-//! - [`ProtoString`](macro@ProtoString): a string.
-//! - [`ProtoBytes`](macro@ProtoBytes): a base64 string. Serializing writes
-//!   the standard alphabet with padding. Deserializing accepts the standard
-//!   and the URL-safe alphabet, each with or without padding.
-//! - [`ProtoList`](macro@ProtoList), [`ProtoBox`](macro@ProtoBox) and
-//!   [`MapStorage`](macro@MapStorage): the form of the wrapped type. The
-//!   impls call the wrapped type's own `Serialize` and `Deserialize`.
-//!
-//! The string and bytes forms are the proto3 JSON forms. They come from
-//! `buffa::json_helpers`, so the crate must also enable `buffa/json`. The
-//! remote type does not need serde support of its own.
-//!
-//! Both `Deserialize` impls reject JSON `null`. Proto3 JSON reads a `null`
-//! field as the field's default, and forbids `null` as a `repeated` element
-//! or a map value. A generated message handles a `null` field before it
-//! calls the newtype's impl, so `null` reaches the impl only where proto3
-//! JSON forbids it.
-//!
-//! The list, box and map impls need the wrapped type to implement serde. For
-//! a foreign type, that usually means enabling a `serde` feature of its
-//! crate. Each impl is bounded on the wrapped type's impl, such as
-//! `Vec<T>: Serialize` for a newtype over `Vec<T>`. So a newtype whose
-//! wrapped type lacks one still works with the binary codec. The wrapped
-//! type's impls decide the JSON, and they do not apply the proto3 JSON rules
-//! for integers, floats, enums or bytes.
-//!
-//! Message code generated with `generate_json(true)` calls these impls for
-//! some field shapes, and its own per-field helpers for the rest:
-//!
-//! - `ProtoString`: called for a `repeated` element, an `optional` field, a
-//!   oneof variant, and a map key or value. A singular field uses a helper
-//!   that needs only `ProtoString`.
-//! - `ProtoBytes`: not called. A helper base64-encodes every `bytes`
-//!   position.
-//! - `ProtoList`: called for a `repeated` field of strings, bools, or
-//!   messages other than the `google.protobuf` wrapper types. Other element
-//!   types use a helper that builds the collection from a `Vec`.
-//! - `MapStorage`: called for a string-keyed map whose values are strings,
-//!   bools, or messages other than the wrapper types. Other maps use a helper
-//!   that builds the map through `MapStorage`.
-//! - `ProtoBox`: not called. Message JSON serializes the pointee, and builds
-//!   the pointer with `ProtoBox::new`.
-//!
-//! A string newtype in one of those positions needs serde impls, and so does
-//! a list or map newtype used for one of those fields. The key is one way to
-//! supply them. On a `ProtoBytes` or `ProtoBox` newtype the impls are for the
-//! caller's own use, such as a field of a hand-written serde struct.
-//!
-//! For an optional dependency, put the key behind the consumer's feature:
-//!
-//! ```rust
-//! #[derive(Clone, PartialEq, Default, Debug, buffa_remote_derive::ProtoString)]
-//! #[buffa(remote = ecow::EcoString)]
-//! #[cfg_attr(feature = "json", buffa(serde))]
-//! pub struct MyEcoString(pub ecow::EcoString);
-//! ```
-//!
-//! Define `json = ["dep:serde", "buffa/json"]` in that crate. No feature
-//! on the proc-macro crate controls the emitted impls, so another dependency
-//! cannot accidentally enable them through Cargo feature unification.
-//! Do not also derive serde on the same type: that creates conflicting impls.
+//! The derives implement the binary storage traits. The bare
+//! [`serde`](#the-serde-key) and [`arbitrary`](#the-arbitrary-key) keys add
+//! `serde::Serialize` / `Deserialize` and `arbitrary::Arbitrary` impls to an
+//! individual newtype. `ReflectList`/`ReflectMap` impls for a custom list or
+//! map are still written by hand (#290).
 //!
 //! Skipping a *required* impl on a JSON/reflect/fuzz build surfaces as a
 //! trait-bound error deep in *generated message code*
@@ -153,6 +85,106 @@
 //! decoder reuses long-lived buffers and capacity retention matters for that
 //! workload. Hand-write `clear` to forward to the remote's own clearing
 //! method instead, in that case.
+//!
+//! # The `serde` key
+//!
+//! A `generate_json(true)` build that fails in generated message code with
+//! ``the trait bound `MyStr: serde::Serialize` is not satisfied`` needs serde
+//! impls on the newtype. The bare `serde` key emits them:
+//!
+//! ```rust
+//! #[derive(Clone, PartialEq, Default, Debug, buffa_remote_derive::ProtoString)]
+//! #[buffa(remote = ecow::EcoString, serde)]
+//! pub struct MyEcoString(pub ecow::EcoString);
+//! ```
+//!
+//! Each of the five derives accepts the key. The JSON form of the
+//! `serde::Serialize` and `serde::Deserialize` impls depends on the derive:
+//!
+//! - [`ProtoString`](macro@ProtoString): a string.
+//! - [`ProtoBytes`](macro@ProtoBytes): a base64 string. Serializing writes
+//!   the standard alphabet with padding. Deserializing accepts the standard
+//!   and the URL-safe alphabet, each with or without padding.
+//! - [`ProtoList`](macro@ProtoList), [`ProtoBox`](macro@ProtoBox) and
+//!   [`MapStorage`](macro@MapStorage): the form of the wrapped type. The
+//!   impls call the wrapped type's own `Serialize` and `Deserialize`.
+//!
+//! The string and bytes forms are the proto3 JSON forms, and the remote type
+//! does not need serde support of its own. A bytes newtype that needs serde
+//! impls takes them from the key, not from `#[serde(transparent)]`. The
+//! transparent impls use the remote type's form, which for `Vec<u8>` is a
+//! JSON array of numbers.
+//!
+//! The `ProtoString` and `ProtoBytes` `Deserialize` impls reject JSON `null`
+//! with serde's `invalid type: null, expected a string` (for bytes,
+//! `expected a base64-encoded string`). Proto3 JSON forbids `null` as a
+//! `repeated` element or a map value. A generated message handles every
+//! other `null` itself: the default for a whole field, and unset for an
+//! `optional` field or a oneof variant. So `null` reaches the newtype's impl
+//! only where proto3 JSON forbids it.
+//!
+//! The impls produce the same form in every serde format, so a binary format
+//! such as bincode or postcard also stores a `ProtoBytes` newtype as base64
+//! text. Write the impls by hand for a compact binary form.
+//!
+//! The list, box and map impls need the wrapped type to implement serde. For
+//! a foreign type, that usually means enabling a `serde` feature of its
+//! crate. Each impl is bounded on the wrapped type's impl, such as
+//! `Vec<T>: Serialize` for a newtype over `Vec<T>`. So a newtype whose
+//! wrapped type lacks one still works with the binary codec. The wrapped
+//! type's impls decide the JSON, and they do not apply the proto3 JSON rules
+//! for integers, floats, enums or bytes.
+//!
+//! The impls are emitted unconditionally, so the crate that defines the
+//! newtype must depend on `serde`, under that name, whenever the key is
+//! present. A `ProtoBytes` newtype also needs the `json` feature of `buffa`,
+//! which has the base64 codec. The other four derives need only `serde`. If
+//! the dependency is optional, put the key in a second `#[buffa(..)]`
+//! attribute behind the same condition:
+//!
+//! ```toml
+//! [dependencies]
+//! serde = { version = "1", optional = true }
+//!
+//! [features]
+//! json = ["dep:serde", "buffa/json"]
+//! ```
+//!
+//! ```rust
+//! #[derive(Clone, PartialEq, Default, Debug, buffa_remote_derive::ProtoString)]
+//! #[buffa(remote = ecow::EcoString)]
+//! #[cfg_attr(feature = "json", buffa(serde))]
+//! pub struct MyEcoString(pub ecow::EcoString);
+//! ```
+//!
+//! Generated messages carry their serde impls unconditionally, or under
+//! `feature = "json"` when codegen's `gate_impls_on_crate_features` is on.
+//! The key's condition has to hold whenever those impls are compiled. If the
+//! newtype lives in another crate, the messages' crate forwards the feature
+//! (`json = [.., "my-types/json"]`). The proc-macro crate has no feature
+//! that controls the emitted impls, so another dependency cannot enable them
+//! through Cargo feature unification. Do not also derive serde on the same
+//! type: that creates conflicting impls.
+//!
+//! Without the `serde` dependency the build fails to resolve the `serde`
+//! crate, and the error points at the key. With the key on a list or map
+//! newtype whose wrapped type lacks serde impls, the newtype's own impls do
+//! not apply. The error then appears where the newtype is used and names the
+//! wrapped type, as in ``the trait bound `SmallVec<[MyStr; 4]>:
+//! serde::Serialize` is not satisfied``: enable the `serde` feature of that
+//! type's crate.
+//!
+//! Not every newtype needs the key. Under `generate_json(true)`, generated
+//! message code calls a newtype's own serde impls only for these shapes, and
+//! a `buffa::json_helpers` function that needs only the storage trait for
+//! the rest:
+//!
+//! | Derive | Needs serde impls when used for |
+//! | --- | --- |
+//! | `ProtoString` | a `repeated` element, an explicit-presence (`optional`) field, a oneof variant, a map key or value. A singular field without presence does not need them. |
+//! | `ProtoList` | a `repeated` field of strings, bools, or messages other than the `google.protobuf` wrapper types |
+//! | `MapStorage` | a string-keyed map whose values are strings, bools, or messages other than the wrapper types |
+//! | `ProtoBytes`, `ProtoBox` | never; the impls are for your own use of the newtype outside a message |
 //!
 //! # The `arbitrary` key
 //!
@@ -250,6 +282,9 @@
 //! #[buffa(remote = smallbox::SmallBox<T, smallbox::space::S4>)]
 //! pub struct SmallBox<T>(pub smallbox::SmallBox<T, smallbox::space::S4>);
 //! ```
+//!
+//! `smallbox` has no `serde` feature, so the [`serde` key](#the-serde-key) on
+//! this newtype emits impls that never apply.
 //!
 //! ```rust
 //! #[derive(Clone, PartialEq, Debug, buffa_remote_derive::MapStorage)]

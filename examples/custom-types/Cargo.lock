@@ -16,7 +16,7 @@ checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
 name = "buffa"
-version = "0.8.0"
+version = "0.9.2"
 dependencies = [
  "base64",
  "bytes",
@@ -32,7 +32,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-build"
-version = "0.8.0"
+version = "0.9.2"
 dependencies = [
  "buffa",
  "buffa-codegen",
@@ -41,7 +41,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-codegen"
-version = "0.8.0"
+version = "0.9.2"
 dependencies = [
  "buffa",
  "buffa-descriptor",
@@ -54,7 +54,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-descriptor"
-version = "0.8.0"
+version = "0.9.2"
 dependencies = [
  "buffa",
  "rustversion",
@@ -64,7 +64,7 @@ dependencies = [
 
 [[package]]
 name = "buffa-remote-derive"
-version = "0.8.0"
+version = "0.9.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -126,7 +126,6 @@ version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d50aef14619d336a54fca5a592d952eb39037b1a1e7e6afd9f91c892ac7ef65"
 dependencies = [
- "serde",
  "static_assertions",
 ]
 
@@ -324,9 +323,9 @@ dependencies = [
 
 [[package]]
 name = "smoothutf8"
-version = "0.1.1"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36358427d32ecdb1624616deed99eccfef0a167fe5bf40ddb51efe6980bc1ec8"
+checksum = "6b4ec95892483d6d94284caccfddb9b77111a4dcac33ed25d624248def0fa5f1"
 dependencies = [
  "simdutf8",
 ]

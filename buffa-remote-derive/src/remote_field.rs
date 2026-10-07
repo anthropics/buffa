@@ -115,7 +115,8 @@ fn single_field(input: &DeriveInput) -> syn::Result<(syn::Type, TokenStream, Opt
 /// [`parse`] for why), and collects the other keys present alongside it: any of
 /// `allowed_overrides` as a `key = path` pair (e.g.
 /// `#[buffa(remote = ..., into_inner = MyType::unwrap)]`), and the bare
-/// `arbitrary` key every derive accepts, in the same attribute or another.
+/// `arbitrary` and `serde` keys every derive accepts, in the same attribute
+/// or another.
 fn parse_attrs(
     input: &DeriveInput,
     allowed_overrides: &[&str],
@@ -134,8 +135,15 @@ fn parse_attrs(
                 Ok(())
             } else if meta.path.is_ident("serde") {
                 if meta.input.peek(syn::Token![=]) {
-                    return Err(meta.error("`serde` takes no value; use `#[buffa(serde)]` or `#[cfg_attr(<condition>, buffa(serde))]`"));
+                    return Err(meta.error(
+                        "`serde` takes no value; write it as a bare key, \
+                         `#[buffa(remote = ..., serde)]`, or as \
+                         `#[cfg_attr(<condition>, buffa(serde))]` to make the impls \
+                         conditional",
+                    ));
                 }
+                // A repeat is accepted: two `cfg_attr`s that both hold look
+                // the same here as a key written twice.
                 flags.serde.get_or_insert(meta.path.span());
                 Ok(())
             } else if meta.path.is_ident("arbitrary") {

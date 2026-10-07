@@ -1416,8 +1416,10 @@ impl Config {
     ///   those cases; singular / optional / oneof uses work directly.
     /// - **JSON of an `optional`, `repeated` or `oneof` custom string, or of
     ///   one in a `map`,** serializes through the type's own `serde` impls, so
-    ///   such a type must derive `Serialize` / `Deserialize` (and an external
-    ///   type must enable its `serde` feature). A singular field without
+    ///   such a type must implement `Serialize` / `Deserialize`. A
+    ///   `buffa-remote-derive` newtype gets them from
+    ///   `#[buffa(remote = ..., serde)]`; any other type derives them (an
+    ///   external type enables its `serde` feature). A singular field without
     ///   `optional` uses the `proto_string` with-module and needs no `serde`
     ///   impl.
     /// - A custom type used as a `map` key must implement `Hash + Eq` for the

@@ -92,8 +92,8 @@ fn roundtrip<T: Serialize + DeserializeOwned + PartialEq + core::fmt::Debug>(val
 #[test]
 fn strings_use_proto_json_without_remote_serde() {
     roundtrip(Text::from("hello"), r#""hello""#);
-    assert!(serde_json::from_str::<Text>("123").is_err());
-    assert!(serde_json::from_str::<Text>("{}").is_err());
+    type_error::<Text>("123", "integer `123`", "a string");
+    type_error::<Text>("{}", "map", "a string");
     // An owned string reaches `visit_string`, a borrowed one `visit_str`.
     assert_eq!(
         serde_json::from_value::<Text>(serde_json::json!("owned")).unwrap(),
@@ -101,11 +101,16 @@ fn strings_use_proto_json_without_remote_serde() {
     );
 }
 
-/// The error serde reports for a `null` where the visitor expects `expected`.
-fn null_error<T: DeserializeOwned + core::fmt::Debug>(json: &str, expected: &str) {
-    let err = serde_json::from_str::<T>(json).expect_err("null is rejected");
-    let want = format!("invalid type: null, expected {expected}");
+/// Asserts that `json` fails with serde's `invalid type` error: `found` is
+/// the token it names, and `expected` the visitor's `expecting` text.
+fn type_error<T: DeserializeOwned + core::fmt::Debug>(json: &str, found: &str, expected: &str) {
+    let err = serde_json::from_str::<T>(json).expect_err("the token is rejected");
+    let want = format!("invalid type: {found}, expected {expected}");
     assert!(err.to_string().contains(&want), "{json}: {err}");
+}
+
+fn null_error<T: DeserializeOwned + core::fmt::Debug>(json: &str, expected: &str) {
+    type_error::<T>(json, "null", expected);
 }
 
 #[test]
@@ -123,8 +128,9 @@ fn string_rejects_null() {
 #[test]
 fn bytes_use_base64_without_remote_serde() {
     roundtrip(Bytes::from(vec![0, 255, 128]), r#""AP+A""#);
-    assert!(serde_json::from_str::<Bytes>("[0,255,128]").is_err());
-    assert!(serde_json::from_str::<Bytes>(r#""!!!""#).is_err());
+    type_error::<Bytes>("[0,255,128]", "sequence", "a base64-encoded string");
+    let err = serde_json::from_str::<Bytes>(r#""!!!""#).expect_err("invalid base64");
+    assert!(err.to_string().contains("Invalid symbol 33"), "{err}");
     // The URL-safe alphabet and unpadded input are accepted.
     assert_eq!(
         serde_json::from_str::<Bytes>(r#""AP-A""#).unwrap(),
@@ -236,9 +242,8 @@ fn expansions_do_not_rely_on_the_std_prelude() {
     );
 }
 
-/// The `Deserialize` impl of a newtype with its own lifetime parameter is
-/// bounded on the wrapped type's impl, so it holds for a pointee that borrows
-/// from the input.
+/// A newtype with its own lifetime parameter gets both impls, and its
+/// `Deserialize` impl accepts a pointee that borrows from the input.
 #[test]
 fn lifetime_parameterised_newtype_borrows_from_the_input() {
     let json = String::from(r#""borrowed""#);

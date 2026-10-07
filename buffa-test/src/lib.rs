@@ -131,8 +131,8 @@ pub mod inline_field {
 pub mod vtable_string_repr {
     /// `String`-backed newtype whose `buffa::ProtoString` impl and conversions
     /// come from the remote derive. The `serde` key supplies `Serialize` /
-    /// `Deserialize`, because the `repeated` and `optional` JSON fields call
-    /// the string type's own serde impls (a singular field uses the
+    /// `Deserialize`, because the `repeated`, `optional` and oneof JSON fields
+    /// call the string type's own serde impls (a singular field uses the
     /// `proto_string` with-module instead, which needs only `AsRef`/`From`).
     #[derive(Clone, PartialEq, Eq, Default, Debug, ::buffa_remote_derive::ProtoString)]
     #[buffa(remote = ::buffa::alloc::string::String, serde)]
