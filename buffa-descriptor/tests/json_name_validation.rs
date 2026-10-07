@@ -37,7 +37,9 @@ fn descriptor_set(file: FileDescriptorProto) -> FileDescriptorSet {
     }
 }
 
-fn assert_invalid_json_name(err: &PoolError, field: &str, name: &str) {
+/// Asserts that `err` is `InvalidJsonName` for `field` and `name`, and that
+/// its message ends with `reason`.
+fn assert_invalid_json_name_because(err: &PoolError, field: &str, name: &str, reason: &str) {
     assert!(matches!(
         err,
         PoolError::InvalidJsonName { field: actual_field, name: actual_name }
@@ -45,9 +47,13 @@ fn assert_invalid_json_name(err: &PoolError, field: &str, name: &str) {
     ));
     assert_eq!(
         err.to_string(),
-        format!("field {field} has JSON name {name:?} containing NUL")
+        format!("field {field} has JSON name {name:?}{reason}")
     );
     assert!(!err.to_string().contains('\0'));
+}
+
+fn assert_invalid_json_name(err: &PoolError, field: &str, name: &str) {
+    assert_invalid_json_name_because(err, field, name, " containing NUL");
 }
 
 #[test]
@@ -189,19 +195,25 @@ fn bracketed_custom_json_names_are_rejected() {
     for name in ["[x]", "[]", "[json.test.ext]", "[a][b]"] {
         let err = DescriptorPool::new(descriptor_set(file_with_json_name(Some(name))))
             .expect_err("a bracketed JSON name reads back as an extension key");
-        assert!(matches!(
+        assert_invalid_json_name_because(
             &err,
-            PoolError::InvalidJsonName { field, name: actual }
-                if field == "json.test.Item.field_name" && actual == name
-        ));
-        assert_eq!(
-            err.to_string(),
-            format!(
-                "field json.test.Item.field_name has JSON name {name:?}, \
-                 which has the form of an extension key"
-            )
+            "json.test.Item.field_name",
+            name,
+            ", which has the form of an extension key",
         );
     }
+}
+
+#[test]
+fn bracketed_json_names_link_under_legacy_json_field_conflicts() {
+    let mut file = file_with_json_name(Some("[x]"));
+    file.message_type[0].options = buffa::MessageField::some(MessageOptions {
+        deprecated_legacy_json_field_conflicts: Some(true),
+        ..Default::default()
+    });
+    let pool = DescriptorPool::new(descriptor_set(file)).unwrap();
+    let message = pool.message_by_name("json.test.Item").unwrap();
+    assert_eq!(message.field(1).unwrap().json_name(), "[x]");
 }
 
 #[test]

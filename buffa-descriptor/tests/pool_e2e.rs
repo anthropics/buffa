@@ -163,11 +163,42 @@ mod packed_options {
                     assert_eq!(
                         err.to_string(),
                         "field packed.test.Sample.value sets features.repeated_field_encoding, \
-                         which does not apply to it"
+                         but the field is not repeated or its elements cannot be packed"
                     );
                 },
             );
         }
+    }
+
+    #[test]
+    fn repeated_field_encoding_feature_is_rejected_on_a_singular_extension() {
+        let mut ext = with_encoding(
+            field(Type::TYPE_INT32, Label::LABEL_OPTIONAL, None),
+            RepeatedFieldEncoding::PACKED,
+        );
+        ext.number = Some(100);
+        ext.extendee = Some(".packed.test.Sample".into());
+        let mut set = editions_set(ext.clone());
+        set.file[0].message_type[0].field.clear();
+        set.file[0].message_type[0]
+            .extension_range
+            .push(ExtensionRange {
+                start: Some(100),
+                end: Some(101),
+                ..Default::default()
+            });
+        set.file[0].extension.push(ext);
+        assert_set_rejected_without_mutating_pool(
+            "packed-options.proto",
+            "packed.test.value",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidRepeatedFieldEncoding { field } if field == "packed.test.value"
+                ));
+            },
+        );
     }
 
     #[test]
@@ -293,7 +324,7 @@ mod packed_options {
                             );
                             assert_eq!(
                                 err.to_string(),
-                                format!("field {full_name} sets packed = true but is not a repeated primitive field"),
+                                format!("field {full_name} sets packed = true but is not a repeated numeric, bool, or enum field"),
                                 "syntax {syntax:?}, type {ty:?}, label {label:?}",
                             );
                         },
@@ -421,7 +452,7 @@ mod packed_options {
                             assert!(
                                 matches!(err, PoolError::InvalidPackedOption { field } if field == "packed.test.Sample.values")
                             );
-                            assert_eq!(err.to_string(), "field packed.test.Sample.values sets packed = true but is not a repeated primitive field");
+                            assert_eq!(err.to_string(), "field packed.test.Sample.values sets packed = true but is not a repeated numeric, bool, or enum field");
                         },
                     );
                 } else {
@@ -481,7 +512,7 @@ mod packed_options {
                             assert!(
                                 matches!(err, PoolError::InvalidPackedOption { field } if field == full_name)
                             );
-                            assert_eq!(err.to_string(), format!("field {full_name} sets packed = true but is not a repeated primitive field"));
+                            assert_eq!(err.to_string(), format!("field {full_name} sets packed = true but is not a repeated numeric, bool, or enum field"));
                         },
                     );
                 }
