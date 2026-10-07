@@ -2605,20 +2605,44 @@ fn emit_buf_rerun_if_changed() {
 /// Convert a filesystem proto path to the name protoc uses in the descriptor.
 ///
 /// `FileDescriptorProto.name` is relative to the `--proto_path` include
-/// directory. This strips the first matching include prefix; if no include
-/// matches, returns the path as-is (not just file_name — that would break
-/// nested proto directories).
+/// directory. The name is what remains after the first include that is a
+/// prefix of the file and leaves no `..` in the remainder: protoc refuses to
+/// map a file through an include when the result would contain `..`, and
+/// tries the next one. If no include qualifies, the name is the full path
+/// (not just file_name — that would break nested proto directories).
+/// Current-directory components and redundant separators are removed first,
+/// as protoc does, without resolving symlinks or `..`.
 fn proto_relative_name(file: &Path, includes: &[PathBuf]) -> String {
+    let file = normalize_proto_path(file);
     let name = includes
         .iter()
-        .find_map(|include| file.strip_prefix(include).ok())
-        .unwrap_or(file)
+        .find_map(|include| {
+            let include = normalize_proto_path(include);
+            // `.` contains every relative path and no rooted one. `has_root`
+            // also covers a Windows path that starts at the root of the
+            // current drive, which `is_absolute` reports as relative.
+            if include.as_os_str().is_empty() && file.has_root() {
+                return None;
+            }
+            file.strip_prefix(include).ok().filter(|name| {
+                !name
+                    .components()
+                    .any(|component| component == Component::ParentDir)
+            })
+        })
+        .unwrap_or(&file)
         .to_str()
         .unwrap_or("")
         .to_string();
     #[cfg(windows)]
     let name = name.replace('\\', "/");
     name
+}
+
+fn normalize_proto_path(path: &Path) -> PathBuf {
+    path.components()
+        .filter(|component| *component != Component::CurDir)
+        .collect()
 }
 
 /// Files Cargo should watch for protoc-based builds.
@@ -3140,6 +3164,115 @@ mod tests {
     }
 
     #[test]
+    fn proto_relative_name_normalizes_current_directory_components() {
+        for (file, includes, expected) in [
+            (
+                "./proto/my/service.proto",
+                vec!["proto"],
+                "my/service.proto",
+            ),
+            (
+                "proto/my/service.proto",
+                vec!["./proto"],
+                "my/service.proto",
+            ),
+            (
+                "./proto/my/service.proto",
+                vec!["./proto"],
+                "my/service.proto",
+            ),
+            (
+                "proto/my/./service.proto",
+                vec!["proto"],
+                "my/service.proto",
+            ),
+            ("./my//pkg/./service.proto", vec![], "my/pkg/service.proto"),
+            ("./my/pkg/service.proto", vec!["."], "my/pkg/service.proto"),
+            ("my/pkg/service.proto", vec!["./."], "my/pkg/service.proto"),
+            (
+                "./my/pkg/service.proto",
+                vec!["other"],
+                "my/pkg/service.proto",
+            ),
+        ] {
+            let includes = includes.into_iter().map(PathBuf::from).collect::<Vec<_>>();
+            assert_eq!(proto_relative_name(Path::new(file), &includes), expected);
+        }
+    }
+
+    #[test]
+    fn proto_relative_name_normalization_preserves_include_order() {
+        let file = Path::new("./proto/vendor/./ext.proto");
+        assert_eq!(
+            proto_relative_name(
+                file,
+                &[PathBuf::from("./proto"), PathBuf::from("proto/vendor")]
+            ),
+            "vendor/ext.proto"
+        );
+        assert_eq!(
+            proto_relative_name(
+                file,
+                &[PathBuf::from("./proto/vendor"), PathBuf::from("proto")]
+            ),
+            "ext.proto"
+        );
+    }
+
+    #[test]
+    fn proto_relative_name_current_directory_include_contains_relative_files() {
+        // `.` listed first names the file by its full relative path, even
+        // when a later include is a closer match.
+        assert_eq!(
+            proto_relative_name(
+                Path::new("proto/my/service.proto"),
+                &[PathBuf::from("."), PathBuf::from("proto")]
+            ),
+            "proto/my/service.proto"
+        );
+    }
+
+    #[test]
+    fn proto_relative_name_current_directory_does_not_match_absolute_path() {
+        let root = std::env::current_dir().unwrap().join("proto");
+        let file = root.join("my/service.proto");
+        assert_eq!(
+            proto_relative_name(&file, &[PathBuf::from("."), root]),
+            "my/service.proto"
+        );
+    }
+
+    #[test]
+    fn proto_relative_name_preserves_parent_directory_components() {
+        assert_eq!(
+            proto_relative_name(Path::new("./proto/../vendor/service.proto"), &[]),
+            "proto/../vendor/service.proto"
+        );
+        assert_eq!(
+            proto_relative_name(
+                Path::new("./proto/../vendor/service.proto"),
+                &[PathBuf::from("proto/../vendor")],
+            ),
+            "service.proto"
+        );
+    }
+
+    #[test]
+    fn proto_relative_name_skips_prefixes_leaving_parent_components() {
+        assert_eq!(
+            proto_relative_name(
+                Path::new("./proto/../vendor/service.proto"),
+                &[
+                    PathBuf::from("."),
+                    PathBuf::from("proto"),
+                    PathBuf::from("proto/../vendor"),
+                ],
+            ),
+            "service.proto"
+        );
+    }
+
+    #[test]
     fn proto_relative_name_first_matching_prefix_wins() {
         let got = proto_relative_name(
             Path::new("proto/vendor/ext.proto"),
@@ -3202,9 +3335,8 @@ mod tests {
 
     #[test]
     fn proto_relative_name_no_match_returns_full_path() {
-        // Regression: previously fell back to file_name(), which stripped
-        // directory components and broke descriptor_set() mode with nested
-        // proto packages. Now returns the full path as-is.
+        // The fallback is the whole path: file_name() alone would drop the
+        // directories that descriptor_set() mode needs for nested packages.
         let got = proto_relative_name(Path::new("my/pkg/service.proto"), &[]);
         assert_eq!(got, "my/pkg/service.proto");
     }

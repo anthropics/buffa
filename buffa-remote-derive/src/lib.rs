@@ -254,6 +254,15 @@
 //! `storage_iter`'s contract. A receiver or item-type mismatch is a type error
 //! at the generated call site, not a special diagnostic from this macro.
 //!
+//! # Reserved identifiers
+//!
+//! The generated impls declare lifetimes and type parameters of their own,
+//! and each of those names starts with `__buffa` or `__Buffa` (for example
+//! `'__buffa_iter` and `__BuffaIter`). Keep those two prefixes out of the
+//! newtype's own lifetime and generic parameter names and out of the types and
+//! override paths it names. A parameter such as `'a` or `T` cannot collide with
+//! a generated one.
+//!
 //! # Why a `remote` attribute that just repeats the field's type?
 //!
 //! It doesn't change what's generated — the macro always reads the wrapped

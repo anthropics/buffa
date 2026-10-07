@@ -85,32 +85,57 @@ pub const MAX_SYMBOL_LEN: usize = 512;
 /// range count.
 struct ReservedRanges(Vec<(i64, i64)>);
 
+/// Two reserved ranges of one declaration that overlap, as positions in its
+/// `reserved_range` list.
+struct OverlappingPair {
+    later: usize,
+    earlier: usize,
+}
+
 impl ReservedRanges {
     /// Index a message's reserved ranges, validating each as protoc does: an
     /// unset bound reads as 0, and the half-open range must satisfy
-    /// `0 < start < end`.
+    /// `0 < start < end`. Ranges must not overlap; adjacent ranges are valid.
     fn for_message(
         message_fqn: &str,
         ranges: &[crate::generated::descriptor::descriptor_proto::ReservedRange],
     ) -> Result<Self, PoolError> {
-        let mut checked = Vec::with_capacity(ranges.len());
+        let mut checked: Vec<(u32, u32)> = Vec::with_capacity(ranges.len());
         for r in ranges {
-            let (start, end) = (r.start.unwrap_or(0), r.end.unwrap_or(0));
-            if start <= 0 || start >= end {
+            let bounds = match (
+                u32::try_from(r.start.unwrap_or(0)),
+                u32::try_from(r.end.unwrap_or(0)),
+            ) {
+                (Ok(start), Ok(end)) if start > 0 && start < end => Some((start, end)),
+                _ => None,
+            };
+            let Some(bounds) = bounds else {
                 return Err(PoolError::InvalidMessageReservedRange {
                     message: message_fqn.to_string(),
                     start: r.start,
                     end: r.end,
                 });
-            }
-            checked.push((i64::from(start), i64::from(end)));
+            };
+            checked.push(bounds);
         }
-        Ok(Self::from_half_open(checked.into_iter()))
+        let half_open = checked
+            .iter()
+            .map(|&(start, end)| (i64::from(start), i64::from(end)));
+        Self::from_disjoint(half_open).map_err(|OverlappingPair { later, earlier }| {
+            let ((start, end), (other_start, other_end)) = (checked[later], checked[earlier]);
+            PoolError::OverlappingMessageReservedRange {
+                message: message_fqn.to_string(),
+                start,
+                end,
+                other_start,
+                other_end,
+            }
+        })
     }
 
     /// Index an enum's reserved ranges, validating each as protoc does: an
     /// unset bound reads as 0, the range is inclusive, may be negative, and
-    /// must satisfy `start <= end`.
+    /// must satisfy `start <= end`. Ranges must not overlap.
     fn for_enum(
         enum_fqn: &str,
         ranges: &[crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange],
@@ -127,7 +152,42 @@ impl ReservedRanges {
             }
             checked.push((i64::from(start), i64::from(end) + 1));
         }
-        Ok(Self::from_half_open(checked.into_iter()))
+        Self::from_disjoint(checked.into_iter()).map_err(|OverlappingPair { later, earlier }| {
+            PoolError::OverlappingEnumReservedRange {
+                enum_name: enum_fqn.to_string(),
+                start: ranges[later].start.unwrap_or(0),
+                end: ranges[later].end.unwrap_or(0),
+                other_start: ranges[earlier].start.unwrap_or(0),
+                other_end: ranges[earlier].end.unwrap_or(0),
+            }
+        })
+    }
+
+    /// Index validated half-open ranges, given in declaration order, that
+    /// must not overlap. The check runs before coalescing hides an overlap:
+    /// once sorted by start, any overlap is visible between neighboring
+    /// ranges. The declaration index rides along so the error can tell the
+    /// later-declared range of the pair from the earlier one.
+    fn from_disjoint(ranges: impl Iterator<Item = (i64, i64)>) -> Result<Self, OverlappingPair> {
+        let mut by_start: Vec<(i64, i64, usize)> = ranges
+            .enumerate()
+            .map(|(i, (start, end))| (start, end, i))
+            .collect();
+        by_start.sort_unstable();
+        for pair in by_start.windows(2) {
+            let ((_, prev_end, i), (start, _, j)) = (pair[0], pair[1]);
+            if start < prev_end {
+                return Err(OverlappingPair {
+                    later: i.max(j),
+                    earlier: i.min(j),
+                });
+            }
+        }
+        let sorted = by_start
+            .into_iter()
+            .map(|(start, end, _)| (start, end))
+            .collect();
+        Ok(Self::from_sorted(sorted))
     }
 
     /// Sort and coalesce validated half-open ranges. Callers validate first;
@@ -135,6 +195,15 @@ impl ReservedRanges {
     fn from_half_open(ranges: impl Iterator<Item = (i64, i64)>) -> Self {
         let mut sorted: Vec<(i64, i64)> = ranges.filter(|&(start, end)| start < end).collect();
         sorted.sort_unstable();
+        Self::from_sorted(sorted)
+    }
+
+    /// Coalesce half-open ranges that are already sorted by start. Ranges
+    /// that touch merge into one. Every caller rejects overlapping ranges
+    /// first, so the merge of overlapping ranges is defensive: it keeps the
+    /// result sorted and disjoint, which the binary searches in `contains`
+    /// and `overlaps` rely on.
+    fn from_sorted(sorted: Vec<(i64, i64)>) -> Self {
         let mut merged: Vec<(i64, i64)> = Vec::with_capacity(sorted.len());
         for (start, end) in sorted {
             match merged.last_mut() {
@@ -376,12 +445,16 @@ pub enum PoolError {
         start: Option<i32>,
         end: Option<i32>,
     },
+    /// A message in a proto3 file declares an extension range.
+    ExtensionRangeInProto3 { message: String },
     /// Two extension ranges declared by the same message overlap. `end` is
     /// exclusive, as in `DescriptorProto.ExtensionRange`. Carries both ranges
     /// as declared: `start..end` is the later of the two in declaration
     /// order, `other_start..other_end` the earlier one it collides with.
-    /// Contrast [`PoolError::ReservedExtensionRange`], an overlap with a
-    /// *reserved* range.
+    /// Only one pair is reported. With three or more overlapping ranges it
+    /// is the first overlapping adjacent pair once the ranges are sorted by
+    /// `start`, then `end`. Contrast [`PoolError::ReservedExtensionRange`],
+    /// an overlap with a *reserved* range.
     OverlappingExtensionRange {
         message: String,
         start: u32,
@@ -427,6 +500,21 @@ pub enum PoolError {
         start: Option<i32>,
         end: Option<i32>,
     },
+    /// Two reserved ranges declared by the same message overlap. `end` is
+    /// exclusive, as in `DescriptorProto.ReservedRange` (`reserved 5 to 7;`
+    /// is `start: 5, end: 8`), so ranges that only touch are valid: `1..5`
+    /// and `5..7` do not overlap. Carries both ranges: `start..end` is the
+    /// later of the two in declaration order, `other_start..other_end` the
+    /// earlier one it collides with. Only one pair is reported. With three
+    /// or more overlapping ranges it is the first overlapping adjacent pair
+    /// once the ranges are sorted by `start`, then `end`.
+    OverlappingMessageReservedRange {
+        message: String,
+        start: u32,
+        end: u32,
+        other_start: u32,
+        other_end: u32,
+    },
     /// An enum reserved range has `start > end`. Both bounds are inclusive,
     /// as in `EnumDescriptorProto.EnumReservedRange`, may be negative, and an
     /// unset bound reads as 0. The bounds are carried as declared.
@@ -434,6 +522,22 @@ pub enum PoolError {
         enum_name: String,
         start: Option<i32>,
         end: Option<i32>,
+    },
+    /// Two reserved ranges declared by the same enum overlap. Both bounds are
+    /// inclusive, as in `EnumDescriptorProto.EnumReservedRange`, and may be
+    /// negative: `1 to 5` and `5 to 7` share 5 and overlap, while `1 to 5`
+    /// and `6 to 7` are valid. An unset bound is reported as 0, the value it
+    /// reads as. Carries both ranges: `start` to `end` is the later of the
+    /// two in declaration order, `other_start` to `other_end` the earlier
+    /// one it collides with. Only one pair is reported. With three or more
+    /// overlapping ranges it is the first overlapping adjacent pair once the
+    /// ranges are sorted by `start`, then `end`.
+    OverlappingEnumReservedRange {
+        enum_name: String,
+        start: i32,
+        end: i32,
+        other_start: i32,
+        other_end: i32,
     },
     /// An enum declares no values.
     EmptyEnum { enum_name: String },
@@ -689,6 +793,9 @@ impl core::fmt::Display for PoolError {
                 Bound(*start),
                 Bound(*end),
             ),
+            Self::ExtensionRangeInProto3 { message } => {
+                write!(f, "message {message} declares an extension range in proto3")
+            }
             Self::OverlappingExtensionRange {
                 message,
                 start,
@@ -751,6 +858,17 @@ impl core::fmt::Display for PoolError {
                 Bound(*start),
                 Bound(*end),
             ),
+            Self::OverlappingMessageReservedRange {
+                message,
+                start,
+                end,
+                other_start,
+                other_end,
+            } => write!(
+                f,
+                "message {message} reserved range {start}..{end} overlaps reserved range \
+                 {other_start}..{other_end}"
+            ),
             Self::InvalidEnumReservedRange {
                 enum_name,
                 start,
@@ -760,6 +878,17 @@ impl core::fmt::Display for PoolError {
                 "enum {enum_name} reserved range {} to {} is invalid; start must not exceed end",
                 Bound(*start),
                 Bound(*end),
+            ),
+            Self::OverlappingEnumReservedRange {
+                enum_name,
+                start,
+                end,
+                other_start,
+                other_end,
+            } => write!(
+                f,
+                "enum {enum_name} reserved range {start} to {end} overlaps reserved range \
+                 {other_start} to {other_end}"
             ),
             Self::EmptyEnum { enum_name } => {
                 write!(f, "enum {enum_name} declares no values")
@@ -1804,6 +1933,9 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        if scope.proto3 && !msg.extension_range.is_empty() {
+            return Err(PoolError::ExtensionRangeInProto3 { message: fqn });
+        }
         let msg_features =
             features::resolve_child(parent_features, features::message_features(msg));
 
@@ -2948,14 +3080,54 @@ mod reserved_ranges_tests {
     #[test]
     fn coalesces_overlapping_and_adjacent_ranges_in_any_order() {
         // 9..12 and 12..15 are adjacent, 20..30 and 25..27 nest, 5..6 stands alone.
+        let r = ReservedRanges::from_half_open(
+            [(20, 30), (12, 15), (5, 6), (25, 27), (9, 12)].into_iter(),
+        );
+        assert_eq!(r.0, vec![(5, 6), (9, 15), (20, 30)]);
+    }
+
+    #[test]
+    fn message_ranges_declared_out_of_order_are_indexed_sorted() {
+        // Disjoint; 9..12 and 12..15 touch and coalesce.
         let r = ranges(&[
             (Some(20), Some(30)),
             (Some(12), Some(15)),
             (Some(5), Some(6)),
-            (Some(25), Some(27)),
             (Some(9), Some(12)),
         ]);
         assert_eq!(r.0, vec![(5, 6), (9, 15), (20, 30)]);
+        for reserved in [5, 9, 12, 14, 20, 29] {
+            assert!(r.contains(reserved), "{reserved}");
+        }
+        for free in [4, 6, 8, 15, 19, 30] {
+            assert!(!r.contains(free), "{free}");
+        }
+        assert!(r.overlaps(1, 6));
+        assert!(r.overlaps(14, 20));
+        assert!(!r.overlaps(6, 9));
+        assert!(!r.overlaps(15, 20));
+    }
+
+    #[test]
+    fn enum_ranges_declared_out_of_order_are_indexed_sorted() {
+        use crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
+        // Disjoint and inclusive; `9 to 11` and `12 to 14` touch and coalesce.
+        let raw: Vec<EnumReservedRange> = [(20, 29), (12, 14), (-5, -3), (9, 11)]
+            .into_iter()
+            .map(|(start, end)| EnumReservedRange {
+                start: Some(start),
+                end: Some(end),
+                ..Default::default()
+            })
+            .collect();
+        let r = ReservedRanges::for_enum("t.E", &raw).expect("valid enum reserved ranges");
+        assert_eq!(r.0, vec![(-5, -2), (9, 15), (20, 30)]);
+        for reserved in [-5, -3, 9, 11, 12, 14, 20, 29] {
+            assert!(r.contains(reserved), "{reserved}");
+        }
+        for free in [-6, -2, 8, 15, 19, 30] {
+            assert!(!r.contains(free), "{free}");
+        }
     }
 
     #[test]
@@ -2996,16 +3168,15 @@ mod reserved_ranges_tests {
             ..Default::default()
         };
         // `reserved 0 to 8`, `reserved -3 to 0`, and `reserved 0` respectively.
-        let r = ReservedRanges::for_enum(
-            "t.E",
-            &[
-                range(None, Some(8)),
-                range(Some(-3), None),
-                range(None, None),
-            ],
-        )
-        .expect("unset enum bounds read as 0 and are valid");
-        assert!(r.contains(-3) && r.contains(0) && r.contains(8) && !r.contains(9));
+        for (start, end, expected) in [
+            (None, Some(8), (0, 9)),
+            (Some(-3), None, (-3, 1)),
+            (None, None, (0, 1)),
+        ] {
+            let r = ReservedRanges::for_enum("t.E", &[range(start, end)])
+                .expect("unset enum bounds read as 0 and are valid");
+            assert_eq!(r.0, vec![expected]);
+        }
         assert!(matches!(
             ReservedRanges::for_enum("t.E", &[range(Some(5), Some(4))]),
             Err(PoolError::InvalidEnumReservedRange { .. })
@@ -3015,7 +3186,7 @@ mod reserved_ranges_tests {
     #[test]
     fn enum_ranges_are_inclusive_and_may_be_negative() {
         use crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
-        let raw: Vec<EnumReservedRange> = [(-5, -3), (7, 9), (9, 9), (i32::MAX, i32::MAX)]
+        let raw: Vec<EnumReservedRange> = [(-5, -3), (7, 9), (12, 12), (i32::MAX, i32::MAX)]
             .into_iter()
             .map(|(start, end)| EnumReservedRange {
                 start: Some(start),
@@ -3029,6 +3200,7 @@ mod reserved_ranges_tests {
             vec![
                 (-5, -2),
                 (7, 10),
+                (12, 13),
                 (i64::from(i32::MAX), i64::from(i32::MAX) + 1)
             ]
         );
@@ -3037,6 +3209,8 @@ mod reserved_ranges_tests {
         assert!(!r.contains(-2));
         assert!(r.contains(9));
         assert!(!r.contains(10));
+        assert!(r.contains(12));
+        assert!(!r.contains(13));
         assert!(r.contains(i32::MAX));
     }
 

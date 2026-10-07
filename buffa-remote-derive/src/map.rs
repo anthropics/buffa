@@ -62,12 +62,12 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
             }
 
             #[inline]
-            fn storage_iter<'a>(
-                &'a self,
-            ) -> impl ::core::iter::Iterator<Item = (&'a #key_ty, &'a #value_ty)>
+            fn storage_iter<'__buffa_iter>(
+                &'__buffa_iter self,
+            ) -> impl ::core::iter::Iterator<Item = (&'__buffa_iter #key_ty, &'__buffa_iter #value_ty)>
             where
-                #key_ty: 'a,
-                #value_ty: 'a,
+                #key_ty: '__buffa_iter,
+                #value_ty: '__buffa_iter,
             {
                 #iter_call(&#accessor)
             }
