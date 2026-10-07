@@ -1,0 +1,4 @@
+kind: Breaking changes
+body: |-
+    **Fields and enum values with `[deprecated = true]` carry `#[deprecated]`, in generated code and in buffa's published types** (#564). Using one from your crate now warns: reading or assigning the field, naming it in a struct literal or pattern, calling its `with_*` setter, or naming the enum value. That covers code generated from your own `.proto` files and from vendored ones, and these published items: `google.protobuf.Method::{syntax, edition}` in `buffa-types`, and in `buffa-descriptor` the option fields `FieldOptions::weak`, `FileOptions::java_generate_equals_and_hash`, `MessageOptions::deprecated_legacy_json_field_conflicts` and `EnumOptions::deprecated_legacy_json_field_conflicts`. A crate built with `-D warnings` or `#![deny(warnings)]` fails after the upgrade until `#[allow(deprecated)]` is on each use that it keeps. Codegen has no option that turns the markers off.
+time: 2026-10-05T04:40:00+08:00

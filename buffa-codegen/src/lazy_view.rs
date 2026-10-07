@@ -75,6 +75,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
     let preserve_unknown_fields = scope.preserve_unknown_fields();
 
     let oneof_idents = crate::oneof::resolve_oneof_idents(msg, proto_fqn)?;
+    let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, proto_fqn);
     let lazy_ident = format_ident!("{}LazyView", rust_name);
 
     let view_depth = nesting + 2;
@@ -369,6 +370,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
             }
 
             #[allow(clippy::useless_conversion, clippy::needless_update)]
+            #deprecated_field_allow
             fn to_owned_message(
                 &self,
             ) -> ::core::result::Result<#owned_path, ::buffa::DecodeError> {
