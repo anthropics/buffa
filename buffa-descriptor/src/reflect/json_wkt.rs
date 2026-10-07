@@ -75,8 +75,11 @@ impl WktKind {
             }
             Self::FieldMask => {
                 let paths = msg.read_string_list(1);
-                let camel: Result<Vec<String>, _> =
-                    paths.iter().map(|p| field_mask_to_camel(p)).collect();
+                let camel: Result<Vec<String>, _> = paths
+                    .iter()
+                    .filter(|p| !p.is_empty())
+                    .map(|p| field_mask_to_camel(p))
+                    .collect();
                 s.serialize_str(&camel.map_err(serde::ser::Error::custom)?.join(","))
             }
             Self::Empty => s.serialize_map(Some(0))?.end(),
@@ -158,10 +161,12 @@ impl WktKind {
                     charge(
                         budget,
                         s.split(',')
+                            .filter(|p| !p.is_empty())
                             .count()
                             .saturating_mul(core::mem::size_of::<Value>()),
                     )?;
                     s.split(',')
+                        .filter(|p| !p.is_empty())
                         .map(|p| field_mask_to_snake(p).map(Value::String))
                         .collect()
                 };

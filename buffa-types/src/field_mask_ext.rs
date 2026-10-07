@@ -245,14 +245,15 @@ impl serde::Serialize for FieldMask {
     ///
     /// # Errors
     ///
-    /// Returns an error if any path is not a valid proto3 JSON field mask
-    /// path: an empty component, a character outside `[a-z0-9_.]`, or a path
-    /// that cannot round-trip through camelCase (already camelCase,
-    /// consecutive underscores, a digit immediately after an underscore).
+    /// Returns an error if any non-empty path is not valid in proto3 JSON:
+    /// it has a character outside `[a-z0-9_.]`, or cannot round-trip through
+    /// camelCase (already camelCase, consecutive underscores, or a digit
+    /// immediately after an underscore). Empty paths are omitted.
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let camel_paths: Vec<String> = self
             .paths
             .iter()
+            .filter(|path| !path.is_empty())
             .map(|p| {
                 if !field_mask_path_round_trips(p) {
                     return Err(serde::ser::Error::custom(alloc::format!(
@@ -272,14 +273,15 @@ impl<'de> serde::Deserialize<'de> for FieldMask {
     ///
     /// # Errors
     ///
-    /// Returns an error if any path is not a valid lowerCamelCase path in the
-    /// JSON representation.
+    /// Returns an error if any non-empty path is not a valid lowerCamelCase
+    /// path in the JSON representation. Empty comma-separated paths are ignored.
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s: String = serde::Deserialize::deserialize(d)?;
         let paths = if s.is_empty() {
             Vec::new()
         } else {
             s.split(',')
+                .filter(|component| !component.is_empty())
                 .map(|component| {
                     if component.contains('_') {
                         return Err(serde::de::Error::custom(alloc::format!(
@@ -623,6 +625,27 @@ mod tests {
         }
 
         #[test]
+        fn field_mask_json_ignores_empty_path_segments() {
+            let back: FieldMask = serde_json::from_str(r#"",fooBar,,user.emailAddress,""#).unwrap();
+            assert_eq!(back.paths, ["foo_bar", "user.email_address"]);
+
+            let empty: FieldMask = serde_json::from_str(r#"",,""#).unwrap();
+            assert!(empty.paths.is_empty());
+        }
+
+        #[test]
+        fn field_mask_json_serialize_ignores_empty_paths() {
+            let m = FieldMask::from_paths(["", "foo_bar", "", "user.email_address", ""]);
+            assert_eq!(
+                serde_json::to_string(&m).unwrap(),
+                r#""fooBar,user.emailAddress""#
+            );
+
+            let empty = FieldMask::from_paths(["", ""]);
+            assert_eq!(serde_json::to_string(&empty).unwrap(), r#""""#);
+        }
+
+        #[test]
         fn field_mask_leading_underscore_roundtrip() {
             let m = FieldMask::from_paths(["_foo", "foo._bar", "foo._b_bar"]);
             let json = serde_json::to_string(&m).unwrap();
@@ -683,7 +706,7 @@ mod tests {
         #[test]
         fn serialize_rejects_invalid_path_characters() {
             for path in [
-                " ", "foo bar", "foo-bar", "foo/bar", "3d", "", ".foo", "foo.", "foo..bar",
+                " ", "foo bar", "foo-bar", "foo/bar", "3d", ".foo", "foo.", "foo..bar",
             ] {
                 let m = FieldMask::from_paths([path]);
                 assert!(
@@ -710,7 +733,6 @@ mod tests {
                 r#""foo,bar-baz""#,
                 r#""foo/bar""#,
                 r#""3d""#,
-                r#""foo,""#,
                 "\".foo\"",
                 "\"foo.\"",
                 "\"foo..bar\"",
