@@ -419,11 +419,7 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                                  (or a type FQN, 'extern_path=.proto.pkg.Type=::rust::path::Type')"
                         ));
                     }
-                    let mut proto = proto.to_string();
-                    // Normalize: accept both ".my.pkg" and "my.pkg".
-                    if !proto.starts_with('.') {
-                        proto.insert(0, '.');
-                    }
+                    let proto = normalize_extern_proto_path(proto)?;
                     codegen.extern_paths.push((proto, rust.to_string()));
                 } else {
                     return Err(format!(
@@ -594,6 +590,35 @@ fn normalize_proto_path(path: &str, label: &str) -> Result<String, String> {
             "{label} rules require a non-empty proto path; use '.' explicitly to match everything"
         ));
     }
+    Ok(path)
+}
+
+fn normalize_extern_proto_path(path: &str) -> Result<String, String> {
+    if path.chars().rev().take_while(|&ch| ch == '.').count() > 1 {
+        return Err(format!(
+            "invalid extern_path proto path '{path}': only one trailing dot is allowed"
+        ));
+    }
+
+    let path = normalize_proto_path(path, "extern_path")?;
+    if path == "." {
+        return Ok(path);
+    }
+
+    let valid_identifier = |segment: &str| {
+        let mut chars = segment.chars();
+        chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    if path[1..]
+        .split('.')
+        .any(|segment| !valid_identifier(segment))
+    {
+        return Err(format!(
+            "invalid extern_path proto path '{path}': expected '.' or a dotted protobuf package or type name"
+        ));
+    }
+
     Ok(path)
 }
 
@@ -892,6 +917,47 @@ mod tests {
     fn extern_path_without_leading_dot_is_normalized() {
         let config = parse_config("extern_path=my.common=::common_protos").unwrap();
         assert_eq!(config.codegen.extern_paths[0].0, ".my.common");
+    }
+
+    #[test]
+    fn extern_path_trailing_dot_is_normalized() {
+        let config = parse_config("extern_path=.my.common.=::common_protos").unwrap();
+        assert_eq!(config.codegen.extern_paths[0].0, ".my.common");
+    }
+
+    #[test]
+    fn extern_path_rejects_empty_proto_segments() {
+        for proto in [
+            ".my..common",
+            "my..common",
+            ".my.common..Shared",
+            ".my.common..",
+            "my.common...",
+        ] {
+            assert!(
+                parse_config(&format!("extern_path={proto}=::common_protos")).is_err(),
+                "{proto}"
+            );
+        }
+    }
+
+    #[test]
+    fn extern_path_rejects_invalid_proto_identifiers() {
+        for proto in [".my.123", "._my", ".my._common", ".my.common-name"] {
+            assert!(
+                parse_config(&format!("extern_path={proto}=::common_protos")).is_err(),
+                "{proto}"
+            );
+        }
+    }
+
+    #[test]
+    fn extern_path_accepts_catchall_and_valid_identifier_edges() {
+        let catchall = parse_config("extern_path=.=::all_protos").unwrap();
+        assert_eq!(catchall.codegen.extern_paths[0].0, ".");
+
+        let identifiers = parse_config("extern_path=my.v2.Type_1=::my_protos").unwrap();
+        assert_eq!(identifiers.codegen.extern_paths[0].0, ".my.v2.Type_1");
     }
 
     #[test]

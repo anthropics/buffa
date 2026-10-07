@@ -1,0 +1,3 @@
+kind: Fixed
+body: The protoc plugin now normalizes extern_path protobuf names and rejects invalid identifiers so malformed mappings fail during configuration parsing instead of silently leaving types unmapped.
+time: 2026-10-07T23:56:24+02:00
