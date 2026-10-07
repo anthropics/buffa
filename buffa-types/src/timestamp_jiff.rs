@@ -10,17 +10,16 @@ use crate::timestamp_ext::{TimestampError, NANOS_MAX};
 impl From<jiff::Timestamp> for Timestamp {
     /// Convert a [`jiff::Timestamp`] to a protobuf [`Timestamp`].
     ///
-    /// Infallible: every [`jiff::Timestamp`] fits the *binary* proto
-    /// `Timestamp` range (proto allows any `i64` second; jiff spans
-    /// ≈ years -9999 through 9999, a strict subset).
+    /// Infallible: every [`jiff::Timestamp`] fits the `Timestamp` fields.
+    /// The protobuf `Timestamp` type is valid only for years 0001–9999,
+    /// though, and jiff reaches back to about year -9999.
     ///
-    /// # Warning: proto JSON spec range
+    /// # Warning: Timestamp valid range
     ///
-    /// `jiff::Timestamp` reaches back to ≈ year -9999, but the proto JSON spec
-    /// restricts `Timestamp` to years 0001–9999. A pre-year-1 instant converts
-    /// without error here and round-trips through binary encoding, but the
-    /// resulting `Timestamp` will fail JSON serialization (`json` feature),
-    /// which enforces the spec range.
+    /// The protobuf `Timestamp` spec restricts valid values to years
+    /// 0001–9999. A pre-year-1 instant still converts and round-trips through
+    /// binary encoding, but the result is outside the valid `Timestamp` range
+    /// and JSON serialization (`json` feature) rejects it.
     ///
     /// # Sign normalization
     ///
@@ -86,8 +85,8 @@ impl TryFrom<Timestamp> for jiff::Timestamp {
     ///
     /// Returns [`TimestampError::InvalidNanos`] if `nanos` is outside
     /// `[0, 999_999_999]`, or [`TimestampError::Overflow`] if the instant is
-    /// outside [`jiff::Timestamp`]'s representable range (≈ years -9999 through
-    /// 9999 — proto permits a far wider second range).
+    /// outside [`jiff::Timestamp`]'s representable range. This conversion
+    /// does not check the protobuf `Timestamp` range of years 0001–9999.
     fn try_from(ts: Timestamp) -> Result<Self, Self::Error> {
         Self::try_from(&ts)
     }
@@ -115,7 +114,8 @@ impl TryFrom<&Timestamp> for jiff::Timestamp {
     ///
     /// Returns [`TimestampError::InvalidNanos`] if `nanos` is outside
     /// `[0, 999_999_999]`, or [`TimestampError::Overflow`] if the instant is
-    /// outside [`jiff::Timestamp`]'s representable range.
+    /// outside [`jiff::Timestamp`]'s representable range. This conversion
+    /// does not check the protobuf `Timestamp` range of years 0001–9999.
     fn try_from(ts: &Timestamp) -> Result<Self, Self::Error> {
         if ts.nanos < 0 || ts.nanos > NANOS_MAX {
             return Err(TimestampError::InvalidNanos);
@@ -209,8 +209,7 @@ mod tests {
 
     #[test]
     fn out_of_range_seconds_is_overflow() {
-        // proto Timestamp spans the full i64 second range; jiff caps at
-        // ≈ year 9999, so i64::MAX seconds overflows.
+        // These i64 values are outside jiff's representable range.
         let huge = Timestamp {
             seconds: i64::MAX,
             nanos: 0,
@@ -230,7 +229,7 @@ mod tests {
 
     #[test]
     fn jiff_extremes_roundtrip() {
-        // Both ends of jiff's representable range survive the proto roundtrip.
+        // Both ends of jiff's range survive the binary Timestamp conversion.
         for jt in [jiff::Timestamp::MIN, jiff::Timestamp::MAX] {
             let ts: Timestamp = jt.into();
             assert!(
@@ -257,5 +256,18 @@ mod tests {
         assert_eq!(ts.nanos, 1);
         let back: jiff::Timestamp = ts.try_into().expect("near-MIN borrow must convert back");
         assert_eq!(back, jt);
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn pre_year_one_conversion_is_rejected_by_json() {
+        let first_valid = jiff::Timestamp::new(-62_135_596_800, 0).unwrap();
+        let before_first_valid = jiff::Timestamp::new(-62_135_596_801, 0).unwrap();
+
+        let valid: Timestamp = first_valid.into();
+        let invalid: Timestamp = before_first_valid.into();
+
+        assert!(serde_json::to_string(&valid).is_ok());
+        assert!(serde_json::to_string(&invalid).is_err());
     }
 }
