@@ -108,12 +108,6 @@ impl TryFrom<&Timestamp> for std::time::SystemTime {
     /// Convert a borrowed protobuf [`Timestamp`] to a
     /// [`std::time::SystemTime`], leaving the message in place.
     ///
-    /// # Errors
-    ///
-    /// Returns [`TimestampError::InvalidNanos`] for invalid nanoseconds, or
-    /// [`TimestampError::Overflow`] if the result does not fit in a
-    /// [`std::time::SystemTime`].
-    ///
     /// # Examples
     ///
     /// ```
@@ -124,6 +118,12 @@ impl TryFrom<&Timestamp> for std::time::SystemTime {
     /// assert_eq!(time, std::time::UNIX_EPOCH);
     /// assert_eq!(timestamp.seconds, 0);
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TimestampError::InvalidNanos`] if `nanos` is outside
+    /// `[0, 999_999_999]`, or [`TimestampError::Overflow`] if the result
+    /// does not fit in a [`std::time::SystemTime`].
     fn try_from(ts: &Timestamp) -> Result<Self, Self::Error> {
         if ts.nanos < 0 || ts.nanos > NANOS_MAX {
             return Err(TimestampError::InvalidNanos);

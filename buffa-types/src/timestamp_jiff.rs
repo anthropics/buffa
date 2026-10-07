@@ -113,9 +113,9 @@ impl TryFrom<&Timestamp> for jiff::Timestamp {
     ///
     /// # Errors
     ///
-    /// Returns [`TimestampError::InvalidNanos`] for invalid nanoseconds, or
-    /// [`TimestampError::Overflow`] if the instant is outside
-    /// [`jiff::Timestamp`]'s representable range.
+    /// Returns [`TimestampError::InvalidNanos`] if `nanos` is outside
+    /// `[0, 999_999_999]`, or [`TimestampError::Overflow`] if the instant is
+    /// outside [`jiff::Timestamp`]'s representable range.
     fn try_from(ts: &Timestamp) -> Result<Self, Self::Error> {
         if ts.nanos < 0 || ts.nanos > NANOS_MAX {
             return Err(TimestampError::InvalidNanos);
