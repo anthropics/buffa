@@ -218,7 +218,9 @@ pub enum PoolError {
         type_name: String,
         defined_in: String,
     },
-    /// A message or group field declares an explicit default value.
+    /// A singular message or group field declares an explicit default value. A
+    /// repeated one reports
+    /// [`RepeatedFieldWithDefault`](Self::RepeatedFieldWithDefault).
     MessageFieldWithDefault { field: String },
     /// A field had no `type_name` for a `TYPE_MESSAGE`/`TYPE_GROUP`/`TYPE_ENUM`.
     MissingTypeName { field: String },
