@@ -223,11 +223,13 @@ tasks:
   verify:
     desc: >-
       Run the full pre-commit verification pipeline: clippy, markdownlint,
-      rustdoc, tests, then conformance suite.  Stops on first failure.
+      rustdoc, tests, the arbitrary-feature lint and tests, then conformance
+      suite.  Stops on first failure.
     cmds:
       - task: lint
       - task: doc
       - task: test
+      - task: test-arbitrary
       - task: conformance
 
   doc:
@@ -261,6 +263,14 @@ tasks:
     desc: Run the workspace test suite.
     cmds:
       - cargo test --workspace
+
+  test-arbitrary:
+    desc: >-
+      Lint and test buffa-test with its `arbitrary` feature on. Local mirror
+      of the two CI steps named "(buffa-test, arbitrary)".
+    cmds:
+      - cargo clippy -p buffa-test --all-targets --features arbitrary -- -D warnings
+      - cargo test -p buffa-test --features arbitrary --lib --tests
 
   test-codegen:
     desc: >-

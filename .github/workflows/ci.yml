@@ -66,6 +66,20 @@ jobs:
       - name: Check all features
         run: cargo check --workspace --all-features
 
+      # "Check all features" builds lib and bin targets and does not deny
+      # warnings, so these two are the only steps that lint
+      # `generate_arbitrary` output and run the tests behind buffa-test's
+      # `arbitrary` feature. They catch generated code that warns only under
+      # the feature, as `derive(Arbitrary)` does on an enum with a
+      # `#[deprecated]` variant (#564). Clippy also lints the workspace crates
+      # buffa-test depends on (buffa, buffa-types) with the feature on. Local
+      # equivalent: `task test-arbitrary`.
+      - name: Clippy (buffa-test, arbitrary)
+        run: cargo clippy -p buffa-test --all-targets --features arbitrary -- -D warnings
+
+      - name: Tests (buffa-test, arbitrary)
+        run: cargo test -p buffa-test --features arbitrary --lib --tests
+
       # Rustdoc warnings are errors, in generated docs too: buffa-test's
       # build include!s codegen output (views, lazy views, json, reflect), so
       # documenting the workspace lints emitted doc comments as well as
