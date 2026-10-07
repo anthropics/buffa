@@ -57,6 +57,8 @@ fn assert_invalid_json_name(err: &PoolError, field: &str, name: &str) {
 }
 
 #[test]
+// The option is deprecated in descriptor.proto; protoc still honours it.
+#[allow(deprecated)]
 fn json_names_with_nul_are_rejected_for_all_syntaxes() {
     for (syntax, edition) in [
         (None, None),
@@ -205,6 +207,8 @@ fn bracketed_custom_json_names_are_rejected() {
 }
 
 #[test]
+// The option is deprecated in descriptor.proto; protoc still honours it.
+#[allow(deprecated)]
 fn bracketed_json_names_link_under_legacy_json_field_conflicts() {
     let mut file = file_with_json_name(Some("[x]"));
     file.message_type[0].options = buffa::MessageField::some(MessageOptions {
