@@ -1817,9 +1817,22 @@ impl Config {
     /// A `#[deprecated]` supplied here wins over the one codegen derives from
     /// the field's `[deprecated = true]` option — rustc permits only one
     /// `deprecated` attribute per item — so this is also how to attach a note
-    /// naming the replacement. Either source marks the field and its `with_*`
-    /// setter, and either one makes the generated items that visit the field
-    /// carry `#[allow(deprecated)]`.
+    /// naming the replacement. Either source marks every generated way to
+    /// reach a message field: the `with_*` setter, the same field on the
+    /// views, its `OwnedView` accessor and, for a `required` field, the views'
+    /// `has_*` method. Those carry a bare `#[deprecated]`; the attribute given
+    /// here, with its note, stays on the owned struct's field. Either source
+    /// also makes the generated items that visit the field carry
+    /// `#[allow(deprecated)]`.
+    ///
+    /// A `deprecated` inside `cfg_attr` counts too: it replaces the
+    /// option-derived marker on the owned field, and the setter and view
+    /// markers stay unconditional.
+    ///
+    /// A oneof variant gets only the attribute given here. Its view variant is
+    /// unmarked and the generated impls that match on it are not guarded, so
+    /// put `#[allow(deprecated)]` on the `mod` that includes the generated
+    /// file.
     ///
     /// # Example
     ///

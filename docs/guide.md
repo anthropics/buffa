@@ -1076,10 +1076,12 @@ JSON formats still have to accept it.
 
 The generated items that must visit every field carry `#[allow(deprecated)]`
 themselves, so one deprecated field does not flood the build with warnings from
-generated code: the `Message` codec impls, `Debug`, `Default` (owned and view),
-the `with_*` setters, the hand-written JSON `Deserialize` impl, the reflection
-vtable, the view and lazy-view `to_owned`, a table message's static, and — on the
-enum side — `Enumeration`, the `allow_alias` consts and the idiomatic consts. A
+generated code. These include the `Message` codec and `TextFormat` impls,
+`Debug`, `Default` (owned and view), the `with_*` setters, the hand-written JSON
+`Deserialize` impl, the reflection vtable and a table message's static. On the
+views they include the decode, encode, `to_owned`, `Debug`, JSON and reflection
+impls. On the enum side they include `Enumeration`, `Default`, the `allow_alias`
+consts and the idiomatic consts. A
 message whose field declares `[default = DEPRECATED_VALUE]` needs the same guard
 even though no field of its own is deprecated, and so does an extension's default
 getter.
@@ -1091,25 +1093,30 @@ value deprecated does not change what a fuzz input builds.
 
 Writes are covered too: the `with_legacy_name(…)` setter for a deprecated field
 is itself `#[deprecated]`, so the builder API is not a quieter way to set it.
-This holds whether the field's deprecation comes from the option or from your own
-`field_attribute`.
+
+Views are also covered. The field on `FooView` and on `FooLazyView` carries
+`#[deprecated]`, and so do its accessor on `FooOwnedView` and a `required`
+field's `has_*` method. So reading a deprecated field after `decode_view` warns,
+as reading the owned field does.
+
+The setter and the view markers are there whether the field's deprecation comes
+from the option or from your own `field_attribute`.
 
 Aliases inherit the marker. An `allow_alias` value names the same variant as its
-primary, so `demo::Size::TINY` is deprecated whenever `demo::Size::SMALL` is; so
-does its idiomatic `CamelCase` const (`Size::Tiny`) when
+primary, so `demo::Size::TINY` is deprecated whenever `demo::Size::SMALL` is. Its
+idiomatic `CamelCase` const (`Size::Tiny`) is deprecated with it when
 `idiomatic_enum_aliases` is on. An alias is not a quiet way to reach a deprecated
 value. The direction is per value: an alias marked `[deprecated = true]` whose
 primary is live marks only the alias and the alias's own idiomatic const.
 
-Three things are not marked:
+Two things are not marked:
 
-- **Oneof variants are not marked yet.** A deprecated `oneof` member neither
-  carries `#[deprecated]` nor widens the owned message's guard, so
-  `examples/addressbook` still needs its module-level `#[allow(deprecated)]`.
-- **The view read path is not marked.** `FooView` fields and the
-  `FooOwnedView` accessors borrow from the decode buffer, and their `to_owned`
-  conversion writes the owned field, so they stay silent for now — a consumer
-  reading a deprecated field through `decode_view` gets no warning.
+- **Oneof variants are not marked.** `[deprecated = true]` on a `oneof` member
+  does not add `#[deprecated]`. `prost-build` marks these, so a deprecated oneof
+  member that warned under prost is silent here. A `#[deprecated]` that you
+  attach to the variant with `field_attribute` goes on the owned oneof enum only.
+  The generated impls that match on it are not guarded, so
+  `examples/addressbook` keeps a module-level `#[allow(deprecated)]`.
 - **Whole-message and whole-enum deprecation is not emitted**, matching prost.
 
 A derive that you attach with `enum_attribute` or `type_attribute` can name a
@@ -1122,14 +1129,16 @@ ones, warns wherever your crate uses a deprecated field or enum value. Buffa's
 published types carry the marker too:
 `google.protobuf.Method::{syntax,edition}` and the deprecated option fields of
 `descriptor.proto` (`FieldOptions::weak`, `FileOptions::java_generate_equals_and_hash`,
-`{Message,Enum}Options::deprecated_legacy_json_field_conflicts`). If your crate
+`{Message,Enum}Options::deprecated_legacy_json_field_conflicts`), on the owned
+types, on their views (`MethodView::syntax`) and on the `OwnedView` accessors
+(`MethodOwnedView::syntax()`). If your crate
 builds under `-D warnings` or `#![deny(warnings)]`, an upgrade fails until you
 put `#[allow(deprecated)]` on the uses that it keeps. Codegen has no option that
 turns the markers off; pin the version if you cannot absorb the diagnostics.
 
-To attach your own note (prost's marker is bare too), use `field_attribute` —
-and note it wins over the option-derived marker, since rustc permits only one
-`deprecated` attribute per item:
+To attach your own note (prost's marker is bare too), use `field_attribute`. On
+the owned struct's field it wins over the option-derived marker, since rustc
+permits only one `deprecated` attribute per item:
 
 ```rust,ignore
 buffa_build::Config::new()
@@ -1140,8 +1149,10 @@ buffa_build::Config::new()
     .unwrap();
 ```
 
-A field deprecated only through this hook still gets the generated-code guard and
-the deprecated setter, so the option and the hook behave alike from here.
+A message field deprecated only through this hook still gets the generated-code
+guard. It also gets the same markers as a field deprecated by the option: on the
+setter, the view fields, the `FooOwnedView` accessor and `has_*`. Those markers
+are bare. Your attribute, with its note, is on the owned struct's field only.
 
 ### `skip_debug` and hand-written `Debug`
 
