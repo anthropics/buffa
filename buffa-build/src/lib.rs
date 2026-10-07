@@ -2142,7 +2142,7 @@ impl Config {
     /// - [`shared_descriptor_pool`](Self::shared_descriptor_pool) is set
     ///   without reflection enabled, without
     ///   [`include_file`](Self::include_file), or with an `include_file`
-    ///   lacking a file-name stem (the sidecar is named after it)
+    ///   that is not a bare file name or lacks a file-name stem
     /// - `protoc` or `buf` cannot be found on `PATH` (when using those sources)
     /// - the proto compiler exits with a non-zero status (syntax errors,
     ///   missing imports, etc.)
@@ -2205,6 +2205,13 @@ impl Config {
                             (the shared descriptor module is emitted into it)"
                     .into());
             };
+            if !is_bare_file_name(include_name) {
+                return Err(format!(
+                    "shared_descriptor_pool requires include_file to be a bare file name; \
+                     got {include_name:?}"
+                )
+                .into());
+            }
             // The sidecar is named after the include file's stem; reject names
             // without one ("", ".", "..") here rather than writing a stray
             // misnamed sidecar before the include-file write fails. The stem
@@ -2405,6 +2412,22 @@ impl Config {
 
         Ok(())
     }
+}
+
+fn is_bare_file_name(name: &str) -> bool {
+    if name.contains('/') || name.contains('\\') || name.contains('\0') {
+        return false;
+    }
+    if name.as_bytes().get(1) == Some(&b':')
+        && name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+    {
+        return false;
+    }
+    let path = Path::new(name);
+    let mut components = path.components();
+    matches!(components.next(), Some(Component::Normal(_)))
+        && components.next().is_none()
+        && path.file_name().and_then(|file_name| file_name.to_str()) == Some(name)
 }
 
 impl Default for Config {
@@ -2789,6 +2812,69 @@ mod tests {
         assert!(
             err.to_string().contains("file name"),
             "error should name the degenerate include_file: {err}"
+        );
+    }
+
+    #[test]
+    fn shared_descriptor_pool_rejects_path_include_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("nested")).unwrap();
+
+        let err = Config::new()
+            .generate_reflection(true)
+            .shared_descriptor_pool(true)
+            .include_file("nested/gen_mod.rs")
+            .descriptor_set_bytes(Vec::new())
+            .out_dir(dir.path())
+            .compile()
+            .expect_err("shared descriptor include_file paths must be rejected");
+        assert!(
+            err.to_string().contains("bare file name"),
+            "error should name the bare-file requirement: {err}"
+        );
+    }
+
+    #[test]
+    fn shared_pool_include_file_name_accepts_bare_names() {
+        for name in ["gen_mod.rs", ".gen_mod.rs", "gen_mod"] {
+            assert!(is_bare_file_name(name), "{name:?} should be bare");
+        }
+    }
+
+    #[test]
+    fn shared_pool_include_file_name_rejects_paths() {
+        for name in [
+            "",
+            ".",
+            "./gen_mod.rs",
+            "..",
+            "../gen_mod.rs",
+            "nested/gen_mod.rs",
+            "nested\\gen_mod.rs",
+            "/gen_mod.rs",
+            "C:gen_mod.rs",
+            "gen_mod.rs/",
+            "gen_mod.rs\0",
+        ] {
+            assert!(!is_bare_file_name(name), "{name:?} should not be bare");
+        }
+    }
+
+    #[test]
+    fn shared_descriptor_pool_rejects_nul_include_file() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let err = Config::new()
+            .generate_reflection(true)
+            .shared_descriptor_pool(true)
+            .include_file("gen_mod.rs\0")
+            .descriptor_set_bytes(Vec::new())
+            .out_dir(dir.path())
+            .compile()
+            .expect_err("shared descriptor include_file names must not contain NUL");
+        assert!(
+            err.to_string().contains("bare file name"),
+            "error should name the bare-file requirement: {err}"
         );
     }
 
