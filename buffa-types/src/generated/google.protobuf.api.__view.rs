@@ -852,6 +852,7 @@ impl<'a> ::buffa::MessageView<'a> for MethodView<'a> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
+    #[allow(deprecated)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,

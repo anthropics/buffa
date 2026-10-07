@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **Cloning a message no longer copies the storage of unset nested message fields** (#552). `MessageField::clone` cloned the inner `Option` into a temporary and moved it, which copied the whole inline payload of every nested message field, set or not. It now builds each arm in place, so an unset field writes only its discriminant. A `Box` field saves a pointer-sized copy. Behaviour is unchanged; the measurements are in #549.
+time: 2026-10-04T18:00:00.000000000+00:00
