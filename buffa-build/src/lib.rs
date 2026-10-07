@@ -1414,14 +1414,15 @@ impl Config {
     ///   `ReflectElement` or `ReflectMapKey` impl for it, which the orphan rule
     ///   forbids for a foreign type. Wrap it in a crate-local newtype for
     ///   those cases; singular / optional / oneof uses work directly.
-    /// - **JSON of an `optional`, `repeated` or `oneof` custom string, or of
-    ///   one in a `map`,** serializes through the type's own `serde` impls, so
-    ///   such a type must implement `Serialize` / `Deserialize`. A
+    /// - **JSON of a custom string with explicit presence (proto3 or proto2
+    ///   `optional`, and the edition 2023 default), in a `repeated` field, in
+    ///   a oneof, or in a `map`,** serializes through the type's own `serde`
+    ///   impls, so such a type must implement `Serialize` / `Deserialize`. A
     ///   `buffa-remote-derive` newtype gets them from
     ///   `#[buffa(remote = ..., serde)]`; any other type derives them (an
-    ///   external type enables its `serde` feature). A singular field without
-    ///   `optional` uses the `proto_string` with-module and needs no `serde`
-    ///   impl.
+    ///   external type enables its `serde` feature). A singular field with
+    ///   implicit presence, or a proto2 `required` field, uses the
+    ///   `proto_string` with-module and needs no `serde` impl.
     /// - A custom type used as a `map` key must implement `Hash + Eq` for the
     ///   default `HashMap` container, or `Ord` for `BTreeMap`.
     /// - A `path` that does not parse as a Rust type is reported as a codegen

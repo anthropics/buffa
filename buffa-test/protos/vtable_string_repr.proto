@@ -2,10 +2,10 @@ syntax = "proto3";
 
 package vtable_string_repr;
 
-// Built with `string_type(SmolStr)` + `reflect_mode(VTable)` to exercise the
-// `ReflectElement for SmolStr` impl on the repeated-string element path. The
-// owned `items` field is `Vec<SmolStr>`; singular `name` is `SmolStr` (reflects
-// via deref, no `ReflectElement`). `alias` and `tag` put the custom type in an
+// Built with `string_type_custom_in(LocalStr)` + `reflect_mode(VTable)` to
+// exercise the `ReflectElement for LocalStr` impl on the repeated-string
+// element path. The owned `items` field is `Vec<LocalStr>`; singular `name` is
+// `LocalStr` (reflects via deref, no `ReflectElement`). `alias` and `tag` put the custom type in an
 // `optional` field and a oneof variant, whose JSON goes through the type's own
 // serde impls as a repeated element's does. The custom rule is scoped to
 // `name`/`items`/`alias`/`tag`, so `attrs` stays a `String`-keyed/valued

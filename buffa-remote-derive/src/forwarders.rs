@@ -16,7 +16,8 @@ pub struct Flags {
     /// The span of the `arbitrary` key, when the newtype carries
     /// `#[buffa(arbitrary)]` — see [`arbitrary`].
     pub arbitrary: Option<Span>,
-    /// Opt-in serde implementations, with the key's span for diagnostics.
+    /// The span of the `serde` key, when the newtype carries
+    /// `#[buffa(serde)]` — see [`serde`].
     pub serde: Option<Span>,
 }
 
@@ -35,11 +36,8 @@ pub enum SerdeForm {
 /// Emits `impl serde::Serialize` and `impl serde::Deserialize` for the
 /// newtype, or nothing when `#[buffa(serde)]` is absent.
 ///
-/// The string and bytes forms deserialize from a string only, `null`
-/// excluded. A generated message calls the string impl in four positions. In
-/// a `repeated` element and a map value, proto3 JSON forbids `null`. In an
-/// `optional` field and a oneof variant, `null` means unset, and `Option` or
-/// the generated oneof code consumes it before the newtype's impl runs.
+/// The string and bytes forms deserialize from a string only and reject
+/// `null`. The crate docs' section on the key gives the reason.
 ///
 /// The wrapped form bounds each impl on the field type's own serde impl. So
 /// the binary codec can use the newtype when that bound does not hold.

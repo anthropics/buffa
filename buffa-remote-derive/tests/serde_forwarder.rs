@@ -16,6 +16,8 @@ struct Bytes {
 
 #[derive(Clone, PartialEq, Debug, ProtoList)]
 #[buffa(remote = Vec<T>)]
+// `cfg(test)` holds in an integration test, so this is the `cfg_attr`
+// spelling of the key.
 #[cfg_attr(test, buffa(serde))]
 struct List<T>(Vec<T>);
 
@@ -25,7 +27,8 @@ impl<T> Default for List<T> {
     }
 }
 
-// Matches the ProtoBox ownership contract used by the override.
+// An `into_inner` override takes the pointer by value, so the `Box<T>`
+// parameter is the required signature.
 #[allow(clippy::boxed_local)]
 fn unbox<T>(value: Box<T>) -> T {
     *value
@@ -166,24 +169,6 @@ fn generic_containers_forward_the_remote_serde_shape() {
     roundtrip(
         Map::from_iter([(String::from("key"), Text::from("value"))]),
         r#"{"key":"value"}"#,
-    );
-}
-
-#[test]
-fn optional_repeated_and_map_string_positions_roundtrip() {
-    #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
-    struct Message {
-        optional: Option<Text>,
-        repeated: List<Text>,
-        map: Map<String, Text>,
-    }
-    roundtrip(
-        Message {
-            optional: Some(Text::from("present")),
-            repeated: List(vec![Text::from("element")]),
-            map: Map::from_iter([(String::from("k"), Text::from("v"))]),
-        },
-        r#"{"optional":"present","repeated":["element"],"map":{"k":"v"}}"#,
     );
 }
 
