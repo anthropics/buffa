@@ -447,6 +447,9 @@ pub enum PoolError {
     },
     /// A message in a proto3 file declares an extension range.
     ExtensionRangeInProto3 { message: String },
+    /// A field or extension in a proto3 file has `TYPE_GROUP`. Proto2 uses
+    /// legacy groups; editions use `message_encoding = DELIMITED`.
+    GroupFieldInProto3 { field: String },
     /// Two extension ranges declared by the same message overlap. `end` is
     /// exclusive, as in `DescriptorProto.ExtensionRange`. Carries both ranges
     /// as declared: `start..end` is the later of the two in declaration
@@ -795,6 +798,9 @@ impl core::fmt::Display for PoolError {
             ),
             Self::ExtensionRangeInProto3 { message } => {
                 write!(f, "message {message} declares an extension range in proto3")
+            }
+            Self::GroupFieldInProto3 { field } => {
+                write!(f, "field {field} uses a group type in proto3")
             }
             Self::OverlappingExtensionRange {
                 message,
@@ -2577,6 +2583,9 @@ impl DescriptorPool {
         if scope.proto3 && f.default_value.is_some() {
             return Err(PoolError::Proto3FieldWithDefault { field: field_fqn });
         }
+        if scope.proto3 && f.r#type == Some(ProtoType::TYPE_GROUP) {
+            return Err(PoolError::GroupFieldInProto3 { field: field_fqn });
+        }
 
         // Detect map fields: repeated + message type + the message is a
         // map_entry. `containing_msg` is `None` for extensions, which cannot
@@ -2686,7 +2695,7 @@ impl DescriptorPool {
         };
 
         // Resolve delimited (group) encoding.
-        // proto2/proto3: TYPE_GROUP is delimited; TYPE_MESSAGE is length-prefixed.
+        // proto2: TYPE_GROUP is delimited; TYPE_MESSAGE is length-prefixed.
         // editions: message_encoding feature controls it.
         let delimited = if f.r#type == Some(ProtoType::TYPE_GROUP) {
             true
