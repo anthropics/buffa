@@ -750,9 +750,9 @@ pub mod codecs {
 
     /// Codec for the `string` proto type.
     ///
-    /// Singular decode uses the last length-delimited record at the field
-    /// number. Invalid UTF-8 in that record returns `None` instead of an
-    /// earlier value. Records with other wire types are ignored.
+    /// Singular decode reads the last length-delimited record at the field
+    /// number and returns `None` when that record is not valid UTF-8, whatever
+    /// earlier records hold. Records with other wire types are ignored.
     pub struct StringCodec;
 
     impl ExtensionCodec for StringCodec {
