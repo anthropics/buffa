@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`text::unescape_str` borrows a literal that is followed by a comment** (#528). An escape-free literal followed only by whitespace was already returned as `Cow::Borrowed`; one followed by a `#` comment was copied. The textproto decoder passes the literal without what follows it, so this changes only direct calls to `unescape_str`.
+time: 2026-10-03T21:18:07.895583+02:00

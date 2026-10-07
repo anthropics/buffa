@@ -343,21 +343,18 @@ impl MapValue {
     /// (later map-entry fields overwrite earlier ones).
     #[must_use]
     pub fn from_entries(mut entries: Vec<(MapKey, Value)>) -> Self {
-        // Stable sort preserves source order within each key group, so a
-        // forward dedup that keeps the last entry per key implements
-        // last-write-wins.
+        // Stable sort preserves source order within each key group.
         entries.sort_by(|(a, _), (b, _)| a.cmp(b));
-        let mut deduped: Vec<(MapKey, Value)> = Vec::with_capacity(entries.len());
-        for entry in entries {
-            if let Some(last) = deduped.last_mut() {
-                if last.0 == entry.0 {
-                    *last = entry;
-                    continue;
-                }
+        entries.dedup_by(|later, earlier| {
+            if later.0 == earlier.0 {
+                // `dedup_by` removes `later`; swap to keep the last entry.
+                core::mem::swap(later, earlier);
+                true
+            } else {
+                false
             }
-            deduped.push(entry);
-        }
-        Self { entries: deduped }
+        });
+        Self { entries }
     }
 
     /// Number of entries.
@@ -532,6 +529,111 @@ mod tests {
         assert_eq!(m.len(), 2);
         assert_eq!(m.get_str("a"), Some(&Value::I32(3)));
         assert_eq!(m.get_str("b"), Some(&Value::I32(2)));
+    }
+
+    #[test]
+    fn map_value_from_entries_reuses_allocation() {
+        for len in [0, 1, 2, 16, 256] {
+            for distinct_keys in [1, 3, 256] {
+                let mut entries = Vec::with_capacity(len + 8);
+                entries.extend((0..len).rev().map(|i| {
+                    (
+                        MapKey::I32((i % distinct_keys) as i32),
+                        Value::I32(i as i32),
+                    )
+                }));
+                let ptr = entries.as_ptr();
+                let capacity = entries.capacity();
+                let map = MapValue::from_entries(entries);
+                assert_eq!(map.entries.as_ptr(), ptr, "len={len}, keys={distinct_keys}");
+                assert_eq!(map.entries.capacity(), capacity);
+            }
+        }
+    }
+
+    #[test]
+    fn map_value_from_entries_keeps_last_of_long_duplicate_runs() {
+        let map = MapValue::from_entries(vec![
+            (MapKey::String("b".into()), Value::I32(1)),
+            (MapKey::String("a".into()), Value::I32(2)),
+            (MapKey::String("b".into()), Value::I32(3)),
+            (MapKey::String("a".into()), Value::I32(4)),
+            (MapKey::String("b".into()), Value::I32(5)),
+            (MapKey::String("a".into()), Value::Bytes(vec![6, 7])),
+            (MapKey::String("b".into()), Value::String("last".into())),
+        ]);
+        assert_eq!(
+            map.entries(),
+            &[
+                (MapKey::String("a".into()), Value::Bytes(vec![6, 7])),
+                (MapKey::String("b".into()), Value::String("last".into())),
+            ]
+        );
+    }
+
+    #[test]
+    fn map_value_from_entries_matches_sequential_insertion() {
+        let keys = [
+            MapKey::Bool(false),
+            MapKey::Bool(true),
+            MapKey::I32(i32::MIN),
+            MapKey::I32(0),
+            MapKey::I32(i32::MAX),
+            MapKey::I64(i64::MIN),
+            MapKey::I64(0),
+            MapKey::I64(i64::MAX),
+            MapKey::U32(0),
+            MapKey::U32(u32::MAX),
+            MapKey::U64(0),
+            MapKey::U64(u64::MAX),
+            MapKey::String("".into()),
+            MapKey::String("a".into()),
+            MapKey::String("é".into()),
+        ];
+        for len in [0, 1, 2, 3, 7, 16, 31, 32, 64, 257] {
+            for offset in 0..keys.len() {
+                let entries: Vec<_> = (0..len)
+                    .map(|i| {
+                        (
+                            keys[(i * 7 + i / keys.len() + offset) % keys.len()].clone(),
+                            Value::String(i.to_string()),
+                        )
+                    })
+                    .collect();
+                let mut expected = MapValue::new();
+                for (key, value) in &entries {
+                    expected.insert(key.clone(), value.clone());
+                }
+                assert_eq!(
+                    MapValue::from_entries(entries),
+                    expected,
+                    "len={len}, offset={offset}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn map_value_normalize_reuses_allocation_and_is_idempotent() {
+        let mut map = MapValue::new();
+        for (key, value) in [(3, 1), (1, 2), (3, 3), (2, 4), (3, 5)] {
+            map.push_unsorted(MapKey::I32(key), Value::I32(value));
+        }
+        let ptr = map.entries.as_ptr();
+        map.normalize();
+        assert_eq!(map.entries.as_ptr(), ptr);
+        assert_eq!(
+            map.entries(),
+            &[
+                (MapKey::I32(1), Value::I32(2)),
+                (MapKey::I32(2), Value::I32(4)),
+                (MapKey::I32(3), Value::I32(5)),
+            ]
+        );
+        let expected = map.clone();
+        map.normalize();
+        assert_eq!(map, expected);
+        assert_eq!(map.entries.as_ptr(), ptr);
     }
 
     #[test]

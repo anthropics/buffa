@@ -81,6 +81,7 @@ mod tests {
         Int32Value, Int64Value, ListValue, StringValue, Struct, Timestamp, UInt32Value,
         UInt64Value, Value,
     };
+    use alloc::{string::ToString, vec};
     use buffa::Message;
 
     /// Encode `$owned`, decode it as `$view`, serialize both to JSON, and

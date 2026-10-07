@@ -1,6 +1,34 @@
 use crate::utf8test::*;
 use buffa::{Message, MessageView};
 
+macro_rules! bytes_defaults_test {
+    ($test:ident, $module:ident) => {
+        #[test]
+        fn $test() {
+            use crate::$module::RequiredBytesDefaults;
+
+            let mut msg = RequiredBytesDefaults::default();
+            assert_eq!(&msg.raw_text[..], "café\n".as_bytes());
+            assert_eq!(&msg.blob[..], &[0, 255]);
+            assert_eq!(msg.checked, "checked");
+            let wire = msg.encode_to_vec();
+            assert_eq!(
+                RequiredBytesDefaults::decode_from_slice(&wire).unwrap(),
+                msg
+            );
+
+            msg.raw_text = Default::default();
+            msg.blob = Default::default();
+            msg.checked.clear();
+            msg.clear();
+            assert_eq!(msg, RequiredBytesDefaults::default());
+        }
+    };
+}
+
+bytes_defaults_test!(vec_bytes_defaults_for_mapped_strings, utf8test);
+bytes_defaults_test!(bytes_defaults_for_mapped_strings, utf8_bytes);
+
 #[test]
 fn none_fields_are_vec_u8() {
     // Compile-time type check: raw fields are Vec<u8>, validated is String.

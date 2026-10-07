@@ -1931,7 +1931,12 @@ impl<'s, 'a, V: LazyMessageView<'a>> IntoIterator for &'s LazyRepeatedView<'a, V
     }
 }
 
-/// Iterator over a [`LazyRepeatedView`], decoding each element on `next`.
+/// Iterator over a [`LazyRepeatedView`], decoding each element on access.
+///
+/// [`nth`](Iterator::nth), [`nth_back`](DoubleEndedIterator::nth_back),
+/// [`count`](Iterator::count) and [`last`](Iterator::last) skip elements
+/// without decoding them, so a skipped element is not validated: a malformed
+/// element is reported only when it is yielded.
 #[derive(Clone, Debug)]
 pub struct LazyRepeatedIter<'s, 'a, V> {
     inner: core::slice::Iter<'s, &'a [u8]>,
@@ -1952,6 +1957,23 @@ impl<'a, V: LazyMessageView<'a>> Iterator for LazyRepeatedIter<'_, 'a, V> {
     }
 
     #[inline]
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner
+            .nth(n)
+            .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
+    }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
     }
@@ -1962,6 +1984,13 @@ impl<'a, V: LazyMessageView<'a>> DoubleEndedIterator for LazyRepeatedIter<'_, 'a
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner
             .next_back()
+            .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
+    }
+
+    #[inline]
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner
+            .nth_back(n)
             .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
     }
 }
@@ -4870,6 +4899,210 @@ mod tests {
         assert!(results[1].is_err());
         let cloned = rep.clone();
         assert_eq!(cloned.len(), 2);
+    }
+
+    #[cfg(feature = "std")]
+    mod lazy_repeated_iter_tests {
+        use super::*;
+        use core::cell::Cell;
+
+        std::thread_local! {
+            static DECODE_CALLS: Cell<usize> = const { Cell::new(0) };
+        }
+
+        #[derive(Clone, Debug)]
+        struct CountingLazyView<'a>(SimpleLazyView<'a>);
+
+        impl<'a> LazyMessageView<'a> for CountingLazyView<'a> {
+            type Owned = SimpleMessage;
+
+            fn decode_lazy(buf: &'a [u8]) -> Result<Self, DecodeError> {
+                DECODE_CALLS.with(|calls| calls.set(calls.get() + 1));
+                SimpleLazyView::decode_lazy(buf).map(Self)
+            }
+
+            fn decode_lazy_with_ctx(
+                buf: &'a [u8],
+                ctx: crate::DecodeContext<'_>,
+            ) -> Result<Self, DecodeError> {
+                DECODE_CALLS.with(|calls| calls.set(calls.get() + 1));
+                SimpleLazyView::decode_lazy_with_ctx(buf, ctx).map(Self)
+            }
+
+            fn merge_lazy(
+                &mut self,
+                buf: &'a [u8],
+                ctx: crate::DecodeContext<'_>,
+            ) -> Result<(), DecodeError> {
+                self.0.merge_lazy(buf, ctx)
+            }
+
+            fn to_owned_message(&self) -> Result<SimpleMessage, DecodeError> {
+                self.0.to_owned_message()
+            }
+        }
+
+        fn repeated(
+            elements: &[&'static [u8]],
+        ) -> LazyRepeatedView<'static, CountingLazyView<'static>> {
+            DECODE_CALLS.with(|calls| calls.set(0));
+            let cell = Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+            let mut rep = LazyRepeatedView::new();
+            for &element in elements {
+                rep.push_bytes(element, full_budget_ctx(&cell));
+            }
+            rep
+        }
+
+        fn decode_calls() -> usize {
+            DECODE_CALLS.with(Cell::get)
+        }
+
+        #[test]
+        fn nth_decodes_only_selected_elements() {
+            let rep = repeated(&[b"\x08\x01", b"\x08\x02", b"\x08\x03", b"\x08\x04"]);
+            let mut iter = rep.iter();
+            assert_eq!(iter.nth(2).unwrap().unwrap().0.id, 3);
+            assert_eq!(decode_calls(), 1);
+            assert_eq!(iter.len(), 1);
+            assert_eq!(iter.next().unwrap().unwrap().0.id, 4);
+            assert_eq!(decode_calls(), 2);
+            assert!(iter.next().is_none());
+            assert_eq!(decode_calls(), 2);
+        }
+
+        #[test]
+        fn count_and_last_decode_at_most_one_element() {
+            let rep = repeated(&[b"\x08\x01", b"\x08\x02", b"\x08\x03"]);
+            assert_eq!(rep.iter().count(), 3);
+            assert_eq!(decode_calls(), 0);
+            assert_eq!(rep.iter().last().unwrap().unwrap().0.id, 3);
+            assert_eq!(decode_calls(), 1);
+            assert!(repeated(&[]).iter().last().is_none());
+            assert_eq!(decode_calls(), 0);
+        }
+
+        #[test]
+        fn count_and_last_do_not_validate_skipped_elements() {
+            let rep = repeated(&[b"\xff", b"\x08\x02"]);
+            assert_eq!(rep.iter().count(), 2);
+            assert_eq!(rep.iter().last().unwrap().unwrap().0.id, 2);
+            assert_eq!(decode_calls(), 1);
+        }
+
+        #[test]
+        fn nth_back_decodes_only_selected_elements() {
+            let rep = repeated(&[b"\x08\x01", b"\x08\x02", b"\x08\x03", b"\x08\x04"]);
+            let mut iter = rep.iter();
+            assert_eq!(iter.nth_back(2).unwrap().unwrap().0.id, 2);
+            assert_eq!(decode_calls(), 1);
+            assert_eq!(iter.len(), 1);
+            assert_eq!(iter.next_back().unwrap().unwrap().0.id, 1);
+            assert_eq!(decode_calls(), 2);
+            assert!(iter.next_back().is_none());
+            assert_eq!(decode_calls(), 2);
+        }
+
+        #[test]
+        fn out_of_range_skips_exhaust_without_decoding() {
+            for elements in [
+                &[][..],
+                &[&b"\x08\x01"[..]][..],
+                &[&b"\x08\x01"[..], &b"\x08\x02"[..]][..],
+            ] {
+                for n in [elements.len(), elements.len() + 1, usize::MAX] {
+                    for from_back in [false, true] {
+                        let rep = repeated(elements);
+                        let mut iter = rep.iter();
+                        let result = if from_back {
+                            iter.nth_back(n)
+                        } else {
+                            iter.nth(n)
+                        };
+                        assert!(result.is_none());
+                        assert_eq!(iter.len(), 0);
+                        assert_eq!(iter.size_hint(), (0, Some(0)));
+                        assert!(iter.next().is_none());
+                        assert!(iter.next_back().is_none());
+                        assert_eq!(decode_calls(), 0, "n={n}, from_back={from_back}");
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn skips_preserve_element_errors_and_remaining_items() {
+            for from_back in [false, true] {
+                let rep = repeated(&[b"\x08\x01", b"\xff", b"\x08\x03"]);
+                let mut iter = rep.iter();
+                let result = if from_back {
+                    iter.nth_back(1)
+                } else {
+                    iter.nth(1)
+                };
+                assert_eq!(result.unwrap().unwrap_err(), DecodeError::UnexpectedEof);
+                assert_eq!(decode_calls(), 1);
+                assert_eq!(iter.len(), 1);
+                let remaining = if from_back {
+                    iter.next_back()
+                } else {
+                    iter.next()
+                };
+                assert_eq!(
+                    remaining.unwrap().unwrap().0.id,
+                    if from_back { 1 } else { 3 }
+                );
+                assert_eq!(decode_calls(), 2);
+            }
+
+            let rep = repeated(&[b"\xff", b"\x08\x02", b"\xff"]);
+            assert_eq!(rep.iter().nth(1).unwrap().unwrap().0.id, 2);
+            assert_eq!(rep.iter().nth_back(1).unwrap().unwrap().0.id, 2);
+            assert_eq!(decode_calls(), 2);
+        }
+
+        #[test]
+        #[allow(clippy::iter_nth_zero)]
+        fn skips_mix_with_both_ends_and_clone() {
+            let rep = repeated(&[
+                b"\x08\x01",
+                b"\x08\x02",
+                b"\x08\x03",
+                b"\x08\x04",
+                b"\x08\x05",
+                b"\x08\x06",
+            ]);
+            let mut iter = rep.iter();
+            assert_eq!(iter.nth(1).unwrap().unwrap().0.id, 2);
+            assert_eq!(iter.nth_back(1).unwrap().unwrap().0.id, 5);
+            assert_eq!(iter.size_hint(), (2, Some(2)));
+            assert_eq!(decode_calls(), 2);
+            let mut cloned = iter.clone();
+            assert_eq!(iter.nth(0).unwrap().unwrap().0.id, 3);
+            assert_eq!(iter.nth_back(0).unwrap().unwrap().0.id, 4);
+            assert!(iter.nth(0).is_none());
+            assert_eq!(cloned.nth_back(0).unwrap().unwrap().0.id, 4);
+            assert_eq!(cloned.nth(0).unwrap().unwrap().0.id, 3);
+            assert!(cloned.nth_back(0).is_none());
+            assert_eq!(decode_calls(), 6);
+        }
+
+        #[test]
+        fn skip_adapter_next_decodes_only_yielded_elements() {
+            let rep = repeated(&[b"\xff", b"\xff", b"\x08\x03", b"\x08\x04"]);
+            let mut iter = rep.iter().skip(2);
+            assert_eq!(iter.next().unwrap().unwrap().0.id, 3);
+            assert_eq!(iter.next().unwrap().unwrap().0.id, 4);
+            assert!(iter.next().is_none());
+            assert_eq!(decode_calls(), 2);
+
+            let rep = repeated(&[b"\x08\x01", b"\x08\x02", b"\xff", b"\xff"]);
+            let mut iter = rep.iter().rev().skip(2);
+            assert_eq!(iter.next().unwrap().unwrap().0.id, 2);
+            assert_eq!(iter.next().unwrap().unwrap().0.id, 1);
+            assert!(iter.next().is_none());
+            assert_eq!(decode_calls(), 2);
+        }
     }
 
     // ── Encode-side 2 GiB guard tests ──────────────────────────────────
