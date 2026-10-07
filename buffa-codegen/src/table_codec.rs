@@ -75,7 +75,7 @@ pub(crate) fn generate_table_impl(
 
     let mut entries: Vec<TokenStream> = Vec::with_capacity(fields.len());
     let mut aux: Vec<TokenStream> = Vec::new();
-    let mut oneofs = Oneofs::new(scope, msg, &fields);
+    let mut oneofs = Oneofs::new(scope, msg, &fields)?;
     for f in &fields {
         if let Some(member) = &f.oneof {
             entries.push(oneofs.member_entry(scope, &name, f, member, &mut aux)?);
@@ -348,7 +348,11 @@ struct Oneofs {
 }
 
 impl Oneofs {
-    fn new(scope: MessageScope<'_>, msg: &DescriptorProto, fields: &[TableField<'_>]) -> Self {
+    fn new(
+        scope: MessageScope<'_>,
+        msg: &DescriptorProto,
+        fields: &[TableField<'_>],
+    ) -> Result<Self, CodeGenError> {
         let mut first: HashMap<usize, u32> = HashMap::new();
         let mut with_messages = HashSet::new();
         for (oneof, f) in fields
@@ -361,20 +365,20 @@ impl Oneofs {
                 with_messages.insert(oneof.index);
             }
         }
-        Self {
+        Ok(Self {
             prefix: ancillary_prefix(
                 AncillaryKind::Oneof,
                 scope.current_package,
                 scope.proto_fqn,
                 scope.nesting,
             ),
-            enum_idents: crate::oneof::resolve_oneof_idents(msg),
+            enum_idents: crate::oneof::resolve_oneof_idents(msg, scope.proto_fqn)?,
             first,
             with_messages,
             group_aux: HashMap::new(),
             payload_aux: HashMap::new(),
             arms: BTreeMap::new(),
-        }
+        })
     }
 
     /// Add `item` to `aux`, or find where the same item already is.
