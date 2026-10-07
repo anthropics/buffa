@@ -316,7 +316,8 @@ const _: fn() = || {
 /// `==` includes presence, as for `Option<T>` and in Go's `proto.Equal`: an
 /// unset field differs from one set to its default, since only the set one is
 /// on the wire. Deref both sides to compare the values alone; that ignores
-/// presence at this level only, not in message fields nested inside.
+/// presence at this level only, not in message fields nested inside. `Deref`
+/// needs `T: DefaultInstance`, which `==` does not.
 ///
 /// ```rust
 /// # use buffa::__doctest_fixtures::Person;
@@ -850,9 +851,9 @@ mod tests {
         let unset: MessageField<Inner, P> = MessageField::none();
         assert!(unset.clone().is_unset());
 
-        // Equality cannot tell set-to-default from unset, so check presence.
         let default: MessageField<Inner, P> = MessageField::some(Inner::default());
         assert!(default.clone().is_set());
+        assert_eq!(default.clone(), default);
 
         let set: MessageField<Inner, P> = MessageField::some(Inner {
             value: 7,
