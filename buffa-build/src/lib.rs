@@ -2605,10 +2605,13 @@ fn emit_buf_rerun_if_changed() {
 /// Convert a filesystem proto path to the name protoc uses in the descriptor.
 ///
 /// `FileDescriptorProto.name` is relative to the `--proto_path` include
-/// directory. This strips the first matching include prefix; if no include
-/// matches, returns the full path (not just file_name — that would break
-/// nested proto directories). Current-directory components and redundant
-/// separators are removed, matching protoc without resolving symlinks or `..`.
+/// directory. The name is what remains after the first include that is a
+/// prefix of the file and leaves no `..` in the remainder: protoc refuses to
+/// map a file through an include when the result would contain `..`, and
+/// tries the next one. If no include qualifies, the name is the full path
+/// (not just file_name — that would break nested proto directories).
+/// Current-directory components and redundant separators are removed first,
+/// as protoc does, without resolving symlinks or `..`.
 fn proto_relative_name(file: &Path, includes: &[PathBuf]) -> String {
     let file = normalize_proto_path(file);
     let name = includes
@@ -3332,9 +3335,8 @@ mod tests {
 
     #[test]
     fn proto_relative_name_no_match_returns_full_path() {
-        // Regression: previously fell back to file_name(), which stripped
-        // directory components and broke descriptor_set() mode with nested
-        // proto packages. Now returns the full path as-is.
+        // The fallback is the whole path: file_name() alone would drop the
+        // directories that descriptor_set() mode needs for nested packages.
         let got = proto_relative_name(Path::new("my/pkg/service.proto"), &[]);
         assert_eq!(got, "my/pkg/service.proto");
     }

@@ -4,6 +4,8 @@ use std::path::PathBuf;
 #[test]
 fn current_directory_components_generate_requested_files() {
     let cwd = std::env::current_dir().unwrap();
+    // The inputs must be reachable by a path relative to the working
+    // directory, which rules out the system temp directory.
     let dir = tempfile::tempdir_in(&cwd).unwrap();
     let root = dir.path().strip_prefix(&cwd).unwrap().join("proto");
     std::fs::create_dir_all(root.join("nested")).unwrap();
