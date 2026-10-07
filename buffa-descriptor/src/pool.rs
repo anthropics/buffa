@@ -175,6 +175,10 @@ pub enum PoolError {
     UnrecognizedSyntax { file: String, syntax: String },
     /// A file declares syntax `editions` and its `edition` is unset or
     /// `EDITION_UNKNOWN`, so its feature defaults are undefined.
+    ///
+    /// An edition number that this version of buffa does not define is a
+    /// different case: decoding keeps it as an unknown field, and the file
+    /// links with the edition 2023 defaults.
     MissingEdition { file: String },
     /// A file's `public_dependency` names an index outside its `dependency`
     /// list. The indices are positions in that list, so an out-of-range one
@@ -400,7 +404,10 @@ impl core::fmt::Display for PoolError {
                 write!(f, "file {file} has unrecognized syntax {syntax:?}")
             }
             Self::MissingEdition { file } => {
-                write!(f, "file {file} has syntax \"editions\" but no edition")
+                write!(
+                    f,
+                    "file {file} has syntax \"editions\" but its edition is unset or EDITION_UNKNOWN"
+                )
             }
             Self::InvalidPublicDependencyIndex {
                 file,
@@ -676,6 +683,24 @@ impl std::error::Error for PoolError {
     }
 }
 
+/// Whether `file` carries an edition other than `EDITION_UNKNOWN`.
+///
+/// `Edition` is a closed enum, so decoding leaves a number that this crate
+/// does not define in the file's unknown fields with `edition` unset. Such a
+/// file has an edition, which [`features::for_file`] resolves to the edition
+/// 2023 defaults.
+fn has_edition(file: &FileDescriptorProto) -> bool {
+    /// Field number of `FileDescriptorProto.edition`.
+    const EDITION_FIELD_NUMBER: u32 = 14;
+    match file.edition {
+        Some(edition) => edition != Edition::EDITION_UNKNOWN,
+        None => file
+            .__buffa_unknown_fields
+            .iter()
+            .any(|field| field.number == EDITION_FIELD_NUMBER),
+    }
+}
+
 /// What a fully-qualified name resolves to within the pool.
 #[derive(Clone, Copy, Debug)]
 enum Definition {
@@ -861,9 +886,12 @@ impl DescriptorPool {
     ///
     /// # Errors
     ///
-    /// Returns a [`PoolError`] if a type name fails to resolve, or if the set
-    /// breaks one of the structural rules that protoc enforces on a `.proto`
-    /// file. Each [`PoolError`] variant documents one rule.
+    /// Returns a [`PoolError`] if a type name does not resolve, or names a type
+    /// in a file the referring file does not import. Also returns one if a file
+    /// breaks a descriptor rule that the pool checks. The rules are protoc's,
+    /// apart from the pool's own field-count limit
+    /// ([`PoolError::TooManyFields`]). Each [`PoolError`] variant documents one
+    /// rule.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -1004,7 +1032,7 @@ impl DescriptorPool {
                 match file.syntax.as_deref() {
                     None | Some("" | "proto2" | "proto3") => {}
                     Some("editions") => {
-                        if matches!(file.edition, None | Some(Edition::EDITION_UNKNOWN)) {
+                        if !has_edition(file) {
                             return Err(PoolError::MissingEdition {
                                 file: file.name.clone().unwrap_or_default(),
                             });
