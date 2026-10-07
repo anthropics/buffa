@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Keep pooled spill buffers within the configured capacity limit.** Drop buffers that remain oversized after a shrink attempt.'
+time: 2026-10-07T15:35:00.861492+02:00
