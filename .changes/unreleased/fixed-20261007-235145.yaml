@@ -1,0 +1,3 @@
+kind: Fixed
+body: Code generation rejects output paths that would overwrite another generated file.
+time: 2026-10-07T23:51:45.002188+02:00

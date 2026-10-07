@@ -3255,6 +3255,8 @@ fn warn_excluded_refs_msg(
 ///
 /// - [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has no
 ///   matching descriptor.
+/// - [`CodeGenError::GeneratedFileNameCollision`] if two generated files
+///   would be written to the same output path.
 /// - [`CodeGenError::InvalidTypeNamePrefix`] if
 ///   [`CodeGenConfig::type_name_prefix`] is neither empty nor PascalCase.
 /// - [`CodeGenError::Other`] if `config` sets an option without the option
@@ -3650,7 +3652,21 @@ pub fn generate_with_diagnostics(
         generate_package(&ctx, &package, &files, &fds_bytes, impls, &mut output)?;
     }
 
+    validate_generated_file_names(&output)?;
+
     Ok((output, ctx.take_warnings()))
+}
+
+fn validate_generated_file_names(files: &[GeneratedFile]) -> Result<(), CodeGenError> {
+    let mut names = std::collections::HashSet::with_capacity(files.len());
+    for file in files {
+        if !names.insert(file.name.as_str()) {
+            return Err(CodeGenError::GeneratedFileNameCollision {
+                file_name: file.name.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Generate a module tree that assembles per-package `.mod.rs` files into
@@ -5261,6 +5277,17 @@ pub enum CodeGenError {
     /// A requested file was not present in the descriptor set.
     #[error("file_to_generate '{0}' not found in descriptor set")]
     FileNotFound(String),
+    /// More than one generated source would be written to the same path.
+    ///
+    /// Resolve the conflict by renaming one of the proto files or changing its
+    /// package so every generated file has a distinct output path.
+    #[error(
+        "generated output file name collision at '{file_name}': multiple generated files map here"
+    )]
+    GeneratedFileNameCollision {
+        /// Path claimed by more than one generated file.
+        file_name: String,
+    },
     /// Unexpected descriptor state (e.g. a map entry or oneof that cannot be
     /// resolved to a known descriptor field).
     #[error("codegen error: {0}")]
