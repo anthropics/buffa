@@ -208,6 +208,213 @@ fn test_json_map_round_trip() {
     assert_eq!(decoded.counts["hits"], 42);
 }
 
+const SIGNED_32BIT_COLLECTIONS: &[(&str, bool)] = &[
+    ("int32Values", true),
+    ("sint32Values", true),
+    ("sfixed32Values", true),
+    ("int32Map", false),
+    ("sint32Map", false),
+    ("sfixed32Map", false),
+    ("int32KeyMap", false),
+];
+
+const UNSIGNED_32BIT_COLLECTIONS: &[(&str, bool)] = &[
+    ("uint32Values", true),
+    ("fixed32Values", true),
+    ("uint32Map", false),
+    ("fixed32Map", false),
+    ("uint32KeyMap", false),
+];
+
+fn integer_collection_json(field: &str, repeated: bool, value: &str) -> String {
+    if repeated {
+        format!(r#"{{"{field}":[{value}]}}"#)
+    } else {
+        format!(r#"{{"{field}":{{"1":{value}}}}}"#)
+    }
+}
+
+#[test]
+fn test_json_32bit_signed_collections_numeric_forms() {
+    use crate::json_types::IntegerCollections;
+
+    let cases = [
+        ("0", 0),
+        (r#""0""#, 0),
+        ("1", 1),
+        (r#""1""#, 1),
+        ("1.0", 1),
+        (r#""1.0""#, 1),
+        ("1e2", 100),
+        (r#""1e2""#, 100),
+        ("1.5e1", 15),
+        (r#""1.5e1""#, 15),
+        (r#""150e-1""#, 15),
+        ("-1", -1),
+        (r#""-1""#, -1),
+        ("-1.0", -1),
+        (r#""-1e2""#, -100),
+        ("-2147483648", i32::MIN),
+        (r#""-2147483648""#, i32::MIN),
+        ("-2147483648.0", i32::MIN),
+        ("2147483647", i32::MAX),
+        (r#""2147483647""#, i32::MAX),
+        (r#""2147483647e0""#, i32::MAX),
+    ];
+
+    for &(field, repeated) in SIGNED_32BIT_COLLECTIONS {
+        for &(input, expected) in &cases {
+            let json = integer_collection_json(field, repeated, input);
+            let decoded: IntegerCollections =
+                serde_json::from_str(&json).unwrap_or_else(|err| panic!("{json}: {err}"));
+            let encoded = serde_json::to_value(&decoded).unwrap();
+            let expected = if repeated {
+                serde_json::json!([expected])
+            } else {
+                serde_json::json!({"1": expected})
+            };
+            assert_eq!(encoded[field], expected, "{json}");
+        }
+    }
+}
+
+#[test]
+fn test_json_32bit_unsigned_collections_numeric_forms() {
+    use crate::json_types::IntegerCollections;
+
+    let cases = [
+        ("0", 0),
+        (r#""0""#, 0),
+        ("1", 1),
+        (r#""1""#, 1),
+        ("1.0", 1),
+        (r#""1.0""#, 1),
+        ("1e2", 100),
+        (r#""1e2""#, 100),
+        ("1.5e1", 15),
+        (r#""1.5e1""#, 15),
+        (r#""150e-1""#, 15),
+        ("4294967295", u32::MAX),
+        (r#""4294967295""#, u32::MAX),
+        ("4294967295.0", u32::MAX),
+        (r#""4294967295e0""#, u32::MAX),
+    ];
+
+    for &(field, repeated) in UNSIGNED_32BIT_COLLECTIONS {
+        for &(input, expected) in &cases {
+            let json = integer_collection_json(field, repeated, input);
+            let decoded: IntegerCollections =
+                serde_json::from_str(&json).unwrap_or_else(|err| panic!("{json}: {err}"));
+            let encoded = serde_json::to_value(&decoded).unwrap();
+            let expected = if repeated {
+                serde_json::json!([expected])
+            } else {
+                serde_json::json!({"1": expected})
+            };
+            assert_eq!(encoded[field], expected, "{json}");
+        }
+    }
+}
+
+#[test]
+fn test_json_32bit_collections_reject_invalid_values() {
+    use crate::json_types::IntegerCollections;
+
+    for &(field, repeated) in SIGNED_32BIT_COLLECTIONS
+        .iter()
+        .chain(UNSIGNED_32BIT_COLLECTIONS)
+    {
+        let unsigned = UNSIGNED_32BIT_COLLECTIONS.contains(&(field, repeated));
+        let out_of_range = if unsigned {
+            ["-1", r#""-1""#, "4294967296", r#""4294967296""#]
+        } else {
+            [
+                "-2147483649",
+                r#""-2147483649""#,
+                "2147483648",
+                r#""2147483648""#,
+            ]
+        };
+        for input in [
+            "null",
+            "true",
+            "[]",
+            "{}",
+            r#""""#,
+            r#""text""#,
+            r#""NaN""#,
+            r#""Infinity""#,
+            "1.5",
+            r#""1.5""#,
+            "1e-1",
+            r#""1e-1""#,
+            "1e100",
+            r#""1e100""#,
+        ]
+        .into_iter()
+        .chain(out_of_range)
+        {
+            let json = integer_collection_json(field, repeated, input);
+            assert!(
+                serde_json::from_str::<IntegerCollections>(&json).is_err(),
+                "accepted {json}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_json_32bit_collections_accept_empty_and_null_containers() {
+    use crate::json_types::IntegerCollections;
+
+    assert_eq!(
+        serde_json::from_str::<IntegerCollections>("{}").unwrap(),
+        IntegerCollections::default()
+    );
+    for &(field, repeated) in SIGNED_32BIT_COLLECTIONS
+        .iter()
+        .chain(UNSIGNED_32BIT_COLLECTIONS)
+    {
+        for container in ["null", if repeated { "[]" } else { "{}" }] {
+            let json = format!(r#"{{"{field}":{container}}}"#);
+            assert_eq!(
+                serde_json::from_str::<IntegerCollections>(&json).unwrap(),
+                IntegerCollections::default(),
+                "{json}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_json_32bit_collections_with_oneof() {
+    use crate::json_types::{__buffa::oneof::mixed_oneof_and_fields::Choice, MixedOneofAndFields};
+
+    let decoded: MixedOneofAndFields = serde_json::from_str(
+        r#"{"numbers":["1",2.0,3e1],"counts":{"a":"4","b":5.0,"c":6e1},"text":"hello"}"#,
+    )
+    .unwrap();
+    assert_eq!(decoded.numbers, [1, 2, 30]);
+    assert_eq!(decoded.counts["a"], 4);
+    assert_eq!(decoded.counts["b"], 5);
+    assert_eq!(decoded.counts["c"], 60);
+    assert_eq!(decoded.choice, Some(Choice::Text("hello".into())));
+    let json = serde_json::to_string(&decoded).unwrap();
+    assert_eq!(
+        serde_json::from_str::<MixedOneofAndFields>(&json).unwrap(),
+        decoded
+    );
+
+    for json in [
+        r#"{"numbers":[null],"text":"hello"}"#,
+        r#"{"counts":{"a":null},"text":"hello"}"#,
+        r#"{"numbers":["1.5"],"num":1}"#,
+        r#"{"counts":{"a":"2147483648"},"num":1}"#,
+    ] {
+        assert!(serde_json::from_str::<MixedOneofAndFields>(json).is_err());
+    }
+}
+
 #[test]
 fn test_json_null_for_simple_containers_is_empty() {
     // proto3-JSON: null for repeated/map fields → empty, not error.

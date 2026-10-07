@@ -190,6 +190,9 @@ impl Config {
     ///
     /// The derive is gated behind `#[cfg_attr(feature = "arbitrary", ...)]`
     /// so the downstream crate compiles with or without the feature enabled.
+    /// An enum with a `[deprecated = true]` variant gets a generated impl
+    /// under the same gate instead, because the derive would warn on that
+    /// variant. The impl maps input to variants as the derive does.
     ///
     /// Your crate's Cargo feature **must be named exactly `"arbitrary"`** —
     /// the generated `cfg_attr` uses that literal string and cannot be
@@ -1813,6 +1816,13 @@ impl Config {
     ///
     /// Also applies to oneof variants when `path` matches
     /// `".pkg.Msg.my_oneof.variant_name"`.
+    ///
+    /// A `#[deprecated]` supplied here wins over the one codegen derives from
+    /// the field's `[deprecated = true]` option — rustc permits only one
+    /// `deprecated` attribute per item — so this is also how to attach a note
+    /// naming the replacement. Either source marks the field and its `with_*`
+    /// setter, and either one makes the generated items that visit the field
+    /// carry `#[allow(deprecated)]`.
     ///
     /// # Example
     ///
