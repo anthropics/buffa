@@ -1214,7 +1214,7 @@ pub struct CodeGenConfig {
     /// A rule that matches no generated message produces a
     /// [`CodeGenWarning::PreserveUnknownFieldsRuleMatchedNothing`].
     pub preserve_unknown_fields_in: Vec<(String, bool)>,
-    /// Whether generated JSON deserializers reject unknown fields
+    /// Whether generated JSON deserializers reject unknown fields by default
     /// (default: `false`, lenient).
     ///
     /// Path-scoped overrides go in
@@ -1229,7 +1229,9 @@ pub struct CodeGenConfig {
     /// extension ranges and preserves unknown fields still go through the
     /// extension registry, where `JsonParseOptions::strict_extension_keys`
     /// governs unregistered ones. A message with extension ranges and
-    /// preservation off rejects them like any other unknown key.
+    /// preservation off rejects them like any other unknown key. Callers can
+    /// override this default per parse with
+    /// `JsonParseOptions::strict_unknown_fields`.
     pub deny_unknown_json_fields: bool,
     /// Path-scoped overrides for
     /// [`deny_unknown_json_fields`](Self::deny_unknown_json_fields). Each
@@ -1246,10 +1248,11 @@ pub struct CodeGenConfig {
     /// A rule that matches no generated message produces a
     /// [`CodeGenWarning::DenyUnknownJsonFieldsRuleMatchedNothing`].
     pub deny_unknown_json_fields_in: Vec<(String, bool)>,
-    /// Whether to derive `serde::Serialize` / `serde::Deserialize` on
-    /// generated message structs and enum types, and emit `#[serde(with = "...")]`
-    /// attributes for proto3 JSON's special scalar encodings (int64 as quoted
-    /// string, bytes as base64, etc.).
+    /// Whether to derive `serde::Serialize` on generated message structs and
+    /// enum types, generate message `Deserialize` implementations and derive
+    /// enum `Deserialize`, and emit `#[serde(with = "...")]` attributes for
+    /// proto3 JSON's special scalar encodings (int64 as quoted string, bytes
+    /// as base64, etc.).
     ///
     /// When this is `true`, the downstream crate must depend on `serde` and
     /// must enable the `buffa/json` feature for the runtime helpers.
@@ -2351,8 +2354,9 @@ pub enum CodeGenWarning {
     /// a typo, a field path instead of a message path, or a rule for a package
     /// mapped through `extern_path` — the affected messages silently keep the
     /// global [`deny_unknown_json_fields`](CodeGenConfig::deny_unknown_json_fields)
-    /// setting, which for an enabling rule means unknown JSON keys stay silently
-    /// ignored.
+    /// setting, which is lenient unless the global option is enabled. A
+    /// runtime `JsonParseOptions::strict_unknown_fields` setting can still
+    /// override the generated default.
     #[non_exhaustive]
     DenyUnknownJsonFieldsRuleMatchedNothing {
         /// The rule's path as configured.

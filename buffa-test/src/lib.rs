@@ -809,8 +809,8 @@ pub mod custopts {
 }
 
 /// Strict JSON unknown-field rejection — `deny_unknown_json_fields_in` over
-/// the derive path, the hand-written-visitor path and the extension path, with
-/// lenient siblings in the same module as the control.
+/// plain, oneof and extension messages, with lenient siblings in the same
+/// module as the control.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod strictjson {
     buffa::include_proto!("buffa.test.strictjson");

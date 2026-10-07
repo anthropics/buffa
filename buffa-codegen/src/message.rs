@@ -301,20 +301,18 @@ fn generate_message_with_nesting(
     debug_fields.extend(oneof_generated.iter().map(|(_, id)| (id, false)));
 
     // When JSON is on, `__buffa_unknown_fields` becomes a `#[serde(flatten)]`
-    // newtype wrapper whose Serialize/Deserialize route through the extension
-    // registry. The wrapper has `Deref<Target = UnknownFields>` so all binary
-    // encode/decode paths in impl_message.rs are unaffected (method-call
-    // auto-deref and `&wrapper` → `&UnknownFields` coercion both apply).
+    // newtype wrapper whose Serialize route goes through the extension
+    // registry. The generated message visitor handles extension keys inline.
+    // The wrapper has `Deref<Target = UnknownFields>` so binary encode/decode
+    // paths in impl_message.rs are unaffected (method-call auto-deref and
+    // `&wrapper` → `&UnknownFields` coercion both apply).
     //
     // Gated on `has_extension_ranges`: protoc rejects `extend Foo { ... }`
     // when `Foo` lacks an `extensions N to M;` declaration, so a message
     // without one can never have a registry entry naming it as extendee.
-    // Without this gate, the wrapper is pure overhead — `#[serde(flatten)]`
-    // on derive-Deserialize buffers every unknown key through serde's
-    // `Content::Map` (a `String` key and a buffered value) before the
-    // wrapper can discard it. With the gate, extension-range-free messages
-    // keep the pre-extensions `#[serde(skip)]` behavior (zero-alloc
-    // `IgnoredAny` skip for unknown keys).
+    // Without this gate, the wrapper is pure overhead. Extension-range-free
+    // messages keep the pre-extensions `#[serde(skip)]` behavior for JSON
+    // serialization, and the visitor skips unknown values with `IgnoredAny`.
     let has_extension_ranges = !msg.extension_range.is_empty();
     let use_ext_json_wrapper =
         ctx.config.generate_json && ctx.preserve_unknown_fields(proto_fqn) && has_extension_ranges;
@@ -387,9 +385,8 @@ fn generate_message_with_nesting(
         (field, wrapper)
     } else if ctx.preserve_unknown_fields(proto_fqn) {
         // No wrapper — either generate_json is off, or this message has no
-        // extension ranges. In the latter case the serde derive is present
-        // and we must `#[serde(skip)]` to exclude the field from JSON; in
-        // the former the attribute is harmless (no derive to read it).
+        // extension ranges. When JSON is on, `#[serde(skip)]` excludes the
+        // unknown-field storage from serialization.
         let skip_attr = if ctx.config.generate_json {
             crate::feature_gates::cfg_attr(quote! { serde(skip) }, gates.json)
         } else {
@@ -404,27 +401,6 @@ fn generate_message_with_nesting(
     } else {
         (quote! {}, quote! {})
     };
-
-    // Does this message have real (non-synthetic) oneofs?
-    let has_real_oneofs = !oneof_struct_fields.is_empty();
-
-    // Messages declaring `extensions N to M;` accept `"[...]"` JSON keys.
-    // With only `#[derive(Deserialize)]`, serde's flatten already routes them
-    // to the wrapper's Deserialize — but that path buffers every unclaimed
-    // key first. The custom impl matches them inline.
-
-    // When serde is enabled and the message has oneofs, we generate a custom
-    // Deserialize impl so that duplicate-oneof-field and null-value errors
-    // propagate correctly (serde's #[serde(flatten)] + Option<T> swallows them).
-    // Extension ranges also force the custom impl so `"[...]"` keys are
-    // handled inline without buffering.
-    let needs_custom_deserialize = ctx.config.generate_json
-        && (has_real_oneofs || (has_extension_ranges && ctx.preserve_unknown_fields(proto_fqn)));
-
-    // Per-message JSON strictness: the derive path turns it into a serde
-    // attribute, the custom visitor into a strict terminal arm. Both ask
-    // `MessageScope`, which also applies the `generate_json` gate.
-    let deny_unknown_json_fields = scope.deny_unknown_json_fields();
 
     // Oneof enum definitions — emitted inside the message's module.
     // Pass the file-level package as current_package, since
@@ -537,33 +513,7 @@ fn generate_message_with_nesting(
     };
 
     let serde_struct_derive = if ctx.config.generate_json {
-        let derives = if needs_custom_deserialize {
-            // Only derive Serialize; Deserialize is generated separately.
-            quote! { derive(::serde::Serialize) }
-        } else {
-            quote! { derive(::serde::Serialize, ::serde::Deserialize) }
-        };
-        let derive_attr = crate::feature_gates::cfg_attr(derives, gates.json);
-        let default_attr = crate::feature_gates::cfg_attr(quote! { serde(default) }, gates.json);
-        // Strictness on the derive path is serde's own attribute. The custom
-        // impl reads the same config value instead (it has no derive to
-        // attach to), so one option covers both paths.
-        //
-        // Invariant: `deny_unknown_fields` is never emitted on a struct with a
-        // `#[serde(flatten)]` field. serde documents the combination as
-        // unsupported but compiles it, so `codegen_integration.rs` asserts
-        // this on emitted output. Both flattened fields (the extension-JSON
-        // wrapper and each oneof) imply `needs_custom_deserialize`.
-        let deny_unknown_attr = if !needs_custom_deserialize && deny_unknown_json_fields {
-            crate::feature_gates::cfg_attr(quote! { serde(deny_unknown_fields) }, gates.json)
-        } else {
-            quote! {}
-        };
-        quote! {
-            #derive_attr
-            #default_attr
-            #deny_unknown_attr
-        }
+        crate::feature_gates::cfg_attr(quote! { derive(::serde::Serialize) }, gates.json)
     } else {
         quote! {}
     };
@@ -576,7 +526,7 @@ fn generate_message_with_nesting(
         CodeGenContext::matching_attributes(&ctx.config.type_attributes, proto_fqn)?;
     let custom_message_attrs =
         CodeGenContext::matching_attributes(&ctx.config.message_attributes, proto_fqn)?;
-    let custom_deserialize = if needs_custom_deserialize {
+    let custom_deserialize = if ctx.config.generate_json {
         crate::feature_gates::cfg_block(
             generate_custom_deserialize(
                 scope,
@@ -594,7 +544,7 @@ fn generate_message_with_nesting(
     };
 
     // ProtoElemJson impl for use in proto_seq / proto_map containers.
-    // Delegates to the derived/generated Serialize + Deserialize.
+    // Delegates to the generated Serialize and Deserialize implementations.
     let proto_elem_json_impl = if ctx.config.generate_json {
         crate::feature_gates::cfg_block(
             quote! {
@@ -1234,18 +1184,15 @@ fn generate_custom_deserialize(
 
     // Terminal arm for keys no field, oneof variant or extension arm claimed.
     //
-    // Under `deny_unknown_json_fields` this reports through serde's own
-    // `unknown_field`, which is what `#[serde(deny_unknown_fields)]` calls on
-    // the derive path — so a message with a oneof and one without produce the
-    // same diagnostic for the same typo. `"[pkg.ext]"` keys are claimed by
-    // `#ext_arm` above, so extension handling is untouched either way.
-    //
-    // Lenient (the default) skips the value with `IgnoredAny`, which costs no
-    // allocation.
-    let terminal_arm = if scope.deny_unknown_json_fields() {
-        let accepted = &accepted_keys;
-        quote! {
-            __unknown => {
+    // Unknown names use serde's own `unknown_field` diagnostic when either
+    // the runtime option or the code-generation setting is strict.
+    let accepted = &accepted_keys;
+    let codegen_strict = scope.deny_unknown_json_fields();
+    let terminal_arm = quote! {
+        __unknown => {
+            let __strict = ::buffa::json::strict_unknown_fields()
+                .unwrap_or(#codegen_strict);
+            if __strict {
                 return ::core::result::Result::Err(
                     <A::Error as ::serde::de::Error>::unknown_field(
                         __unknown,
@@ -1253,9 +1200,8 @@ fn generate_custom_deserialize(
                     ),
                 );
             }
+            map.next_value::<::serde::de::IgnoredAny>()?;
         }
-    } else {
-        quote! { _ => { map.next_value::<::serde::de::IgnoredAny>()?; } }
     };
 
     // Assemble the impl block. The non-snake allow covers the `__f_<name>` /
@@ -1335,9 +1281,8 @@ fn deser_seed_expr(rust_type: &TokenStream, inner: TokenStream) -> TokenStream {
 /// (non-oneof) field in a custom `Deserialize` impl.
 ///
 /// `accepted_keys` lists the JSON keys the arm matches (the field's JSON name
-/// and, when it differs, its proto name), so the terminal arm emitted under
-/// [`CodeGenConfig::deny_unknown_json_fields`](crate::CodeGenConfig::deny_unknown_json_fields)
-/// can report the same set serde's derive would.
+/// and, when it differs, its proto name), so the terminal arm can report them
+/// when unknown fields are rejected.
 struct CustomDeserField {
     var_decl: TokenStream,
     arm: TokenStream,
@@ -2645,7 +2590,7 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
         });
     }
 
-    // Other message values: derived Serialize/Deserialize is already
+    // Other message values: generated Serialize/Deserialize is already
     // proto-JSON. Default serde for HashMap<String, Message> works.
     // Non-string keys still need stringification via string_key_map.
     if matches!(info.map_value_type, Some(Type::TYPE_MESSAGE)) {
