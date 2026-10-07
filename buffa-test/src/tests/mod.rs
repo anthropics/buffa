@@ -81,6 +81,7 @@ mod closed_enum;
 mod collision;
 mod cross_ref;
 mod debug_redact;
+mod deprecated;
 mod edge_cases;
 #[cfg(has_edition_2024)]
 mod editions_2024;
