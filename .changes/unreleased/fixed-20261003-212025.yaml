@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Text format requires the `:` before a scalar value** (#527). `id 7` and `tags ["a"]` parsed, although the colon is optional only before a message value or a list of message values, and the C++ and Go parsers reject both. Each is now an `UnexpectedToken` error at the value, so input that omits the colon before a scalar no longer parses. `address { ... }` and `addresses [{ ... }]` need no colon, as before. An empty list also still parses without one on any field, where C++ and Go require the colon for a scalar field.
+time: 2026-10-03T21:20:25.429696+02:00
