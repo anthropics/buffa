@@ -278,10 +278,11 @@ pub enum PoolError {
     /// syntax.
     Proto3FieldWithDefault { field: String },
     /// A singular field with implicit presence declares an explicit default
-    /// value, of any value, including the type's zero value. A field has
-    /// implicit presence in an editions file when `features.field_presence`
-    /// resolves to `IMPLICIT`. Such a field is not encoded when it holds its
-    /// zero value, so it cannot have another default.
+    /// value. Every declared default is rejected, the type's zero value
+    /// included. A field has implicit presence in an editions file when
+    /// `features.field_presence` resolves to `IMPLICIT`. Such a field is not
+    /// encoded when it holds its zero value, so it cannot have another
+    /// default.
     ///
     /// An extension always has presence. A proto3 field reports
     /// [`Proto3FieldWithDefault`](Self::Proto3FieldWithDefault) instead.
