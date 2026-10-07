@@ -291,9 +291,14 @@ fn default_fn_tokens(
         // Same ident escaping as `enumeration.rs` uses for variant names.
         let variant =
             crate::idents::make_field_ident(field.default_value.as_deref().unwrap_or_default());
+        // A `[default = V]` whose variant V is `[deprecated = true]` spells the
+        // deprecated variant out here.
+        let deprecated_allow = crate::message::default_names_deprecated_value(ctx, field)
+            .then(|| quote! { #[allow(deprecated)] });
         return Ok((
             fn_ident.clone(),
             quote! {
+                #deprecated_allow
                 #[doc(hidden)]
                 const fn #fn_ident() -> i32 {
                     #enum_path::#variant as i32
@@ -333,9 +338,15 @@ fn default_fn_tokens(
         quote! { const }
     };
 
+    // A `[default = V]` whose enum value V is `[deprecated = true]` spells the
+    // deprecated variant out in this fn body.
+    let deprecated_allow = crate::message::default_names_deprecated_value(ctx, field)
+        .then(|| quote! { #[allow(deprecated)] });
+
     Ok((
         fn_ident.clone(),
         quote! {
+            #deprecated_allow
             #[doc(hidden)]
             #const_kw fn #fn_ident() -> #value_ty {
                 #default_expr

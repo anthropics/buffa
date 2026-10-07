@@ -297,8 +297,9 @@ fn serialize_json_value<S: Serializer>(
     if let Some(Value::Message(inner)) = msg.field_by_number(6) {
         return Nested::charge(inner, depth)?.serialize(s);
     }
-    // Unset Value: spec is ambiguous; serialize as null.
-    s.serialize_none()
+    Err(serde::ser::Error::custom(
+        "google.protobuf.Value.kind must be set",
+    ))
 }
 
 fn deserialize_json_value<'de, D: Deserializer<'de>>(
