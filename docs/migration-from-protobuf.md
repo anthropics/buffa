@@ -352,7 +352,7 @@ v4 manages unknown fields internally through upb. Buffa exposes them as a public
 
 ## 12. Feature comparison
 
-Features in `protobuf` v3/v4 that buffa does not support:
+This table lists selected v3/v4 features and the closest buffa equivalent or status:
 
 | Feature | buffa status |
 |---------|-------------|

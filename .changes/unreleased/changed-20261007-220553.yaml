@@ -1,0 +1,3 @@
+kind: Changed
+body: Clarify that the protobuf v3/v4 migration table includes supported equivalents as well as unsupported features.
+time: 2026-10-07T22:05:53.161039+02:00
