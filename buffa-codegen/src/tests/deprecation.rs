@@ -729,6 +729,102 @@ fn caller_deprecated_attribute_marks_the_view_without_its_note() {
 }
 
 #[test]
+fn caller_deprecated_fields_are_marked_and_guarded_on_every_view_surface() {
+    // The option-deprecated tests never consult the `field_attribute` path,
+    // so this one repeats their assertions for fields that only the caller
+    // deprecates: a required message field and a required scalar, beside a
+    // redacted field that gives the views a `Debug` impl.
+    let mut limits = make_field("limits", 1, Label::LABEL_REQUIRED, Type::TYPE_MESSAGE);
+    limits.type_name = Some(".deprecate.test.Limits".to_string());
+    let mut label = make_field("label", 3, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+    label.options = FieldOptions {
+        debug_redact: Some(true),
+        ..Default::default()
+    }
+    .into();
+    let mut file = proto3_file("required.proto");
+    file.syntax = Some("proto2".to_string());
+    file.package = Some("deprecate.test".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Limits".to_string()),
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Widget".to_string()),
+        field: vec![
+            limits,
+            make_field("code", 2, Label::LABEL_REQUIRED, Type::TYPE_INT32),
+            label,
+        ],
+        ..Default::default()
+    });
+    let note = "#[deprecated(note = \"hand\")]".to_string();
+    let config = CodeGenConfig {
+        field_attributes: vec![
+            (".deprecate.test.Widget.limits".to_string(), note.clone()),
+            (".deprecate.test.Widget.code".to_string(), note),
+        ],
+        lazy_views: true,
+        generate_json: true,
+        generate_reflection: true,
+        generate_reflection_vtable: true,
+        ..Default::default()
+    };
+    let content = generate_squashed(file, &config);
+
+    assert_eq!(
+        content.matches(r#"note="hand""#).count(),
+        2,
+        "the caller's attribute stays on the two owned fields: {content}"
+    );
+    for field in ["limits", "code"] {
+        assert_eq!(
+            content
+                .matches(&format!("#[deprecated]pub{field}:"))
+                .count(),
+            2,
+            "`{field}` carries a bare marker on the view and the lazy view: {content}"
+        );
+        assert_eq!(
+            content
+                .matches(&format!(
+                    "#[deprecated]#[allow(deprecated)]#[must_use]#[inline]pubconstfnhas_{field}(&self)"
+                ))
+                .count(),
+            2,
+            "`has_{field}` is marked on the view and the lazy view: {content}"
+        );
+        assert!(
+            content.contains(&format!(
+                "#[deprecated]#[allow(deprecated)]#[must_use]pubfn{field}("
+            )),
+            "the `WidgetOwnedView` accessor for `{field}` is marked: {content}"
+        );
+    }
+    for impl_head in [
+        "impl<'a>::buffa::MessageView<'a>forWidgetView<'a>",
+        "impl<'a>::buffa::ViewEncode<'a>forWidgetView<'a>",
+        "impl<'a>::core::fmt::DebugforWidgetView<'a>",
+        "impl<'__a>::serde::SerializeforWidgetView<'__a>",
+        "impl<'a>::buffa_descriptor::reflect::ReflectMessageforWidgetView<'a>",
+        "impl<'a>::core::fmt::DebugforWidgetLazyView<'a>",
+        "impl<'__a>::serde::SerializeforWidgetLazyView<'__a>",
+    ] {
+        assert!(
+            content.contains(&format!("#[allow(deprecated)]{impl_head}")),
+            "`{impl_head}` names a caller-deprecated view field, so it must be guarded"
+        );
+    }
+    assert_eq!(
+        content
+            .matches("#[allow(deprecated)]impl<'a>WidgetLazyView<'a>{")
+            .count(),
+        2,
+        "the lazy view's decode and encode inherent impls are both guarded"
+    );
+}
+
+#[test]
 fn deprecated_map_field_carries_marker_on_each_struct() {
     let mut key = make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
     key.json_name = Some("key".to_string());
@@ -987,6 +1083,10 @@ fn attribute_shape_detection() {
         ("#[deprecated_alias]", false),
         ("#[some_tool::deprecated]", false),
         ("#[cfg_attr(feature = \"json\", allow(deprecated))]", false),
+        ("#[cfg_attr(a, cfg_attr(b, deprecated))]", true),
+        // `deprecated` as a cfg predicate, or as another tool's argument.
+        ("#[cfg_attr(deprecated, serde(skip))]", false),
+        ("#[schema(deprecated)]", false),
         ("#[serde(skip)]", false),
         ("#[doc = \"marked deprecated in the proto\"]", false),
         ("not an attribute", false),

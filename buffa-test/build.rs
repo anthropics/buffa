@@ -747,10 +747,16 @@ fn main() {
     // text, JSON, lazy views and vtable reflection are on so every guarded
     // surface is compiled. The proof is that this crate compiles clean under
     // `-D warnings`. `generate_arbitrary` adds the `Arbitrary` impls, which
-    // only a build with the `arbitrary` feature compiles.
+    // only a build with the `arbitrary` feature compiles. One field takes its
+    // `#[deprecated]` from `field_attribute`, which marks and guards the same
+    // items as the option.
     let mut deprecated = buffa_build::Config::new()
         .files(&["protos/deprecated.proto"])
         .includes(&["protos/"])
+        .field_attribute(
+            ".deprecated.LegacyProfile.hand_marked",
+            "#[deprecated(note = \"marked in build.rs\")]",
+        )
         .generate_views(true)
         .generate_text(true)
         .generate_json(true)
@@ -772,12 +778,13 @@ fn main() {
     // extension's default getter spell it out and need the guard. The enums
     // are closed here, so `generate_arbitrary` puts their `Arbitrary` impls
     // behind a bare enum field. `Quota` has deprecated `required` fields, for
-    // the views' `has_*` accessors.
+    // the views' `has_*` accessors, which the reflection vtable calls.
     buffa_build::Config::new()
         .files(&["protos/deprecated_proto2.proto"])
         .includes(&["protos/"])
         .generate_views(true)
         .lazy_views(true)
+        .generate_reflection(true)
         .generate_arbitrary(true)
         .compile()
         .expect("buffa_build failed for deprecated_proto2.proto");

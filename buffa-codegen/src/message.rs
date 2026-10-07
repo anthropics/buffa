@@ -2121,6 +2121,10 @@ pub(crate) fn is_debug_redacted(
 /// `[deprecated = true]`, or from a `#[deprecated]` that the caller attaches
 /// with `field_attribute`. `field_fqn` is `<message FQN>.<field name>`.
 ///
+/// `field` is a struct field of the message. A member of a real oneof is a
+/// variant of the oneof enum, which the option does not mark and which takes
+/// its `field_attribute` under `<message FQN>.<oneof name>.<field name>`.
+///
 /// Every other generated way to reach the field carries a bare `#[deprecated]`
 /// when this holds: the `with_*` setter, the field on the view structs, the
 /// `OwnedView` accessor and the view's `has_*` method.
@@ -2149,6 +2153,9 @@ pub(crate) fn is_deprecated(field: &crate::generated::descriptor::FieldDescripto
 /// of it. Unparseable attribute strings are ignored here — they are reported
 /// by [`CodeGenContext::matching_attributes`] on the way to the same field.
 pub(crate) fn caller_deprecated_attr(ctx: &CodeGenContext, fqn: &str) -> bool {
+    if ctx.config.field_attributes.is_empty() {
+        return false;
+    }
     let fqn_dotted = format!(".{fqn}");
     ctx.config.field_attributes.iter().any(|(prefix, attr)| {
         crate::context::matches_proto_prefix(prefix, &fqn_dotted) && is_deprecated_attr_str(attr)
@@ -2192,44 +2199,37 @@ pub(crate) fn is_deprecated_attr_str(attr: &str) -> bool {
     false
 }
 
-/// Whether any comma-separated segment of an attribute body starts with the
-/// built-in `deprecated` ident, recursing into parenthesised arguments so
-/// `cfg_attr(feature = "x", deprecated)` is recognized.
+/// Whether an attribute body is the built-in `deprecated` attribute, or a
+/// `cfg_attr` that expands to it in one of its arms.
 ///
-/// Starting-with is what keeps the neighbours honest: `#[deprecated_alias]` is
-/// a different ident, `#[some_tool::deprecated]` starts with `some_tool`, and
-/// `#[cfg_attr(x, allow(deprecated))]` reaches an `allow` segment, not a
-/// `deprecated` one.
+/// Only `cfg_attr` is looked into, and its first argument, the predicate, is
+/// skipped. A tool attribute's own `deprecated` argument is that tool's
+/// business: `#[schema(deprecated)]` does not deprecate the Rust field.
+/// `#[deprecated_alias]` is a different ident, and `#[some_tool::deprecated]`
+/// starts with `some_tool`.
 fn names_deprecated(iter: impl Iterator<Item = proc_macro2::TokenTree>) -> bool {
-    let stream: Vec<proc_macro2::TokenTree> = iter.collect();
-    stream
-        .split(|t| matches!(t, proc_macro2::TokenTree::Punct(p) if p.as_char() == ','))
-        .any(|segment| {
-            let mut it = segment.iter();
-            let Some(proc_macro2::TokenTree::Ident(id)) = it.next() else {
-                return false;
-            };
-            if id == "deprecated" && !matches!(it.next(), Some(proc_macro2::TokenTree::Punct(p)) if p.as_char() == ':')
-            {
-                return true;
-            }
-            match it.next() {
-                Some(proc_macro2::TokenTree::Group(group))
-                    if group.delimiter() == proc_macro2::Delimiter::Parenthesis
-                        // `allow(deprecated)` names a *lint*, not an attribute,
-                        // so its arguments must not be scanned — otherwise a
-                        // suppression would look like a marker and codegen would
-                        // drop the option-derived one.
-                        && !matches!(
-                            id.to_string().as_str(),
-                            "allow" | "expect" | "warn" | "deny" | "forbid"
-                        ) =>
-                {
-                    names_deprecated(group.stream().into_iter())
-                }
-                _ => false,
-            }
-        })
+    use proc_macro2::{Delimiter, TokenTree};
+    let body: Vec<TokenTree> = iter.collect();
+    let mut it = body.iter();
+    let Some(TokenTree::Ident(id)) = it.next() else {
+        return false;
+    };
+    if id == "deprecated" {
+        return !matches!(it.next(), Some(TokenTree::Punct(p)) if p.as_char() == ':');
+    }
+    if id != "cfg_attr" {
+        return false;
+    }
+    let Some(TokenTree::Group(args)) = it.next() else {
+        return false;
+    };
+    if args.delimiter() != Delimiter::Parenthesis {
+        return false;
+    }
+    let args: Vec<TokenTree> = args.stream().into_iter().collect();
+    args.split(|t| matches!(t, TokenTree::Punct(p) if p.as_char() == ','))
+        .skip(1)
+        .any(|attr| names_deprecated(attr.iter().cloned()))
 }
 
 /// True when generating code for `field` emits a reference to a *deprecated*
@@ -2269,13 +2269,8 @@ fn references_deprecated(ctx: &CodeGenContext, msg: &DescriptorProto, proto_fqn:
         if crate::impl_message::is_real_oneof_member(f) {
             return false;
         }
-        if is_deprecated(f) || default_names_deprecated_value(ctx, f) {
-            return true;
-        }
-        match f.name.as_deref() {
-            Some(field_name) => caller_deprecated_attr(ctx, &format!("{proto_fqn}.{field_name}")),
-            None => false,
-        }
+        let field_fqn = format!("{proto_fqn}.{}", f.name.as_deref().unwrap_or_default());
+        field_is_deprecated(ctx, f, &field_fqn) || default_names_deprecated_value(ctx, f)
     })
 }
 

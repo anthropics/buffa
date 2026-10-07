@@ -20,6 +20,8 @@ message LegacyProfile {
   // A redacted field swaps the views' `Debug` derive for an impl, which names
   // every field of the view.
   string secret = 10 [debug_redact = true];
+  // Live in the schema; build.rs deprecates it with `field_attribute`.
+  string hand_marked = 11;
 
   // Deprecated oneof variants are not marked. The oneof here is live, so
   // this file covers the oneof codec paths only incidentally (they read the

@@ -1060,11 +1060,12 @@ JSON formats still have to accept it.
 
 The generated items that must visit every field carry `#[allow(deprecated)]`
 themselves, so one deprecated field does not flood the build with warnings from
-generated code: the `Message` codec impls, `Debug`, `Default` (owned and view),
-the `with_*` setters, the hand-written JSON `Deserialize` impl, the reflection
-vtable, a table message's static, the views' decode, encode, `to_owned`, `Debug`,
-JSON and reflection impls, and — on the enum side — `Enumeration`, the
-`allow_alias` consts and the idiomatic consts. A
+generated code. These include the `Message` codec and `TextFormat` impls,
+`Debug`, `Default` (owned and view), the `with_*` setters, the hand-written JSON
+`Deserialize` impl, the reflection vtable and a table message's static. On the
+views they include the decode, encode, `to_owned`, `Debug`, JSON and reflection
+impls. On the enum side they include `Enumeration`, `Default`, the `allow_alias`
+consts and the idiomatic consts. A
 message whose field declares `[default = DEPRECATED_VALUE]` needs the same guard
 even though no field of its own is deprecated, and so does an extension's default
 getter.
@@ -1076,26 +1077,30 @@ value deprecated does not change what a fuzz input builds.
 
 Writes are covered too: the `with_legacy_name(…)` setter for a deprecated field
 is itself `#[deprecated]`, so the builder API is not a quieter way to set it.
-This holds whether the field's deprecation comes from the option or from your own
-`field_attribute`.
 
-Views are covered as well. The field on `FooView` and on `FooLazyView`, its
-accessor on `FooOwnedView`, and a `required` field's `has_*` method carry
-`#[deprecated]`, so reading a deprecated field after `decode_view` warns as
-reading the owned field does.
+Views are also covered. The field on `FooView` and on `FooLazyView` carries
+`#[deprecated]`, and so do its accessor on `FooOwnedView` and a `required`
+field's `has_*` method. Reading a deprecated field after `decode_view` therefore
+warns, as reading the owned field does.
+
+The setter and the view markers are there whether the field's deprecation comes
+from the option or from your own `field_attribute`.
 
 Aliases inherit the marker. An `allow_alias` value names the same variant as its
-primary, so `demo::Size::TINY` is deprecated whenever `demo::Size::SMALL` is; so
-does its idiomatic `CamelCase` const (`Size::Tiny`) when
+primary, so `demo::Size::TINY` is deprecated whenever `demo::Size::SMALL` is. Its
+idiomatic `CamelCase` const (`Size::Tiny`) is deprecated with it when
 `idiomatic_enum_aliases` is on. An alias is not a quiet way to reach a deprecated
 value. The direction is per value: an alias marked `[deprecated = true]` whose
 primary is live marks only the alias and the alias's own idiomatic const.
 
 Two things are not marked:
 
-- **Oneof variants are not marked yet.** A deprecated `oneof` member neither
-  carries `#[deprecated]` nor widens the owned message's guard, so
-  `examples/addressbook` still needs its module-level `#[allow(deprecated)]`.
+- **Oneof variants are not marked.** `[deprecated = true]` on a `oneof` member
+  adds no `#[deprecated]`. `prost-build` marks these, so a deprecated oneof
+  member that warned under prost is silent here. A `#[deprecated]` that you
+  attach to the variant with `field_attribute` goes on the owned oneof enum only,
+  and the generated impls that match on it are not guarded, so
+  `examples/addressbook` keeps a module-level `#[allow(deprecated)]`.
 - **Whole-message and whole-enum deprecation is not emitted**, matching prost.
 
 A derive that you attach with `enum_attribute` or `type_attribute` can name a
@@ -1128,10 +1133,10 @@ buffa_build::Config::new()
     .unwrap();
 ```
 
-A field deprecated only through this hook still gets the generated-code guard,
-and the same markers as one deprecated by the option: on the setter, on the view
-fields, on the `FooOwnedView` accessor and on `has_*`. Those markers are bare.
-Your attribute, with its note, is on the owned struct's field only.
+A message field deprecated only through this hook still gets the generated-code
+guard. It also gets the same markers as a field deprecated by the option: on the
+setter, the view fields, the `FooOwnedView` accessor and `has_*`. Those markers
+are bare. Your attribute, with its note, is on the owned struct's field only.
 
 ### `skip_debug` and hand-written `Debug`
 
