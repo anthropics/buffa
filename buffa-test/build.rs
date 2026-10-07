@@ -541,7 +541,8 @@ fn main() {
     // emission paths are exercised. The sibling file shares the package, so
     // its `Wrapper.kind: Option<...>` would resolve to the proto-defined
     // `Option` struct unless the codegen path is fully qualified.
-    // Compilation is the assertion.
+    // Setters are on so `with_*(impl Into<..>)` signatures are emitted beside
+    // the `Into` struct. Compilation is the assertion.
     buffa_build::Config::new()
         .files(&[
             "protos/prelude_shadow.proto",
@@ -549,6 +550,7 @@ fn main() {
         ])
         .includes(&["protos/"])
         .generate_json(true)
+        .generate_with_setters(true)
         .compile()
         .expect("buffa_build failed for prelude_shadow.proto");
 

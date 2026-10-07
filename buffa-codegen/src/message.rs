@@ -331,8 +331,8 @@ fn generate_message_with_nesting(
         let serde_impls = crate::feature_gates::cfg_block(
             quote! {
                 impl ::serde::Serialize for #ext_json_wrapper_ident {
-                    fn serialize<S: ::serde::Serializer>(&self, s: S)
-                        -> ::core::result::Result<S::Ok, S::Error>
+                    fn serialize<__S: ::serde::Serializer>(&self, s: __S)
+                        -> ::core::result::Result<__S::Ok, __S::Error>
                     {
                         ::buffa::extension_registry::serialize_extensions(#proto_fqn_lit, &self.0, s)
                     }
@@ -343,8 +343,8 @@ fn generate_message_with_nesting(
         let serde_de_impl = crate::feature_gates::cfg_block(
             quote! {
                 impl<'de> ::serde::Deserialize<'de> for #ext_json_wrapper_ident {
-                    fn deserialize<D: ::serde::Deserializer<'de>>(d: D)
-                        -> ::core::result::Result<Self, D::Error>
+                    fn deserialize<__D: ::serde::Deserializer<'de>>(d: __D)
+                        -> ::core::result::Result<Self, __D::Error>
                     {
                         ::buffa::extension_registry::deserialize_extensions(#proto_fqn_lit, d).map(Self)
                     }
@@ -598,15 +598,15 @@ fn generate_message_with_nesting(
         crate::feature_gates::cfg_block(
             quote! {
                 impl ::buffa::json_helpers::ProtoElemJson for #name_ident {
-                    fn serialize_proto_json<S: ::serde::Serializer>(
+                    fn serialize_proto_json<__S: ::serde::Serializer>(
                         v: &Self,
-                        s: S,
-                    ) -> ::core::result::Result<S::Ok, S::Error> {
+                        s: __S,
+                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
                         ::serde::Serialize::serialize(v, s)
                     }
-                    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                        d: D,
-                    ) -> ::core::result::Result<Self, D::Error> {
+                    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                        d: __D,
+                    ) -> ::core::result::Result<Self, __D::Error> {
                         <Self as ::serde::Deserialize>::deserialize(d)
                     }
                 }
@@ -1242,7 +1242,7 @@ fn generate_custom_deserialize(
                         }
                         ::core::option::Option::Some(::core::result::Result::Err(__e)) => {
                             return ::core::result::Result::Err(
-                                <A::Error as ::serde::de::Error>::custom(__e),
+                                <__A::Error as ::serde::de::Error>::custom(__e),
                             );
                         }
                         ::core::option::Option::None => {}
@@ -1274,7 +1274,7 @@ fn generate_custom_deserialize(
         quote! {
             __unknown => {
                 return ::core::result::Result::Err(
-                    <A::Error as ::serde::de::Error>::unknown_field(
+                    <__A::Error as ::serde::de::Error>::unknown_field(
                         __unknown,
                         &[#(#accepted),*],
                     ),
@@ -1295,7 +1295,7 @@ fn generate_custom_deserialize(
         #non_snake_attr
         #deprecated_field_allow
         impl<'de> ::serde::Deserialize<'de> for #name_ident {
-            fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(d: __D) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl<'de> ::serde::de::Visitor<'de> for _V {
                     type Value = #name_ident;
@@ -1305,10 +1305,10 @@ fn generate_custom_deserialize(
                     }
 
                     #[allow(clippy::field_reassign_with_default)]
-                    fn visit_map<A: ::serde::de::MapAccess<'de>>(
+                    fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                         self,
-                        mut map: A,
-                    ) -> ::core::result::Result<#name_ident, A::Error> {
+                        mut map: __A,
+                    ) -> ::core::result::Result<#name_ident, __A::Error> {
                         #(#field_vars)*
                         #ext_var
 
@@ -1342,14 +1342,14 @@ fn generate_custom_deserialize(
 /// { struct _S; impl DeserializeSeed for _S { ... } map.next_value_seed(_S)? }
 /// ```
 /// where the body of `deserialize` is `inner`, which should return
-/// `Result<rust_type, D::Error>` using `d` as the deserializer binding.
+/// `Result<rust_type, __D::Error>` using `d` as the deserializer binding.
 fn deser_seed_expr(rust_type: &TokenStream, inner: TokenStream) -> TokenStream {
     quote! {{
         struct _S;
         impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
             type Value = #rust_type;
-            fn deserialize<D: ::serde::Deserializer<'de>>(self, d: D)
-                -> ::core::result::Result<#rust_type, D::Error>
+            fn deserialize<__D: ::serde::Deserializer<'de>>(self, d: __D)
+                -> ::core::result::Result<#rust_type, __D::Error>
             {
                 #inner
             }
@@ -2098,7 +2098,7 @@ fn generate_field(
         //   bytes::Bytes: Vec<u8>. EnumValue<E>: E (From<E> impl on EnumValue).
         let (param_type, use_into) = match field_type {
             Type::TYPE_STRING | Type::TYPE_BYTES | Type::TYPE_ENUM => {
-                (quote! { impl Into<#inner> }, true)
+                (quote! { impl ::core::convert::Into<#inner> }, true)
             }
             _ => (quote! { #inner }, false),
         };

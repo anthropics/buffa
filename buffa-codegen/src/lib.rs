@@ -2971,18 +2971,18 @@ fn render_custom_elem_impls(
             out.extend(feature_gates::cfg_block(
                 quote! {
                     impl ::buffa::json_helpers::ProtoElemJson for #ty {
-                        fn serialize_proto_json<S: ::serde::Serializer>(
+                        fn serialize_proto_json<__S: ::serde::Serializer>(
                             v: &Self,
-                            s: S,
-                        ) -> ::core::result::Result<S::Ok, S::Error> {
+                            s: __S,
+                        ) -> ::core::result::Result<__S::Ok, __S::Error> {
                             ::buffa::json_helpers::bytes::serialize(
                                 ::core::convert::AsRef::<[u8]>::as_ref(v),
                                 s,
                             )
                         }
-                        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                            d: D,
-                        ) -> ::core::result::Result<Self, D::Error> {
+                        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                            d: __D,
+                        ) -> ::core::result::Result<Self, __D::Error> {
                             ::buffa::json_helpers::bytes::deserialize(d)
                         }
                     }

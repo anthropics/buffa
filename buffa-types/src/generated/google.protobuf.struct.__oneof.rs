@@ -16,22 +16,24 @@ pub mod value {
         ListValue(::buffa::alloc::boxed::Box<super::super::super::ListValue>),
     }
     impl ::buffa::Oneof for Kind {}
-    impl From<super::super::super::Struct> for Kind {
+    impl ::core::convert::From<super::super::super::Struct> for Kind {
         fn from(v: super::super::super::Struct) -> Self {
             Self::StructValue(::buffa::alloc::boxed::Box::new(v))
         }
     }
-    impl From<super::super::super::Struct> for ::core::option::Option<Kind> {
+    impl ::core::convert::From<super::super::super::Struct>
+    for ::core::option::Option<Kind> {
         fn from(v: super::super::super::Struct) -> Self {
             Self::Some(Kind::from(v))
         }
     }
-    impl From<super::super::super::ListValue> for Kind {
+    impl ::core::convert::From<super::super::super::ListValue> for Kind {
         fn from(v: super::super::super::ListValue) -> Self {
             Self::ListValue(::buffa::alloc::boxed::Box::new(v))
         }
     }
-    impl From<super::super::super::ListValue> for ::core::option::Option<Kind> {
+    impl ::core::convert::From<super::super::super::ListValue>
+    for ::core::option::Option<Kind> {
         fn from(v: super::super::super::ListValue) -> Self {
             Self::Some(Kind::from(v))
         }
