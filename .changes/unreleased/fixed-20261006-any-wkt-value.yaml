@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **The generated `Any` JSON parser requires the `value` key for a well-known type** (#575). `{"@type": "type.googleapis.com/google.protobuf.BoolValue"}` parsed as a `BoolValue` of `false`, and the same input for `google.protobuf.Value` as a null value, because a missing `value` was read as `null`. It is now an error, as in the reflective parser and in protobuf-go, so input that omits the key no longer parses. An explicit `"value": null` keeps its meaning, and a message without a special JSON mapping, `Empty` included, still needs no `value` key.
+time: 2026-10-06T21:26:50Z
