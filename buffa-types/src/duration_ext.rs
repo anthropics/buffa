@@ -35,6 +35,35 @@ impl TryFrom<Duration> for core::time::Duration {
     /// negative but otherwise well-formed (e.g. `seconds < 0`, `nanos ≤ 0`),
     /// since [`core::time::Duration`] cannot represent negative values.
     fn try_from(d: Duration) -> Result<Self, Self::Error> {
+        Self::try_from(&d)
+    }
+}
+
+impl TryFrom<&Duration> for core::time::Duration {
+    type Error = DurationError;
+
+    /// Convert a borrowed protobuf [`Duration`] to a [`core::time::Duration`],
+    /// leaving the message in place.
+    ///
+    /// Available without the `std` feature.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use buffa_types::Duration;
+    ///
+    /// let proto = Duration::from_millis(1_500);
+    /// let duration: core::time::Duration = (&proto).try_into().unwrap();
+    /// assert_eq!(duration, core::time::Duration::from_millis(1_500));
+    /// assert_eq!(proto.seconds, 1);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DurationError::InvalidNanos`] if `nanos` is out of range or
+    /// its sign is inconsistent with `seconds`. Returns
+    /// [`DurationError::NegativeDuration`] for a well-formed negative duration.
+    fn try_from(d: &Duration) -> Result<Self, Self::Error> {
         // Protobuf spec: nanos ∈ [-999_999_999, 999_999_999].
         // Use a range check rather than .abs() to avoid overflow on i32::MIN.
         if !(-999_999_999..=999_999_999).contains(&d.nanos) {

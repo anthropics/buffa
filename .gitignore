@@ -24,3 +24,8 @@ fuzz/corpus/
 
 # IDEs
 .idea/
+
+# buffa-build's protoc dot-path test creates its fixture inside the crate
+# directory, because it needs paths relative to the working directory. An
+# interrupted run leaves the directory behind.
+/buffa-build/.tmp*/

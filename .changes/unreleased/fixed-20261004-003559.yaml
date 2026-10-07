@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a `required` label outside proto2, and a required extension** (#537). A field with `LABEL_REQUIRED` linked in a proto3 or editions file, where protoc refuses it: proto3 has no required fields, and an edition expresses them with `features.field_presence = LEGACY_REQUIRED`. It is now `PoolError::RequiredLabelOutsideProto2`. An extension that is required, by its label in proto2 or by that feature in an edition, also linked, and is now `PoolError::RequiredExtension`. A proto2 `required` field and an editions `LEGACY_REQUIRED` field of a message link as before.
+time: 2026-10-04T00:35:59.454342+02:00

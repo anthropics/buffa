@@ -160,8 +160,9 @@ pub trait ReflectMessage {
     ///
     /// For explicit-presence fields (proto2 `optional`/`required`, proto3
     /// `optional`, message-typed fields), this is "was a value written".
-    /// For implicit-presence fields, this is "is non-default". For
-    /// repeated/map fields, this is "non-empty".
+    /// For implicit-presence fields, this is "is non-default". A `float` or
+    /// `double` is at its default only when it is `+0.0`, so `-0.0` and NaN
+    /// are present. For repeated/map fields, this is "non-empty".
     fn has(&self, field: &FieldDescriptor) -> bool;
 
     /// Visit every set field.

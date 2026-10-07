@@ -57,6 +57,33 @@ fn string_value_view_reflects_string() {
 }
 
 #[test]
+fn float_wrapper_presence_is_by_bit_pattern() {
+    for (value, set) in [(-0.0, true), (0.0, false), (f64::NAN, true)] {
+        let double = wkt::DoubleValue {
+            value,
+            ..Default::default()
+        };
+        let bytes = double.encode_to_vec();
+        let view = wkt_view::DoubleValueView::decode_view(&bytes).expect("decode_view");
+        for r in [&double as &dyn ReflectMessage, &view] {
+            let md = r.message_descriptor();
+            assert_eq!(r.has(md.field(1).unwrap()), set, "{value}");
+        }
+
+        let float = wkt::FloatValue {
+            value: value as f32,
+            ..Default::default()
+        };
+        let bytes = float.encode_to_vec();
+        let view = wkt_view::FloatValueView::decode_view(&bytes).expect("decode_view");
+        for r in [&float as &dyn ReflectMessage, &view] {
+            let md = r.message_descriptor();
+            assert_eq!(r.has(md.field(1).unwrap()), set, "{value}");
+        }
+    }
+}
+
+#[test]
 fn struct_view_reflects_map_of_nested_value_oneof() {
     // Struct.fields is map<string, Value>; Value.kind is a oneof. This
     // exercises the two trickiest WKT reflection paths together: a map whose

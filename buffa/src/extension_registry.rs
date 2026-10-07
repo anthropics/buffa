@@ -1103,6 +1103,22 @@ mod tests {
     }
 
     #[test]
+    fn string_to_json_reports_an_invalid_last_record_as_missing() {
+        let mut f = fields_with(UnknownField {
+            number: 1,
+            data: UnknownFieldData::LengthDelimited(b"earlier".to_vec()),
+        });
+        f.push(UnknownField {
+            number: 1,
+            data: UnknownFieldData::LengthDelimited(vec![0xFF]),
+        });
+        assert_eq!(
+            string_to_json(1, &f).unwrap_err(),
+            "extension field 1: no value present"
+        );
+    }
+
+    #[test]
     fn bytes_base64_roundtrip() {
         let f = fields_with(UnknownField {
             number: 1,

@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **FieldMask JSON validates each path in one pass, without allocating** (#585). Checking that a path survives the `snake_case` to `lowerCamelCase` round trip built two `String`s per path; the check now reads the path's bytes once. The typed and the reflective JSON codecs accept and reject the same paths as before.
+time: 2026-10-07T00:13:47.448074+02:00

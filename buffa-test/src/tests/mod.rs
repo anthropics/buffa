@@ -81,6 +81,7 @@ mod closed_enum;
 mod collision;
 mod cross_ref;
 mod debug_redact;
+mod deprecated;
 mod edge_cases;
 #[cfg(has_edition_2024)]
 mod editions_2024;
@@ -107,6 +108,7 @@ mod open_enums;
 mod owned_view;
 mod proto2;
 mod proto3_semantics;
+mod remote_derive_serde;
 mod repeated_type;
 mod rope_encode;
 mod scoped_unknown_fields;

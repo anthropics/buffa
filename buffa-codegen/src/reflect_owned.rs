@@ -63,6 +63,7 @@ pub(crate) fn reflect_owned_impls(
     let current_package = scope.current_package;
     let proto_fqn = scope.proto_fqn;
     let features = scope.features;
+    let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, proto_fqn);
     let oneof_idents = scope.oneof_idents;
     let oneof_prefix = scope.oneof_prefix;
     let nesting = scope.nesting;
@@ -191,7 +192,11 @@ pub(crate) fn reflect_owned_impls(
                     let variant = scalar_variant(ty);
                     let has_val = match ty {
                         Type::TYPE_BOOL => quote! { self.#id },
-                        Type::TYPE_FLOAT | Type::TYPE_DOUBLE => quote! { self.#id != 0.0 },
+                        // By bit pattern, so `-0.0` and NaN are set, as in the
+                        // encoder's `is_non_default_expr`.
+                        Type::TYPE_FLOAT | Type::TYPE_DOUBLE => {
+                            quote! { self.#id.to_bits() != 0 }
+                        }
                         _ => quote! { self.#id != 0 },
                     };
                     (quote! { #vr::#variant(self.#id) }, has_val)
@@ -303,6 +308,7 @@ pub(crate) fn reflect_owned_impls(
     };
 
     Ok(quote! {
+        #deprecated_field_allow
         impl ::buffa_descriptor::reflect::ReflectMessage for #name_ident {
             fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
                 #pool.message(Self::__buffa_reflect_message_index())

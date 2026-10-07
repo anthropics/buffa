@@ -205,7 +205,11 @@ pub(crate) fn reflect_view_impls(
                     let variant = scalar_variant(ty);
                     let has_val = match ty {
                         Type::TYPE_BOOL => quote! { self.#id },
-                        Type::TYPE_FLOAT | Type::TYPE_DOUBLE => quote! { self.#id != 0.0 },
+                        // By bit pattern, so `-0.0` and NaN are set, as in the
+                        // encoder's `is_non_default_expr`.
+                        Type::TYPE_FLOAT | Type::TYPE_DOUBLE => {
+                            quote! { self.#id.to_bits() != 0 }
+                        }
                         _ => quote! { self.#id != 0 },
                     };
                     (quote! { #vr::#variant(self.#id) }, has_val)
