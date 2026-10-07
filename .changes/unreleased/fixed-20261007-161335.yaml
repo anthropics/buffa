@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Remote derives handle lifetime names that match generated parameters.** Previously, serde or arbitrary derives failed to compile when the newtype used one of those names. The generated impls now choose an unused lifetime name.'
+time: 2026-10-07T16:13:35.304956+02:00

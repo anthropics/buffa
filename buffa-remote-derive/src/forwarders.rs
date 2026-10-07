@@ -4,8 +4,10 @@
 //! emitted unconditionally. The crate docs show how a consumer makes it
 //! conditional with `cfg_attr`. Reflection impls are written by hand.
 
-use proc_macro2::{Ident, Span, TokenStream};
-use quote::quote;
+use std::collections::HashSet;
+
+use proc_macro2::{Ident, Span, TokenStream, TokenTree};
+use quote::{quote, ToTokens};
 use syn::{parse_quote, GenericParam, Lifetime, LifetimeParam, WherePredicate};
 
 use crate::remote_field::RemoteField;
@@ -53,7 +55,7 @@ pub fn serde(remote: &RemoteField, form: SerdeForm) -> TokenStream {
         ..
     } = remote;
     let krate = Ident::new("serde", span);
-    let lifetime: Lifetime = parse_quote!('__buffa_de);
+    let lifetime = fresh_lifetime(generics, field_ty, "__buffa_de");
     let mut ser_generics = generics.clone();
     let mut de_generics = generics.clone();
     de_generics.params.insert(
@@ -254,7 +256,7 @@ pub fn arbitrary(
     // A fresh lifetime for `Arbitrary<'a>`, inserted ahead of the struct's own
     // parameters (lifetimes must precede types) and named so it cannot collide
     // with one the newtype declares.
-    let lifetime: Lifetime = parse_quote!('__buffa_arb);
+    let lifetime = fresh_lifetime(generics, &remote.field_ty, "__buffa_arb");
     let mut arb_generics = generics.clone();
     arb_generics.params.insert(
         0,
@@ -301,9 +303,75 @@ pub fn arbitrary(
     }
 }
 
+fn fresh_lifetime(generics: &syn::Generics, field_ty: &syn::Type, stem: &str) -> Lifetime {
+    let mut used = HashSet::new();
+    collect_lifetime_names(generics.to_token_stream(), &mut used);
+    if let Some(where_clause) = &generics.where_clause {
+        collect_lifetime_names(where_clause.to_token_stream(), &mut used);
+    }
+    collect_lifetime_names(field_ty.to_token_stream(), &mut used);
+    for suffix in 0usize.. {
+        let name = if suffix == 0 {
+            stem.to_string()
+        } else {
+            format!("{stem}_{suffix}")
+        };
+        if !used.contains(&name) {
+            return Lifetime::new(&format!("'{name}"), Span::call_site());
+        }
+    }
+    unreachable!()
+}
+
+fn collect_lifetime_names(tokens: TokenStream, names: &mut HashSet<String>) {
+    let mut tokens = tokens.into_iter().peekable();
+    while let Some(token) = tokens.next() {
+        match token {
+            TokenTree::Punct(punct) if punct.as_char() == '\'' => {
+                if let Some(TokenTree::Ident(ident)) = tokens.peek() {
+                    names.insert(ident.to_string());
+                }
+            }
+            TokenTree::Group(group) => collect_lifetime_names(group.stream(), names),
+            _ => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use syn::parse_quote;
+
+    #[test]
+    fn fresh_lifetime_skips_existing_names() {
+        let generics: syn::Generics = parse_quote!(<'__buffa_de, '__buffa_de_1, T>);
+        let field_ty: syn::Type = parse_quote!(T);
+        assert_eq!(
+            super::fresh_lifetime(&generics, &field_ty, "__buffa_de").to_string(),
+            "'__buffa_de_2"
+        );
+    }
+
+    #[test]
+    fn fresh_lifetime_skips_higher_ranked_names() {
+        let mut generics: syn::Generics = parse_quote!(<T>);
+        generics.where_clause = Some(parse_quote!(where T: for<'__buffa_de> Fn(&'__buffa_de ())));
+        let field_ty: syn::Type = parse_quote!(T);
+        assert_eq!(
+            super::fresh_lifetime(&generics, &field_ty, "__buffa_de").to_string(),
+            "'__buffa_de_1"
+        );
+    }
+
+    #[test]
+    fn fresh_lifetime_skips_field_type_names() {
+        let generics: syn::Generics = parse_quote!(<T>);
+        let field_ty: syn::Type = parse_quote!(for<'__buffa_de> fn(&'__buffa_de ()) -> T);
+        assert_eq!(
+            super::fresh_lifetime(&generics, &field_ty, "__buffa_de").to_string(),
+            "'__buffa_de_1"
+        );
+    }
 
     #[test]
     fn serde_opt_in_is_per_type_and_repeatable() {
