@@ -964,7 +964,7 @@ mod tests {
     /// `set_type_registry` replaces the JSON and the text halves together, so
     /// the `json` and `text` tests must share one lock.
     #[cfg(any(feature = "json", feature = "text"))]
-    static GLOBAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static GLOBAL_LOCK: &std::sync::Mutex<()> = &crate::test_doubles::REGISTRY_TEST_LOCK;
 
     #[test]
     fn default_is_empty() {
