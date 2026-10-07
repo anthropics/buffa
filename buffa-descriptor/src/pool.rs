@@ -356,6 +356,10 @@ pub enum PoolError {
     /// An extension always has presence. A proto3 field reports
     /// [`Proto3FieldWithDefault`](Self::Proto3FieldWithDefault) instead.
     ImplicitPresenceFieldWithDefault { field: String },
+    /// A singular enum field has implicit presence but uses a closed enum.
+    /// Closed enum fields require presence to distinguish an unset field
+    /// from its default value.
+    ImplicitPresenceClosedEnum { field: String },
     /// A field marked `proto3_optional` is not declared in a proto3 file.
     Proto3OptionalOutsideProto3 { field: String },
     /// A field marked `proto3_optional` does not have optional cardinality.
@@ -680,6 +684,10 @@ impl core::fmt::Display for PoolError {
             Self::ImplicitPresenceFieldWithDefault { field } => write!(
                 f,
                 "field {field} has implicit presence and declares a default value"
+            ),
+            Self::ImplicitPresenceClosedEnum { field } => write!(
+                f,
+                "field {field} has implicit presence and uses a closed enum"
             ),
             Self::Proto3OptionalOutsideProto3 { field } => write!(
                 f,
@@ -1406,6 +1414,18 @@ impl DescriptorPool {
             }
         }
         self.finalize_field_enum_types(first_new_message, first_new_extension);
+        for message in &self.messages[first_new_message..] {
+            for field in &message.fields {
+                if matches!(field.kind, FieldKind::Singular(SingularKind::Enum(_)))
+                    && field.presence == FieldPresence::Implicit
+                    && field.enum_type == Some(EnumType::Closed)
+                {
+                    return Err(PoolError::ImplicitPresenceClosedEnum {
+                        field: format!("{}.{}", message.full_name, field.name),
+                    });
+                }
+            }
+        }
 
         // Record the symbol → file index (for `FindFileContainingSymbol`).
         for (i, f) in new_files.iter().enumerate() {

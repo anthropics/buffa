@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects singular enum fields with implicit presence when their enum is closed.** protoc rejects this combination too. The check runs after enum types are resolved, so enums declared later or in imported files are checked. Repeated fields, oneof members and extensions remain valid.
+time: 2026-10-07T10:30:00+02:00
