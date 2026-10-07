@@ -5,6 +5,8 @@ use bytes::{Buf, BufMut};
 use crate::error::DecodeError;
 use crate::message_field::DefaultInstance;
 
+pub(crate) static REGISTRY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Test double whose `compute_size` reports a caller-chosen value and whose
 /// `write_to` writes nothing — lets over-limit encode paths be exercised
 /// without materializing gigabytes. (buffa-types carries its own copy in
