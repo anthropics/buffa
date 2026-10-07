@@ -801,10 +801,9 @@ fn inline_proto2_required_no_json_skip() {
 
 #[test]
 fn inline_proto2_custom_deserialize_honours_struct_default() {
-    // Regression: custom Deserialize (triggered by oneof) used
-    // var.unwrap_or_default() which calls i32::default() = 0, ignoring the
-    // struct's custom Default impl that sets bar: 42 per [default = 42].
-    // The derive path (#[serde(default)]) correctly uses the struct Default.
+    // Regression: generated Deserialize used var.unwrap_or_default(), which
+    // calls i32::default() = 0 and ignores the struct's custom Default impl
+    // that sets bar: 42 per [default = 42]. It must start from struct Default.
     let content = generate_proto(
         r#"
         syntax = "proto2";
@@ -2269,8 +2268,7 @@ fn json_codegen_qualifies_serde_paths() {
 // path gets; `buffa-test/src/tests/strict_json.rs` covers what the generated
 // code then does at parse time.
 
-/// A proto with one derive-path message (no oneof, no extension ranges) and
-/// one hand-written-visitor message (a real oneof).
+/// A proto with a plain message and one with a real oneof.
 const STRICT_JSON_PROTO: &str = r#"
     syntax = "proto3";
     package t;
@@ -2312,28 +2310,30 @@ fn generate_warnings(proto: &str, config: &CodeGenConfig) -> Vec<String> {
 fn deny_unknown_json_fields_off_by_default() {
     let content = generate_proto(STRICT_JSON_PROTO, &json_no_views());
     assert!(!content.contains("deny_unknown_fields"));
-    // The lenient terminal arm in the oneof message's visitor.
+    assert!(content.contains("strict_unknown_fields()"));
+    assert!(content.contains("unwrap_or(false)"));
     assert!(content.contains("IgnoredAny"));
 }
 
 #[test]
-fn deny_unknown_json_fields_uses_serdes_attribute_on_the_derive_path() {
+fn deny_unknown_json_fields_sets_the_custom_visitor_default() {
     let content = generate_proto(STRICT_JSON_PROTO, &json_strict());
-    assert!(content.contains("serde(deny_unknown_fields)"));
+    assert!(content.contains("strict_unknown_fields()"));
+    assert!(content.contains("unwrap_or(true)"));
 }
 
 #[test]
 fn deny_unknown_json_fields_uses_a_strict_arm_in_the_custom_visitor() {
     let content = generate_proto(STRICT_JSON_PROTO, &json_strict());
-    // serde's own constructor, so the diagnostic matches the derive path's.
+    // serde's own constructor provides a consistent diagnostic.
     // Qualified, to tell it apart from textproto's `dec.unknown_field()` and
     // the wire decoder's `decode_unknown_field`.
     assert!(content.contains("::unknown_field("));
     // Both spellings of every oneof variant are named as accepted.
     assert!(content.contains("\"bName\""));
     assert!(content.contains("\"b_name\""));
-    // The message with a oneof has no lenient skip left.
-    assert!(!content.contains("IgnoredAny"));
+    // The runtime override can still select lenient behavior.
+    assert!(content.contains("IgnoredAny"));
 }
 
 #[test]
@@ -2395,7 +2395,7 @@ fn deny_unknown_json_fields_in_scopes_to_matching_messages() {
     let mut config = json_no_views();
     config.deny_unknown_json_fields_in = vec![(".t.Choice".to_string(), true)];
     let content = generate_proto(STRICT_JSON_PROTO, &config);
-    // Choice (custom visitor) is strict; Plain (derive) keeps the default.
+    // Both messages use visitors; only Choice has a strict codegen default.
     assert!(content.contains("::unknown_field("));
     assert!(!content.contains("deny_unknown_fields"));
 }
@@ -2412,17 +2412,10 @@ fn deny_unknown_json_fields_in_rule_matching_nothing_warns() {
     );
 }
 
-/// `#[serde(deny_unknown_fields)]` must never land on a struct that also
-/// carries `#[serde(flatten)]`. serde documents that combination as
-/// unsupported but does not reject it: it compiles and unknown keys are still
-/// reported, but as a bare ``unknown field `x` `` with no expected-key list,
-/// and through the buffering path the wrapper gate in `message.rs` avoids.
-/// buffa emits two kinds of flattened field — the extension-JSON wrapper and
-/// each oneof field — and both force the hand-written-visitor path, so neither
-/// can meet the attribute. serde will not catch a regression, so assert it
-/// here.
+/// Strict unknown-field handling uses the custom visitor, including for a
+/// message with a flattened extension wrapper.
 #[test]
-fn deny_unknown_json_fields_never_meets_the_flattened_extension_wrapper() {
+fn deny_unknown_json_fields_with_extensions_uses_the_custom_visitor() {
     let proto = r#"
         syntax = "proto2";
         package t;
@@ -2440,7 +2433,7 @@ fn deny_unknown_json_fields_never_meets_the_flattened_extension_wrapper() {
         content.contains("serde(flatten)"),
         "no flattened wrapper emitted"
     );
-    // … so strictness came from the visitor, not from serde's attribute.
+    // … and strictness is handled by the visitor.
     assert!(content.contains("::unknown_field("));
     assert!(!content.contains("deny_unknown_fields"));
 }

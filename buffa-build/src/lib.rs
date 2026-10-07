@@ -141,7 +141,8 @@ impl Config {
     /// Enable or disable serde JSON generation (default: false).
     ///
     /// When enabled:
-    /// - Generated message structs get `Serialize`/`Deserialize` derives.
+    /// - Generated message structs derive `Serialize` and get a generated
+    ///   `Deserialize` implementation.
     /// - Generated enum types get `Serialize`/`Deserialize` derives.
     /// - Generated view types (when `generate_views` is also enabled) get a
     ///   manual `impl Serialize` for zero-copy JSON serialization, so
@@ -822,12 +823,13 @@ impl Config {
         self
     }
 
-    /// Make generated JSON deserializers reject unknown keys instead of
-    /// ignoring them (default: `false`, unknown keys are ignored).
+    /// Set the generated default for rejecting unknown JSON keys (default:
+    /// `false`, unknown keys are ignored).
     ///
-    /// Strictness is fixed in the generated type: code that uses the type
-    /// cannot switch it per call or per process. To be strict for selected
-    /// messages only, use
+    /// Callers can override this setting per parse with
+    /// `buffa::json::JsonParseOptions::strict_unknown_fields`. If that runtime
+    /// option is unset, this code-generation setting applies. To set a
+    /// different default for selected messages, use
     /// [`deny_unknown_json_fields_in`](Self::deny_unknown_json_fields_in).
     ///
     /// With [`generate_json`](Self::generate_json) off there are no JSON

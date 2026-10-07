@@ -3,15 +3,14 @@
 //! messages it does not.
 //!
 //! The option is path-scoped in `build.rs`, so `Strict*` and `Lenient*` come
-//! from one codegen run over one proto file — the difference in behaviour is
-//! the rule, not the configuration around it. Both codegen paths are covered:
-//! `StrictPlain` gets `#[serde(deny_unknown_fields)]` on its derived
-//! `Deserialize`, while `StrictOneof` and `StrictExt` get the strict terminal
-//! arm in the hand-written visitor that oneofs and extension ranges force.
+//! from one codegen run over one proto file. The tests cover plain messages,
+//! oneofs and extension ranges. All use the same custom `Deserialize` visitor,
+//! which combines the runtime setting with each message's codegen default.
 
 use super::install_type_registry;
 use crate::strictjson::__buffa::ext::LABEL;
 use crate::strictjson::{LenientOneof, LenientPlain, StrictExt, StrictOneof, StrictPlain};
+use buffa::json::{with_json_parse_options, JsonParseOptions};
 use buffa::ExtensionSet;
 
 /// The `expected one of ...` tail of a serde unknown-field message.
@@ -27,7 +26,7 @@ fn expected_list(msg: &str) -> &str {
 }
 
 #[test]
-fn derive_path_rejects_an_unknown_key() {
+fn plain_message_rejects_an_unknown_key() {
     let err = serde_json::from_str::<StrictPlain>(r#"{"valueTypo": 7}"#)
         .expect_err("unknown key must be rejected");
     let msg = err.to_string();
@@ -89,6 +88,41 @@ fn messages_outside_the_rule_still_ignore_unknown_keys() {
 }
 
 #[test]
+fn runtime_unknown_field_setting_overrides_codegen_behavior() {
+    install_type_registry();
+    let strict = JsonParseOptions::new().strict_unknown_fields(true);
+    let err = with_json_parse_options(&strict, || {
+        serde_json::from_str::<LenientPlain>(r#"{"valueTypo": 7}"#)
+    })
+    .expect_err("runtime strictness must reject an unknown key");
+    assert!(err.to_string().contains("unknown field `valueTypo`"));
+    let err = with_json_parse_options(&strict, || {
+        serde_json::from_str::<LenientOneof>(r#"{"aTypo": 7}"#)
+    })
+    .expect_err("runtime strictness must reject an unknown oneof key");
+    assert!(err.to_string().contains("unknown field `aTypo`"));
+
+    let lenient = JsonParseOptions::new().strict_unknown_fields(false);
+    let parsed = with_json_parse_options(&lenient, || {
+        serde_json::from_str::<StrictPlain>(r#"{"valueTypo": 7, "value": 3}"#)
+    })
+    .expect("runtime leniency must override codegen strictness");
+    assert_eq!(parsed.value, Some(3));
+
+    let parsed = with_json_parse_options(&lenient, || {
+        serde_json::from_str::<StrictOneof>(r#"{"nodeTypo": 7, "plainNode": 2}"#)
+    })
+    .expect("runtime leniency must override oneof codegen strictness");
+    assert!(parsed.node.is_some());
+
+    let parsed = with_json_parse_options(&lenient, || {
+        serde_json::from_str::<StrictExt>(r#"{"xTypo": 7, "x": 4}"#)
+    })
+    .expect("runtime leniency must override extension-message codegen strictness");
+    assert_eq!(parsed.x, Some(4));
+}
+
+#[test]
 fn extension_keys_survive_strictness() {
     install_type_registry();
     // `"[pkg.ext]"` keys are claimed by the extension arm before the terminal
@@ -129,8 +163,8 @@ fn a_malformed_bracketed_key_is_not_mistaken_for_an_extension() {
     }
 }
 
-/// Every field of a message on the hand-written-visitor path stays accepted,
-/// in both spellings, whatever its shape — a synthetic oneof from proto3
+/// Every field of a generated message stays accepted in both spellings,
+/// whatever its shape — a synthetic oneof from proto3
 /// `optional`, a map, a `repeated`, a `google.protobuf.Value`, a plain scalar,
 /// and the real oneof's own variants. A field missing from the visitor's
 /// accepted-key list would reject a valid key, so this pins the list.

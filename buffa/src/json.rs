@@ -6,12 +6,9 @@
 //! implementations.
 //!
 //! The options here are runtime ones: unknown enum *values*
-//! ([`JsonParseOptions::ignore_unknown_enum_values`]) and unregistered
-//! extension keys ([`JsonParseOptions::strict_extension_keys`]). Unknown
-//! *field names* are not governed here: generated deserializers ignore them
-//! unless the code was generated with
-//! `buffa_build::Config::deny_unknown_json_fields` (or its path-scoped
-//! `deny_unknown_json_fields_in`).
+//! ([`JsonParseOptions::ignore_unknown_enum_values`]), unknown field names
+//! ([`JsonParseOptions::strict_unknown_fields`]), and unregistered extension
+//! keys ([`JsonParseOptions::strict_extension_keys`]).
 //!
 //! # Two mutually exclusive APIs: scoped (std) vs global (no_std)
 //!
@@ -32,7 +29,7 @@
 //! ```ignore
 //! use buffa::json::{JsonParseOptions, with_json_parse_options};
 //!
-//! let opts = JsonParseOptions::new().ignore_unknown_enum_values(true);
+//! let opts = JsonParseOptions::new().strict_unknown_fields(true);
 //! let msg = with_json_parse_options(&opts, || {
 //!     serde_json::from_str::<MyMessage>(json_str)
 //! });
@@ -46,7 +43,7 @@
 //!
 //! // Call ONCE during startup (e.g. in your init function).
 //! set_global_json_parse_options(
-//!     &JsonParseOptions::new().ignore_unknown_enum_values(true)
+//!     &JsonParseOptions::new().strict_unknown_fields(true)
 //! );
 //!
 //! // All subsequent JSON deserialization uses these options.
@@ -97,8 +94,8 @@
 ///
 /// ```
 /// # use buffa::json::JsonParseOptions;
-/// let opts = JsonParseOptions::new().ignore_unknown_enum_values(true);
-/// # assert!(opts.ignore_unknown_enum_values);
+/// let opts = JsonParseOptions::new().strict_unknown_fields(true);
+/// # assert_eq!(opts.strict_unknown_fields, Some(true));
 /// ```
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
@@ -128,13 +125,23 @@ pub struct JsonParseOptions {
     /// This flag covers `"[pkg.ext]"` keys only, and only for messages that
     /// preserve unknown fields. Ordinary unknown field names are governed by
     /// the codegen option `buffa_build::Config::deny_unknown_json_fields`,
-    /// which also rejects `"[pkg.ext]"` keys on a message generated with
-    /// preservation off.
+    /// unless [`strict_unknown_fields`](Self::strict_unknown_fields) overrides
+    /// it. A strict setting also rejects `"[pkg.ext]"` keys on a message
+    /// generated with preservation off.
     pub strict_extension_keys: bool,
+    /// Whether generated JSON deserializers reject unknown field names.
+    ///
+    /// `None` keeps the setting from code generation. `Some(true)` rejects
+    /// unknown names and `Some(false)` ignores them, overriding the
+    /// code-generation setting for the current parse. Extension keys such as
+    /// `"[pkg.ext]"` are governed by
+    /// [`strict_extension_keys`](Self::strict_extension_keys).
+    /// Default: `None`.
+    pub strict_unknown_fields: Option<bool>,
 }
 
 impl JsonParseOptions {
-    /// Create new parse options with all flags at their default (strict) values.
+    /// Create new parse options with all flags at their default values.
     pub fn new() -> Self {
         Self::default()
     }
@@ -155,6 +162,17 @@ impl JsonParseOptions {
         self.strict_extension_keys = strict;
         self
     }
+
+    /// Set whether generated JSON deserializers reject unknown field names.
+    ///
+    /// This overrides the code-generation setting for parses inside
+    /// [`with_json_parse_options`] or, in `no_std` builds, after
+    /// `set_global_json_parse_options`.
+    #[must_use]
+    pub fn strict_unknown_fields(mut self, strict: bool) -> Self {
+        self.strict_unknown_fields = Some(strict);
+        self
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -171,13 +189,14 @@ mod std_impl {
             Cell::new(JsonParseOptions {
                 ignore_unknown_enum_values: false,
                 strict_extension_keys: false,
+                strict_unknown_fields: None,
             })
         };
     }
 
     /// Run a closure with the given parse options active.
     ///
-    /// The options affect enum deserialization within the closure. This is
+    /// The options affect generated-message deserialization within the closure. This is
     /// **thread-local** state — concurrent parses on different threads are
     /// independent. The previous options are restored when the closure returns
     /// (or panics), so scopes nest correctly.
@@ -203,6 +222,10 @@ mod std_impl {
 
     pub(crate) fn strict_extension_keys() -> bool {
         OPTIONS.with(|c| c.get().strict_extension_keys)
+    }
+
+    pub(crate) fn strict_unknown_fields() -> Option<bool> {
+        OPTIONS.with(|c| c.get().strict_unknown_fields)
     }
 }
 
@@ -238,6 +261,7 @@ mod global {
     static DEFAULT: JsonParseOptions = JsonParseOptions {
         ignore_unknown_enum_values: false,
         strict_extension_keys: false,
+        strict_unknown_fields: None,
     };
 
     /// Set the global JSON parse options.
@@ -294,6 +318,10 @@ mod global {
     pub(crate) fn strict_extension_keys() -> bool {
         get().strict_extension_keys
     }
+
+    pub(crate) fn strict_unknown_fields() -> Option<bool> {
+        get().strict_unknown_fields
+    }
 }
 
 #[cfg(not(feature = "std"))]
@@ -333,6 +361,23 @@ pub(crate) fn strict_extension_keys() -> bool {
     }
 }
 
+/// Returns the runtime override for unknown field names, when one is active.
+///
+/// This is public for generated code and is not intended as a direct
+/// application entry point.
+#[doc(hidden)]
+#[must_use]
+pub fn strict_unknown_fields() -> Option<bool> {
+    #[cfg(feature = "std")]
+    {
+        std_impl::strict_unknown_fields()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        global::strict_unknown_fields()
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -362,6 +407,14 @@ mod tests {
         });
         // Restored after closure returns.
         assert!(!ignore_unknown_enum_values());
+    }
+
+    #[test]
+    fn thread_local_scope_controls_unknown_field_strictness() {
+        assert_eq!(strict_unknown_fields(), None);
+        let opts = JsonParseOptions::new().strict_unknown_fields(true);
+        with_json_parse_options(&opts, || assert_eq!(strict_unknown_fields(), Some(true)));
+        assert_eq!(strict_unknown_fields(), None);
     }
 
     #[test]
@@ -416,23 +469,30 @@ mod tests {
             "unset global should return strict defaults"
         );
         assert_eq!(*global::get(), JsonParseOptions::default());
+        assert_eq!(global::strict_unknown_fields(), None);
 
         // Phase 2: first set wins, locks in.
-        let lenient = JsonParseOptions::new().ignore_unknown_enum_values(true);
-        global::set_global_json_parse_options(&lenient);
+        let configured = JsonParseOptions::new()
+            .ignore_unknown_enum_values(true)
+            .strict_unknown_fields(true);
+        global::set_global_json_parse_options(&configured);
         assert!(global::ignore_unknown_enum_values());
+        assert_eq!(global::strict_unknown_fields(), Some(true));
 
         // Phase 3: idempotent re-init with identical options — no panic.
-        global::set_global_json_parse_options(&lenient);
-        global::set_global_json_parse_options(&lenient);
+        global::set_global_json_parse_options(&configured);
+        global::set_global_json_parse_options(&configured);
         assert!(global::ignore_unknown_enum_values());
+        assert_eq!(global::strict_unknown_fields(), Some(true));
 
         // Phase 4: mismatch → debug_assert.
         //
         // Run in a child thread so the panic is catchable (debug_assert panics
         // without unwinding the current test); in release builds this phase
         // asserts the first call's options remain in effect instead.
-        let strict = JsonParseOptions::new().ignore_unknown_enum_values(false);
+        let strict = JsonParseOptions::new()
+            .ignore_unknown_enum_values(false)
+            .strict_unknown_fields(false);
         let result = std::thread::spawn(move || {
             global::set_global_json_parse_options(&strict);
         })
@@ -467,7 +527,8 @@ mod tests {
         // Either way: first call's options remain in effect.
         assert!(
             global::ignore_unknown_enum_values(),
-            "first call's lenient options should remain in effect after mismatch"
+            "first call's options should remain in effect after mismatch"
         );
+        assert_eq!(global::strict_unknown_fields(), Some(true));
     }
 }

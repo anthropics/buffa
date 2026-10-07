@@ -201,8 +201,8 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.generate_views(bool)` | `true` | Generate zero-copy view types |
 | `.generate_json(bool)` | `false` | Generate serde Serialize/Deserialize for proto3 JSON |
 | `.generate_text(bool)` | `false` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
-| `.deny_unknown_json_fields(bool)` | `false` | Reject unknown keys when parsing JSON instead of ignoring them; see [Unknown fields in JSON](#unknown-fields-in-json) |
-| `.deny_unknown_json_fields_in(&[...])` | — | Reject unknown JSON keys for matching messages and the messages nested in them (proto-path prefixes), on top of the global setting. Rules can only enable |
+| `.deny_unknown_json_fields(bool)` | `false` | Set the default for rejecting unknown JSON keys; callers can override it per parse with `JsonParseOptions`; see [Unknown fields in JSON](#unknown-fields-in-json) |
+| `.deny_unknown_json_fields_in(&[...])` | — | Set the default for matching messages and nested messages (proto-path prefixes), on top of the global setting. Rules can only enable; callers can override the result per parse |
 | `.preserve_unknown_fields(bool)` | `true` | Preserve unknown fields for round-trip fidelity |
 | `.preserve_unknown_fields_in(&[...])` | — | Re-enable unknown-field preservation for matching messages and the messages nested in them (proto-path prefixes). Pair with `.preserve_unknown_fields(false)` to keep the memory savings globally while selected types still round-trip; see [Path-scoped re-enable](#path-scoped-re-enable) |
 | `.override_feature_in(path, feature)` | — | Apply a path-scoped editions feature override to the compiled descriptors — for protos you cannot modify; see [Enums](#enumvaluet--type-safe-open-enums) for the `enum_type` override's semantics |
@@ -624,8 +624,8 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `text=true` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
 | `unknown_fields=false` | Disable unknown field preservation |
 | `unknown_fields_in=<path>` | Re-enable unknown-field preservation for matching messages and the messages nested in them. Repeatable; same proto-path prefix matching as `open_enums_in`; see [Path-scoped re-enable](#path-scoped-re-enable) |
-| `deny_unknown_json_fields=true` | Reject unknown keys when parsing JSON instead of ignoring them; without `json=true` it changes nothing and the plugin prints a warning. See [Unknown fields in JSON](#unknown-fields-in-json) |
-| `deny_unknown_json_fields_in=<path>` | Reject unknown JSON keys for matching messages and the messages nested in them; rules can only enable, and need `json=true` like the global option. Repeatable; same proto-path prefix matching as `unknown_fields_in`. See [Unknown fields in JSON](#unknown-fields-in-json) |
+| `deny_unknown_json_fields=true` | Set the default for rejecting unknown JSON keys; without `json=true` it changes nothing and the plugin prints a warning. Callers can override it per parse. See [Unknown fields in JSON](#unknown-fields-in-json) |
+| `deny_unknown_json_fields_in=<path>` | Set the default for matching messages and nested messages; rules can only enable, and need `json=true` like the global option. Callers can override the result per parse. Repeatable; same path matching as `unknown_fields_in`. See [Unknown fields in JSON](#unknown-fields-in-json) |
 | `skip_debug=<path>` | Omit the generated `Debug` impl for matching messages (with their oneof enums) and for enums named exactly, so the crate can write its own. A matched enum needs a hand-written impl to compile. Repeatable; message paths use the same proto-path prefix matching as `unknown_fields_in`. See [`skip_debug` and hand-written `Debug`](#skip_debug-and-hand-written-debug) |
 | `arbitrary=true` | Emit `#[derive(arbitrary::Arbitrary)]` for fuzzing |
 | `gate_impls=true` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface (default: emitted unconditionally) |
@@ -1682,7 +1682,7 @@ cargo add serde --features derive
 cargo add serde_json
 ```
 
-The direct `serde` dependency is required: the generated `#[derive(::serde::Serialize, ::serde::Deserialize)]` expands to `extern crate serde as _serde;`, so the consuming crate must depend on `serde` itself. `serde_json` is *not* required by generated code (buffa re-exports it where it needs `Value`); add it only if you call `serde_json::to_string` / `from_str` directly, as below.
+The direct `serde` dependency is required because generated code uses `serde` directly, so the consuming crate must depend on `serde` itself. `serde_json` is *not* required by generated code (buffa re-exports it where it needs `Value`); add it only if you call `serde_json::to_string` / `from_str` directly, as below.
 
 ```rust,ignore
 // build.rs
@@ -1793,27 +1793,24 @@ unknown field `maxItemsTypo`, expected one of `maxItems`, `max_items`, `name`, `
 ```
 
 Both spellings of every field stay accepted — the option rejects keys that
-match *no* field, not the proto-name spelling. Messages whose `Deserialize` is
-hand-written (those with a oneof, or with extension ranges under preservation)
-report through the same serde constructor as the derived ones, so the
-diagnostic does not depend on a message's shape.
+match *no* field, not the proto-name spelling. Generated messages use the same
+visitor, so the error does not depend on whether a message declares a oneof or
+extension range. This codegen setting is the default; callers can choose strict
+or lenient handling for an individual parse:
 
-The option is a codegen-time switch rather than a
-[`JsonParseOptions`](#json-parse-options) flag, because serde's derive has no
-runtime hook. A runtime flag has two possible designs. The first leaves
-derive-path messages lenient, which makes strictness depend on whether a
-message happens to declare a oneof. The second emits the hand-written visitor
-for the messages a rule names, so their terminal arm can consult the ambient
-state. The codegen-time switch costs nothing when off and needs no ambient
-state on `no_std`.
+```rust,ignore
+use buffa::json::{JsonParseOptions, with_json_parse_options};
 
-A codegen-time switch fixes strictness in the generated type. A library crate
-that publishes those types decides for its consumers, who have no override
-short of regenerating, and one process cannot hold both behaviours for the
-same type. A caller that must be lenient for some inputs and strict for others
-needs a runtime override, which buffa does not have yet. The second design
-would provide one, and only opted-in messages would pay for it;
-[#444](https://github.com/anthropics/buffa/issues/444) tracks it.
+let opts = JsonParseOptions::new().strict_unknown_fields(true);
+let msg = with_json_parse_options(&opts, || {
+    serde_json::from_str::<Config>(json)
+})?;
+```
+
+`strict_unknown_fields(true)` rejects unknown names and `false` ignores them,
+overriding the codegen setting. If it is not set, the codegen setting applies.
+In `no_std` builds, set it with `set_global_json_parse_options` instead; the
+setting then applies to every parse.
 
 Weigh these consequences before you enable the option for every message:
 
@@ -1825,28 +1822,33 @@ Weigh these consequences before you enable the option for every message:
   rejected too. With preservation on they keep going through the extension
   registry, where `JsonParseOptions::strict_extension_keys` governs
   unregistered ones.
-- Only messages generated in this run become strict. A field whose type comes
-  from another crate through `extern_path` still ignores unknown keys inside
-  it, unless that crate was generated with the option too.
-- The option emits `#[serde(deny_unknown_fields)]` on messages that derive
-  `Deserialize`. If you already add that attribute yourself through
-  `type_attribute`, remove it first; serde rejects the duplicate at compile
-  time.
+- The runtime option only affects messages generated with runtime-aware JSON
+  deserializers. A field whose type comes from another crate through
+  `extern_path` follows that crate's generated code and runtime option.
+- Serde `Deserialize` attributes added with `type_attribute` or
+  `field_attribute` are not applied by the generated visitor. Use
+  `deny_unknown_json_fields` or `strict_unknown_fields` for unknown names.
 
 ### JSON parse options
 
-For lenient parsing (e.g., ignoring unknown enum string values):
+Parse options can combine enum handling and unknown field handling:
 
 ```rust,ignore
 use buffa::json::{JsonParseOptions, with_json_parse_options};
 
-let opts = JsonParseOptions::new().ignore_unknown_enum_values(true);
+let opts = JsonParseOptions::new()
+    .ignore_unknown_enum_values(true)
+    .strict_unknown_fields(true);
 let msg = with_json_parse_options(&opts, || {
     serde_json::from_str::<Person>(json)
 })?;
 ```
 
-The option covers enum values that the enum does not declare. A value that cannot be an enum value, such as `true` or `1.5`, is a parse error with the option on or off; the `buffa::json` module docs give the result for each kind of field.
+The enum option covers enum values the enum does not declare. A value that
+cannot be an enum value, such as `true` or `1.5`, is a parse error with the
+option on or off. `strict_unknown_fields` overrides the codegen default for
+generated messages; `None` keeps that default. See the [`buffa::json` module
+docs](https://docs.rs/buffa/latest/buffa/json/) for details.
 
 ## Text format (textproto)
 
@@ -2081,7 +2083,7 @@ In `no_std` mode:
 
 - Map fields use `hashbrown::HashMap` instead of `std::collections::HashMap`
 - `Timestamp` conversions to/from `std::time::SystemTime` are unavailable; `Duration` conversions to/from `core::time::Duration` remain available
-- Scoped [`with_json_parse_options`] is unavailable (requires thread-local); use [`set_global_json_parse_options`] to set options process-wide once at startup. The options cannot vary between individual parse calls. The `buffa::json` module docs list how `ignore_unknown_enum_values` treats each field shape, and the one shape where `no_std` differs.
+- Scoped [`with_json_parse_options`] is unavailable (requires thread-local); use [`set_global_json_parse_options`] to set options process-wide once at startup. The options cannot vary between individual parse calls. This includes `strict_unknown_fields`; `None` keeps each message's codegen setting. The `buffa::json` module docs list how `ignore_unknown_enum_values` treats each field shape, and the one shape where `no_std` differs.
 - JSON serialization via serde works fully (both `serde` and `serde_json` support `no_std` + `alloc`)
 
 [`with_json_parse_options`]: https://docs.rs/buffa/latest/buffa/json/fn.with_json_parse_options.html
@@ -2241,8 +2243,9 @@ let msg = with_json_parse_options(&opts, || serde_json::from_str::<MyMsg>(json))
 ```
 
 `strict_extension_keys` covers `"[...]"` keys only. Ordinary unknown field
-names are governed by the codegen-time
-[`deny_unknown_json_fields`](#unknown-fields-in-json) instead; that section
+names use the codegen default from
+[`deny_unknown_json_fields`](#unknown-fields-in-json), which
+`strict_unknown_fields` can override per parse. The unknown-fields section
 also says what happens to `"[...]"` keys on a message generated with
 unknown-field preservation off.
 

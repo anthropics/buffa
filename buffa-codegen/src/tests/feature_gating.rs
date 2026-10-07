@@ -245,8 +245,8 @@ fn gated_message_serde_derive_is_cfg_attr() {
         "struct serde derive must be cfg_attr-gated: {content}"
     );
     assert!(
-        content.contains(r#"#[cfg_attr(feature = "json", serde(default))]"#),
-        "struct serde(default) must be cfg_attr-gated: {content}"
+        !content.contains("serde(default)"),
+        "custom deserializers do not use the derive default attr: {content}"
     );
     // Field-level serde attrs must also be cfg_attr-gated, otherwise they
     // are unrecognised when the derive is gated off. prettyplease may

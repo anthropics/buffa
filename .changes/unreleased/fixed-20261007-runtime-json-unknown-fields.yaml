@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`JsonParseOptions::strict_unknown_fields` controls unknown JSON field names at parse time.** `true` rejects them, `false` ignores them, and the default keeps each message's code-generation setting.
+time: 2026-10-07T16:07:15+02:00

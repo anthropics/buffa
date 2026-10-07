@@ -125,14 +125,18 @@ fn test_json_message_has_derive_and_field_attrs() {
     let files = generate(&[file], &["scalars_json.proto".to_string()], &json_config())
         .expect("should generate");
     let content = &joined(&files);
-    // Struct gets serde derive and default
+    // Struct gets serde serialization derive, plus generated deserialization.
     assert!(
-        content.contains("derive(::serde::Serialize, ::serde::Deserialize)"),
-        "missing serde derive on struct: {content}"
+        content.contains("derive(::serde::Serialize)"),
+        "missing serde serialization derive on struct: {content}"
     );
     assert!(
-        content.contains("serde(default)"),
-        "missing #[serde(default)] on struct: {content}"
+        content.contains("impl<'de> ::serde::Deserialize<'de> for Msg"),
+        "missing generated deserializer on struct: {content}"
+    );
+    assert!(
+        !content.contains("serde(default)"),
+        "custom deserializer does not need #[serde(default)]: {content}"
     );
     // i32 field: rename + skip_serializing_if
     assert!(
