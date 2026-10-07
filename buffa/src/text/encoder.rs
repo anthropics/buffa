@@ -56,8 +56,10 @@ pub struct TextEncoder<'a> {
     emit_unknown: bool,
     last: Last,
     /// The extension name that
-    /// [`write_extension_fields`](Self::write_extension_fields) wrote, for as
-    /// long as it is the last thing written.
+    /// [`write_extension_fields`](Self::write_extension_fields) wrote. It is
+    /// set only while that entry's `text_encode` runs and the name is still
+    /// the last thing written: the next write clears it, and so does the
+    /// return of `text_encode`.
     /// [`write_repeated_extension`](Self::write_repeated_extension) writes it
     /// again before each element after the first.
     ext_name: Option<&'static str>,
@@ -229,6 +231,7 @@ impl<'a> TextEncoder<'a> {
         &mut self,
         messages: &[M],
     ) -> core::fmt::Result {
+        debug_assert!(self.ext_name.is_none() || self.last == Last::Name);
         match (self.ext_name, messages) {
             (Some(name), [first, rest @ ..]) => {
                 self.write_message(first)?;
@@ -362,6 +365,7 @@ impl<'a> TextEncoder<'a> {
             self.write_extension_name(entry.full_name)?;
             self.ext_name = Some(entry.full_name);
             (entry.text_encode)(uf.number, fields, self)?;
+            self.ext_name = None;
         }
         Ok(())
     }

@@ -1908,8 +1908,10 @@ msg.encode_text(&mut enc)?;
 `Any` expansion (`[type.googleapis.com/pkg.Type] { ... }`) and the
 `[pkg.ext] { ... }` extension bracket syntax both consult the `TypeRegistry`
 — see [Extensions](#extensions-custom-options). If you already call
-`register_types`, text format picks up those types alongside JSON. The `json`
-and `text` features are independently enableable.
+`register_types`, text format picks up those types alongside JSON. A repeated
+message or group extension prints one `[pkg.ext] { ... }` entry per element and
+also parses `[pkg.ext]: [{ ... }, { ... }]`. The `json` and `text` features are
+independently enableable.
 
 The `text` feature is zero-dependency and fully `no_std` + `alloc`.
 

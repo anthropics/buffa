@@ -224,7 +224,8 @@ pub type AnyTextMergeFn =
 /// Registry entry for a single extension field's textproto conversion.
 ///
 /// Carries fn-ptrs for the `[pkg.ext] { ... }` bracket syntax. Covers
-/// message- and group-typed extensions (the conformance-exercised forms).
+/// message- and group-typed extensions, singular and repeated (the
+/// conformance-exercised forms).
 #[cfg(feature = "text")]
 pub struct TextExtEntry {
     /// Field number on the extendee.
@@ -235,13 +236,27 @@ pub struct TextExtEntry {
     /// decode; a mismatch is a contract violation and fails the parse.
     pub extendee: &'static str,
     /// Extract this extension's value from unknown fields and write it.
-    /// Does not write the `[full_name]` name — the encoder does that.
+    ///
+    /// [`TextEncoder::write_extension_fields`] calls this once per extension
+    /// number, after it has written `[full_name]`, so the function writes
+    /// one value and does not write the name. The repeated helpers
+    /// ([`repeated_message_encode_text`], [`repeated_group_encode_text`])
+    /// are the exception: for each element after the first they have the
+    /// encoder write `[full_name]` again.
+    ///
+    /// [`TextEncoder::write_extension_fields`]: crate::text::TextEncoder::write_extension_fields
     pub text_encode: fn(
         u32,
         &crate::unknown_fields::UnknownFields,
         &mut crate::text::TextEncoder<'_>,
     ) -> core::fmt::Result,
-    /// Consume a value and produce unknown-field records.
+    /// Consume one value and produce unknown-field records.
+    ///
+    /// [`TextDecoder::read_extension`] calls this once per `[full_name]`
+    /// occurrence in the input. Generated `merge_text` appends the records
+    /// of every occurrence to the message's unknown fields.
+    ///
+    /// [`TextDecoder::read_extension`]: crate::text::TextDecoder::read_extension
     pub text_merge: ExtTextMergeFn,
 }
 
@@ -692,21 +707,33 @@ fn oversized_message_error() -> crate::text::ParseError {
 /// Textproto encode for a repeated message extension: write each element as
 /// its own `[full_name] { ... }` entry, in wire order.
 ///
-/// The caller writes `[full_name]` once before the call.
-/// [`TextEncoder::write_extension_fields`] does that for a registered entry,
-/// and the encoder then writes the name again before each element after the
-/// first. After a name that any other caller wrote, the encoder cannot
-/// repeat the name, and the value is the list form `: [{ ... }, ...]`.
+/// Codegen emits
+/// `text_encode: ::buffa::type_registry::repeated_message_encode_text::<Foo>`
+/// in the `TextExtEntry` const of a `repeated Foo` extension when
+/// `generate_text` is on. A hand-written [`TextExtEntry`] can store it the
+/// same way.
 ///
-/// A record that fails to decode as `M` is skipped, as by [`Repeated`]. When
-/// every record is skipped, the value is the empty list `: []`, which parses
-/// back to an extension with zero elements.
+/// [`TextEncoder::write_extension_fields`] writes `[full_name]` and then
+/// calls the entry's `text_encode`. Called that way, this function writes
+/// the first element after that name and has the encoder write the name
+/// again before each later element.
+///
+/// Called directly, after a name the caller wrote with
+/// [`TextEncoder::write_extension_name`], it writes the elements as one list
+/// value, `: [{ ... }, { ... }]`, because the encoder repeats only a name
+/// that `write_extension_fields` wrote. [`repeated_message_merge_text`]
+/// parses the list; [`message_merge_text`] rejects it.
+///
+/// A record that does not decode as `M` is skipped, as [`Repeated`] skips
+/// it. When every record is skipped the value is the empty list `: []` in
+/// both cases, which parses to zero elements.
 ///
 /// # Errors
 ///
 /// Propagates [`core::fmt::Error`] from the underlying writer.
 ///
 /// [`TextEncoder::write_extension_fields`]: crate::text::TextEncoder::write_extension_fields
+/// [`TextEncoder::write_extension_name`]: crate::text::TextEncoder::write_extension_name
 /// [`Repeated`]: crate::extension::codecs::Repeated
 #[cfg(feature = "text")]
 pub fn repeated_message_encode_text<M>(
@@ -723,8 +750,15 @@ where
 }
 
 /// Textproto encode for a repeated group extension. Writes the same text as
-/// [`repeated_message_encode_text`]; the elements are read from `Group`
-/// records, and a record of another wire type is skipped.
+/// [`repeated_message_encode_text`], in the same two forms; the elements are
+/// read from `Group` records, and a record of another wire type is skipped.
+/// [`repeated_group_merge_text`] parses the list form; [`group_merge_text`]
+/// rejects it.
+///
+/// Codegen emits
+/// `text_encode: ::buffa::type_registry::repeated_group_encode_text::<Foo>`
+/// in the `TextExtEntry` const of a repeated group-encoded extension when
+/// `generate_text` is on.
 ///
 /// # Errors
 ///
@@ -746,6 +780,14 @@ where
 /// Textproto merge for a repeated message extension. Accepts a message list
 /// or a single message and returns one length-delimited record per element.
 ///
+/// Called once per `[full_name]` occurrence, so `[x] {..} [x] {..}` and
+/// `[x]: [{..}, {..}]` yield the same records.
+///
+/// Codegen emits
+/// `text_merge: ::buffa::type_registry::repeated_message_merge_text::<Foo>`
+/// in the `TextExtEntry` const of a `repeated Foo` extension when
+/// `generate_text` is on.
+///
 /// # Errors
 ///
 /// Returns a parse error for invalid text, an exceeded decode budget, or a
@@ -765,6 +807,14 @@ where
 
 /// Textproto merge for a repeated group extension. Accepts a message list
 /// or a single message and returns one group record per element.
+///
+/// Called once per `[full_name]` occurrence, so `[x] {..} [x] {..}` and
+/// `[x]: [{..}, {..}]` yield the same records.
+///
+/// Codegen emits
+/// `text_merge: ::buffa::type_registry::repeated_group_merge_text::<Foo>`
+/// in the `TextExtEntry` const of a repeated group-encoded extension when
+/// `generate_text` is on.
 ///
 /// # Errors
 ///
@@ -1262,6 +1312,76 @@ mod tests {
                 s,
                 alloc::format!("{REPEATED_ENTRIES} [x]: [{{n: 1}}, {{}}, {{n: 2}}]")
             );
+
+            clear_text_registry();
+        }
+
+        /// Installs a global registry that holds `text_encode` as extension
+        /// 60 of `pkg.Msg`, named `pkg.custom`, and returns two records at
+        /// that number.
+        fn install_custom_entry(
+            text_encode: fn(
+                u32,
+                &UnknownFields,
+                &mut crate::text::TextEncoder<'_>,
+            ) -> core::fmt::Result,
+        ) -> UnknownFields {
+            let mut reg = TypeRegistry::new();
+            reg.register_text_ext(TextExtEntry {
+                number: 60,
+                full_name: "pkg.custom",
+                extendee: "pkg.Msg",
+                text_encode,
+                text_merge: repeated_message_merge_text::<Inner>,
+            });
+            set_type_registry(reg);
+            let mut dec = crate::text::TextDecoder::new("f: [{ n: 1 }, { n: 2 }]");
+            dec.read_field_name().unwrap();
+            fields_from(repeated_message_merge_text::<Inner>(&mut dec, 60).unwrap())
+        }
+
+        #[test]
+        fn repeated_helper_does_not_repeat_the_name_of_an_entry_that_returned() {
+            fn write_no_value(
+                _: u32,
+                _: &UnknownFields,
+                _: &mut crate::text::TextEncoder<'_>,
+            ) -> core::fmt::Result {
+                Ok(())
+            }
+
+            let _g = GLOBAL_LOCK.lock().unwrap();
+            let fields = install_custom_entry(write_no_value);
+
+            let mut s = alloc::string::String::new();
+            let mut enc = crate::text::TextEncoder::new(&mut s);
+            enc.write_extension_fields("pkg.Msg", &fields).unwrap();
+            repeated_message_encode_text::<Inner>(60, &fields, &mut enc).unwrap();
+            assert_eq!(s, "[pkg.custom]: [{n: 1}, {n: 2}]");
+
+            clear_text_registry();
+        }
+
+        #[test]
+        fn repeated_helper_does_not_repeat_a_name_that_already_has_a_value() {
+            fn value_then_a_direct_call(
+                n: u32,
+                f: &UnknownFields,
+                enc: &mut crate::text::TextEncoder<'_>,
+            ) -> core::fmt::Result {
+                message_encode_text::<Inner>(n, f, enc)?;
+                enc.write_extension_name("x")?;
+                repeated_message_encode_text::<Inner>(n, f, enc)
+            }
+
+            let _g = GLOBAL_LOCK.lock().unwrap();
+            let fields = install_custom_entry(value_then_a_direct_call);
+
+            let mut s = alloc::string::String::new();
+            crate::text::TextEncoder::new(&mut s)
+                .write_extension_fields("pkg.Msg", &fields)
+                .unwrap();
+            assert_eq!(s, "[pkg.custom] {n: 2} [x]: [{n: 1}, {n: 2}]");
 
             clear_text_registry();
         }

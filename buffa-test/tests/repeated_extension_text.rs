@@ -25,57 +25,6 @@ fn annotation(doc: &str, priority: i32) -> extjson::Ann {
 }
 
 #[test]
-fn repeated_message_extensions_preserve_elements_through_text() {
-    register_types();
-    let expected = vec![annotation("first", 1), annotation("second", 2)];
-    let mut carrier = extjson::Carrier::default();
-    carrier.set_extension(&extjson::__buffa::ext::ANNS, expected.clone());
-
-    for text in [
-        encode_to_string(&carrier),
-        encode_to_string_pretty(&carrier),
-    ] {
-        let decoded: extjson::Carrier = decode_from_str(&text).unwrap();
-        assert_eq!(
-            decoded.extension(&extjson::__buffa::ext::ANNS),
-            expected,
-            "{text}"
-        );
-        assert_eq!(decoded.encode_to_vec(), carrier.encode_to_vec());
-    }
-}
-
-#[test]
-fn repeated_group_extensions_preserve_elements_through_text() {
-    register_types();
-    let expected = vec![
-        groupext::Inner {
-            c: Some(1),
-            ..Default::default()
-        },
-        groupext::Inner {
-            c: Some(2),
-            ..Default::default()
-        },
-    ];
-    let mut carrier = groupext::Carrier::default();
-    carrier.set_extension(&groupext::__buffa::ext::DELIM_REPEATED, expected.clone());
-
-    for text in [
-        encode_to_string(&carrier),
-        encode_to_string_pretty(&carrier),
-    ] {
-        let decoded: groupext::Carrier = decode_from_str(&text).unwrap();
-        assert_eq!(
-            decoded.extension(&groupext::__buffa::ext::DELIM_REPEATED),
-            expected,
-            "{text}"
-        );
-        assert_eq!(decoded.encode_to_vec(), carrier.encode_to_vec());
-    }
-}
-
-#[test]
 fn repeated_message_extension_prints_one_entry_per_element() {
     register_types();
     let expected = vec![annotation("first", 1), annotation("second", 2)];
@@ -157,6 +106,66 @@ fn repeated_extension_entries_keep_their_own_name_between_other_fields() {
     let carrier: extjson::Carrier = decode_from_str(text).unwrap();
     assert_eq!(carrier.extension(&extjson::__buffa::ext::ANNS).len(), 3);
     assert_eq!(encode_to_string(&carrier), text);
+}
+
+fn tree(v: i32) -> extjson::Tree {
+    extjson::Tree {
+        v: Some(v),
+        ..Default::default()
+    }
+}
+
+/// An element that writes repeated and singular extensions of its own sits
+/// between two entries of the outer repeated extension.
+#[test]
+fn nested_repeated_extensions_keep_the_name_of_their_own_level() {
+    register_types();
+    let kids = &extjson::__buffa::ext::KIDS;
+    let kid = &extjson::__buffa::ext::KID;
+    let mut first = tree(2);
+    first.set_extension(kids, vec![tree(3), tree(4)]);
+    first.set_extension(kid, tree(5));
+    let mut root = tree(1);
+    root.set_extension(kids, vec![first, tree(6)]);
+
+    let compact = encode_to_string(&root);
+    assert_eq!(
+        compact,
+        "v: 1 \
+         [buffa.test.extjson.kids] {\
+         v: 2 \
+         [buffa.test.extjson.kids] {v: 3} \
+         [buffa.test.extjson.kids] {v: 4} \
+         [buffa.test.extjson.kid] {v: 5}\
+         } \
+         [buffa.test.extjson.kids] {v: 6}"
+    );
+    let pretty = encode_to_string_pretty(&root);
+    assert_eq!(
+        pretty,
+        "\
+v: 1
+[buffa.test.extjson.kids] {
+  v: 2
+  [buffa.test.extjson.kids] {
+    v: 3
+  }
+  [buffa.test.extjson.kids] {
+    v: 4
+  }
+  [buffa.test.extjson.kid] {
+    v: 5
+  }
+}
+[buffa.test.extjson.kids] {
+  v: 6
+}
+"
+    );
+    for text in [compact, pretty] {
+        let decoded: extjson::Tree = decode_from_str(&text).unwrap();
+        assert_eq!(decoded, root, "{text}");
+    }
 }
 
 fn record(number: u32, data: UnknownFieldData) -> UnknownField {
@@ -376,6 +385,34 @@ fn group_extension_lists_and_occurrences_append_in_order() {
 }
 
 #[test]
+fn extension_lists_parse_without_the_colon() {
+    register_types();
+    let carrier: extjson::Carrier =
+        decode_from_str("[buffa.test.extjson.anns] [{priority: 1}, {}] x: 9").unwrap();
+    assert_eq!(carrier.x, Some(9));
+    assert_eq!(
+        carrier.extension(&extjson::__buffa::ext::ANNS),
+        [
+            extjson::Ann {
+                priority: Some(1),
+                ..Default::default()
+            },
+            extjson::Ann::default()
+        ]
+    );
+    let carrier: groupext::Carrier =
+        decode_from_str("[buffa.test.groupext.delim_repeated] [{}, {c: 2}]").unwrap();
+    assert_eq!(
+        carrier
+            .extension(&groupext::__buffa::ext::DELIM_REPEATED)
+            .iter()
+            .map(|v| v.c)
+            .collect::<Vec<_>>(),
+        [None, Some(2)]
+    );
+}
+
+#[test]
 fn empty_extension_lists_add_no_records() {
     register_types();
     let carrier: extjson::Carrier = decode_from_str("[buffa.test.extjson.anns]: [] x: 9").unwrap();
@@ -393,13 +430,12 @@ fn empty_extension_lists_add_no_records() {
 fn singular_and_repeated_message_extensions_coexist() {
     register_types();
     let text = r#"
-        [buffa.test.extjson.ann] { doc: "merged" }
+        [buffa.test.extjson.ann] { doc: "single" priority: 7 }
         [buffa.test.extjson.anns]: [{doc: "first"}, {priority: 2}]
-        [buffa.test.extjson.ann] { priority: 7 }
         x: 9
     "#;
     let carrier: extjson::Carrier = decode_from_str(text).unwrap();
-    let expected = annotation("merged", 7);
+    let expected = annotation("single", 7);
     assert_eq!(
         carrier.extension(&extjson::__buffa::ext::ANN),
         Some(expected.clone())
@@ -463,6 +499,31 @@ fn repeated_extensions_charge_each_record_against_the_element_budget() {
         decode_from_str_with_element_memory_limit::<extjson::Carrier>(message, 2 * record_size)
             .unwrap();
     assert_eq!(carrier.extension(&extjson::__buffa::ext::ANNS).len(), 2);
+
+    // The single-value form charges one record per entry, on the same budget.
+    let message = "[buffa.test.extjson.anns] {} [buffa.test.extjson.anns] {}";
+    let group = "[buffa.test.groupext.delim_repeated] {} [buffa.test.groupext.delim_repeated] {}";
+    for budget in [0, record_size, 2 * record_size - 1] {
+        let error = decode_from_str_with_element_memory_limit::<extjson::Carrier>(message, budget)
+            .unwrap_err();
+        assert_eq!(error.kind, ParseErrorKind::ElementMemoryLimitExceeded);
+        let error = decode_from_str_with_element_memory_limit::<groupext::Carrier>(group, budget)
+            .unwrap_err();
+        assert_eq!(error.kind, ParseErrorKind::ElementMemoryLimitExceeded);
+    }
+    let carrier =
+        decode_from_str_with_element_memory_limit::<extjson::Carrier>(message, 2 * record_size)
+            .unwrap();
+    assert_eq!(carrier.extension(&extjson::__buffa::ext::ANNS).len(), 2);
+    let carrier =
+        decode_from_str_with_element_memory_limit::<groupext::Carrier>(group, 2 * record_size)
+            .unwrap();
+    assert_eq!(
+        carrier
+            .extension(&groupext::__buffa::ext::DELIM_REPEATED)
+            .len(),
+        2
+    );
     let carrier =
         decode_from_str_with_element_memory_limit::<groupext::Carrier>(group, 2 * record_size)
             .unwrap();

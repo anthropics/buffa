@@ -205,7 +205,7 @@ fn generate_one(
     };
 
     let (text_const, text_ident) = if ctx.config.generate_text {
-        match text_helper_tokens(ctx, field, ty, current_package, nesting)? {
+        match text_helper_tokens(ctx, field, ty, repeated, current_package, nesting)? {
             Some((te, tm)) => {
                 let ident = format_ident!("__{}_TEXT_EXT", const_ident);
                 let tokens = crate::feature_gates::cfg_block(
@@ -472,11 +472,11 @@ fn text_helper_tokens(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
     ty: Type,
+    repeated: bool,
     current_package: &str,
     nesting: usize,
 ) -> Result<Option<(TokenStream, TokenStream)>, CodeGenError> {
     let h = quote! { ::buffa::type_registry };
-    let repeated = field.label == Some(Label::LABEL_REPEATED);
     let (kind, encode, merge) = match (ty, repeated) {
         (Type::TYPE_MESSAGE, false) => ("message", "message_encode_text", "message_merge_text"),
         (Type::TYPE_MESSAGE, true) => (

@@ -39,3 +39,15 @@ extend Carrier {
   repeated google.protobuf.Value values = 109;
   repeated google.protobuf.NullValue null_values = 110;
 }
+
+// A message that extends itself, so an element of the repeated extension
+// carries extensions of its own.
+message Tree {
+  extensions 100 to 200;
+  optional int32 v = 1;
+}
+
+extend Tree {
+  repeated Tree kids = 100;
+  optional Tree kid = 101;
+}
