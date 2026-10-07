@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a `default_value` where the syntax has no explicit defaults** (#568). A proto3 field or extension with `default_value` set linked, and so did an editions field whose presence resolves to `IMPLICIT`; protoc refuses both. An extension always has presence, so the editions rule leaves it alone. The proto3 case is now `PoolError::Proto3FieldWithDefault` and the editions case `PoolError::ImplicitPresenceFieldWithDefault`. The proto3 rule also covers `optional` fields and oneof members, as protoc's does; protobuf-go accepts a default on those two.
+time: 2026-10-05T23:50:41.293412+02:00
