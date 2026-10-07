@@ -35,9 +35,9 @@ pub enum TokenKind {
     MessageOpen,
     /// `}` or `>` — end of a nested message.
     MessageClose,
-    /// `[` — start of a repeated-scalar list.
+    /// `[` — start of a list of scalar or message values.
     ListOpen,
-    /// `]` — end of a repeated-scalar list.
+    /// `]` — end of a list.
     ListClose,
 }
 
@@ -82,8 +82,8 @@ pub struct Token<'a> {
     /// For `Scalar` tokens: which kind of scalar. `Number` for non-`Scalar`.
     pub scalar_kind: ScalarKind,
     /// For `Name` tokens: was this name followed by a `:` separator?
-    /// The textproto grammar makes `:` optional before messages but required
-    /// before scalars.
+    /// The `:` is optional before a message value or a list of message
+    /// values, and required before a scalar or a list of scalars.
     pub has_separator: bool,
 }
 
@@ -95,9 +95,19 @@ enum OpenKind {
     /// Inside `{ ... }` (close with `}`) or `< ... >` (close with `>`).
     /// Holds the expected close byte.
     Message(u8),
-    /// Inside `[ ... ]`.
-    List,
+    /// Inside `[ ... ]`. `scalars` is false for a list opened without a `:`
+    /// after the field name, which may hold only message values.
+    List { scalars: bool },
 }
+
+/// `open_stack` byte for a list opened without a `:` after the field name.
+/// The input byte is `[` for both kinds of list; this one never appears in
+/// the input as an open delimiter.
+const MESSAGE_LIST: u8 = b'(';
+
+/// `expected` text of the error for a scalar that follows a field name, or
+/// opens a list element, without a `:` after the name.
+const COLON_BEFORE_SCALAR: &str = "':' before scalar value";
 
 /// Internal: the last-emitted token kind, driving the state machine.
 /// Slightly richer than [`TokenKind`] because it tracks the consumed
@@ -125,7 +135,7 @@ pub struct Tokenizer<'a> {
     input: &'a str,
     cursor: usize,
     last_kind: LastKind,
-    /// Stack of `{`, `<`, `[` bytes. Capped at
+    /// Stack of `{`, `<`, `[` and [`MESSAGE_LIST`] bytes. Capped at
     /// [`RECURSION_LIMIT`](crate::RECURSION_LIMIT) — pushing beyond that
     /// fails with [`ParseErrorKind::RecursionLimitExceeded`].
     open_stack: [u8; crate::message::RECURSION_LIMIT as usize],
@@ -257,8 +267,9 @@ impl<'a> Tokenizer<'a> {
         match self.open_stack[self.open_depth - 1] {
             b'{' => OpenKind::Message(b'}'),
             b'<' => OpenKind::Message(b'>'),
-            b'[' => OpenKind::List,
-            _ => unreachable!("open_stack holds only {{, <, ["),
+            b'[' => OpenKind::List { scalars: true },
+            MESSAGE_LIST => OpenKind::List { scalars: false },
+            _ => unreachable!("open_stack holds only {{, <, [ and MESSAGE_LIST"),
         }
     }
 
@@ -338,12 +349,12 @@ impl<'a> Tokenizer<'a> {
                             return Ok(self.emit(TokenKind::MessageOpen, 1));
                         }
                         b'[' => {
-                            self.push_open(ch)?;
+                            self.push_open(if has_separator { ch } else { MESSAGE_LIST })?;
                             return Ok(self.emit(TokenKind::ListOpen, 1));
                         }
                         _ if !has_separator => {
                             return Err(self.err_here(ParseErrorKind::UnexpectedToken {
-                                expected: "':' before scalar value",
+                                expected: COLON_BEFORE_SCALAR,
                             }));
                         }
                         _ => return self.parse_scalar(),
@@ -398,7 +409,7 @@ impl<'a> Tokenizer<'a> {
                                 _ => return self.parse_field_name(),
                             }
                         }
-                        OpenKind::List => {
+                        OpenKind::List { .. } => {
                             if at_eof {
                                 return Err(self.err_here(ParseErrorKind::UnexpectedEof));
                             }
@@ -447,6 +458,9 @@ impl<'a> Tokenizer<'a> {
                     if at_eof {
                         return Err(self.err_here(ParseErrorKind::UnexpectedEof));
                     }
+                    let OpenKind::List { scalars } = open else {
+                        unreachable!("ListOpen always pushes a List frame")
+                    };
                     let ch = self.rest()[0];
                     match ch {
                         b']' => {
@@ -457,7 +471,7 @@ impl<'a> Tokenizer<'a> {
                             self.push_open(ch)?;
                             return Ok(self.emit(TokenKind::MessageOpen, 1));
                         }
-                        _ => return self.parse_scalar(),
+                        _ => return self.parse_list_scalar(scalars),
                     }
                 }
 
@@ -484,7 +498,7 @@ impl<'a> Tokenizer<'a> {
                             }
                             return self.parse_field_name();
                         }
-                        OpenKind::List => {
+                        OpenKind::List { scalars } => {
                             // Semicolon inside a list is unreachable by
                             // construction (the Scalar→List arm doesn't
                             // emit semicolons). Comma: next element.
@@ -497,13 +511,32 @@ impl<'a> Tokenizer<'a> {
                                     self.push_open(ch)?;
                                     return Ok(self.emit(TokenKind::MessageOpen, 1));
                                 }
-                                _ => return self.parse_scalar(),
+                                _ => return self.parse_list_scalar(scalars),
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    /// Parse a scalar element of a list. With `scalars` false (see
+    /// [`OpenKind::List`]) a well-formed scalar is an error at its first byte;
+    /// a malformed one keeps the error `parse_scalar` gives it.
+    fn parse_list_scalar(&mut self, scalars: bool) -> Result<Token<'a>, ParseError> {
+        if scalars {
+            return self.parse_scalar();
+        }
+        let missing_colon = self.err_here(ParseErrorKind::UnexpectedToken {
+            expected: COLON_BEFORE_SCALAR,
+        });
+        // Lexing the scalar moves the cursor; put it back so that a second
+        // call returns the same error.
+        let (cursor, last_kind) = (self.cursor, self.last_kind);
+        self.parse_scalar()?;
+        self.cursor = cursor;
+        self.last_kind = last_kind;
+        Err(missing_colon)
     }
 
     fn emit(&mut self, kind: TokenKind, len: usize) -> Token<'a> {
@@ -1392,7 +1425,7 @@ mod tests {
                 assert_eq!(
                     err.kind,
                     ParseErrorKind::UnexpectedToken {
-                        expected: "':' before scalar value",
+                        expected: COLON_BEFORE_SCALAR,
                     },
                     "input: {input:?}"
                 );
@@ -1405,6 +1438,83 @@ mod tests {
         for input in ["field\"text\"", "field # comment\n  7", "m { field 7 }"] {
             assert!(drain(input).is_err(), "input: {input:?}");
         }
+    }
+
+    #[test]
+    fn scalar_list_requires_colon() {
+        // (input, column of the first scalar element)
+        for (input, col) in [
+            ("f [1]", 4),
+            ("f [1, 2]", 4),
+            ("f [\"a\"]", 4),
+            ("f [ACTIVE]", 4),
+            ("f [{}, 1]", 8),
+            ("[pkg.ext] [true]", 12),
+            ("m { f [1] }", 8),
+            // The rule belongs to each list: an inner list with a colon
+            // leaves the outer colon-less one as it was, and a later list
+            // at the same depth has its own.
+            ("m [{ f [1] }]", 9),
+            ("m [{ f: [1] }, 2]", 16),
+            ("a: [1] b [1]", 11),
+        ] {
+            let err = drain(input).unwrap_err();
+            assert_eq!(
+                err.kind,
+                ParseErrorKind::UnexpectedToken {
+                    expected: COLON_BEFORE_SCALAR,
+                },
+                "input: {input:?}"
+            );
+            assert_eq!((err.line, err.col), (1, col), "input: {input:?}");
+        }
+        // With the colon a list takes scalars, also when it is inside or
+        // around a colon-less list.
+        for input in [
+            "f: [1]",
+            "f: [1, 2]",
+            "f: [\"a\"]",
+            "f: [ACTIVE]",
+            "f: [{}, 1]",
+            "[pkg.ext]: [true]",
+            "m { f: [1] }",
+            "m [{ f: [1] }, { g: 2 }]",
+            "m: [{ f [{}] }, 1]",
+            "a [{}] b: [1]",
+            "f # comment\n : [1]",
+        ] {
+            assert!(drain(input).is_ok(), "input: {input:?}");
+        }
+        // A comment between the name and the list changes nothing.
+        let err = drain("f # comment\n [1]").unwrap_err();
+        assert_eq!((err.line, err.col), (2, 3));
+    }
+
+    #[test]
+    fn malformed_element_of_colonless_list_keeps_its_own_error() {
+        // The trailing comma leaves `]` where an element should start.
+        let with_colon = drain("m: [{},]").unwrap_err();
+        let without = drain("m [{},]").unwrap_err();
+        assert_eq!(without.kind, with_colon.kind);
+        assert_ne!(
+            without.kind,
+            ParseErrorKind::UnexpectedToken {
+                expected: COLON_BEFORE_SCALAR,
+            }
+        );
+    }
+
+    #[test]
+    fn peeked_colonless_list_open_still_rejects_scalar() {
+        let mut t = Tokenizer::new("f [1]");
+        t.read().unwrap();
+        assert_eq!(t.peek().unwrap().kind, TokenKind::ListOpen);
+        assert_eq!(t.read().unwrap().kind, TokenKind::ListOpen);
+        let expected = ParseErrorKind::UnexpectedToken {
+            expected: COLON_BEFORE_SCALAR,
+        };
+        assert_eq!(t.peek().unwrap_err().kind, expected);
+        assert_eq!(t.read().unwrap_err().kind, expected);
     }
 
     #[test]

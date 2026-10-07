@@ -71,6 +71,30 @@ fn direct_scalar_values_require_colon() {
 }
 
 #[test]
+fn scalar_lists_require_colon() {
+    for valid in [
+        "tags: ['a']",
+        "tags: ['a', 'b']",
+        "lucky_numbers: [7]",
+        "lucky_numbers: [7, 8]",
+    ] {
+        decode_from_str::<Person>(valid).unwrap();
+        let invalid = valid.replacen(':', "", 1);
+        let err = decode_from_str::<Person>(&invalid).unwrap_err();
+        assert_eq!(
+            err.kind,
+            ParseErrorKind::UnexpectedToken {
+                expected: "':' before scalar value",
+            },
+            "input: {invalid:?}"
+        );
+    }
+    // A map is a list of entry messages, so it needs no colon.
+    let inv: Inventory = decode_from_str("stock [{ key: 'apples' value: 10 }]").unwrap();
+    assert_eq!(inv.stock.get("apples"), Some(&10));
+}
+
+#[test]
 fn all_scalars_golden() {
     // Every numeric scalar type. Implicit presence: zero values suppressed.
     let msg = AllScalars {
