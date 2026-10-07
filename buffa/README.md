@@ -44,6 +44,7 @@ let msg: Person = DecodeOptions::new()
 |------|:-------:|---------|
 | `std` | ✓ | `std::io::Read` decoders, `HashMap` for map fields, thread-local JSON parse options |
 | `json` |  | Proto3 JSON via `serde` |
+| `text` |  | Text format (`textproto`) encode/decode |
 | `arbitrary` |  | `arbitrary::Arbitrary` impls for fuzzing |
 
 With `default-features = false` the crate is `#![no_std]` (requires `alloc`).
@@ -59,8 +60,8 @@ With `default-features = false` the crate is `#![no_std]` (requires `alloc`).
 
 ## Conformance
 
-buffa passes the full protobuf [conformance suite] for binary and JSON encoding
-(both `std` and `no_std` builds). Text format (`textproto`) is not supported.
+buffa passes the full protobuf [conformance suite] for binary, JSON, and
+text-format encoding (both `std` and `no_std` builds).
 
 [conformance suite]: https://github.com/protocolbuffers/protobuf/tree/main/conformance
 
