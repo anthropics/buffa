@@ -278,12 +278,16 @@ pub enum PoolError {
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
-    /// A field in a proto3 or Editions file uses a `required` label.
-    /// Editions express required presence through features instead of labels.
-    RequiredFieldOutsideProto2 { field: String },
-    /// An extension is required: it has a `required` label, or its
-    /// `field_presence` feature resolves to `LEGACY_REQUIRED`. A message
-    /// written before the extension existed could never satisfy it.
+    /// A field in a proto3 or editions file has a `required` label. An
+    /// editions file states required presence with
+    /// `features.field_presence = LEGACY_REQUIRED`, and proto3 has no required
+    /// fields.
+    RequiredLabelOutsideProto2 { field: String },
+    /// An extension is required: it has a `required` label in a proto2 file,
+    /// or its `field_presence` feature resolves to `LEGACY_REQUIRED`. In a
+    /// proto3 or editions file, a `required` label reports
+    /// [`RequiredLabelOutsideProto2`](Self::RequiredLabelOutsideProto2)
+    /// instead.
     RequiredExtension { field: String },
     /// A field number, or a finite extension range, overlaps the field-number
     /// interval reserved for the protobuf implementation. The bounds are
@@ -298,9 +302,13 @@ pub enum PoolError {
     /// not a repeated numeric, bool, or enum field. The fields of a map entry
     /// are exempt, because protoc copies the map field's features onto them.
     InvalidRepeatedFieldEncoding { field: String },
-    /// A map entry message does not have exactly the optional fields `key`
-    /// (1) and `value` (2), in that order, or the key type is not a valid map
-    /// key per the protobuf spec.
+    /// A map field's entry message is malformed. The entry must have exactly
+    /// two fields, in this order: `key` with number 1, then `value` with
+    /// number 2. Each must be optional, and the key type must be an integer
+    /// type, `bool`, or `string` (see [`ScalarType::is_valid_map_key`]).
+    ///
+    /// `message` is the full name of the map field that uses the entry, and
+    /// the entry message is the field's type.
     MalformedMapEntry { message: String },
     /// Two extensions claim the same field number on the same message.
     /// protoc rejects this within one compilation unit, but it can arise
@@ -550,12 +558,12 @@ impl core::fmt::Display for PoolError {
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
-            Self::RequiredFieldOutsideProto2 { field } => write!(
+            Self::RequiredLabelOutsideProto2 { field } => write!(
                 f,
                 "field {field} uses a required label outside a proto2 file"
             ),
             Self::RequiredExtension { field } => {
-                write!(f, "extension {field} is required")
+                write!(f, "extension {field} must not be required")
             }
             Self::ReservedFieldNumber { field, number } => {
                 write!(
@@ -565,15 +573,19 @@ impl core::fmt::Display for PoolError {
             }
             Self::InvalidPackedOption { field } => write!(
                 f,
-                "field {field} sets packed = true but is not a repeated primitive field"
+                "field {field} sets packed = true but is not a repeated numeric, bool, or enum field"
             ),
             Self::InvalidRepeatedFieldEncoding { field } => write!(
                 f,
-                "field {field} sets features.repeated_field_encoding, which does not apply to it"
+                "field {field} sets features.repeated_field_encoding, but the field is not repeated or \
+                 its elements cannot be packed"
             ),
-            Self::MalformedMapEntry { message } => {
-                write!(f, "malformed map entry message {message}")
-            }
+            Self::MalformedMapEntry { message } => write!(
+                f,
+                "map field {message} has a malformed entry message: it needs exactly the optional \
+                 fields key = 1 and value = 2, in that order, and a key of an integer type, bool, \
+                 or string"
+            ),
             Self::DuplicateExtensionNumber { extendee, number } => {
                 write!(
                     f,
@@ -847,6 +859,23 @@ struct LinkScope<'a> {
     /// Itself, its direct and weak dependencies, and their transitive
     /// `public_dependency` closure; `None` when visibility is not enforced.
     visible: Option<&'a BTreeSet<usize>>,
+}
+
+impl<'a> LinkScope<'a> {
+    /// The scope for links made from `file`, which the pool stores at `index`.
+    fn for_file(
+        index: usize,
+        file: &FileDescriptorProto,
+        visible: Option<&'a BTreeSet<usize>>,
+    ) -> Self {
+        let syntax = file.syntax.as_deref();
+        Self {
+            file: index,
+            proto3: syntax == Some("proto3"),
+            allows_required_labels: !matches!(syntax, Some("proto3" | "editions")),
+            visible,
+        }
+    }
 }
 
 /// A pool of linked, feature-resolved protobuf descriptors.
@@ -1159,15 +1188,7 @@ impl DescriptorPool {
             let pkg = file.package.as_deref().unwrap_or("");
             let file_features = features::for_file(file);
             let visible = self.visible_files(base + i, file, base, &new_files);
-            let scope = LinkScope {
-                file: base + i,
-                proto3: file.syntax.as_deref() == Some("proto3"),
-                allows_required_labels: !matches!(
-                    file.syntax.as_deref(),
-                    Some("proto3" | "editions")
-                ),
-                visible: visible.as_ref(),
-            };
+            let scope = LinkScope::for_file(base + i, file, visible.as_ref());
             for msg in &file.message_type {
                 linked = self.link_message(pkg, msg, &file_features, linked, scope)?;
             }
@@ -1187,15 +1208,7 @@ impl DescriptorPool {
             let pkg = file.package.as_deref().unwrap_or("");
             let file_features = features::for_file(file);
             let visible = self.visible_files(base + i, file, base, &new_files);
-            let scope = LinkScope {
-                file: base + i,
-                proto3: file.syntax.as_deref() == Some("proto3"),
-                allows_required_labels: !matches!(
-                    file.syntax.as_deref(),
-                    Some("proto3" | "editions")
-                ),
-                visible: visible.as_ref(),
-            };
+            let scope = LinkScope::for_file(base + i, file, visible.as_ref());
             for svc in &file.service {
                 self.link_service(pkg, svc, scope)?;
             }
@@ -2353,12 +2366,12 @@ impl DescriptorPool {
         }
         let is_repeated = label == Label::LABEL_REPEATED;
         if label == Label::LABEL_REQUIRED && !scope.allows_required_labels {
-            return Err(PoolError::RequiredFieldOutsideProto2 { field: field_fqn });
+            return Err(PoolError::RequiredLabelOutsideProto2 { field: field_fqn });
         }
-        // `containing_msg` is `None` for an extension.
-        if containing_msg.is_none()
+        let is_extension = containing_msg.is_none();
+        if is_extension
             && (label == Label::LABEL_REQUIRED
-                || (!is_repeated && resolved.field_presence == FieldPresence::LegacyRequired))
+                || resolved.field_presence == FieldPresence::LegacyRequired)
         {
             return Err(PoolError::RequiredExtension { field: field_fqn });
         }
@@ -2438,13 +2451,13 @@ impl DescriptorPool {
         if packed_option == Some(true) && !packable {
             return Err(PoolError::InvalidPackedOption { field: field_fqn });
         }
-        // The feature is the editions spelling of the option. Only the
-        // field's own setting counts: an inherited one applies to the fields
-        // it fits.
         let in_map_entry = containing_msg
             .and_then(|m| m.options.as_option())
             .and_then(|o| o.map_entry)
             == Some(true);
+        // The feature is the editions spelling of the option. Only the
+        // field's own setting counts: an inherited one applies to the fields
+        // it fits.
         if let Some(encoding) =
             features::field_features(f).and_then(|fs| fs.repeated_field_encoding)
         {
