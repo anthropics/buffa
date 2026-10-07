@@ -55,6 +55,12 @@ pub struct TextEncoder<'a> {
     pretty: bool,
     emit_unknown: bool,
     last: Last,
+    /// The extension name that
+    /// [`write_extension_fields`](Self::write_extension_fields) wrote, for as
+    /// long as it is the last thing written.
+    /// [`write_repeated_extension`](Self::write_repeated_extension) writes it
+    /// again before each element after the first.
+    ext_name: Option<&'static str>,
 }
 
 impl<'a> TextEncoder<'a> {
@@ -67,6 +73,7 @@ impl<'a> TextEncoder<'a> {
             pretty: false,
             emit_unknown: false,
             last: Last::Open,
+            ext_name: None,
         }
     }
 
@@ -80,6 +87,7 @@ impl<'a> TextEncoder<'a> {
             pretty: true,
             emit_unknown: false,
             last: Last::Open,
+            ext_name: None,
         }
     }
 
@@ -102,6 +110,7 @@ impl<'a> TextEncoder<'a> {
     fn prepare(&mut self, next: Last) -> core::fmt::Result {
         let prev = self.last;
         self.last = next;
+        self.ext_name = None;
         if !self.pretty {
             // Single line: space between end-of-field and start of next name.
             if prev == Last::Value && next == Last::Name {
@@ -207,10 +216,33 @@ impl<'a> TextEncoder<'a> {
         self.write_message_body(f)
     }
 
-    pub(crate) fn write_message_list<M: super::TextFormat>(
+    /// Write the elements of a repeated message or group extension, after
+    /// the caller has written the extension's bracketed name once.
+    ///
+    /// When [`write_extension_fields`](Self::write_extension_fields) wrote
+    /// the name, each element is its own `[name] { ... }` entry, which a
+    /// parser can read without support for message lists. The list form
+    /// `: [{ ... }, ...]` is written in the two other cases: `messages` is
+    /// empty, where `[]` is the one value that parses to zero elements, or
+    /// another caller wrote the name, so the encoder cannot repeat it.
+    pub(crate) fn write_repeated_extension<M: super::TextFormat>(
         &mut self,
         messages: &[M],
     ) -> core::fmt::Result {
+        match (self.ext_name, messages) {
+            (Some(name), [first, rest @ ..]) => {
+                self.write_message(first)?;
+                for message in rest {
+                    self.write_extension_name(name)?;
+                    self.write_message(message)?;
+                }
+                Ok(())
+            }
+            (None, _) | (Some(_), []) => self.write_message_list(messages),
+        }
+    }
+
+    fn write_message_list<M: super::TextFormat>(&mut self, messages: &[M]) -> core::fmt::Result {
         self.prepare(Last::Value)?;
         self.w.write_str(": [")?;
         for (index, message) in messages.iter().enumerate() {
@@ -290,7 +322,9 @@ impl<'a> TextEncoder<'a> {
     }
 
     /// Write registered extensions from `fields` as `[full_name] { ... }`
-    /// entries, or `[full_name]: [{ ... }, ...]` for repeated messages and groups.
+    /// entries: one entry per extension, or one per element for a repeated
+    /// message or group extension. A repeated extension whose records in
+    /// `fields` all fail to decode is written as `[full_name]: []`.
     /// Unregistered field numbers are left for the caller's
     /// [`write_unknown_fields`](Self::write_unknown_fields) (debug-only,
     /// default off).
@@ -326,6 +360,7 @@ impl<'a> TextEncoder<'a> {
                 continue;
             };
             self.write_extension_name(entry.full_name)?;
+            self.ext_name = Some(entry.full_name);
             (entry.text_encode)(uf.number, fields, self)?;
         }
         Ok(())

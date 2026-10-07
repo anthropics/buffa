@@ -3,7 +3,7 @@ use buffa::text::{
     encode_to_string_pretty, merge_from_str, ParseErrorKind,
 };
 use buffa::type_registry::{set_type_registry, TypeRegistry};
-use buffa::{ExtensionSet, Message};
+use buffa::{ExtensionSet, Message, UnknownField, UnknownFieldData};
 use buffa_test::{extjson, groupext};
 
 fn register_types() {
@@ -73,6 +73,189 @@ fn repeated_group_extensions_preserve_elements_through_text() {
         );
         assert_eq!(decoded.encode_to_vec(), carrier.encode_to_vec());
     }
+}
+
+#[test]
+fn repeated_message_extension_prints_one_entry_per_element() {
+    register_types();
+    let expected = vec![annotation("first", 1), annotation("second", 2)];
+    let mut carrier = extjson::Carrier {
+        x: Some(7),
+        ..Default::default()
+    };
+    carrier.set_extension(&extjson::__buffa::ext::ANNS, expected.clone());
+
+    let compact = encode_to_string(&carrier);
+    assert_eq!(
+        compact,
+        "x: 7 \
+         [buffa.test.extjson.anns] {doc: \"first\" priority: 1} \
+         [buffa.test.extjson.anns] {doc: \"second\" priority: 2}"
+    );
+    let pretty = encode_to_string_pretty(&carrier);
+    assert_eq!(
+        pretty,
+        "x: 7\n\
+         [buffa.test.extjson.anns] {\n  doc: \"first\"\n  priority: 1\n}\n\
+         [buffa.test.extjson.anns] {\n  doc: \"second\"\n  priority: 2\n}\n"
+    );
+    for text in [compact, pretty] {
+        let decoded: extjson::Carrier = decode_from_str(&text).unwrap();
+        assert_eq!(decoded, carrier, "{text}");
+        assert_eq!(decoded.extension(&extjson::__buffa::ext::ANNS), expected);
+    }
+}
+
+#[test]
+fn repeated_group_extension_prints_one_entry_per_element() {
+    register_types();
+    let expected = vec![
+        groupext::Inner {
+            c: Some(1),
+            ..Default::default()
+        },
+        groupext::Inner {
+            c: Some(2),
+            ..Default::default()
+        },
+    ];
+    let mut carrier = groupext::Carrier::default();
+    carrier.set_extension(&groupext::__buffa::ext::DELIM_REPEATED, expected.clone());
+
+    let compact = encode_to_string(&carrier);
+    assert_eq!(
+        compact,
+        "[buffa.test.groupext.delim_repeated] {c: 1} \
+         [buffa.test.groupext.delim_repeated] {c: 2}"
+    );
+    let pretty = encode_to_string_pretty(&carrier);
+    assert_eq!(
+        pretty,
+        "[buffa.test.groupext.delim_repeated] {\n  c: 1\n}\n\
+         [buffa.test.groupext.delim_repeated] {\n  c: 2\n}\n"
+    );
+    for text in [compact, pretty] {
+        let decoded: groupext::Carrier = decode_from_str(&text).unwrap();
+        assert_eq!(decoded, carrier, "{text}");
+        assert_eq!(
+            decoded.extension(&groupext::__buffa::ext::DELIM_REPEATED),
+            expected
+        );
+    }
+}
+
+/// The elements of a repeated extension that follows a singular one, and of
+/// one whose neighbours are regular fields, each carry their own name.
+#[test]
+fn repeated_extension_entries_keep_their_own_name_between_other_fields() {
+    register_types();
+    let text = "x: 7 \
+                [buffa.test.extjson.ann] {doc: \"single\"} \
+                [buffa.test.extjson.anns] {priority: 1} \
+                [buffa.test.extjson.anns] {} \
+                [buffa.test.extjson.anns] {priority: 3}";
+    let carrier: extjson::Carrier = decode_from_str(text).unwrap();
+    assert_eq!(carrier.extension(&extjson::__buffa::ext::ANNS).len(), 3);
+    assert_eq!(encode_to_string(&carrier), text);
+}
+
+fn record(number: u32, data: UnknownFieldData) -> UnknownField {
+    UnknownField { number, data }
+}
+
+#[test]
+fn repeated_message_extension_skips_records_that_do_not_decode() {
+    register_types();
+    let number = extjson::__buffa::ext::ANNS.number();
+    let valid = |ann: &extjson::Ann| {
+        record(
+            number,
+            UnknownFieldData::LengthDelimited(ann.encode_to_vec()),
+        )
+    };
+    // A string field whose declared length runs past the end of the record.
+    let truncated = || record(number, UnknownFieldData::LengthDelimited(vec![0x0a, 0x05]));
+    let wrong_wire_type = || record(number, UnknownFieldData::Varint(5));
+
+    let mut carrier = extjson::Carrier::default();
+    let fields = carrier.unknown_fields_mut();
+    fields.push(truncated());
+    fields.push(valid(&annotation("first", 1)));
+    fields.push(wrong_wire_type());
+    fields.push(truncated());
+    fields.push(valid(&annotation("second", 2)));
+    let text = encode_to_string(&carrier);
+    assert_eq!(
+        text,
+        "[buffa.test.extjson.anns] {doc: \"first\" priority: 1} \
+         [buffa.test.extjson.anns] {doc: \"second\" priority: 2}"
+    );
+    let decoded: extjson::Carrier = decode_from_str(&text).unwrap();
+    assert_eq!(
+        decoded.extension(&extjson::__buffa::ext::ANNS),
+        [annotation("first", 1), annotation("second", 2)]
+    );
+}
+
+#[test]
+fn repeated_group_extension_skips_records_of_another_wire_type() {
+    register_types();
+    let ext = &groupext::__buffa::ext::DELIM_REPEATED;
+    let mut carrier = groupext::Carrier::default();
+    carrier.set_extension(
+        ext,
+        vec![groupext::Inner {
+            c: Some(1),
+            ..Default::default()
+        }],
+    );
+    carrier.unknown_fields_mut().push(record(
+        ext.number(),
+        UnknownFieldData::LengthDelimited(vec![0x08, 0x02]),
+    ));
+    assert_eq!(
+        encode_to_string(&carrier),
+        "[buffa.test.groupext.delim_repeated] {c: 1}"
+    );
+}
+
+/// With records at the extension's number and zero that decode, the entry is
+/// the empty list, which parses back to an extension with zero elements.
+#[test]
+fn repeated_extension_with_zero_decodable_records_prints_an_empty_list() {
+    register_types();
+    let mut message = extjson::Carrier {
+        x: Some(7),
+        ..Default::default()
+    };
+    message.unknown_fields_mut().push(record(
+        extjson::__buffa::ext::ANNS.number(),
+        UnknownFieldData::Varint(5),
+    ));
+    let mut group = groupext::Carrier::default();
+    group.unknown_fields_mut().push(record(
+        groupext::__buffa::ext::DELIM_REPEATED.number(),
+        UnknownFieldData::Fixed32(5),
+    ));
+
+    assert_eq!(
+        encode_to_string(&message),
+        "x: 7 [buffa.test.extjson.anns]: []"
+    );
+    assert_eq!(
+        encode_to_string_pretty(&message),
+        "x: 7\n[buffa.test.extjson.anns]: []\n"
+    );
+    assert_eq!(
+        encode_to_string(&group),
+        "[buffa.test.groupext.delim_repeated]: []"
+    );
+
+    let decoded: extjson::Carrier = decode_from_str(&encode_to_string(&message)).unwrap();
+    assert_eq!(decoded.x, Some(7));
+    assert!(decoded.unknown_fields().is_empty());
+    let decoded: groupext::Carrier = decode_from_str(&encode_to_string(&group)).unwrap();
+    assert!(decoded.unknown_fields().is_empty());
 }
 
 #[test]

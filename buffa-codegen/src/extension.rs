@@ -883,10 +883,10 @@ mod tests {
         assert!(!tokens.contains("JsonExtEntry"), "{tokens}");
     }
 
-    #[test]
-    fn text_const_emitted_for_message_independent_of_json() {
-        // text on, json OFF — message extension gets a TextExtEntry but no
-        // JsonExtEntry. This is the decoupling that the feature-split enables.
+    /// Run `generate_one` with text on and JSON off for an extension named
+    /// `ext` of type `.my.pkg.Ann`, and return `(tokens, json_ident,
+    /// text_ident)`.
+    fn gen_text(ty: Type, label: Label) -> (String, Option<String>, Option<String>) {
         let files = [FileDescriptorProto {
             name: Some("test.proto".into()),
             package: Some("my.pkg".into()),
@@ -902,23 +902,68 @@ mod tests {
         };
         let ctx = CodeGenContext::new(&files, &config, &[]);
         let features = ResolvedFeatures::proto2_defaults();
-        let mut field = ext_field("ann", 50007, Type::TYPE_MESSAGE);
+        let mut field = ext_field("ext", 50007, ty);
         field.type_name = Some(".my.pkg.Ann".to_string());
+        field.label = Some(label);
 
         let (tokens, json_id, text_id) =
             generate_one(&ctx, &field, "my.pkg", 0, &features, "my.pkg")
                 .unwrap()
                 .unwrap();
-        let tokens = tokens.to_string();
+        (
+            tokens.to_string(),
+            json_id.map(|i| i.to_string()),
+            text_id.map(|i| i.to_string()),
+        )
+    }
+
+    #[test]
+    fn text_const_emitted_for_message_independent_of_json() {
+        // text on, json OFF — message extension gets a TextExtEntry but no
+        // JsonExtEntry. This is the decoupling that the feature-split enables.
+        let (tokens, json_id, text_id) = gen_text(Type::TYPE_MESSAGE, Label::LABEL_OPTIONAL);
         assert!(json_id.is_none());
-        assert_eq!(
-            text_id.map(|i| i.to_string()).as_deref(),
-            Some("__ANN_TEXT_EXT")
-        );
+        assert_eq!(text_id.as_deref(), Some("__EXT_TEXT_EXT"));
         assert!(tokens.contains("TextExtEntry"), "{tokens}");
-        assert!(tokens.contains("message_encode_text"), "{tokens}");
-        assert!(tokens.contains("message_merge_text"), "{tokens}");
         assert!(!tokens.contains("JsonExtEntry"), "{tokens}");
+    }
+
+    #[test]
+    fn text_helpers_follow_the_type_and_the_label() {
+        // The singular names are suffixes of the repeated ones, so each case
+        // matches the whole path segment, `::` on both sides.
+        let all = [
+            "message_encode_text",
+            "message_merge_text",
+            "repeated_message_encode_text",
+            "repeated_message_merge_text",
+            "group_encode_text",
+            "group_merge_text",
+            "repeated_group_encode_text",
+            "repeated_group_merge_text",
+        ];
+        let cases = [
+            (Type::TYPE_MESSAGE, Label::LABEL_OPTIONAL, &all[0..2]),
+            (Type::TYPE_MESSAGE, Label::LABEL_REPEATED, &all[2..4]),
+            (Type::TYPE_GROUP, Label::LABEL_OPTIONAL, &all[4..6]),
+            (Type::TYPE_GROUP, Label::LABEL_REPEATED, &all[6..8]),
+        ];
+        for (ty, label, expected) in cases {
+            let (tokens, _, text_id) = gen_text(ty, label);
+            assert_eq!(
+                text_id.as_deref(),
+                Some("__EXT_TEXT_EXT"),
+                "{ty:?} {label:?}"
+            );
+            for helper in all {
+                let path = format!(":: buffa :: type_registry :: {helper} :: < Ann >");
+                assert_eq!(
+                    tokens.contains(&path),
+                    expected.contains(&helper),
+                    "{ty:?} {label:?} {helper}: {tokens}"
+                );
+            }
+        }
     }
 
     #[test]
