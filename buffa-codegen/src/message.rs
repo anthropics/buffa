@@ -279,7 +279,11 @@ fn generate_message_with_nesting(
             let oneof_name = oneof.name.as_deref()?;
             let field_ident = ctx.oneof_ident(oneof_name);
             let opt = resolver.option_at(ctx, nesting);
+            let rename_note = ctx
+                .oneof_rename_note(oneof_name)
+                .map(|note| quote! { #[doc = #note] });
             let tokens = quote! {
+                #rename_note
                 #oneof_serde_attr
                 pub #field_ident: #opt<#oneof_prefix #enum_ident>,
             };
@@ -2087,25 +2091,34 @@ pub(crate) fn is_debug_redacted(
 /// with `map_entry = true`).  Used by all map-related helpers to avoid
 /// duplicating the lookup predicate.
 ///
-/// The match uses suffix comparison (`type_name.ends_with(".{name}")`)
-/// rather than full FQN equality. This is safe because `msg.nested_type`
-/// only contains types nested within this message, and protobuf does not
-/// allow duplicate type names within a single message scope.
+/// The entry is the nested `map_entry` message that `type_name` names as
+/// `<this message>.<entry>`. A repeated field whose type is an unrelated
+/// message with the same short name as a local entry (`Other.ItemsEntry`
+/// next to a map field `items`) is a list, not a map.
+///
+/// The parent is compared by `msg`'s short name, because the callers do not
+/// have its fully-qualified name. A regular message named like a local entry
+/// is taken for the entry when it is declared in another message, or in a
+/// package, whose last name segment is this message's short name.
 pub(crate) fn find_map_entry<'a>(
     msg: &'a DescriptorProto,
     field: &crate::generated::descriptor::FieldDescriptorProto,
 ) -> Option<&'a DescriptorProto> {
     let type_name = field.type_name.as_deref()?;
+    let msg_name = msg.name.as_deref()?;
     msg.nested_type.iter().find(|nested| {
         nested
             .options
             .as_option()
             .and_then(|o| o.map_entry)
             .unwrap_or(false)
-            && nested
-                .name
-                .as_deref()
-                .is_some_and(|n| type_name.ends_with(&format!(".{n}")))
+            && nested.name.as_deref().is_some_and(|entry_name| {
+                type_name
+                    .strip_suffix(entry_name)
+                    .and_then(|rest| rest.strip_suffix('.'))
+                    .and_then(|parent| parent.strip_suffix(msg_name))
+                    .is_some_and(|scope| scope.is_empty() || scope.ends_with('.'))
+            })
     })
 }
 
@@ -2340,17 +2353,20 @@ fn field_deser_modules(
     (with_module, null_deser)
 }
 
-/// Does this scalar type need proto3-JSON special encoding in containers?
+/// Does this scalar type need proto3-JSON helpers in containers?
 ///
-/// int64/uint64 → quoted strings; float/double → NaN/Inf tokens; bytes →
-/// base64. For bool/string/int32/uint32/sint32/sfixed32/fixed32, derive
-/// serde is already proto3-JSON compliant — routing through ProtoElemJson
-/// adds trait-dispatch overhead (and for proto_map, a `.to_string()` alloc
-/// per key) for no correctness benefit.
+/// Integers accept quoted strings and integral decimal/exponent forms;
+/// int64/uint64 serialize as quoted strings; float/double use NaN/Inf tokens;
+/// bytes use base64. For bool/string, derive serde is already compliant.
 fn value_needs_proto_json(ty: Type) -> bool {
     matches!(
         ty,
-        Type::TYPE_INT64
+        Type::TYPE_INT32
+            | Type::TYPE_SINT32
+            | Type::TYPE_SFIXED32
+            | Type::TYPE_UINT32
+            | Type::TYPE_FIXED32
+            | Type::TYPE_INT64
             | Type::TYPE_SINT64
             | Type::TYPE_SFIXED64
             | Type::TYPE_UINT64
@@ -2364,10 +2380,10 @@ fn value_needs_proto_json(ty: Type) -> bool {
 /// Serde module for map fields (keyed by key/value types).
 ///
 /// Uses `proto_map` (generic over `V: ProtoElemJson`) only when the value
-/// type needs proto3-JSON special encoding (int64→quoted, float→NaN token,
-/// bytes→base64). For simple values (string, bool, 32-bit ints) with string
-/// keys, returns `None` to use derive — zero overhead. Non-string keys still
-/// use `string_key_map` for key stringification.
+/// type needs proto3-JSON parsing or encoding (integer numeric forms,
+/// int64→quoted, float→NaN token, bytes→base64). For string/bool values with
+/// string keys, returns `None` to use derive. Non-string keys still use
+/// `string_key_map` for key stringification.
 ///
 /// Open-enum map values keep `map_enum` for its ignore-unknown-values
 /// filtering behavior (a `JsonParseOptions` feature proto_map doesn't have).
@@ -2431,13 +2447,12 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
         };
     }
 
-    // Scalar value types: only route through proto_map if the value needs
-    // proto-JSON encoding. For simple values with string keys, derive is
-    // correct and avoids proto_map's per-key `.to_string()` allocation.
+    // Scalar value types: route through proto_map if the value needs
+    // proto-JSON parsing or encoding. String/bool values can use derive.
     let value_ty = info.map_value_type.unwrap_or(Type::TYPE_STRING);
     let is_string_key = matches!(info.map_key_type, Some(Type::TYPE_STRING));
     if value_needs_proto_json(value_ty) {
-        // Value needs special encoding (int64 quoted, bytes base64, etc.).
+        // Value needs special parsing or encoding.
         // A custom-`ProtoString` key lacks the `Display`/`FromStr` that
         // `proto_map` requires, so route it through the serde-keyed twin.
         Some(if info.map_key_custom_string {
@@ -2457,8 +2472,8 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
 /// Serde module for repeated fields.
 ///
 /// Uses `proto_seq` (generic over `T: ProtoElemJson`) only for element types
-/// that need proto3-JSON special encoding. For string/bool/32-bit ints,
-/// derive is correct and avoids trait-dispatch overhead.
+/// that need proto3-JSON parsing or encoding. For string/bool, derive is
+/// already compliant.
 ///
 /// Enums keep the `_enum` / `_closed_enum` modules for their
 /// ignore-unknown-values filtering behavior (JsonParseOptions).
@@ -2481,9 +2496,8 @@ fn repeated_serde_module(
         }
         // Other messages/groups: derived Serialize is already proto-JSON.
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => None,
-        // Simple scalar types (string, bool, 32-bit ints): derive is
-        // proto-JSON compliant. Only route through proto_seq for types
-        // that need special encoding (int64 quoted, bytes base64, etc.).
+        // Route scalar types needing special parsing or encoding through
+        // proto_seq. String/bool can use derive.
         ty if value_needs_proto_json(ty) => Some("::buffa::json_helpers::proto_seq"),
         _ => None,
     }
@@ -2759,6 +2773,7 @@ fn generate_custom_default(
             &field_features,
             nesting,
             crate::impl_message::field_string_repr(ctx, proto_fqn, field_name),
+            &crate::impl_message::field_bytes_repr(ctx, proto_fqn, field_name),
         )? {
             field_inits.push(quote! { #field_ident: #expr, });
         } else if let Some(expr) = crate::defaults::open_enum_bare_default_value(

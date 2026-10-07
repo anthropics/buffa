@@ -1,0 +1,29 @@
+
+ß
+map_entry_identity.protoreflect.map_identity"¦
+Holder=
+items (2'.reflect.map_identity.Holder.ItemsEntryRitems@
+records (2&.reflect.map_identity.Other.ItemsEntryRrecordsW
+prefixed_records (2,.reflect.map_identity.HolderExtra.ItemsEntryRprefixedRecords;
+nested (2#.reflect.map_identity.Holder.NestedRnested8
+
+ItemsEntry
+key (	Rkey
+value (Rvalue:8Ê
+NestedD
+items (2..reflect.map_identity.Holder.Nested.ItemsEntryRitems@
+records (2&.reflect.map_identity.Other.ItemsEntryRrecords8
+
+ItemsEntry
+key (	Rkey
+value (Rvalue:8"9
+Other0
+
+ItemsEntry
+id (Rid
+note (	Rnote"A
+HolderExtra2
+
+ItemsEntry
+id (	Rid
+count (Rcountbproto3

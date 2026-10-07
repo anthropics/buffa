@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`buffa-build` creates `out_dir` before it writes the include file** (#547). When a build generated no per-package file (an empty descriptor set, or every selected package excluded) and `out_dir` did not exist, writing the include file or the shared descriptor sidecar failed with a not-found error.
+time: 2026-10-04T13:34:27.085158+02:00
