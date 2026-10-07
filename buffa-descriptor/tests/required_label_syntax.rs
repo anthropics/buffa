@@ -55,7 +55,7 @@ fn extension_host() -> FileDescriptorProto {
     }
 }
 
-fn invalid_syntax_files() -> [FileDescriptorProto; 3] {
+fn non_proto2_files() -> [FileDescriptorProto; 3] {
     let mut edition_2024 = file(Some("editions"));
     edition_2024.edition = Some(Edition::EDITION_2024);
     [file(Some("proto3")), file(Some("editions")), edition_2024]
@@ -65,7 +65,7 @@ fn assert_rejected_transactionally(file: FileDescriptorProto, expected_field: &s
     assert_rejected_transactionally_with(file, expected_field, |err| {
         assert!(matches!(
             err,
-            PoolError::RequiredFieldOutsideProto2 { field } if field == expected_field
+            PoolError::RequiredLabelOutsideProto2 { field } if field == expected_field
         ));
         assert_eq!(
             err.to_string(),
@@ -112,14 +112,14 @@ fn assert_rejected_transactionally_with(
 
 #[test]
 fn required_field_labels_are_rejected_outside_proto2() {
-    for file in invalid_syntax_files() {
+    for file in non_proto2_files() {
         assert_rejected_transactionally(file, "required.test.Message.value");
     }
 }
 
 #[test]
 fn encoded_required_field_labels_are_rejected_outside_proto2() {
-    for file in invalid_syntax_files() {
+    for file in non_proto2_files() {
         let bytes = FileDescriptorSet {
             file: vec![file],
             ..Default::default()
@@ -128,7 +128,7 @@ fn encoded_required_field_labels_are_rejected_outside_proto2() {
         let err = DescriptorPool::decode(&bytes).unwrap_err();
         assert!(matches!(
             err,
-            PoolError::RequiredFieldOutsideProto2 { field }
+            PoolError::RequiredLabelOutsideProto2 { field }
                 if field == "required.test.Message.value"
         ));
     }
@@ -136,7 +136,7 @@ fn encoded_required_field_labels_are_rejected_outside_proto2() {
 
 #[test]
 fn nested_required_field_labels_are_rejected_outside_proto2() {
-    for mut file in invalid_syntax_files() {
+    for mut file in non_proto2_files() {
         let message = &mut file.message_type[0];
         message.field.clear();
         message.nested_type.push(DescriptorProto {
@@ -148,26 +148,21 @@ fn nested_required_field_labels_are_rejected_outside_proto2() {
     }
 }
 
+/// An extension of `Host` named `flag`, with a `required` label.
+fn flag_extension() -> FieldDescriptorProto {
+    FieldDescriptorProto {
+        name: Some("flag".into()),
+        number: Some(100),
+        extendee: Some(".required.test.Host".into()),
+        ..required_field()
+    }
+}
+
 #[test]
 fn required_extension_labels_are_rejected_outside_proto2() {
-    for file in invalid_syntax_files() {
+    for file in non_proto2_files() {
         for nested in [false, true] {
-            let mut file = file.clone();
-            file.dependency.push("host.proto".into());
-            file.message_type[0].field.clear();
-            let extension = FieldDescriptorProto {
-                name: Some("flag".into()),
-                number: Some(100),
-                extendee: Some(".required.test.Host".into()),
-                ..required_field()
-            };
-            let expected_field = if nested {
-                file.message_type[0].extension.push(extension);
-                "required.test.Message.flag"
-            } else {
-                file.extension.push(extension);
-                "required.test.flag"
-            };
+            let (file, expected_field) = with_extension(file.clone(), flag_extension(), nested);
             assert_rejected_transactionally(file, expected_field);
         }
     }
@@ -200,7 +195,7 @@ fn assert_required_extension_rejected(file: FileDescriptorProto, expected_field:
         ));
         assert_eq!(
             err.to_string(),
-            format!("extension {expected_field} is required")
+            format!("extension {expected_field} must not be required")
         );
     });
 }
@@ -209,13 +204,7 @@ fn assert_required_extension_rejected(file: FileDescriptorProto, expected_field:
 fn required_extension_labels_are_rejected_in_proto2() {
     for syntax in [None, Some(""), Some("proto2")] {
         for nested in [false, true] {
-            let extension = FieldDescriptorProto {
-                name: Some("flag".into()),
-                number: Some(100),
-                extendee: Some(".required.test.Host".into()),
-                ..required_field()
-            };
-            let (file, expected_field) = with_extension(file(syntax), extension, nested);
+            let (file, expected_field) = with_extension(file(syntax), flag_extension(), nested);
             assert_required_extension_rejected(file, expected_field);
         }
     }
@@ -224,41 +213,39 @@ fn required_extension_labels_are_rejected_in_proto2() {
 #[test]
 fn legacy_required_extensions_are_rejected_in_editions() {
     for edition in [Edition::EDITION_2023, Edition::EDITION_2024] {
-        for nested in [false, true] {
-            let mut file = file(Some("editions"));
-            file.edition = Some(edition);
-            let extension = FieldDescriptorProto {
-                name: Some("flag".into()),
-                number: Some(100),
-                extendee: Some(".required.test.Host".into()),
-                label: Some(Label::LABEL_OPTIONAL),
-                options: buffa::MessageField::some(FieldOptions {
-                    features: buffa::MessageField::some(FeatureSet {
-                        field_presence: Some(DescriptorPresence::LEGACY_REQUIRED),
+        for label in [Label::LABEL_OPTIONAL, Label::LABEL_REPEATED] {
+            for nested in [false, true] {
+                let mut file = file(Some("editions"));
+                file.edition = Some(edition);
+                let extension = FieldDescriptorProto {
+                    label: Some(label),
+                    options: buffa::MessageField::some(FieldOptions {
+                        features: buffa::MessageField::some(FeatureSet {
+                            field_presence: Some(DescriptorPresence::LEGACY_REQUIRED),
+                            ..Default::default()
+                        }),
                         ..Default::default()
                     }),
-                    ..Default::default()
-                }),
-                ..required_field()
-            };
-            let (file, expected_field) = with_extension(file, extension, nested);
-            assert_required_extension_rejected(file, expected_field);
+                    ..flag_extension()
+                };
+                let (file, expected_field) = with_extension(file, extension, nested);
+                assert_required_extension_rejected(file, expected_field);
+            }
         }
     }
 }
 
 #[test]
 fn optional_and_repeated_extensions_link_in_every_syntax() {
-    let mut edition_2023 = file(Some("editions"));
-    edition_2023.edition = Some(Edition::EDITION_2023);
-    for file in [file(Some("proto2")), file(Some("proto3")), edition_2023] {
+    for file in [
+        file(Some("proto2")),
+        file(Some("proto3")),
+        file(Some("editions")),
+    ] {
         for label in [Label::LABEL_OPTIONAL, Label::LABEL_REPEATED] {
             let extension = FieldDescriptorProto {
-                name: Some("flag".into()),
-                number: Some(100),
-                extendee: Some(".required.test.Host".into()),
                 label: Some(label),
-                ..required_field()
+                ..flag_extension()
             };
             let (file, name) = with_extension(file.clone(), extension, false);
             let pool = DescriptorPool::new(FileDescriptorSet {
@@ -292,7 +279,7 @@ fn required_field_labels_link_in_explicit_and_implicit_proto2_files() {
 
 #[test]
 fn optional_and_repeated_field_labels_link_in_proto3_and_editions() {
-    for file in invalid_syntax_files() {
+    for file in non_proto2_files() {
         for label in [Label::LABEL_OPTIONAL, Label::LABEL_REPEATED] {
             let mut file = file.clone();
             file.message_type[0].field[0].label = Some(label);
@@ -337,7 +324,7 @@ fn editions_legacy_required_features_link_without_required_labels() {
             file: vec![file],
             ..Default::default()
         })
-        .expect("Editions use LEGACY_REQUIRED features instead of required labels");
+        .expect("an edition states required presence with the LEGACY_REQUIRED feature");
         assert_eq!(
             pool.message_by_name("required.test.Message")
                 .unwrap()
