@@ -669,6 +669,34 @@ impl Buf for RopeBuf {
         }
     }
 
+    /// Returns a prefix that lies within one segment without copying it. A
+    /// prefix that spans segments is copied into one contiguous buffer.
+    ///
+    /// An uncopied prefix is a reference-counted slice of its segment's
+    /// backing allocation and keeps that allocation alive until it is dropped.
+    /// The allocation holds at least the whole segment, and more when the
+    /// segment was spliced in with `put_shared` from a larger buffer.
+    #[inline]
+    fn copy_to_bytes(&mut self, len: usize) -> Bytes {
+        assert!(len <= self.remaining, "copy_to_bytes past end of RopeBuf");
+        if len == 0 {
+            return Bytes::new();
+        }
+        if len <= self.chunk().len() {
+            let front = &mut self.segments[self.pos];
+            let bytes = front.split_to(len);
+            self.remaining -= len;
+            if front.is_empty() {
+                self.pos += 1;
+            }
+            return bytes;
+        }
+
+        let mut bytes = BytesMut::with_capacity(len);
+        bytes.put(self.take(len));
+        bytes.freeze()
+    }
+
     /// Expose every remaining segment as its own I/O slice so vectored
     /// writers (h2, tokio `write_vectored`) can emit the whole rope in one
     /// syscall without copying. The trait's default would surface only the
@@ -850,6 +878,152 @@ mod tests {
         assert_eq!(buf.chunk(), b"defgh");
         let rest = buf.copy_to_bytes(buf.remaining());
         assert_eq!(&rest[..], b"defghij");
+    }
+
+    fn rope_buf(segments: &[Bytes]) -> RopeBuf {
+        let mut rope = Rope::with_min_segment(1);
+        for segment in segments {
+            rope.put_shared(segment.clone());
+        }
+        RopeBuf::from(rope)
+    }
+
+    #[test]
+    fn rope_buf_copy_to_bytes_shares_whole_segment() {
+        let payload = Bytes::from(crate::alloc::vec![0xAB; 64]);
+        let ptr = payload.as_ptr();
+        let mut rope = Rope::with_min_segment(1);
+        rope.put_shared(payload);
+        let mut buf = RopeBuf::from(rope);
+
+        let copied = buf.copy_to_bytes(64);
+        assert_eq!(copied.as_ptr(), ptr);
+        assert_eq!(copied.as_ref(), &[0xAB; 64]);
+        assert_eq!(buf.remaining(), 0);
+        assert!(buf.chunk().is_empty());
+        assert!(copied.try_into_mut().is_ok());
+    }
+
+    #[test]
+    fn rope_buf_copy_to_bytes_shares_partial_segment() {
+        let payload = Bytes::copy_from_slice(b"abcdefgh");
+        let mut buf = rope_buf(core::slice::from_ref(&payload));
+        let copied = buf.copy_to_bytes(3);
+        assert_eq!(copied, &b"abc"[..]);
+        assert_eq!(copied.as_ptr(), payload.as_ptr());
+        assert_eq!(buf.remaining(), 5);
+        assert_eq!(buf.chunk(), b"defgh");
+        let rest = buf.copy_to_bytes(5);
+        assert_eq!(rest.as_ptr(), payload.as_ptr().wrapping_add(3));
+        assert_eq!(rest, &b"defgh"[..]);
+        assert_eq!(buf.remaining(), 0);
+    }
+
+    #[test]
+    fn rope_buf_copy_to_bytes_partial_result_outlives_buffer() {
+        let (copied, ptr) = {
+            let payload = Bytes::copy_from_slice(b"abcdefgh");
+            let ptr = payload.as_ptr();
+            let mut buf = rope_buf(&[payload]);
+            (buf.copy_to_bytes(3), ptr)
+        };
+        assert_eq!(copied.as_ptr(), ptr);
+        assert_eq!(copied, &b"abc"[..]);
+        assert!(copied.try_into_mut().is_ok());
+    }
+
+    #[test]
+    fn rope_buf_copy_to_bytes_shares_segment_after_advance() {
+        let payload = Bytes::from(crate::alloc::vec![0x5A; 64]);
+        let mut buf = rope_buf(&[Bytes::from_static(b"head"), payload.clone()]);
+        buf.advance(7);
+        let copied = buf.copy_to_bytes(10);
+        assert_eq!(copied.as_ptr(), payload.as_ptr().wrapping_add(3));
+        assert_eq!(copied.as_ref(), &[0x5A; 10]);
+        assert_eq!(buf.remaining(), 51);
+        assert_eq!(buf.chunk().as_ptr(), payload.as_ptr().wrapping_add(13));
+    }
+
+    #[test]
+    fn rope_buf_copy_to_bytes_zero_does_not_advance() {
+        let mut empty = RopeBuf::from(Rope::new());
+        assert!(empty.copy_to_bytes(0).is_empty());
+        assert_eq!(empty.remaining(), 0);
+
+        let mut buf = rope_buf(&[Bytes::from_static(b"abc")]);
+        assert!(buf.copy_to_bytes(0).is_empty());
+        assert_eq!(buf.remaining(), 3);
+        assert_eq!(buf.chunk(), b"abc");
+        assert_eq!(buf.copy_to_bytes(3), &b"abc"[..]);
+        assert!(buf.copy_to_bytes(0).is_empty());
+        assert!(buf.chunk().is_empty());
+    }
+
+    #[test]
+    fn rope_buf_copy_to_bytes_matches_contiguous_buffer_at_every_boundary() {
+        let segments = [
+            Bytes::from_static(b"a"),
+            Bytes::from_static(b"bcde"),
+            Bytes::from_static(b"fgh"),
+            Bytes::from_static(b"ijklmn"),
+        ];
+        let expected = b"abcdefghijklmn";
+        for offset in 0..=expected.len() {
+            for len in 0..=expected.len() - offset {
+                let mut buf = rope_buf(&segments);
+                buf.advance(offset);
+                assert_eq!(buf.copy_to_bytes(len), &expected[offset..offset + len]);
+                assert_eq!(buf.remaining(), expected.len() - offset - len);
+                let remaining = buf.remaining();
+                assert_eq!(buf.copy_to_bytes(remaining), &expected[offset + len..]);
+                assert!(buf.chunk().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn rope_buf_copy_to_bytes_take_preserves_limit_and_sharing() {
+        let payload = Bytes::from_static(b"abcdefgh");
+        let mut buf = rope_buf(core::slice::from_ref(&payload));
+        let mut limited = (&mut buf).take(3);
+        let copied = limited.copy_to_bytes(2);
+        assert_eq!(copied.as_ptr(), payload.as_ptr());
+        assert_eq!(copied, &b"ab"[..]);
+        assert_eq!(limited.remaining(), 1);
+        assert_eq!(limited.copy_to_bytes(1), &b"c"[..]);
+        assert_eq!(limited.remaining(), 0);
+        assert_eq!(buf.remaining(), 5);
+        assert_eq!(buf.chunk(), b"defgh");
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn rope_buf_copy_to_bytes_updates_vectored_chunks() {
+        let segments = [Bytes::from_static(b"abc"), Bytes::from_static(b"def")];
+        let mut buf = rope_buf(&segments);
+        assert_eq!(buf.copy_to_bytes(3), &b"abc"[..]);
+        {
+            let mut slices = [std::io::IoSlice::new(&[]); 2];
+            assert_eq!(buf.chunks_vectored(&mut slices), 1);
+            assert_eq!(slices[0].as_ref(), b"def");
+        }
+        assert_eq!(buf.copy_to_bytes(3), &b"def"[..]);
+        let mut slices = [std::io::IoSlice::new(&[]); 2];
+        assert_eq!(buf.chunks_vectored(&mut slices), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "copy_to_bytes past end of RopeBuf")]
+    fn rope_buf_copy_to_bytes_rejects_overread() {
+        let mut buf = rope_buf(&[Bytes::from_static(b"a"), Bytes::from_static(b"bc")]);
+        buf.copy_to_bytes(4);
+    }
+
+    #[test]
+    #[should_panic(expected = "copy_to_bytes past end of RopeBuf")]
+    fn rope_buf_copy_to_bytes_rejects_read_from_empty_buffer() {
+        let mut buf = RopeBuf::from(Rope::new());
+        buf.copy_to_bytes(1);
     }
 
     /// `min_segment = usize::MAX` degrades to fully contiguous output.
