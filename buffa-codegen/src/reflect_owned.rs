@@ -63,6 +63,7 @@ pub(crate) fn reflect_owned_impls(
     let current_package = scope.current_package;
     let proto_fqn = scope.proto_fqn;
     let features = scope.features;
+    let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, proto_fqn);
     let oneof_idents = scope.oneof_idents;
     let oneof_prefix = scope.oneof_prefix;
     let nesting = scope.nesting;
@@ -303,6 +304,7 @@ pub(crate) fn reflect_owned_impls(
     };
 
     Ok(quote! {
+        #deprecated_field_allow
         impl ::buffa_descriptor::reflect::ReflectMessage for #name_ident {
             fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
                 #pool.message(Self::__buffa_reflect_message_index())

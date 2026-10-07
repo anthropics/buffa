@@ -16,6 +16,21 @@ pub mod debug_redact {
     buffa::include_proto!("debug_redact");
 }
 
+/// `[deprecated = true]` — generated fields and enum values carry
+/// `#[deprecated]`, and the impls that must visit them carry
+/// `#[allow(deprecated)]`, so this module compiles without warnings.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod deprecated {
+    buffa::include_proto!("deprecated");
+}
+
+/// `[default = DEPRECATED_VALUE]` in proto2: no field is deprecated, yet the
+/// generated default, `clear` and extension getter name a deprecated variant.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod deprecated_proto2 {
+    buffa::include_proto!("deprecated_proto2");
+}
+
 /// `skip_debug` — hand-written `Debug` impls for the types `build.rs` names
 /// in its rules.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
