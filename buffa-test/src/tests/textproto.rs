@@ -101,6 +101,33 @@ fn all_scalars_golden() {
 }
 
 #[test]
+fn float_field_prints_f32_digits() {
+    let msg = AllScalars {
+        f_float: 0.1,
+        f_double: 0.1,
+        ..Default::default()
+    };
+    let text = encode_to_string(&msg);
+    assert_eq!(text, "f_float: 0.1 f_double: 0.1");
+    let back: AllScalars = decode_from_str(&text).unwrap();
+    assert_eq!(back, msg);
+}
+
+#[test]
+fn float_field_round_trips_where_short_digits_would_not() {
+    // The two `f32` values whose shortest digits a reader that narrows from
+    // `f64` takes to a neighbour. They are written with their `f64` digits.
+    for bits in [0x15ae_43fd_u32, 0x95ae_43fd] {
+        let msg = AllScalars {
+            f_float: f32::from_bits(bits),
+            ..Default::default()
+        };
+        let back: AllScalars = decode_from_str(&encode_to_string(&msg)).unwrap();
+        assert_eq!(back.f_float.to_bits(), bits);
+    }
+}
+
+#[test]
 fn signed_special_floats_allow_comments_between_sign_and_literal() {
     let inf: AllScalars = decode_from_str("f_float: - # comment\ninf").unwrap();
     assert!(inf.f_float.is_infinite() && inf.f_float.is_sign_negative());
@@ -108,10 +135,9 @@ fn signed_special_floats_allow_comments_between_sign_and_literal() {
     let infinity: AllScalars = decode_from_str("f_double: -\n# comment\ninfinity").unwrap();
     assert!(infinity.f_double.is_infinite() && infinity.f_double.is_sign_negative());
 
-    let nan: AllScalars = decode_from_str("f_double: -\n# comment\nnan").unwrap();
-    // Sign bit is only guaranteed for the negation, so assert it on the
-    // f64 path rather than through the f32 cast.
+    let nan: AllScalars = decode_from_str("f_double: -\n# comment\nnan f_float: -nan").unwrap();
     assert!(nan.f_double.is_nan() && nan.f_double.is_sign_negative());
+    assert!(nan.f_float.is_nan() && nan.f_float.is_sign_negative());
 }
 
 #[test]
@@ -188,6 +214,30 @@ fn person_pretty_output() {
     });
     let text = encode_to_string_pretty(&p);
     assert_eq!(text, "id: 1\naddress {\n  city: \"London\"\n}\n");
+}
+
+#[test]
+fn uppercase_hex_escapes_in_string_and_bytes_fields() {
+    let input = r#"name: "\XC3\XA9" avatar: '\X00\X7f\X80\Xff' tags: ["\X41" 'B', "\X414"]"#;
+    let msg: Person = decode_from_str(input).unwrap();
+    assert_eq!(msg.name, "é");
+    assert_eq!(msg.avatar, [0x00, 0x7F, 0x80, 0xFF]);
+    assert_eq!(msg.tags, ["AB", "A4"]);
+    let back: Person = decode_from_str(&encode_to_string(&msg)).unwrap();
+    assert_eq!(back, msg);
+}
+
+#[test]
+fn uppercase_hex_escapes_preserve_string_validation() {
+    let err = decode_from_str::<Person>(r#"name: "\Xff""#).unwrap_err();
+    assert_eq!(err.kind, ParseErrorKind::InvalidUtf8);
+    for input in [r#"name: "\X""#, r#"avatar: "\Xg""#] {
+        let err = decode_from_str::<Person>(input).unwrap_err();
+        assert_eq!(
+            err.kind,
+            ParseErrorKind::InvalidString("invalid \\x escape")
+        );
+    }
 }
 
 // ── enum ────────────────────────────────────────────────────────────────────

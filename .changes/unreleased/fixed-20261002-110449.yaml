@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Two oneofs of one message whose names give the same Rust enum name are now a codegen error** (#510). `oneof foo_bar` beside `oneof foo__bar` (both `FooBar`), or `oneof self` beside `oneof self_` (both `Self_`), generated two enums of one name, and the output did not compile. `generate` now returns the new `CodeGenError::OneofEnumNameConflict`, which names the message, both oneofs and the Rust name. protoc accepts such a schema, so the remedy is to rename one of the oneofs; a oneof's name is in neither the wire format nor JSON, so the rename changes generated code only.
+time: 2026-10-02T11:04:49.08195+02:00

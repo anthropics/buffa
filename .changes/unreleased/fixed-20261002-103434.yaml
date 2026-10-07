@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **Text format prints a `float` field with `f32` digits** (#519). `TextEncoder::write_f32` widened the value to `f64` before formatting, so a `float` field holding `0.1` was written as `0.10000000149011612`. It is now written as `0.1`, the shortest decimal that identifies the `f32`. JSON output already uses those digits for the field, and protobuf-go and protobuf C++ also print `0.1`.
+    The text of a `float` changes wherever the widened `f64` printed digits the `f32` does not have: `0.1` changes, and `0.5` does not. The values are unchanged and earlier releases read the new text back to the same `f32`, but golden files written from the old output differ. Two values keep the widened digits, the `f32` with bits `0x15ae43fd` (`7.038531e-26`) and its negation: a reader that parses a `float` as an `f64` and narrows it, as protobuf C++, protobuf-go and earlier buffa releases do, would read their short digits one ulp off.
+time: 2026-10-02T10:34:34.000000+01:00
