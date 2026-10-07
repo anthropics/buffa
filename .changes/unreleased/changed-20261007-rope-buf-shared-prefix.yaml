@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`RopeBuf::copy_to_bytes` returns a shared slice when the read fits in the front segment** (#583). The `Buf` default allocated a buffer and copied the bytes for every call. A read that lies within one segment now takes a reference-counted slice of the segment's backing allocation, which stays alive until the slice is dropped. A read that spans segments is copied into one contiguous buffer, as before.
+time: 2026-10-06T22:00:33.000000000+00:00

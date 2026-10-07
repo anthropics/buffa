@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects an extension range in a proto3 message** (#589). A `syntax = "proto3"` message with an `extension_range` entry linked, which protoc and protobuf-go refuse. It is now `PoolError::ExtensionRangeInProto3`, which names the message, for nested messages too. proto2 and editions messages keep their extension ranges.
+time: 2026-10-07T00:00:00+02:00

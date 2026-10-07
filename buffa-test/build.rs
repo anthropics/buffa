@@ -165,7 +165,8 @@ fn main() {
     // Generated table code needs `core::mem::offset_of!`, stable in Rust 1.77,
     // and the workspace MSRV is 1.75, where it is a compile error by design.
     println!("cargo:rustc-check-cfg=cfg(has_table_codec)");
-    if rustc_minor() >= 77 {
+    let table_codec = rustc_minor() >= 77;
+    if table_codec {
         println!("cargo:rustc-cfg=has_table_codec");
         compile_both_codecs("table_codec.proto", &read_proto("table_codec.proto"), "tc");
         compile_both_codecs(
@@ -260,10 +261,10 @@ fn main() {
     // `ProtoElemJson`) impl for the element path (`Vec<LocalStr>`). A foreign
     // type here would be an orphan-rule error — only local types are reflectable
     // in a repeated field. Singular string fields reflect via deref. The rule is
-    // scoped to the singular + repeated fields so the `map<string, string> attrs`
-    // field stays the `String`-keyed control here (`LocalStr` is not `Hash`, so
-    // it could not be a map key); custom string map keys/values get their own
-    // dedicated fixture in `string_map.proto`.
+    // scoped to the singular, repeated, optional and oneof fields so the
+    // `map<string, string> attrs` field stays the `String`-keyed control here
+    // (`LocalStr` is not `Hash`, so it could not be a map key); custom string
+    // map keys/values get their own dedicated fixture in `string_map.proto`.
     buffa_build::Config::new()
         .files(&["protos/vtable_string_repr.proto"])
         .includes(&["protos/"])
@@ -272,6 +273,8 @@ fn main() {
             &[
                 ".vtable_string_repr.Labels.name",
                 ".vtable_string_repr.Labels.items",
+                ".vtable_string_repr.Labels.alias",
+                ".vtable_string_repr.Labels.tag",
             ],
         )
         .generate_json(true)
@@ -756,6 +759,44 @@ fn main() {
         .compile()
         .expect("buffa_build failed for debug_redact.proto");
 
+    // `[deprecated = true]` — generated declarations carry `#[deprecated]` and
+    // the impls that visit every field carry `#[allow(deprecated)]`. Views,
+    // text, JSON, lazy views and vtable reflection are on so every guarded
+    // surface is compiled. The proof is that this crate compiles clean under
+    // `-D warnings`. `generate_arbitrary` adds the `Arbitrary` impls, which
+    // only a build with the `arbitrary` feature compiles.
+    let mut deprecated = buffa_build::Config::new()
+        .files(&["protos/deprecated.proto"])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .generate_text(true)
+        .generate_json(true)
+        .lazy_views(true)
+        .generate_reflection(true)
+        .generate_arbitrary(true);
+    // `Audit` takes the table codec, where the field offsets are taken inside
+    // a `static` rather than an impl.
+    if table_codec {
+        deprecated =
+            deprecated.codec_strategy_in(buffa_build::CodecStrategy::Table, &[".deprecated.Audit"]);
+    }
+    deprecated
+        .compile()
+        .expect("buffa_build failed for deprecated.proto");
+
+    // The proto2 half: no field is deprecated, but a `[default = …]` names a
+    // deprecated enum variant or an alias of one, so the `Default` impl,
+    // `Message::clear` and the extension's default getter spell it out and
+    // need the guard. The enums are closed here, so `generate_arbitrary` puts
+    // their `Arbitrary` impls behind a bare enum field.
+    buffa_build::Config::new()
+        .files(&["protos/deprecated_proto2.proto"])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .generate_arbitrary(true)
+        .compile()
+        .expect("buffa_build failed for deprecated_proto2.proto");
+
     // `skip_debug` — the hand-written `Debug` impls in `src/lib.rs` compile
     // only if the generated ones are omitted. Views enabled so the view of a
     // matched message compiles too.
@@ -1003,11 +1044,13 @@ fn main() {
     // Extension JSON registry — message/enum/repeated extensions with a local
     // extendee. `generate_json(true)` so the `#[serde(flatten)]` wrapper and
     // `register_extensions` are emitted alongside the `Extension<_>` consts.
+    // `generate_text(true)` for `tests/repeated_extension_text.rs`.
     buffa_build::Config::new()
         .files(&["protos/ext_json.proto"])
         .includes(&["protos/"])
         .generate_views(false)
         .generate_json(true)
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for ext_json.proto");
 
@@ -1042,6 +1085,7 @@ fn main() {
         .files(&["protos/group_ext.proto"])
         .includes(&["protos/"])
         .generate_views(false)
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for group_ext.proto");
 

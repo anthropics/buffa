@@ -111,9 +111,11 @@ impl<'a> TextDecoder<'a> {
     /// type names (`[pkg.ext]`) it includes the brackets — generated code
     /// matches against `"[pkg.ext]"` literally.
     ///
-    /// Does **not** validate that a `:` separator was present; the colon is
-    /// optional before message values, so the check is deferred to after the
-    /// caller dispatches on the name.
+    /// The `:` after the name is optional before a message value or a list
+    /// of message values. This method returns the name either way; for a
+    /// scalar value, or a scalar list element, that follows a name without
+    /// one, the call that reads the value returns the error. An empty list
+    /// parses with or without the colon.
     ///
     /// # Errors
     ///
@@ -689,6 +691,9 @@ impl<'a> TextDecoder<'a> {
     /// extension map (installed via [`set_type_registry`]); the registered
     /// `text_merge` consumes the value and produces unknown-field records at
     /// the extension's field number.
+    ///
+    /// Repeated message and group entries accept a message list or a single
+    /// message value and produce one record per element.
     ///
     /// # Errors
     ///
@@ -1395,6 +1400,19 @@ mod tests {
     fn skip_unknown_message_list() {
         let m: TestMsg = decode_from_str("unknown: [{a: 1}, {a: 2}] i: 42").unwrap();
         assert_eq!(m.i, 42);
+    }
+
+    #[test]
+    fn skip_unknown_list_without_colon() {
+        let m: TestMsg = decode_from_str("unknown [{a: 1}, {a: 2}] i: 42").unwrap();
+        assert_eq!(m.i, 42);
+        let err = decode_from_str::<TestMsg>("unknown [1, 2] i: 42").unwrap_err();
+        assert_eq!(
+            err.kind,
+            ParseErrorKind::UnexpectedToken {
+                expected: "':' before scalar value",
+            }
+        );
     }
 
     // ── errors ──────────────────────────────────────────────────────────────

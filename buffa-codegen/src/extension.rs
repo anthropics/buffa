@@ -205,7 +205,7 @@ fn generate_one(
     };
 
     let (text_const, text_ident) = if ctx.config.generate_text {
-        match text_helper_tokens(ctx, field, ty, current_package, nesting)? {
+        match text_helper_tokens(ctx, field, ty, repeated, current_package, nesting)? {
             Some((te, tm)) => {
                 let ident = format_ident!("__{}_TEXT_EXT", const_ident);
                 let tokens = crate::feature_gates::cfg_block(
@@ -291,9 +291,14 @@ fn default_fn_tokens(
         // Same ident escaping as `enumeration.rs` uses for variant names.
         let variant =
             crate::idents::make_field_ident(field.default_value.as_deref().unwrap_or_default());
+        // A `[default = V]` whose variant V is `[deprecated = true]` spells the
+        // deprecated variant out here.
+        let deprecated_allow = crate::message::default_names_deprecated_value(ctx, field)
+            .then(|| quote! { #[allow(deprecated)] });
         return Ok((
             fn_ident.clone(),
             quote! {
+                #deprecated_allow
                 #[doc(hidden)]
                 const fn #fn_ident() -> i32 {
                     #enum_path::#variant as i32
@@ -333,9 +338,15 @@ fn default_fn_tokens(
         quote! { const }
     };
 
+    // A `[default = V]` whose enum value V is `[deprecated = true]` spells the
+    // deprecated variant out in this fn body.
+    let deprecated_allow = crate::message::default_names_deprecated_value(ctx, field)
+        .then(|| quote! { #[allow(deprecated)] });
+
     Ok((
         fn_ident.clone(),
         quote! {
+            #deprecated_allow
             #[doc(hidden)]
             #const_kw fn #fn_ident() -> #value_ty {
                 #default_expr
@@ -453,35 +464,40 @@ fn json_helper_tokens(
     }))
 }
 
-/// Map a message/group extension to its `type_registry::*_{encode,merge}_text<M>`
-/// function-path token pair. Returns `None` for scalars and enums — textproto
-/// extension support currently covers only the `[pkg.ext] { ... }` form that
-/// conformance exercises.
+/// Map a message/group extension to its `type_registry` text helper pair, the
+/// `repeated_*` pair when `repeated` is set. Returns `None` for scalars and
+/// enums, which have no text helpers.
 fn text_helper_tokens(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
     ty: Type,
+    repeated: bool,
     current_package: &str,
     nesting: usize,
 ) -> Result<Option<(TokenStream, TokenStream)>, CodeGenError> {
     let h = quote! { ::buffa::type_registry };
-    match ty {
-        Type::TYPE_MESSAGE => {
-            let msg_ty = resolve_type_path(ctx, field, current_package, nesting, "message")?;
-            Ok(Some((
-                quote! { #h::message_encode_text::<#msg_ty> },
-                quote! { #h::message_merge_text::<#msg_ty> },
-            )))
-        }
-        Type::TYPE_GROUP => {
-            let msg_ty = resolve_type_path(ctx, field, current_package, nesting, "group")?;
-            Ok(Some((
-                quote! { #h::group_encode_text::<#msg_ty> },
-                quote! { #h::group_merge_text::<#msg_ty> },
-            )))
-        }
-        _ => Ok(None),
-    }
+    let (kind, encode, merge) = match (ty, repeated) {
+        (Type::TYPE_MESSAGE, false) => ("message", "message_encode_text", "message_merge_text"),
+        (Type::TYPE_MESSAGE, true) => (
+            "message",
+            "repeated_message_encode_text",
+            "repeated_message_merge_text",
+        ),
+        (Type::TYPE_GROUP, false) => ("group", "group_encode_text", "group_merge_text"),
+        (Type::TYPE_GROUP, true) => (
+            "group",
+            "repeated_group_encode_text",
+            "repeated_group_merge_text",
+        ),
+        _ => return Ok(None),
+    };
+    let msg_ty = resolve_type_path(ctx, field, current_package, nesting, kind)?;
+    let encode = format_ident!("{encode}");
+    let merge = format_ident!("{merge}");
+    Ok(Some((
+        quote! { #h::#encode::<#msg_ty> },
+        quote! { #h::#merge::<#msg_ty> },
+    )))
 }
 
 /// Resolve `field.type_name` (a `.pkg.Type` proto FQN) to a Rust type path
@@ -866,10 +882,10 @@ mod tests {
         assert!(!tokens.contains("JsonExtEntry"), "{tokens}");
     }
 
-    #[test]
-    fn text_const_emitted_for_message_independent_of_json() {
-        // text on, json OFF — message extension gets a TextExtEntry but no
-        // JsonExtEntry. This is the decoupling that the feature-split enables.
+    /// Run `generate_one` with text on and JSON off for an extension named
+    /// `ext` of type `.my.pkg.Ann`, and return `(tokens, json_ident,
+    /// text_ident)`.
+    fn gen_text(ty: Type, label: Label) -> (String, Option<String>, Option<String>) {
         let files = [FileDescriptorProto {
             name: Some("test.proto".into()),
             package: Some("my.pkg".into()),
@@ -885,23 +901,68 @@ mod tests {
         };
         let ctx = CodeGenContext::new(&files, &config, &[]);
         let features = ResolvedFeatures::proto2_defaults();
-        let mut field = ext_field("ann", 50007, Type::TYPE_MESSAGE);
+        let mut field = ext_field("ext", 50007, ty);
         field.type_name = Some(".my.pkg.Ann".to_string());
+        field.label = Some(label);
 
         let (tokens, json_id, text_id) =
             generate_one(&ctx, &field, "my.pkg", 0, &features, "my.pkg")
                 .unwrap()
                 .unwrap();
-        let tokens = tokens.to_string();
+        (
+            tokens.to_string(),
+            json_id.map(|i| i.to_string()),
+            text_id.map(|i| i.to_string()),
+        )
+    }
+
+    #[test]
+    fn text_const_emitted_for_message_independent_of_json() {
+        // text on, json OFF — message extension gets a TextExtEntry but no
+        // JsonExtEntry. This is the decoupling that the feature-split enables.
+        let (tokens, json_id, text_id) = gen_text(Type::TYPE_MESSAGE, Label::LABEL_OPTIONAL);
         assert!(json_id.is_none());
-        assert_eq!(
-            text_id.map(|i| i.to_string()).as_deref(),
-            Some("__ANN_TEXT_EXT")
-        );
+        assert_eq!(text_id.as_deref(), Some("__EXT_TEXT_EXT"));
         assert!(tokens.contains("TextExtEntry"), "{tokens}");
-        assert!(tokens.contains("message_encode_text"), "{tokens}");
-        assert!(tokens.contains("message_merge_text"), "{tokens}");
         assert!(!tokens.contains("JsonExtEntry"), "{tokens}");
+    }
+
+    #[test]
+    fn text_helpers_follow_the_type_and_the_label() {
+        // The singular names are suffixes of the repeated ones, so each case
+        // matches the whole path segment, `::` on both sides.
+        let all = [
+            "message_encode_text",
+            "message_merge_text",
+            "repeated_message_encode_text",
+            "repeated_message_merge_text",
+            "group_encode_text",
+            "group_merge_text",
+            "repeated_group_encode_text",
+            "repeated_group_merge_text",
+        ];
+        let cases = [
+            (Type::TYPE_MESSAGE, Label::LABEL_OPTIONAL, &all[0..2]),
+            (Type::TYPE_MESSAGE, Label::LABEL_REPEATED, &all[2..4]),
+            (Type::TYPE_GROUP, Label::LABEL_OPTIONAL, &all[4..6]),
+            (Type::TYPE_GROUP, Label::LABEL_REPEATED, &all[6..8]),
+        ];
+        for (ty, label, expected) in cases {
+            let (tokens, _, text_id) = gen_text(ty, label);
+            assert_eq!(
+                text_id.as_deref(),
+                Some("__EXT_TEXT_EXT"),
+                "{ty:?} {label:?}"
+            );
+            for helper in all {
+                let path = format!(":: buffa :: type_registry :: {helper} :: < Ann >");
+                assert_eq!(
+                    tokens.contains(&path),
+                    expected.contains(&helper),
+                    "{ty:?} {label:?} {helper}: {tokens}"
+                );
+            }
+        }
     }
 
     #[test]

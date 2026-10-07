@@ -1933,11 +1933,11 @@ impl<E: crate::Enumeration> serde::Serialize for EnumProtoNameRef<'_, E> {
 
 // ── skip_if ───────────────────────────────────────────────────────────────────
 
-/// Predicates for `#[serde(skip_serializing_if = "...")]` on proto3 fields.
+/// Predicates for `#[serde(skip_serializing_if = "...")]` on implicit-presence
+/// fields.
 ///
-/// In proto3 JSON, fields whose value equals the type default are omitted.
-/// Attach these to the appropriate field types in generated `#[derive(Serialize)]`
-/// structs to match that behaviour.
+/// Proto3 JSON omits such a field at its protobuf default. Generated
+/// `Serialize` impls attach these to the matching field types.
 pub mod skip_if {
     pub fn is_zero_i32(v: &i32) -> bool {
         *v == 0
@@ -1954,15 +1954,16 @@ pub mod skip_if {
     pub fn is_false(v: &bool) -> bool {
         !*v
     }
-    /// Treats `-0.0` as zero (IEEE 754: `-0.0 == 0.0`), so negative zero
-    /// is omitted from JSON output. Correct for proto3 JSON but a
-    /// round-trip through JSON will not preserve `-0.0`.
+    /// Returns `true` only for `+0.0` (all bits clear). Returns `false` for
+    /// `-0.0` and NaN, so both are serialized. Differs from `*v == 0.0`, which
+    /// is also `true` for `-0.0`.
     pub fn is_zero_f32(v: &f32) -> bool {
-        *v == 0.0
+        v.to_bits() == 0
     }
-    /// See [`is_zero_f32`] — same `-0.0` behavior applies.
+    /// Returns `true` only for `+0.0` (all bits clear), and `false` for `-0.0`
+    /// and NaN.
     pub fn is_zero_f64(v: &f64) -> bool {
-        *v == 0.0
+        v.to_bits() == 0
     }
     pub fn is_empty_str(v: &str) -> bool {
         v.is_empty()

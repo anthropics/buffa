@@ -62,6 +62,7 @@ pub(crate) fn generate_table_impl(
     let name = format_ident!("{}", rust_name);
     let table = table_ident(rust_name);
     let dotted_fqn = format!(".{proto_fqn}");
+    let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, proto_fqn);
 
     let fields = table_fields(ctx, msg, &dotted_fqn, features).map_err(|why| {
         CodeGenError::Other(format!(
@@ -90,6 +91,7 @@ pub(crate) fn generate_table_impl(
     Ok(quote! {
         #[doc(hidden)]
         #[allow(non_upper_case_globals)]
+        #deprecated_field_allow
         pub(crate) static #table: ::buffa::table::Table<#name> = ::buffa::__table!(
             #name,
             abi = #abi,

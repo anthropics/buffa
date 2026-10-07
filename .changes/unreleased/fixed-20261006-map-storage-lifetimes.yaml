@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`#[derive(MapStorage)]` accepts a newtype with a lifetime parameter named `'a`** (#578). The generated `storage_iter` declared a lifetime `'a` of its own, so `struct Borrowed<'a, K, V>(HashMap<K, V, Hasher<'a>>)` failed with E0496. The method's lifetime is now `'__buffa_iter`. Names that start with `__buffa` or `__Buffa` are reserved for the code the remote derives generate, and the crate documentation now says so.
+time: 2026-10-06T21:52:20.000000Z

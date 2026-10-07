@@ -99,6 +99,33 @@ impl TryFrom<Duration> for jiff::SignedDuration {
     /// sign-mismatched ones invalid, and this conversion rejects them rather
     /// than letting `SignedDuration::new` silently re-normalize them.
     fn try_from(d: Duration) -> Result<Self, Self::Error> {
+        Self::try_from(&d)
+    }
+}
+
+#[cfg_attr(docsrs, doc(cfg(feature = "jiff")))]
+impl TryFrom<&Duration> for jiff::SignedDuration {
+    type Error = DurationJiffError;
+
+    /// Convert a borrowed protobuf [`Duration`] to a [`jiff::SignedDuration`],
+    /// leaving the message in place.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use buffa_types::Duration;
+    ///
+    /// let proto = Duration::from_millis(-1_500);
+    /// let duration: jiff::SignedDuration = (&proto).try_into().unwrap();
+    /// assert_eq!(duration, jiff::SignedDuration::new(-1, -500_000_000));
+    /// assert_eq!(proto.seconds, -1);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DurationJiffError::InvalidNanos`] if `nanos` is out of range
+    /// or its sign is inconsistent with `seconds`.
+    fn try_from(d: &Duration) -> Result<Self, Self::Error> {
         if !(-999_999_999..=999_999_999).contains(&d.nanos) {
             return Err(DurationJiffError::InvalidNanos);
         }
