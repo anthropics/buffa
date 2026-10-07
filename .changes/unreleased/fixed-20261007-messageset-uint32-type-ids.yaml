@@ -1,0 +1,2 @@
+kind: Fixed
+body: Accept the full nonzero `uint32` range for MessageSet type IDs.
