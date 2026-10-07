@@ -2515,7 +2515,9 @@ impl DescriptorPool {
             .clone()
             .unwrap_or_else(|| derive_json_name(&name));
         // protoc applies the bracket rule with its JSON name conflict checks,
-        // which the message option turns off.
+        // which the message option turns off. The option is deprecated and
+        // protoc still honours it.
+        #[allow(deprecated)]
         let checks_json_name_form = containing_msg.is_some_and(|m| {
             !m.options
                 .deprecated_legacy_json_field_conflicts
