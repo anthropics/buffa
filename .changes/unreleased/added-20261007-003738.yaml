@@ -1,3 +1,0 @@
-kind: Added
-body: '**Borrowed Duration conversions**: convert a protobuf Duration by reference to core::time::Duration, chrono::TimeDelta, or jiff::SignedDuration without cloning or consuming the message. Owned conversions share the same validation.'
-time: 2026-10-07T00:37:38.182258+02:00

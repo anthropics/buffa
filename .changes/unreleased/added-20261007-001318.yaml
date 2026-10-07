@@ -1,4 +1,4 @@
 kind: Added
 body: |-
-    **`Timestamp` converts by reference** (#582). `TryFrom<&Timestamp>` is implemented for `std::time::SystemTime`, `chrono::DateTime<Utc>` and `jiff::Timestamp`, beside the by-value conversions and with the same errors and feature gates. `Timestamp` is `Clone` and not `Copy`, so a caller holding a reference had to clone the message to convert it.
+    **`Timestamp` and `Duration` convert by reference** (#582, #586). `TryFrom<&Timestamp>` is implemented for `std::time::SystemTime`, `chrono::DateTime<Utc>` and `jiff::Timestamp`, and `TryFrom<&Duration>` for `core::time::Duration`, `chrono::TimeDelta` and `jiff::SignedDuration`, beside the by-value conversions and with the same errors and feature gates. Both types are `Clone` and not `Copy`, so a caller holding a reference had to clone the message to convert it.
 time: 2026-10-07T00:13:18.923347+02:00
