@@ -331,6 +331,12 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// A map's enum value type starts with a nonzero value.
+    MapEnumFirstValueNotZero {
+        field: String,
+        enum_name: String,
+        number: i32,
+    },
     /// A oneof member has required or repeated cardinality instead of optional.
     InvalidOneofCardinality { field: String },
     /// A repeated field declares an explicit default value.
@@ -670,6 +676,10 @@ impl core::fmt::Display for PoolError {
             } => write!(
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
+            ),
+            Self::MapEnumFirstValueNotZero { field, enum_name, number } => write!(
+                f,
+                "map field {field} uses enum {enum_name} whose first value is {number}, which must be zero"
             ),
             Self::InvalidOneofCardinality { field } => {
                 write!(f, "field {field} is a oneof member but is not optional")
@@ -1406,6 +1416,27 @@ impl DescriptorPool {
             }
         }
         self.finalize_field_enum_types(first_new_message, first_new_extension);
+        // All enums must be linked before checking map defaults: the value
+        // type may be declared later in this file or another file in the set.
+        for message in &self.messages[first_new_message..] {
+            for field in &message.fields {
+                if let FieldKind::Map {
+                    value: SingularKind::Enum(eidx),
+                    ..
+                } = field.kind
+                {
+                    let enumeration = &self.enums[eidx.0 as usize];
+                    let number = enumeration.values[0].number;
+                    if number != 0 {
+                        return Err(PoolError::MapEnumFirstValueNotZero {
+                            field: format!("{}.{}", message.full_name, field.name),
+                            enum_name: enumeration.full_name.clone(),
+                            number,
+                        });
+                    }
+                }
+            }
+        }
 
         // Record the symbol → file index (for `FindFileContainingSymbol`).
         for (i, f) in new_files.iter().enumerate() {

@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**DescriptorPool rejects map enum values whose first declared value is nonzero.** This matches protoc, including proto2 enums that are valid for ordinary fields. The check runs after enum linking so imported and forward-declared value types are handled.'
+time: 2026-10-07T12:01:09.196099+02:00

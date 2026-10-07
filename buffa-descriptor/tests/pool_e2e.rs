@@ -5899,3 +5899,163 @@ mod message_field_defaults {
         }
     }
 }
+
+mod map_enum_defaults {
+    use super::{assert_set_rejected_without_mutating_pool, enum_value, scalar_field};
+    use buffa::Message;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        MessageOptions,
+    };
+    use buffa_descriptor::{DescriptorPool, PoolError};
+
+    fn set(first: i32, nested: bool, enum_first: bool) -> FileDescriptorSet {
+        let enum_name = if nested {
+            ".map.test.M.E"
+        } else {
+            ".map.test.E"
+        };
+        let enumeration = EnumDescriptorProto {
+            name: Some("E".into()),
+            value: vec![
+                enum_value("FIRST", first),
+                enum_value("OTHER", if first == 0 { 1 } else { 0 }),
+            ],
+            ..Default::default()
+        };
+        let mut message = DescriptorProto {
+            name: Some("M".into()),
+            field: vec![
+                buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+                    label: Some(Label::LABEL_REPEATED),
+                    type_name: Some(".map.test.M.ValuesEntry".into()),
+                    ..scalar_field("values", 1, Type::TYPE_MESSAGE)
+                },
+            ],
+            nested_type: vec![DescriptorProto {
+                name: Some("ValuesEntry".into()),
+                options: buffa::MessageField::some(MessageOptions {
+                    map_entry: Some(true),
+                    ..Default::default()
+                }),
+                field: vec![
+                    scalar_field("key", 1, Type::TYPE_STRING),
+                    buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+                        type_name: Some(enum_name.into()),
+                        ..scalar_field("value", 2, Type::TYPE_ENUM)
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut file = FileDescriptorProto {
+            name: Some("map.proto".into()),
+            package: Some("map.test".into()),
+            syntax: Some("proto2".into()),
+            ..Default::default()
+        };
+        if nested {
+            message.enum_type.push(enumeration);
+        } else {
+            file.enum_type.push(enumeration);
+        }
+        file.message_type.push(message);
+        if enum_first && !nested {
+            let imported = FileDescriptorProto {
+                name: Some("enum.proto".into()),
+                package: file.package.clone(),
+                syntax: file.syntax.clone(),
+                enum_type: core::mem::take(&mut file.enum_type),
+                ..Default::default()
+            };
+            file.dependency.push("enum.proto".into());
+            FileDescriptorSet {
+                file: vec![imported, file],
+                ..Default::default()
+            }
+        } else {
+            FileDescriptorSet {
+                file: vec![file],
+                ..Default::default()
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_nonzero_first_map_enum_values_transactionally() {
+        for first in [-1, 1, i32::MIN, i32::MAX] {
+            for nested in [false, true] {
+                for enum_first in [false, true] {
+                    let set = set(first, nested, enum_first);
+                    let expected_enum = if nested { "map.test.M.E" } else { "map.test.E" };
+                    assert!(DescriptorPool::new(set.clone()).is_err());
+                    assert!(DescriptorPool::decode(&set.encode_to_vec()).is_err());
+                    assert_set_rejected_without_mutating_pool(
+                        "map.proto",
+                        "map.test.M",
+                        set,
+                        |err| {
+                            assert!(
+                                matches!(err, PoolError::MapEnumFirstValueNotZero { field, enum_name, number } if field == "map.test.M.values" && enum_name == expected_enum && *number == first)
+                            );
+                            assert!(err.to_string().contains("must be zero"));
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn checks_imported_enums_in_either_file_order() {
+        for first in [0, 7] {
+            for reverse in [false, true] {
+                let mut set = set(first, false, true);
+                if reverse {
+                    set.file.reverse();
+                }
+                assert_eq!(DescriptorPool::new(set).is_ok(), first == 0);
+            }
+        }
+    }
+
+    #[test]
+    fn checks_enums_already_in_the_pool() {
+        for first in [0, 7] {
+            let mut set = set(first, false, true);
+            let enumeration = set.file.remove(0);
+            let mut pool = DescriptorPool::new(FileDescriptorSet {
+                file: vec![enumeration],
+                ..Default::default()
+            })
+            .unwrap();
+            assert_eq!(pool.add_file_descriptor_set(set).is_ok(), first == 0);
+            assert_eq!(pool.messages().len(), if first == 0 { 2 } else { 0 });
+            assert_eq!(pool.enums().len(), 1);
+        }
+    }
+
+    #[test]
+    fn accepts_zero_first_map_enum_values() {
+        for nested in [false, true] {
+            for enum_first in [false, true] {
+                DescriptorPool::new(set(0, nested, enum_first)).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn ordinary_proto2_enum_fields_may_start_nonzero() {
+        let mut set = set(7, false, false);
+        set.file[0].message_type[0].field = vec![
+            buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+                type_name: Some(".map.test.E".into()),
+                ..scalar_field("value", 1, Type::TYPE_ENUM)
+            },
+        ];
+        set.file[0].message_type[0].nested_type.clear();
+        DescriptorPool::new(set).unwrap();
+    }
+}
