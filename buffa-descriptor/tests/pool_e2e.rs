@@ -208,11 +208,60 @@ fn editions_file_without_edition_is_rejected_without_mutating_pool() {
                 ));
                 assert_eq!(
                     err.to_string(),
-                    "file no-edition.proto has syntax \"editions\" but no edition"
+                    "file no-edition.proto has syntax \"editions\" but its edition is unset \
+                     or EDITION_UNKNOWN"
                 );
             },
         );
     }
+}
+
+#[test]
+fn editions_file_with_an_undefined_edition_number_links_with_2023_defaults() {
+    use buffa::Message;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    // An edition number that `Edition` does not define.
+    const UNDEFINED_EDITION: i32 = 5000;
+    assert_eq!(
+        <Edition as buffa::Enumeration>::from_i32(UNDEFINED_EDITION),
+        None
+    );
+
+    let mut file = FileDescriptorProto {
+        name: Some("future-edition.proto".into()),
+        syntax: Some("editions".into()),
+        message_type: vec![DescriptorProto {
+            name: Some("FutureEdition".into()),
+            field: vec![scalar_field("value", 1, Type::TYPE_INT32)],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    file.__buffa_unknown_fields.push(buffa::UnknownField {
+        number: 14,
+        data: buffa::UnknownFieldData::Varint(UNDEFINED_EDITION as u64),
+    });
+    let bytes = FileDescriptorSet {
+        file: vec![file],
+        ..Default::default()
+    }
+    .encode_to_vec();
+
+    // The wire form carries the number, and decoding keeps it as an unknown
+    // field with `edition` unset.
+    let p = DescriptorPool::decode(&bytes).unwrap();
+    assert_eq!(
+        p.message_by_name("FutureEdition")
+            .unwrap()
+            .field(1)
+            .unwrap()
+            .presence(),
+        FieldPresence::Explicit
+    );
 }
 
 #[test]
