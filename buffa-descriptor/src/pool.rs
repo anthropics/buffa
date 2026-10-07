@@ -405,6 +405,8 @@ pub enum PoolError {
     /// two fields, in this order: `key` with number 1, then `value` with
     /// number 2. Each must be optional, and the key type must be an integer
     /// type, `bool`, or `string` (see [`ScalarType::is_valid_map_key`]).
+    /// The entry must not contain extensions, extension ranges, nested
+    /// messages, or enums.
     ///
     /// `message` is the full name of the map field that uses the entry, and
     /// the entry message is the field's type.
@@ -741,7 +743,7 @@ impl core::fmt::Display for PoolError {
                 f,
                 "map field {message} has a malformed entry message: it needs exactly the optional \
                  fields key = 1 and value = 2, in that order, and a key of an integer type, bool, \
-                 or string"
+                 or string; extensions, extension ranges, nested messages, and enums are not allowed"
             ),
             Self::DuplicateExtensionNumber { extendee, number } => {
                 write!(
@@ -2893,6 +2895,15 @@ impl DescriptorPool {
         field_fqn: &str,
         scope: LinkScope<'_>,
     ) -> Result<(ScalarType, SingularKind), PoolError> {
+        if !entry.extension.is_empty()
+            || !entry.extension_range.is_empty()
+            || !entry.nested_type.is_empty()
+            || !entry.enum_type.is_empty()
+        {
+            return Err(PoolError::MalformedMapEntry {
+                message: field_fqn.to_string(),
+            });
+        }
         // The key is the first field and the value the second, as protoc
         // writes them and as it reads them back.
         let [kf, vf] = entry.field.as_slice() else {
