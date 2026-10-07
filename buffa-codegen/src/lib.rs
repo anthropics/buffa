@@ -3697,12 +3697,14 @@ pub fn generate_module_tree<F: AsRef<str>, P: AsRef<str>>(
         for file in &node.files {
             match mode {
                 IncludeMode::Relative(prefix) => {
-                    let _ = writeln!(out, r#"{indent}include!("{prefix}{file}");"#);
+                    let path = format!("{prefix}{file}");
+                    let _ = writeln!(out, "{indent}include!({path:?});");
                 }
                 IncludeMode::OutDir => {
+                    let path = format!("/{file}");
                     let _ = writeln!(
                         out,
-                        r#"{indent}include!(concat!(env!("OUT_DIR"), "/{file}"));"#
+                        "{indent}include!(concat!(env!(\"OUT_DIR\"), {path:?}));"
                     );
                 }
             }

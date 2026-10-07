@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`generate_module_tree` escapes include paths**. Quotes, backslashes, and control characters in paths no longer produce invalid Rust.
+time: 2026-10-07T16:30:00+02:00

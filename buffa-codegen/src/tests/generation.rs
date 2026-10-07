@@ -939,6 +939,32 @@ fn test_child_package_named_view_no_collision() {
 }
 
 #[test]
+fn module_tree_escapes_relative_include_paths() {
+    let file = "quoted\"name\\segment\n.rs";
+    let source = crate::generate_module_tree(
+        &[(file, "example")],
+        crate::IncludeMode::Relative("generated/"),
+        false,
+    );
+
+    assert!(source.contains(&format!("include!({:?});", format!("generated/{file}"))));
+    syn::parse_file(&source).expect("relative include paths must be valid Rust string literals");
+}
+
+#[test]
+fn module_tree_escapes_out_dir_include_paths() {
+    let file = "quoted\"name\\segment\n.rs";
+    let source =
+        crate::generate_module_tree(&[(file, "example")], crate::IncludeMode::OutDir, false);
+
+    assert!(source.contains(&format!(
+        "include!(concat!(env!(\"OUT_DIR\"), {:?}));",
+        format!("/{file}")
+    )));
+    syn::parse_file(&source).expect("OUT_DIR include paths must be valid Rust string literals");
+}
+
+#[test]
 fn test_simple_enum() {
     let mut file = proto3_file("status.proto");
     file.enum_type.push(EnumDescriptorProto {
