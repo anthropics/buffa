@@ -1,0 +1,3 @@
+kind: Fixed
+body: Remote derive attributes reject duplicate override paths instead of silently replacing them.
+time: 2026-10-08T00:15:40+02:00
