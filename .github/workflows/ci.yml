@@ -26,7 +26,8 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     # 15 rather than 10: documenting the workspace (buffa-test's generated
-    # modules are large) adds a few minutes on top of a cold-cache build.
+    # modules are large) and building buffa-test a second time with its
+    # `arbitrary` feature each add a few minutes on top of a cold-cache build.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
