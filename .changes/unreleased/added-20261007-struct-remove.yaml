@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`Struct::remove`** removes a field by name and returns its owned `Value` without cloning. Missing keys leave the struct unchanged and return `None`.
+time: 2026-10-07T13:00:00+02:00
