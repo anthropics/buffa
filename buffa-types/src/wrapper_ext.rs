@@ -78,6 +78,20 @@ impl AsRef<[u8]> for BytesValue {
     }
 }
 
+impl AsMut<str> for StringValue {
+    /// Borrows the inner string for in-place edits that preserve UTF-8.
+    fn as_mut(&mut self) -> &mut str {
+        &mut self.value
+    }
+}
+
+impl AsMut<[u8]> for BytesValue {
+    /// Borrows the inner bytes for in-place edits.
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.value
+    }
+}
+
 // ── serde impls ──────────────────────────────────────────────────────────────
 
 // Primitive wrapper values use the same ProtoJSON scalar helpers as generated
@@ -324,6 +338,46 @@ mod tests {
             b.len()
         }
         assert_eq!(takes_bytes(w.as_ref()), 3);
+    }
+
+    #[test]
+    fn string_value_as_mut_edits_in_place() {
+        fn uppercase(value: &mut impl AsMut<str>) {
+            value.as_mut().make_ascii_uppercase();
+        }
+        let mut w = StringValue::from("hello é🦀");
+        let pointer = w.value.as_ptr();
+        let capacity = w.value.capacity();
+        uppercase(&mut w);
+        assert_eq!(w.value, "HELLO é🦀");
+        assert_eq!(w.value.as_ptr(), pointer);
+        assert_eq!(w.value.capacity(), capacity);
+    }
+
+    #[test]
+    fn bytes_value_as_mut_edits_in_place() {
+        fn reverse(value: &mut impl AsMut<[u8]>) {
+            value.as_mut().reverse();
+        }
+        let mut w = BytesValue::from(vec![0, 128, 255]);
+        let pointer = w.value.as_ptr();
+        let capacity = w.value.capacity();
+        reverse(&mut w);
+        assert_eq!(w.value, vec![255, 128, 0]);
+        assert_eq!(w.value.as_ptr(), pointer);
+        assert_eq!(w.value.capacity(), capacity);
+    }
+
+    #[test]
+    fn wrapper_as_mut_empty_payloads() {
+        let mut string = StringValue::default();
+        let mut bytes = BytesValue::default();
+        let text: &mut str = string.as_mut();
+        text.make_ascii_uppercase();
+        assert!(text.is_empty());
+        let payload: &mut [u8] = bytes.as_mut();
+        payload.reverse();
+        assert!(payload.is_empty());
     }
 
     #[cfg(feature = "json")]
