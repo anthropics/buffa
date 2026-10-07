@@ -1826,6 +1826,9 @@ impl DescriptorPool {
         // conflict this leaves through, so the check still catches ambiguity in
         // a hand-built or third-party set without ever refusing protoc's own
         // output.
+        // The option itself carries `[deprecated = true]` in descriptor.proto,
+        // which protoc still honours — reading it is the point, not a mistake.
+        #[allow(deprecated)]
         let enforce_json_names = msg_features.json_format == JsonFormat::Allow
             && !msg
                 .options
