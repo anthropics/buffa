@@ -1,7 +1,9 @@
 //! Tests for source code comment propagation into generated Rust code.
 
 use super::*;
-use crate::generated::descriptor::{source_code_info::Location, SourceCodeInfo};
+use crate::generated::descriptor::{
+    descriptor_proto::ExtensionRange, source_code_info::Location, SourceCodeInfo,
+};
 
 fn make_location(path: Vec<i32>, leading: &str) -> Location {
     Location {
@@ -158,6 +160,73 @@ fn test_oneof_comment_in_generated_code() {
     assert!(
         content.contains("The event payload variant."),
         "oneof doc comment should appear, got:\n{content}"
+    );
+}
+
+#[test]
+fn test_extension_comments_in_generated_code() {
+    let mut file = proto3_file("extension_docs.proto");
+    file.package = Some("comments".to_string());
+    file.syntax = Some("proto2".to_string());
+    let extension = |name: &str, number| FieldDescriptorProto {
+        name: Some(name.to_string()),
+        number: Some(number),
+        label: Some(Label::LABEL_OPTIONAL),
+        r#type: Some(Type::TYPE_BOOL),
+        extendee: Some(".comments.Target".to_string()),
+        ..Default::default()
+    };
+    file.extension.push(extension("file_flag", 1001));
+    file.message_type = vec![
+        DescriptorProto {
+            name: Some("Target".to_string()),
+            extension_range: vec![ExtensionRange {
+                start: Some(1000),
+                end: Some(2000),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        DescriptorProto {
+            name: Some("Outer".to_string()),
+            extension: vec![extension("nested_flag", 1002)],
+            ..Default::default()
+        },
+    ];
+    let mut sci = SourceCodeInfo::default();
+    sci.location.push(make_location(
+        vec![7, 0],
+        " File-level extension description.\n",
+    ));
+    sci.location.push(make_location(
+        vec![4, 1, 6, 0],
+        " Nested extension description.\n",
+    ));
+    file.source_code_info = sci.into();
+
+    let result = generate(
+        &[file],
+        &["extension_docs.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("generation should succeed");
+
+    let content = &joined(&result);
+    assert!(
+        content.contains("File-level extension description."),
+        "file-level extension comment should appear, got:\n{content}"
+    );
+    assert!(
+        content.contains("Nested extension description."),
+        "nested extension comment should appear, got:\n{content}"
+    );
+    assert!(
+        content.contains("Extension `file_flag` on `.comments.Target` (field 1001)."),
+        "the generated extension summary should remain, got:\n{content}"
+    );
+    assert!(
+        content.contains("Extension `nested_flag` on `.comments.Target` (field 1002)."),
+        "the generated nested extension summary should remain, got:\n{content}"
     );
 }
 

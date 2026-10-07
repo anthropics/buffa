@@ -23,11 +23,13 @@ use crate::generated::descriptor::{DescriptorProto, FileDescriptorProto};
 // FileDescriptorProto
 const FILE_MESSAGE_TYPE: i32 = 4;
 const FILE_ENUM_TYPE: i32 = 5;
+const FILE_EXTENSION: i32 = 7;
 
 // DescriptorProto
 const MSG_FIELD: i32 = 2;
 const MSG_NESTED_TYPE: i32 = 3;
 const MSG_ENUM_TYPE: i32 = 4;
+const MSG_EXTENSION: i32 = 6;
 const MSG_ONEOF_DECL: i32 = 8;
 
 // EnumDescriptorProto
@@ -35,8 +37,8 @@ const ENUM_VALUE: i32 = 2;
 
 /// Walk a file descriptor's `SourceCodeInfo` and produce an FQN-keyed comment map.
 ///
-/// Returns `(fqn -> comment_string)` entries for messages, fields, enums,
-/// enum values, and oneofs. FQNs use the same dotted form as `proto_fqn`
+/// Returns `(fqn -> comment_string)` entries for messages, fields, extensions,
+/// enums, enum values, and oneofs. FQNs use the same dotted form as `proto_fqn`
 /// throughout codegen (no leading dot), e.g. `"example.v1.Person"`,
 /// `"example.v1.Person.name"`.
 pub fn fqn_comments(file: &FileDescriptorProto) -> HashMap<String, String> {
@@ -47,6 +49,15 @@ pub fn fqn_comments(file: &FileDescriptorProto) -> HashMap<String, String> {
 
     let package = file.package.as_deref().unwrap_or("");
     let mut result = HashMap::new();
+
+    for (i, extension) in file.extension.iter().enumerate() {
+        let name = extension.name.as_deref().unwrap_or("");
+        let fqn = fqn_join(package, name);
+        let path = vec![FILE_EXTENSION, i as i32];
+        if let Some(comment) = path_map.get(&path) {
+            result.insert(fqn, comment.clone());
+        }
+    }
 
     // Top-level enums
     for (i, enum_type) in file.enum_type.iter().enumerate() {
@@ -101,6 +112,16 @@ fn collect_message_comments(
         let fqn = format!("{}.{}", msg_fqn, field_name);
         let mut path = msg_path.to_vec();
         path.extend_from_slice(&[MSG_FIELD, i as i32]);
+        if let Some(comment) = path_map.get(&path) {
+            out.insert(fqn, comment.clone());
+        }
+    }
+
+    for (i, extension) in msg.extension.iter().enumerate() {
+        let name = extension.name.as_deref().unwrap_or("");
+        let fqn = format!("{}.{}", msg_fqn, name);
+        let mut path = msg_path.to_vec();
+        path.extend_from_slice(&[MSG_EXTENSION, i as i32]);
         if let Some(comment) = path_map.get(&path) {
             out.insert(fqn, comment.clone());
         }
