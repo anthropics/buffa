@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Reject invalid extension field numbers at construction.**'
+time: 2026-10-07T23:22:31.588977+02:00

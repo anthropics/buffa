@@ -33,9 +33,11 @@
 //!
 //! # Panics
 //!
-//! [`extension`], [`set_extension`], and [`clear_extension`] panic if the
-//! descriptor's [`extendee`](Extension::extendee) does not match the extendee
-//! message's [`PROTO_FQN`](ExtensionSet::PROTO_FQN). This catches bugs like
+//! [`Extension::new`] and [`Extension::with_default`] panic if the extension
+//! field number is invalid. [`extension`], [`extension_or_default`],
+//! [`set_extension`], [`try_set_extension`], and [`clear_extension`] panic if
+//! the descriptor's [`extendee`](Extension::extendee) does not match the
+//! extendee message's [`PROTO_FQN`](ExtensionSet::PROTO_FQN). This catches bugs like
 //! `field_options.extension(&MESSAGE_LEVEL_OPTION)` at the first call site
 //! (matches protobuf-go, which panics, and protobuf-es, which throws).
 //! [`has_extension`] returns `false` gracefully on mismatch — "is this
@@ -66,6 +68,7 @@
 //!
 //! [`extension`]: ExtensionSet::extension
 //! [`set_extension`]: ExtensionSet::set_extension
+//! [`try_set_extension`]: ExtensionSet::try_set_extension
 //! [`clear_extension`]: ExtensionSet::clear_extension
 //! [`has_extension`]: ExtensionSet::has_extension
 //! [`extension_or_default`]: ExtensionSet::extension_or_default
@@ -109,11 +112,18 @@ impl<C: ExtensionCodec> Extension<C> {
     /// `extendee` is the fully-qualified proto type name (no leading dot) of
     /// the message this extension extends — e.g. `"google.protobuf.FieldOptions"`.
     /// Passing an extension with a mismatched extendee to `extension()` /
-    /// `set_extension()` / `clear_extension()` will panic.
+    /// `extension_or_default()` / `set_extension()` / `try_set_extension()` /
+    /// `clear_extension()` will panic.
     ///
-    /// Field number `0` is invalid in protobuf. Codegen never emits it;
-    /// a descriptor constructed with `0` will never match valid wire data.
+    /// # Panics
+    ///
+    /// Panics if `number` is less than 1, greater than
+    /// [`MAX_FIELD_NUMBER`](crate::encoding::MAX_FIELD_NUMBER), or in the
+    /// implementation-reserved range `19000..=19999` (from
+    /// [`FIRST_RESERVED_FIELD_NUMBER`](crate::encoding::FIRST_RESERVED_FIELD_NUMBER)
+    /// through [`LAST_RESERVED_FIELD_NUMBER`](crate::encoding::LAST_RESERVED_FIELD_NUMBER)).
     pub const fn new(number: u32, extendee: &'static str) -> Self {
+        assert_valid_extension_field_number(number);
         Self {
             number,
             extendee,
@@ -132,11 +142,20 @@ impl<C: ExtensionCodec> Extension<C> {
     /// call. For `Copy` scalars codegen emits a `const fn`; for `String` and
     /// `bytes` a regular `fn` (allocates on each call — same cost as a
     /// hand-written `.unwrap_or_else(|| "x".into())`).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `number` is less than 1, greater than
+    /// [`MAX_FIELD_NUMBER`](crate::encoding::MAX_FIELD_NUMBER), or in the
+    /// implementation-reserved range `19000..=19999` (from
+    /// [`FIRST_RESERVED_FIELD_NUMBER`](crate::encoding::FIRST_RESERVED_FIELD_NUMBER)
+    /// through [`LAST_RESERVED_FIELD_NUMBER`](crate::encoding::LAST_RESERVED_FIELD_NUMBER)).
     pub const fn with_default(
         number: u32,
         extendee: &'static str,
         default: fn() -> C::Value,
     ) -> Self {
+        assert_valid_extension_field_number(number);
         Self {
             number,
             extendee,
@@ -154,6 +173,18 @@ impl<C: ExtensionCodec> Extension<C> {
     pub const fn extendee(&self) -> &'static str {
         self.extendee
     }
+}
+
+const fn assert_valid_extension_field_number(number: u32) {
+    assert!(
+        number >= 1 && number <= crate::encoding::MAX_FIELD_NUMBER,
+        "extension field number must be in [1, MAX_FIELD_NUMBER]"
+    );
+    assert!(
+        number < crate::encoding::FIRST_RESERVED_FIELD_NUMBER
+            || number > crate::encoding::LAST_RESERVED_FIELD_NUMBER,
+        "extension field number is in the implementation-reserved range"
+    );
 }
 
 /// Asserts that `ext` actually extends `Self`. Called from `extension()`,
@@ -1194,6 +1225,43 @@ mod tests {
         assert_eq!(E.extendee(), CARRIER);
         let copy = E; // still Copy with the fn-pointer field
         assert_eq!(copy.number(), 1);
+    }
+
+    #[test]
+    fn extension_constructors_validate_field_numbers() {
+        let valid_numbers = [
+            1,
+            crate::encoding::FIRST_RESERVED_FIELD_NUMBER - 1,
+            crate::encoding::LAST_RESERVED_FIELD_NUMBER + 1,
+            crate::encoding::MAX_FIELD_NUMBER,
+        ];
+        for number in valid_numbers {
+            assert_eq!(Extension::<Int32>::new(number, CARRIER).number(), number);
+            assert_eq!(
+                Extension::<Int32>::with_default(number, CARRIER, || 0).number(),
+                number
+            );
+        }
+
+        let invalid_numbers = [
+            0,
+            crate::encoding::FIRST_RESERVED_FIELD_NUMBER,
+            crate::encoding::LAST_RESERVED_FIELD_NUMBER,
+            crate::encoding::MAX_FIELD_NUMBER + 1,
+        ];
+        for number in invalid_numbers {
+            assert!(
+                std::panic::catch_unwind(|| Extension::<Int32>::new(number, CARRIER)).is_err(),
+                "new accepted field number {number}"
+            );
+            assert!(
+                std::panic::catch_unwind(|| {
+                    Extension::<Int32>::with_default(number, CARRIER, || 0)
+                })
+                .is_err(),
+                "with_default accepted field number {number}"
+            );
+        }
     }
 
     // ── Extendee identity check ─────────────────────────────────────────────
