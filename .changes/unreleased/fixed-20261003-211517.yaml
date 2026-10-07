@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **The civil-calendar helpers in `json_helpers` handle every `i64` day count** (#526). `days_to_date` overflowed for a day count within 719,468 of `i64::MAX`, and `date_to_days` overflowed for a year near either end of `i64`: a debug build panicked and a release build returned a wrong date. `date_to_days` now returns `None` when the result is outside `i64`. The helpers are `#[doc(hidden)]`, and buffa's own `Timestamp` code checks the range first, so only a direct call could reach the overflow.
+time: 2026-10-03T21:15:17.336617+02:00

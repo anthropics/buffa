@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a file whose `syntax` it does not recognize** (#529). A `syntax` other than `proto2`, `proto3` or `editions` linked with proto2 semantics, and an `editions` file without an `edition` linked with the edition 2023 defaults, so a misspelt or incomplete descriptor resolved field presence, enum openness and packing differently from the schema it came from. They are now `PoolError::UnrecognizedSyntax` and `PoolError::MissingEdition`, as protoc and protobuf-go reject both. An absent or empty `syntax` still means proto2.
+time: 2026-10-03T21:34:26.89645+02:00

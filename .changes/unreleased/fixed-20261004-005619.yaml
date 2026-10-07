@@ -1,3 +1,4 @@
 kind: Fixed
-body: '**Reject empty oneof declarations in DescriptorPool.** Report the oneof name and leave the pool unchanged when a declaration has no member fields.'
+body: |-
+    **`DescriptorPool` rejects a oneof that has no fields** (#538). A `oneof_decl` entry that no field's `oneof_index` names linked as a oneof without members, which protoc and protobuf-go refuse. It is now `PoolError::EmptyOneof`, in every syntax and for nested messages.
 time: 2026-10-04T00:56:19.938982+02:00

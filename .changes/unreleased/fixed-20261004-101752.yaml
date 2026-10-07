@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool::file_containing_symbol` finds an enum value in a file without a package** (#546). The value was indexed with a leading dot (`.STATE_READY`), so a lookup by its name returned `None`.
+time: 2026-10-04T10:17:52.047901+02:00
