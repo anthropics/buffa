@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **The view decode docs now describe element-memory charging and input-size limits**. A view element can differ in size from its owned type, so decoding near the limit can return different results.
+time: 2026-10-08T00:41:08.000000+02:00
