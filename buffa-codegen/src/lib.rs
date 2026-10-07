@@ -1873,9 +1873,10 @@ pub struct CodeGenConfig {
     /// and nested, plus their derived view/owned-view types). It does not
     /// apply to:
     ///
-    /// - module names (`message Outer` still nests under `pub mod outer` —
-    ///   modules are namespaced by the package tree and never collide with
-    ///   type names),
+    /// - module names (`message Outer` still nests under `pub mod outer`).
+    ///   A prefix can remove a module's trailing `_`: the nested types of
+    ///   `message item` are in `item_` beside `struct item`, and in `item`
+    ///   beside `struct Pbitem`,
     /// - oneof enums (structurally namespaced under `__buffa::oneof::`,
     ///   named after the oneof declaration, not the message),
     /// - types mapped away via [`extern_paths`](Self::extern_paths) or the
@@ -4331,19 +4332,7 @@ fn generate_proto_content(
         owned.extend(owned_top);
         let mod_name = ctx.nested_module_name(current_package, top_level_name);
         let mod_ident = make_field_ident(&mod_name);
-        // When the nested-types module was deconflicted from a sub-package
-        // (issue #135), document why the name carries a trailing `_`.
-        let mod_doc = if mod_name == crate::oneof::to_snake_case(top_level_name) {
-            quote! {}
-        } else {
-            let doc = format!(
-                "Nested items of `{top_level_name}`. The module name carries a \
-                 trailing `_` to avoid a collision with another module in this \
-                 scope (a sub-package or sibling message of the same name). See \
-                 buffa#135."
-            );
-            quote! { #[doc = #doc] }
-        };
+        let mod_doc = message::module_rename_doc(top_level_name, &mod_name);
         for p in msg_reg.json_ext {
             reg.json_ext.push(quote! { #mod_ident :: #p });
         }
@@ -4669,8 +4658,7 @@ fn generate_package(
 }
 
 /// Names occupied at a package's root by real items: top-level messages,
-/// enums, message nested-types modules (deconflicted name, #135), and the
-/// `__buffa` sentinel itself.
+/// enums, message nested-types modules, and the `__buffa` sentinel itself.
 ///
 /// The package root is shared across every `.proto` file in the package, so
 /// the set is built from *all* of them. File-level extension consts live in
@@ -4691,7 +4679,6 @@ fn root_occupied_names(
             // The declared struct name carries the configured prefix; the
             // module name stays proto-derived.
             occupied.insert(ctx.config.prefixed_type_name(name));
-            // The actual module name (deconflicted from sub-packages, #135).
             occupied.insert(ctx.nested_module_name(package, name));
         }
         for e in &file.enum_type {

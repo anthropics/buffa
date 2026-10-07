@@ -270,15 +270,16 @@ Oneof and view-oneof enums drop the `Oneof`/`View` suffix — the tree position 
 
 Moving ancillary items under `__buffa::` removes almost every collision: a oneof `kind` and a nested message `Kind` coexist because they land in different trees.
 
-One owned-tree collision remains, because protobuf is case-sensitive while Rust module names are not: a message's nested-types module is `snake_case(MessageName)`, so `message Oof` and a sibling sub-package `pkg.oof` both want `pkg::oof`. When this happens, codegen deconflicts the **nested-types module** by appending `_` (and repeating until the name is unique against the sub-package segments, sibling message modules, and the `__buffa` sentinel in that scope). The message struct (`pkg::Oof`) and the sub-package module (`pkg::oof`) keep their natural names; only the nested-types module moves:
+One owned-tree collision remains: a message's nested-types module is `snake_case(MessageName)`, and that name can be unavailable in its scope. A package can declare `message Oof` beside a sub-package `oof`, and snake_case maps the message to the module `oof` too. A lower-case message name is also its struct's name (`message item` declares `struct item`). `self`, `super` and `crate` cannot name a module. A module named `arbitrary` would take the place of the crate in the output of `derive(Arbitrary)`, and at package level `oneof` is the root of the view-oneof tree under `__buffa::view`. In each case codegen deconflicts the **nested-types module** by appending `_` (and repeating until the name is unique against those reserved names, the sub-package segments, the generated types, sibling message modules, and the `__buffa` sentinel in that scope). The message struct (`pkg::Oof`) and the sub-package module (`pkg::oof`) keep their natural names; only the nested-types module moves, and the trees under `__buffa` use the same module name as the owned tree:
 
 ```text
 <pkg>::Oof                                # owned struct (unchanged)
 <pkg>::oof_::Inner                        # nested owned — module deconflicted from sub-package `oof`
+<pkg>::__buffa::view::oof_::InnerView     # its view — same module name
 <pkg>::oof::Thing                         # sub-package `pkg.oof` (unchanged)
 ```
 
-This activates only on a real collision (one that previously failed to compile), so output for every other schema is unchanged. The deconfliction is computed per scope from the full descriptor set, so the colliding message and sub-package must be generated in the same `buffa_build::Config::compile()` invocation — codegen cannot deconflict against a package it does not see. The per-message suffix length depends only on which names collide in the scope, not on file or message declaration order.
+A module keeps `snake_case(MessageName)` unless that name is unavailable in its scope. The reserved names are fixed, so they do not depend on the configuration. The rest is computed per scope from the full descriptor set, so the colliding message and sub-package (or type) must be generated in the same `buffa_build::Config::compile()` invocation — codegen cannot deconflict against a package or file it does not see. The per-message suffix length depends only on which names collide in the scope, not on file or message declaration order.
 
 **File layout — up to five content files + one stitcher:**
 
