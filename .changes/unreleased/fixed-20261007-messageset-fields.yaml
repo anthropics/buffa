@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+    **Reject ordinary fields in MessageSet descriptors.** `DescriptorPool` now rejects top-level and nested MessageSet messages that declare fields, matching protoc. Extension-only MessageSets remain valid.

@@ -413,6 +413,9 @@ pub enum PoolError {
     /// protoc rejects this within one compilation unit, but it can arise
     /// when merging independently-compiled `FileDescriptorSet`s.
     DuplicateExtensionNumber { extendee: String, number: u32 },
+    /// A message using MessageSet wire format declares an ordinary field.
+    /// MessageSets may contain extensions only.
+    MessageSetWithFields { message: String },
     /// Two methods in one service have the same proto name.
     DuplicateMethodName { service: String, name: String },
     /// Two enum values in the same symbol scope have the same proto name.
@@ -748,6 +751,9 @@ impl core::fmt::Display for PoolError {
                     f,
                     "more than one extension claims field number {number} on {extendee}"
                 )
+            }
+            Self::MessageSetWithFields { message } => {
+                write!(f, "MessageSet {message} declares fields instead of extensions")
             }
             Self::DuplicateMethodName { service, name } => {
                 write!(
@@ -1935,6 +1941,14 @@ impl DescriptorPool {
         };
         if scope.proto3 && !msg.extension_range.is_empty() {
             return Err(PoolError::ExtensionRangeInProto3 { message: fqn });
+        }
+        if !msg.field.is_empty()
+            && msg
+                .options
+                .as_option()
+                .is_some_and(|options| options.message_set_wire_format == Some(true))
+        {
+            return Err(PoolError::MessageSetWithFields { message: fqn });
         }
         let msg_features =
             features::resolve_child(parent_features, features::message_features(msg));
