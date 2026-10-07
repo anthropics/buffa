@@ -1,0 +1,5 @@
+kind: Breaking changes
+body: |-
+    **JSON serialization of a `google.protobuf.Value` with no kind set returns an error** (#532). It was written as `null`, which reads back as a `Value` holding `NullValue`, so the round trip changed the message. `struct.proto` defines a `Value` without a kind as an error, and protobuf-go rejects it the same way. The error comes from the generated type, its view and the reflective serializer, and also for such a `Value` inside a `ListValue`, a `Struct` or an `Any`.
+    `Value::default()` is such a value: replace it with `Value::null()` where a JSON `null` is meant. A `Value` decoded from binary can be one as well (an empty payload, or a kind that this version of `struct.proto` lacks), and serializing the message that holds it to JSON now fails.
+time: 2026-10-04T00:18:08.646643+02:00

@@ -349,4 +349,29 @@ mod malformed {
         let ext = p.extension_by_name("reflect.ext.ext_int32").unwrap();
         assert_eq!(ext.field().oneof_index(), None);
     }
+
+    #[test]
+    fn repeated_extension_oneof_indices_are_scrubbed() {
+        use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+        use buffa_descriptor::{FieldKind, ScalarType, SingularKind};
+
+        for index in [-1, 0, i32::MAX] {
+            let mut set = base_set();
+            let ext_file = set
+                .file
+                .iter_mut()
+                .find(|f| f.package.as_deref() == Some("reflect.ext"))
+                .unwrap();
+            ext_file.extension[0].label = Some(Label::LABEL_REPEATED);
+            ext_file.extension[0].oneof_index = Some(index);
+
+            let p = DescriptorPool::new(set).unwrap();
+            let ext = p.extension_by_name("reflect.ext.ext_int32").unwrap();
+            assert_eq!(ext.field().oneof_index(), None);
+            assert_eq!(
+                ext.field().kind(),
+                FieldKind::List(SingularKind::Scalar(ScalarType::Int32))
+            );
+        }
+    }
 }

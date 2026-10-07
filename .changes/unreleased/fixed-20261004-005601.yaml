@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a map entry whose fields are not exactly `key` and `value`** (#541). A message with the `map_entry` option linked as a map when it had a third field, when field 1 or 2 had another name or was `repeated` or `required`, or when the value was declared before the key; the extra or mislabelled data was then read as an ordinary map. Each is now `PoolError::MalformedMapEntry`, as protoc and protobuf-go reject them. The error text now names the map field and states the rule.
+time: 2026-10-04T00:56:01.702377+02:00
