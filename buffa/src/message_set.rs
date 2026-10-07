@@ -51,7 +51,7 @@ pub const MESSAGE_TAG: u64 = (3 << 3) | 2;
 /// # Errors
 ///
 /// Returns [`DecodeError::InvalidMessageSet`] if `type_id` is missing or out
-/// of the valid range `[1, i32::MAX]`. Returns other decode errors on
+/// of the valid range `[1, u32::MAX]`. Returns other decode errors on
 /// malformed input (truncated varint, buffer underrun, mismatched end-group)
 /// or when the unknown-field limit is exceeded.
 pub fn merge_item(
@@ -74,10 +74,8 @@ pub fn merge_item(
         match (tag.field_number(), tag.wire_type()) {
             (2, WireType::Varint) => {
                 let v = decode_varint(buf)?;
-                // type_id is `required int32`; valid protobuf field numbers
-                // are [1, 2^29-1], but MessageSet historically allows the
-                // full positive int32 range.
-                if v < 1 || v > i32::MAX as u64 {
+                // MessageSet type IDs use the full nonzero uint32 range.
+                if v < 1 || v > u32::MAX as u64 {
                     return Err(DecodeError::InvalidMessageSet("type_id out of range"));
                 }
                 type_id = Some(v as u32);
@@ -276,18 +274,24 @@ mod tests {
     }
 
     #[test]
-    fn merge_item_type_id_out_of_range() {
+    fn merge_item_type_id_uses_u32_range() {
         #[rustfmt::skip]
-        let cases: &[(u64, bool)] = &[
-            (0,                     false), // zero → error
-            (1,                     true),  // minimum valid
-            (i32::MAX as u64,       true),  // maximum valid
-            (i32::MAX as u64 + 1,   false), // overflows int32
+        let cases: &[(u64, Option<u32>)] = &[
+            (0,                     None),
+            (1,                     Some(1)),
+            (i32::MAX as u64,       Some(i32::MAX as u32)),
+            (i32::MAX as u64 + 1,   Some(i32::MAX as u32 + 1)),
+            (u32::MAX as u64,       Some(u32::MAX)),
+            (u32::MAX as u64 + 1,   None),
         ];
-        for &(id, ok) in cases {
+        for &(id, expected) in cases {
             let body = item_body(&[&type_id_field(id), &message_field(b""), &end_group()]);
             let result = merge_item_d(&mut body.as_slice(), 50);
-            assert_eq!(result.is_ok(), ok, "type_id = {id}");
+            assert_eq!(
+                result.map(|(type_id, _)| type_id).ok(),
+                expected,
+                "type_id = {id}"
+            );
         }
     }
 
