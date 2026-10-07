@@ -641,7 +641,6 @@ impl DynamicMessage {
         buf: &mut impl Buf,
         ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
-        let mut known = Vec::new();
         if tag.wire_type() == WireType::LengthDelimited {
             let len = decode_varint(buf)?;
             let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
@@ -655,7 +654,7 @@ impl DynamicMessage {
                     // Same charge `merge_list_field` applies; this is a
                     // parallel implementation of the same work.
                     ctx.register_element_memory(core::mem::size_of::<Value>())?;
-                    known.push(Value::EnumNumber(raw));
+                    self.push_closed_enum_list_value(number, raw);
                 } else {
                     self.record_unknown_enum(number, raw, ctx)?;
                 }
@@ -664,23 +663,23 @@ impl DynamicMessage {
             let raw = decode_int32(buf)?;
             if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
                 ctx.register_element_memory(core::mem::size_of::<Value>())?;
-                known.push(Value::EnumNumber(raw));
+                self.push_closed_enum_list_value(number, raw);
             } else {
                 self.record_unknown_enum(number, raw, ctx)?;
             }
         }
-        if known.is_empty() {
-            return Ok(());
-        }
+        Ok(())
+    }
+
+    fn push_closed_enum_list_value(&mut self, number: u32, raw: i32) {
         match self
             .fields
             .entry(number)
             .or_insert_with(|| Value::List(Vec::new()))
         {
-            Value::List(list) => list.extend(known),
-            other => *other = Value::List(known),
+            Value::List(list) => list.push(Value::EnumNumber(raw)),
+            other => *other = Value::List(alloc::vec![Value::EnumNumber(raw)]),
         }
-        Ok(())
     }
 
     fn merge_map_field(

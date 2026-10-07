@@ -2142,6 +2142,28 @@ fn packed_fixed_width_payload_with_a_partial_element_is_eof() {
     }
 }
 
+#[test]
+fn packed_closed_enum_keeps_valid_values_before_truncated_varint() {
+    let p = pool();
+    let idx = p.message_index("reflect.closed.Contexts").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), idx);
+    msg.merge(&packed_field(3, &[0])).unwrap();
+
+    let mut wire = Vec::new();
+    Tag::new(3, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(2, &mut wire);
+    wire.extend_from_slice(&[1, 0x80]);
+
+    assert_eq!(msg.merge(&wire), Err(DecodeError::UnexpectedEof));
+    assert_eq!(
+        msg.field_by_number(3),
+        Some(&Value::List(vec![
+            Value::EnumNumber(0),
+            Value::EnumNumber(1)
+        ]))
+    );
+}
+
 /// Reflective map decode must not be quadratic in the entry count.
 ///
 /// `MapValue` is a sorted `Vec`, so a sorted insert per wire entry shifts the

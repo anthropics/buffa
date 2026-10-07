@@ -1,0 +1,3 @@
+kind: Fixed
+body: Keep valid packed closed-enum values when a later value is malformed.
+time: 2026-10-07T22:48:46.097694+02:00
