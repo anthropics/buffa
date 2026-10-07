@@ -1,0 +1,3 @@
+kind: Added
+body: Borrowed conversions from numeric and boolean well-known wrappers to their primitive values, without consuming the message.
+time: 2026-10-07T12:18:41.973437+02:00

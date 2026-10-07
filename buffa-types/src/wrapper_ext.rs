@@ -32,13 +32,26 @@ macro_rules! impl_wrapper {
     };
 }
 
-impl_wrapper!(BoolValue, bool);
-impl_wrapper!(DoubleValue, f64);
-impl_wrapper!(FloatValue, f32);
-impl_wrapper!(Int32Value, i32);
-impl_wrapper!(Int64Value, i64);
-impl_wrapper!(UInt32Value, u32);
-impl_wrapper!(UInt64Value, u64);
+macro_rules! impl_scalar_wrapper {
+    ($wrapper:ty, $inner:ty) => {
+        impl_wrapper!($wrapper, $inner);
+
+        impl From<&$wrapper> for $inner {
+            #[doc = concat!("Copies the inner `", stringify!($inner), "` from a borrowed [`", stringify!($wrapper), "`], leaving the message in place.")]
+            fn from(w: &$wrapper) -> Self {
+                w.value
+            }
+        }
+    };
+}
+
+impl_scalar_wrapper!(BoolValue, bool);
+impl_scalar_wrapper!(DoubleValue, f64);
+impl_scalar_wrapper!(FloatValue, f32);
+impl_scalar_wrapper!(Int32Value, i32);
+impl_scalar_wrapper!(Int64Value, i64);
+impl_scalar_wrapper!(UInt32Value, u32);
+impl_scalar_wrapper!(UInt64Value, u64);
 impl_wrapper!(StringValue, String);
 impl_wrapper!(BytesValue, Vec<u8>);
 
@@ -222,6 +235,75 @@ impl<'de> serde::Deserialize<'de> for BytesValue {
 mod tests {
     use super::*;
     use alloc::vec;
+
+    macro_rules! borrowed_scalar_cases {
+        ($test:ident, $wrapper:ty, $inner:ty, $values:expr) => {
+            #[test]
+            fn $test() {
+                for value in $values {
+                    let wrapper = <$wrapper>::from(value);
+                    let extracted: $inner = (&wrapper).into();
+                    assert_eq!(extracted, value);
+                    assert_eq!(wrapper.value, value);
+                    assert_eq!(<$inner>::from(wrapper), value);
+                }
+            }
+        };
+    }
+
+    borrowed_scalar_cases!(borrowed_bool_value, BoolValue, bool, [false, true]);
+    borrowed_scalar_cases!(
+        borrowed_int32_value,
+        Int32Value,
+        i32,
+        [i32::MIN, -1, 0, i32::MAX]
+    );
+    borrowed_scalar_cases!(
+        borrowed_int64_value,
+        Int64Value,
+        i64,
+        [i64::MIN, -1, 0, i64::MAX]
+    );
+    borrowed_scalar_cases!(borrowed_uint32_value, UInt32Value, u32, [0, 1, u32::MAX]);
+    borrowed_scalar_cases!(borrowed_uint64_value, UInt64Value, u64, [0, 1, u64::MAX]);
+
+    #[test]
+    fn borrowed_double_value_preserves_bits() {
+        for bits in [
+            0,
+            (-0.0_f64).to_bits(),
+            f64::MIN.to_bits(),
+            f64::MAX.to_bits(),
+            f64::INFINITY.to_bits(),
+            f64::NEG_INFINITY.to_bits(),
+            0x7ff8_0000_0000_0042,
+        ] {
+            let wrapper = DoubleValue::from(f64::from_bits(bits));
+            let extracted: f64 = (&wrapper).into();
+            assert_eq!(extracted.to_bits(), bits);
+            assert_eq!(wrapper.value.to_bits(), bits);
+            assert_eq!(f64::from(wrapper).to_bits(), bits);
+        }
+    }
+
+    #[test]
+    fn borrowed_float_value_preserves_bits() {
+        for bits in [
+            0,
+            (-0.0_f32).to_bits(),
+            f32::MIN.to_bits(),
+            f32::MAX.to_bits(),
+            f32::INFINITY.to_bits(),
+            f32::NEG_INFINITY.to_bits(),
+            0x7fc0_0042,
+        ] {
+            let wrapper = FloatValue::from(f32::from_bits(bits));
+            let extracted: f32 = (&wrapper).into();
+            assert_eq!(extracted.to_bits(), bits);
+            assert_eq!(wrapper.value.to_bits(), bits);
+            assert_eq!(f32::from(wrapper).to_bits(), bits);
+        }
+    }
 
     #[test]
     fn bool_value_roundtrip() {
