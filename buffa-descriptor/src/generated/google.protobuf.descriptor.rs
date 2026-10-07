@@ -1536,25 +1536,25 @@ impl ::buffa::text::TextFormat for FileDescriptorProto {
                     );
                 }
                 "dependency" => {
-                    dec.read_repeated_into(
+                    dec.read_repeated_scalar_into(
                         &mut self.dependency,
                         |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
                     )?
                 }
                 "public_dependency" => {
-                    dec.read_repeated_into(
+                    dec.read_repeated_scalar_into(
                         &mut self.public_dependency,
                         |__d| __d.read_i32(),
                     )?
                 }
                 "weak_dependency" => {
-                    dec.read_repeated_into(
+                    dec.read_repeated_scalar_into(
                         &mut self.weak_dependency,
                         |__d| __d.read_i32(),
                     )?
                 }
                 "option_dependency" => {
-                    dec.read_repeated_into(
+                    dec.read_repeated_scalar_into(
                         &mut self.option_dependency,
                         |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
                     )?
@@ -2303,7 +2303,7 @@ impl ::buffa::text::TextFormat for DescriptorProto {
                     )?
                 }
                 "reserved_name" => {
-                    dec.read_repeated_into(
+                    dec.read_repeated_scalar_into(
                         &mut self.reserved_name,
                         |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
                     )?
@@ -5735,7 +5735,7 @@ impl ::buffa::text::TextFormat for EnumDescriptorProto {
                     )?
                 }
                 "reserved_name" => {
-                    dec.read_repeated_into(
+                    dec.read_repeated_scalar_into(
                         &mut self.reserved_name,
                         |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
                     )?
@@ -10409,7 +10409,7 @@ impl ::buffa::text::TextFormat for FieldOptions {
                     dec.merge_message(self.feature_support.get_or_insert_default())?
                 }
                 "targets" => {
-                    dec.read_repeated_into(
+                    dec.read_repeated_scalar_into(
                         &mut self.targets,
                         |__d| {
                             __d
@@ -19485,13 +19485,19 @@ pub mod source_code_info {
                         );
                     }
                     "path" => {
-                        dec.read_repeated_into(&mut self.path, |__d| __d.read_i32())?
+                        dec.read_repeated_scalar_into(
+                            &mut self.path,
+                            |__d| __d.read_i32(),
+                        )?
                     }
                     "span" => {
-                        dec.read_repeated_into(&mut self.span, |__d| __d.read_i32())?
+                        dec.read_repeated_scalar_into(
+                            &mut self.span,
+                            |__d| __d.read_i32(),
+                        )?
                     }
                     "leading_detached_comments" => {
-                        dec.read_repeated_into(
+                        dec.read_repeated_scalar_into(
                             &mut self.leading_detached_comments,
                             |__d| ::core::result::Result::Ok(
                                 __d.read_string()?.into_owned(),
@@ -20124,7 +20130,10 @@ pub mod generated_code_info {
                         );
                     }
                     "path" => {
-                        dec.read_repeated_into(&mut self.path, |__d| __d.read_i32())?
+                        dec.read_repeated_scalar_into(
+                            &mut self.path,
+                            |__d| __d.read_i32(),
+                        )?
                     }
                     _ => return ::core::result::Result::Err(dec.unknown_field()),
                 }

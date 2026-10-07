@@ -1,0 +1,3 @@
+kind: Fixed
+body: Require a colon before empty repeated scalar lists.
+time: 2026-10-07T15:03:04.143562+02:00

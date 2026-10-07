@@ -95,6 +95,36 @@ fn scalar_lists_require_colon() {
 }
 
 #[test]
+fn empty_scalar_lists_require_colon() {
+    for valid in ["tags: []", "lucky_numbers: []"] {
+        let person: Person = decode_from_str(valid).unwrap();
+        assert!(person.tags.is_empty());
+        assert!(person.lucky_numbers.is_empty());
+
+        let with_comment: Person =
+            decode_from_str(&valid.replacen(":", ": # comment\n", 1)).unwrap();
+        assert!(with_comment.tags.is_empty());
+    }
+
+    for invalid in ["tags []", "lucky_numbers []"] {
+        let err = decode_from_str::<Person>(invalid).unwrap_err();
+        assert_eq!(
+            err.kind,
+            ParseErrorKind::UnexpectedToken {
+                expected: "':' before scalar value",
+            },
+            "input: {invalid:?}"
+        );
+        assert_eq!(err.col as usize, invalid.find('[').unwrap() + 1);
+    }
+
+    let person: Person = decode_from_str("addresses []").unwrap();
+    assert!(person.addresses.is_empty());
+    let inventory: Inventory = decode_from_str("stock []").unwrap();
+    assert!(inventory.stock.is_empty());
+}
+
+#[test]
 fn all_scalars_golden() {
     // Every numeric scalar type. Implicit presence: zero values suppressed.
     let msg = AllScalars {
