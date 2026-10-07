@@ -1259,7 +1259,9 @@ pub struct CodeGenConfig {
     /// JSON field (proto3 JSON inline oneof encoding).
     pub generate_json: bool,
     /// Whether to emit `#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]`
-    /// on generated message structs and enum types.
+    /// on generated message structs and enum types. An enum with a
+    /// `[deprecated = true]` variant gets a generated impl under the same
+    /// `cfg` instead, because the derive would warn on that variant.
     ///
     /// When this is `true`, the downstream crate must add `arbitrary` as an
     /// optional dependency and enable the `buffa/arbitrary` feature. The

@@ -75,6 +75,11 @@ pub struct CodeGenContext<'a> {
     /// enum field opened by an enum-type override needs an explicit generated
     /// default (`EnumValue::Known(first)` instead of the derived wire-zero).
     enum_first_value: HashMap<String, i32>,
+    /// Enum FQN → proto names of its values whose generated item is
+    /// `#[deprecated]`; see [`Self::enum_value_is_deprecated`].
+    /// Built on first use, and consulted only when a field declares an explicit
+    /// enum `default_value`, so the common path never walks the descriptor set.
+    deprecated_enum_values: std::cell::OnceCell<HashMap<String, HashSet<String>>>,
     /// Map from fully-qualified protobuf element name to its source comment.
     ///
     /// Keys use dotted FQN form without a leading dot, matching the `proto_fqn`
@@ -512,6 +517,7 @@ impl<'a> CodeGenContext<'a> {
             } else {
                 HashMap::new()
             },
+            deprecated_enum_values: std::cell::OnceCell::new(),
             comment_map,
             nested_module_names,
             unboxed_oneof_variants,
@@ -849,6 +855,24 @@ impl<'a> CodeGenContext<'a> {
     /// per spec. `None` for enums not in this compilation set (extern_path).
     pub(crate) fn enum_first_value(&self, proto_fqn: &str) -> Option<i32> {
         self.enum_first_value.get(proto_fqn).copied()
+    }
+
+    /// Whether the generated item for the enum value `value_name` of enum
+    /// `proto_fqn` is `#[deprecated]`, by the rule in
+    /// [`deprecated_items`](crate::enumeration::deprecated_items).
+    /// `proto_fqn` is the dotted form used by
+    /// `FieldDescriptorProto::type_name` (`.pkg.Enum`, `.pkg.Msg.Nested`).
+    ///
+    /// Enums imported from a dependency file are in `files` along with the
+    /// compilation set's own, so an `extern_path` remap still resolves here and
+    /// this build emits its own guard — the remapped Rust type is a different
+    /// item whose deprecation state we cannot see, and a missing guard would
+    /// only warn inside the other crate's generated code.
+    pub(crate) fn enum_value_is_deprecated(&self, proto_fqn: &str, value_name: &str) -> bool {
+        self.deprecated_enum_values
+            .get_or_init(|| collect_deprecated_enum_values(self.files))
+            .get(proto_fqn)
+            .is_some_and(|names| names.contains(value_name))
     }
 
     /// Look up the Rust type path relative to the current code generation
@@ -1805,6 +1829,57 @@ fn collect_enum_first_values(files: &[FileDescriptorProto]) -> HashMap<String, i
         }
     }
     fn walk_msg(map: &mut HashMap<String, i32>, prefix: &str, msg: &DescriptorProto) {
+        let Some(name) = msg.name.as_deref() else {
+            return;
+        };
+        let child_prefix = format!("{prefix}{name}.");
+        for e in &msg.enum_type {
+            record(map, &child_prefix, e);
+        }
+        for nested in &msg.nested_type {
+            walk_msg(map, &child_prefix, nested);
+        }
+    }
+
+    let mut map = HashMap::new();
+    for file in files {
+        let prefix = match file.package.as_deref() {
+            Some(p) if !p.is_empty() => format!(".{p}."),
+            _ => ".".to_string(),
+        };
+        for e in &file.enum_type {
+            record(&mut map, &prefix, e);
+        }
+        for msg in &file.message_type {
+            walk_msg(&mut map, &prefix, msg);
+        }
+    }
+    map
+}
+
+/// The proto names of each enum's values whose generated item is
+/// `#[deprecated]`, keyed by dotted FQN (same key form as
+/// [`collect_enum_first_values`]). Consulted only to decide whether a
+/// generated item that spells out an enum value — a `[default = V]`
+/// expression — needs `#[allow(deprecated)]`.
+fn collect_deprecated_enum_values(
+    files: &[FileDescriptorProto],
+) -> HashMap<String, HashSet<String>> {
+    fn record(map: &mut HashMap<String, HashSet<String>>, prefix: &str, e: &EnumDescriptorProto) {
+        let Some(name) = e.name.as_deref() else {
+            return;
+        };
+        let fqn = format!("{prefix}{name}");
+        let deprecated = crate::enumeration::deprecated_items(e);
+        for (v, _) in e.value.iter().zip(deprecated).filter(|(_, d)| *d) {
+            if let Some(value_name) = v.name.as_deref() {
+                map.entry(fqn.clone())
+                    .or_default()
+                    .insert(value_name.to_string());
+            }
+        }
+    }
+    fn walk_msg(map: &mut HashMap<String, HashSet<String>>, prefix: &str, msg: &DescriptorProto) {
         let Some(name) = msg.name.as_deref() else {
             return;
         };

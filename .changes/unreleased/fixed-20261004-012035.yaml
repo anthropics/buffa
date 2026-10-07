@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a field `json_name` that contains NUL or has the form `[x]`** (#543). A message field with a custom `json_name` such as `[x]` linked and was serialized under that key, which the reflective JSON parser reads as the key of an extension, so the message could not parse its own output. That name, and a `json_name` containing NUL on a field or an extension, are now `PoolError::InvalidJsonName`, as protoc rejects both. As in protoc, a message that sets `deprecated_legacy_json_field_conflicts` keeps the bracketed name.
+time: 2026-10-04T01:20:35.242319+02:00

@@ -398,6 +398,7 @@ pub(crate) fn generate_view_with_nesting(
     // Scoped #[allow(non_snake_case)] for non-snake member names (verbatim
     // camelCase protos or collision fallbacks); empty otherwise.
     let non_snake_attr = ctx.message_non_snake_attr(msg);
+    let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, proto_fqn);
     let top_level = quote! {
         #view_doc
         #view_debug_derive
@@ -477,6 +478,7 @@ pub(crate) fn generate_view_with_nesting(
             // unify the `UnknownFields` (no-wrapper) and `__<Name>ExtJson`
             // (generate_json wrapper) cases; no-op in the former.
             #[allow(clippy::useless_conversion, clippy::needless_update)]
+            #deprecated_field_allow
             fn to_owned_from_source(
                 &self,
                 __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
@@ -543,6 +545,10 @@ pub(crate) fn custom_view_default_impl(
     has_phantom_field: bool,
 ) -> Result<Option<TokenStream>, CodeGenError> {
     let ctx = scope.ctx;
+    // A view default can spell out `Enum::VARIANT` (an opened bare-enum field
+    // whose declared default is non-wire-zero), so this impl needs the same
+    // guard the owned message's does when a deprecated member is involved.
+    let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, scope.proto_fqn);
 
     // The triggering condition (bare open enum with a non-wire-zero declared
     // default) can only arise through an enum-type feature override, so the
@@ -614,6 +620,7 @@ pub(crate) fn custom_view_default_impl(
     }
 
     Ok(Some(quote! {
+        #deprecated_field_allow
         impl<'a> ::core::default::Default for #view_ident<'a> {
             fn default() -> Self {
                 Self {
