@@ -26,13 +26,23 @@ fn json_field_mask_round_trip_and_rejects_invalid_paths() {
     let valid = DynamicMessage::from_json(Arc::clone(&p), idx, valid_input).unwrap();
     assert_eq!(valid.to_json().unwrap(), valid_input);
 
+    let empty_segments = DynamicMessage::from_json(
+        Arc::clone(&p),
+        idx,
+        r#"{"fFieldMask":",fooBar,,foo.barBaz,"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        empty_segments.to_json().unwrap(),
+        r#"{"fFieldMask":"fooBar,foo.barBaz"}"#
+    );
+
     for input in [
         r#"{"fFieldMask":" "}"#,
         r#"{"fFieldMask":"foo, barBaz"}"#,
         r#"{"fFieldMask":"foo,bar-baz"}"#,
         r#"{"fFieldMask":"foo/bar"}"#,
         r#"{"fFieldMask":"3d"}"#,
-        r#"{"fFieldMask":"foo,"}"#,
         r#"{"fFieldMask":".foo"}"#,
         r#"{"fFieldMask":"foo."}"#,
         r#"{"fFieldMask":"foo..bar"}"#,
@@ -47,7 +57,7 @@ fn json_field_mask_round_trip_and_rejects_invalid_paths() {
     let field_mask_md = p.message_by_name("google.protobuf.FieldMask").unwrap();
     let scalars_md = p.message_by_name("reflect.test.Scalars").unwrap();
     for path in [
-        " ", "foo bar", "foo-bar", "foo/bar", "3d", "", ".foo", "foo.", "foo..bar",
+        " ", "foo bar", "foo-bar", "foo/bar", "3d", ".foo", "foo.", "foo..bar",
     ] {
         let mut mask = DynamicMessage::new(Arc::clone(&p), field_mask_idx);
         mask.set(

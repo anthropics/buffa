@@ -154,6 +154,18 @@ mod tests {
     }
 
     #[test]
+    fn field_mask_view_omits_empty_paths_like_owned() {
+        let json = assert_view_json_parity!(
+            FieldMaskView,
+            FieldMask {
+                paths: vec!["".into(), "user_id".into(), "".into()],
+                ..Default::default()
+            }
+        );
+        assert_eq!(json, r#""userId""#);
+    }
+
+    #[test]
     fn wrapper_views_serialize_match_owned() {
         assert_view_json_parity!(
             BoolValueView,
