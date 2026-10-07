@@ -1,0 +1,22 @@
+name: Publish order tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  test-publish-order:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+      - name: Test publish-order validation
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: ./scripts/test-publish-order.sh
