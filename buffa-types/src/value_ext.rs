@@ -456,6 +456,7 @@ impl<'de> serde::Deserialize<'de> for ListValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::{vec, vec::Vec};
 
     #[test]
     fn value_null() {

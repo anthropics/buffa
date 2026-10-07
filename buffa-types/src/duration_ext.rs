@@ -5,7 +5,7 @@ use crate::google::protobuf::Duration;
 /// Errors that can occur when converting a protobuf [`Duration`] to a Rust type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum DurationError {
-    /// The duration is negative and cannot be represented as [`std::time::Duration`].
+    /// The duration is negative and cannot be represented as [`core::time::Duration`].
     #[error("negative protobuf Duration cannot be converted to std::time::Duration")]
     NegativeDuration,
     /// The `nanos` field is outside its valid range, or its sign is inconsistent
@@ -17,11 +17,13 @@ pub enum DurationError {
     InvalidNanos,
 }
 
-#[cfg(feature = "std")]
-impl TryFrom<Duration> for std::time::Duration {
+impl TryFrom<Duration> for core::time::Duration {
     type Error = DurationError;
 
-    /// Convert a protobuf [`Duration`] to a [`std::time::Duration`].
+    /// Convert a protobuf [`Duration`] to a [`core::time::Duration`].
+    ///
+    /// Available without the `std` feature. In `std` builds, this also covers
+    /// `std::time::Duration`, which is the same type.
     ///
     /// # Errors
     ///
@@ -31,7 +33,7 @@ impl TryFrom<Duration> for std::time::Duration {
     ///
     /// Returns [`DurationError::NegativeDuration`] if the duration is
     /// negative but otherwise well-formed (e.g. `seconds < 0`, `nanos ≤ 0`),
-    /// since [`std::time::Duration`] cannot represent negative values.
+    /// since [`core::time::Duration`] cannot represent negative values.
     fn try_from(d: Duration) -> Result<Self, Self::Error> {
         // Protobuf spec: nanos ∈ [-999_999_999, 999_999_999].
         // Use a range check rather than .abs() to avoid overflow on i32::MIN.
@@ -43,7 +45,7 @@ impl TryFrom<Duration> for std::time::Duration {
         if sign_mismatch {
             return Err(DurationError::InvalidNanos);
         }
-        // std::time::Duration is unsigned; reject well-formed negative durations.
+        // core::time::Duration is unsigned; reject well-formed negative durations.
         if d.seconds < 0 || d.nanos < 0 {
             return Err(DurationError::NegativeDuration);
         }
@@ -51,16 +53,17 @@ impl TryFrom<Duration> for std::time::Duration {
     }
 }
 
-#[cfg(feature = "std")]
-impl From<std::time::Duration> for Duration {
-    /// Convert a [`std::time::Duration`] to a protobuf [`Duration`].
+impl From<core::time::Duration> for Duration {
+    /// Convert a [`core::time::Duration`] to a protobuf [`Duration`].
+    ///
+    /// Available without the `std` feature.
     ///
     /// # Saturation
     ///
     /// Durations whose `as_secs()` exceeds `i64::MAX` (~292 billion years) are
     /// saturated to `i64::MAX` seconds rather than wrapping, which would produce
     /// an incorrect negative value.
-    fn from(d: std::time::Duration) -> Self {
+    fn from(d: core::time::Duration) -> Self {
         Self {
             // Saturate at i64::MAX rather than wrapping for extremely large durations.
             seconds: d.as_secs().min(i64::MAX as u64) as i64,
@@ -230,27 +233,24 @@ impl Duration {
 mod tests {
     use super::*;
 
-    #[cfg(feature = "std")]
     #[test]
-    fn std_duration_roundtrip() {
-        let d = std::time::Duration::new(300, 500_000_000);
+    fn core_duration_roundtrip() {
+        let d = core::time::Duration::new(300, 500_000_000);
         let proto: Duration = d.into();
         assert_eq!(proto.seconds, 300);
         assert_eq!(proto.nanos, 500_000_000);
-        let back: std::time::Duration = proto.try_into().unwrap();
+        let back: core::time::Duration = proto.try_into().unwrap();
         assert_eq!(back, d);
     }
 
-    #[cfg(feature = "std")]
     #[test]
     fn zero_duration_roundtrip() {
-        let d = std::time::Duration::ZERO;
+        let d = core::time::Duration::ZERO;
         let proto: Duration = d.into();
-        let back: std::time::Duration = proto.try_into().unwrap();
+        let back: core::time::Duration = proto.try_into().unwrap();
         assert_eq!(back, d);
     }
 
-    #[cfg(feature = "std")]
     #[test]
     fn negative_duration_rejected() {
         let neg = Duration {
@@ -258,11 +258,10 @@ mod tests {
             nanos: 0,
             ..Default::default()
         };
-        let result: Result<std::time::Duration, _> = neg.try_into();
+        let result: Result<core::time::Duration, _> = neg.try_into();
         assert_eq!(result, Err(DurationError::NegativeDuration));
     }
 
-    #[cfg(feature = "std")]
     #[test]
     fn invalid_nanos_rejected() {
         let bad = Duration {
@@ -270,7 +269,7 @@ mod tests {
             nanos: 1_000_000_000,
             ..Default::default()
         };
-        let result: Result<std::time::Duration, _> = bad.try_into();
+        let result: Result<core::time::Duration, _> = bad.try_into();
         assert_eq!(result, Err(DurationError::InvalidNanos));
     }
 
@@ -372,7 +371,6 @@ mod tests {
 
     // ---- TryFrom edge cases -----------------------------------------------
 
-    #[cfg(feature = "std")]
     #[test]
     fn nanos_i32_min_is_invalid() {
         // i32::MIN cannot be represented as a valid protobuf nanos value
@@ -383,11 +381,10 @@ mod tests {
             nanos: i32::MIN,
             ..Default::default()
         };
-        let result: Result<std::time::Duration, _> = bad.try_into();
+        let result: Result<core::time::Duration, _> = bad.try_into();
         assert_eq!(result, Err(DurationError::InvalidNanos));
     }
 
-    #[cfg(feature = "std")]
     #[test]
     fn negative_seconds_and_negative_nanos_is_negative_duration() {
         // A well-formed negative duration (sign-consistent) must return
@@ -397,7 +394,7 @@ mod tests {
             nanos: -500_000_000,
             ..Default::default()
         };
-        let result: Result<std::time::Duration, _> = neg.try_into();
+        let result: Result<core::time::Duration, _> = neg.try_into();
         assert_eq!(result, Err(DurationError::NegativeDuration));
     }
 
@@ -476,13 +473,12 @@ mod tests {
 
     // ---- saturation -------------------------------------------------------
 
-    #[cfg(feature = "std")]
     #[test]
-    fn large_std_duration_saturates_to_i64_max_seconds() {
-        // std::time::Duration can represent values far beyond i64::MAX seconds
+    fn large_core_duration_saturates_to_i64_max_seconds() {
+        // core::time::Duration can represent values far beyond i64::MAX seconds
         // (its seconds are stored as u64).  The From impl must saturate rather
         // than wrap, which would produce a negative seconds value.
-        let huge = std::time::Duration::from_secs(u64::MAX);
+        let huge = core::time::Duration::from_secs(u64::MAX);
         let proto: Duration = huge.into();
         assert_eq!(proto.seconds, i64::MAX);
         // Subsecond nanos are zero because u64::MAX is a whole number of seconds.
@@ -589,7 +585,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "std")]
     #[test]
     fn negative_nanos_on_positive_seconds_is_invalid_nanos() {
         // Duration { seconds: 5, nanos: -1 } has a sign mismatch — nanos is negative
@@ -599,7 +594,7 @@ mod tests {
             nanos: -1,
             ..Default::default()
         };
-        let result: Result<std::time::Duration, _> = bad.try_into();
+        let result: Result<core::time::Duration, _> = bad.try_into();
         assert_eq!(result, Err(DurationError::InvalidNanos));
     }
 }

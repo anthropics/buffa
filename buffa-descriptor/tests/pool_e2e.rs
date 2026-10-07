@@ -138,6 +138,139 @@ fn assert_set_rejected_without_mutating_pool(
 }
 
 #[test]
+fn unrecognized_file_syntax_is_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for syntax in ["prot3", "proto4", "PROTO3", " proto3", "proto3 "] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("invalid-syntax.proto".into()),
+                package: Some("invalid.test".into()),
+                syntax: Some(syntax.into()),
+                message_type: vec![DescriptorProto {
+                    name: Some("InvalidSyntax".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_set_rejected_without_mutating_pool(
+            "invalid-syntax.proto",
+            "invalid.test.InvalidSyntax",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::UnrecognizedSyntax { file, syntax: found }
+                        if file == "invalid-syntax.proto" && found == syntax
+                ));
+                assert_eq!(
+                    err.to_string(),
+                    format!("file invalid-syntax.proto has unrecognized syntax {syntax:?}")
+                );
+            },
+        );
+    }
+}
+
+#[test]
+fn editions_file_without_edition_is_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for edition in [None, Some(Edition::EDITION_UNKNOWN)] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("no-edition.proto".into()),
+                package: Some("invalid.test".into()),
+                syntax: Some("editions".into()),
+                edition,
+                message_type: vec![DescriptorProto {
+                    name: Some("NoEdition".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_set_rejected_without_mutating_pool(
+            "no-edition.proto",
+            "invalid.test.NoEdition",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::MissingEdition { file } if file == "no-edition.proto"
+                ));
+                assert_eq!(
+                    err.to_string(),
+                    "file no-edition.proto has syntax \"editions\" but no edition"
+                );
+            },
+        );
+    }
+}
+
+#[test]
+fn recognized_file_syntax_keeps_its_field_presence() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for (syntax, edition, presence) in [
+        (None, None, FieldPresence::Explicit),
+        (Some(""), None, FieldPresence::Explicit),
+        (Some("proto2"), None, FieldPresence::Explicit),
+        (Some("proto3"), None, FieldPresence::Implicit),
+        (
+            Some("editions"),
+            Some(Edition::EDITION_2023),
+            FieldPresence::Explicit,
+        ),
+        (
+            Some("editions"),
+            Some(Edition::EDITION_2024),
+            FieldPresence::Explicit,
+        ),
+    ] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("valid-syntax.proto".into()),
+                syntax: syntax.map(Into::into),
+                edition,
+                message_type: vec![DescriptorProto {
+                    name: Some("ValidSyntax".into()),
+                    field: vec![scalar_field("value", 1, Type::TYPE_INT32)],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut p = DescriptorPool::new(set.clone()).unwrap();
+        assert_eq!(
+            p.message_by_name("ValidSyntax")
+                .unwrap()
+                .field(1)
+                .unwrap()
+                .presence(),
+            presence,
+            "syntax {syntax:?}, edition {edition:?}"
+        );
+
+        let mut readded = set;
+        readded.file[0].syntax = Some("prot3".into());
+        p.add_file_descriptor_set(readded).unwrap();
+        assert_eq!(p.files().len(), 1);
+    }
+}
+
+#[test]
 fn pool_registers_all_types() {
     let p = pool();
     assert!(p.message_by_name("reflect.test.Scalars").is_some());
