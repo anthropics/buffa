@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **A lazy repeated view's iterator skips elements without decoding them** (#530). `nth`, `nth_back`, `count` and `last` on `LazyRepeatedIter`, and the adapters built on them (`skip`, `step_by`), decoded every element they skipped and dropped the result. They now advance over the recorded bytes, so `iter().nth(n)` costs one decode. A skipped element is not validated; a malformed element is reported when it is yielded, as before.
+time: 2026-10-03T21:34:54.025538+02:00
