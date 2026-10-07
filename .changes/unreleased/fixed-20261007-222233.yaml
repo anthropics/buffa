@@ -1,0 +1,3 @@
+kind: Fixed
+body: Bound text output for deeply nested unknown groups to the recursion limit.
+time: 2026-10-07T22:22:33.985871+02:00

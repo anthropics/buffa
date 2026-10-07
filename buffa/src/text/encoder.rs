@@ -25,6 +25,11 @@ use crate::unknown_fields::{UnknownFieldData, UnknownFields};
 /// [`RECURSION_LIMIT`]: crate::RECURSION_LIMIT
 const UNKNOWN_LD_RECURSE_BUDGET: u32 = 10;
 
+/// Maximum group nesting the unknown-field printer will traverse. Decoded
+/// groups already respect this limit; public `UnknownFields::push` can also
+/// construct deeper trees directly.
+const UNKNOWN_GROUP_RECURSE_BUDGET: u32 = crate::RECURSION_LIMIT;
+
 /// What the encoder last emitted — drives separator logic in
 /// [`prepare`](TextEncoder::prepare).
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -385,8 +390,10 @@ impl<'a> TextEncoder<'a> {
     /// Length-delimited bytes are speculatively parsed as wire-format records
     /// (same heuristic as C++ text_format.cc:2926 / Java TextFormat.java:87):
     /// if the parse succeeds, print nested; otherwise print as escaped bytes.
-    /// Capped at 10 levels deep. False positives are possible — a string that
-    /// happens to look like valid wire format will be printed as `{ }`.
+    /// Capped at 10 levels deep. Group nesting is capped at
+    /// [`RECURSION_LIMIT`](crate::RECURSION_LIMIT); a deeper group's body is
+    /// omitted. False positives are possible — a string that happens to look
+    /// like valid wire format will be printed as `{ }`.
     ///
     /// This is debug output: the parser can't round-trip it because wire type
     /// doesn't determine proto type (a varint could be int32, sint64, bool, an
@@ -399,10 +406,19 @@ impl<'a> TextEncoder<'a> {
         if !self.emit_unknown {
             return Ok(());
         }
-        self.write_unknown_inner(fields, UNKNOWN_LD_RECURSE_BUDGET)
+        self.write_unknown_inner(
+            fields,
+            UNKNOWN_LD_RECURSE_BUDGET,
+            UNKNOWN_GROUP_RECURSE_BUDGET,
+        )
     }
 
-    fn write_unknown_inner(&mut self, fields: &UnknownFields, budget: u32) -> core::fmt::Result {
+    fn write_unknown_inner(
+        &mut self,
+        fields: &UnknownFields,
+        ld_budget: u32,
+        group_budget: u32,
+    ) -> core::fmt::Result {
         for f in fields.iter() {
             self.prepare(Last::Name)?;
             write!(self.w, "{}", f.number)?;
@@ -425,10 +441,10 @@ impl<'a> TextEncoder<'a> {
                     // If not (or we're out of budget), print as escaped bytes.
                     // Matches C++ text_format.cc:2926-2966 and Java
                     // TextFormat.java:87-102.
-                    if budget > 0 && !bytes.is_empty() {
+                    if ld_budget > 0 && !bytes.is_empty() {
                         if let Ok(inner) = UnknownFields::decode_from_slice(bytes) {
                             self.write_map_entry(|enc| {
-                                enc.write_unknown_inner(&inner, budget - 1)
+                                enc.write_unknown_inner(&inner, ld_budget - 1, group_budget)
                             })?;
                             continue;
                         }
@@ -438,9 +454,15 @@ impl<'a> TextEncoder<'a> {
                     escape_bytes(bytes, self.w)?;
                 }
                 UnknownFieldData::Group(inner) => {
-                    // Groups don't consume budget — they were already
-                    // validated at decode time (C++ text_format.cc:3009).
-                    self.write_map_entry(|enc| enc.write_unknown_inner(inner, budget))?;
+                    // Limit public, manually constructed groups as well as
+                    // groups that came through the bounded decoder.
+                    self.write_map_entry(|enc| {
+                        if group_budget == 0 {
+                            Ok(())
+                        } else {
+                            enc.write_unknown_inner(inner, ld_budget, group_budget - 1)
+                        }
+                    })?;
                 }
             }
         }
@@ -899,6 +921,58 @@ mod tests {
         assert_eq!(
             s,
             r#"1001: 42 1002: 0x3f800000 1003: 0xdeadbeef 1004: "\001\377" 1005 {1: 7}"#
+        );
+    }
+
+    #[test]
+    fn unknown_group_depth_is_bounded() {
+        use crate::unknown_fields::UnknownField;
+
+        fn group_chain(depth: u32) -> UnknownFields {
+            let mut nested = UnknownFields::new();
+            nested.push(UnknownField {
+                number: 2,
+                data: UnknownFieldData::Varint(7),
+            });
+            for _ in 0..depth {
+                let mut parent = UnknownFields::new();
+                parent.push(UnknownField {
+                    number: 1,
+                    data: UnknownFieldData::Group(nested),
+                });
+                nested = parent;
+            }
+            nested
+        }
+
+        fn render(fields: &UnknownFields) -> String {
+            let mut s = String::new();
+            TextEncoder::new(&mut s)
+                .emit_unknown(true)
+                .write_unknown_fields(fields)
+                .unwrap();
+            s
+        }
+
+        let at_limit = render(&group_chain(crate::RECURSION_LIMIT));
+        assert_eq!(
+            at_limit.matches('{').count(),
+            crate::RECURSION_LIMIT as usize
+        );
+        assert!(
+            at_limit.contains(": 7"),
+            "the limit-depth body was not printed"
+        );
+
+        let too_deep = render(&group_chain(crate::RECURSION_LIMIT + 25));
+        assert_eq!(
+            too_deep.matches('{').count(),
+            crate::RECURSION_LIMIT as usize + 1,
+            "over-depth groups should stop at the recursion limit: {too_deep}"
+        );
+        assert!(
+            !too_deep.contains(": 7"),
+            "the over-depth group body was printed"
         );
     }
 
