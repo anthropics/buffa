@@ -6910,6 +6910,7 @@ impl<'a> ::buffa::MessageView<'a> for FileOptionsView<'a> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
+    #[allow(deprecated)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
@@ -7760,6 +7761,7 @@ impl<'a> ::buffa::MessageView<'a> for MessageOptionsView<'a> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
+    #[allow(deprecated)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
@@ -8533,6 +8535,7 @@ impl<'a> ::buffa::MessageView<'a> for FieldOptionsView<'a> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
+    #[allow(deprecated)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
@@ -10314,6 +10317,7 @@ impl<'a> ::buffa::MessageView<'a> for EnumOptionsView<'a> {
         self.to_owned_from_source(None)
     }
     #[allow(clippy::useless_conversion, clippy::needless_update)]
+    #[allow(deprecated)]
     fn to_owned_from_source(
         &self,
         __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,

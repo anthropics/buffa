@@ -206,6 +206,21 @@ pub fn open_enum_bare_default_value(
         return Ok(None);
     }
 
+    let first = enum_first_value_expr(ctx, type_name, current_package, nesting)?;
+    Ok(Some(quote! { ::buffa::EnumValue::Known(#first) }))
+}
+
+/// An expression for an enum's first declared value, as the bare enum type.
+///
+/// The generated enum's `Default` is its first declared value, so the
+/// expression also works for an `extern_path` enum, whose values are not in
+/// the compilation set.
+pub(crate) fn enum_first_value_expr(
+    ctx: &CodeGenContext,
+    type_name: &str,
+    current_package: &str,
+    nesting: usize,
+) -> Result<TokenStream, CodeGenError> {
     let path_str = ctx
         .rust_type_relative(type_name, current_package, nesting)
         .ok_or_else(|| {
@@ -214,10 +229,7 @@ pub fn open_enum_bare_default_value(
             ))
         })?;
     let ty = crate::message::rust_path_to_tokens(&path_str);
-    // The generated enum's `Default` is its first declared value.
-    Ok(Some(quote! {
-        ::buffa::EnumValue::Known(<#ty as ::core::default::Default>::default())
-    }))
+    Ok(quote! { <#ty as ::core::default::Default>::default() })
 }
 
 /// Parse a float/double default value, handling special values "inf", "-inf", "nan".

@@ -30,7 +30,7 @@ use crate::impl_message::{
 };
 use crate::message::{is_closed_enum, is_map_field, rust_path_to_tokens};
 use crate::oneof::oneof_variant_ident;
-use crate::reflect_view::{scalar_default, scalar_variant};
+use crate::reflect_view::{enum_default_number, scalar_default, scalar_variant};
 use crate::CodeGenError;
 
 /// Context needed to emit the owned-message vtable impls, mirroring the
@@ -63,6 +63,7 @@ pub(crate) fn reflect_owned_impls(
     let current_package = scope.current_package;
     let proto_fqn = scope.proto_fqn;
     let features = scope.features;
+    let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, proto_fqn);
     let oneof_idents = scope.oneof_idents;
     let oneof_prefix = scope.oneof_prefix;
     let nesting = scope.nesting;
@@ -128,10 +129,15 @@ pub(crate) fn reflect_owned_impls(
                     quote! { #vr::Bytes(self.#id.as_deref().unwrap_or(&[])) },
                     quote! { self.#id.is_some() },
                 ),
-                Type::TYPE_ENUM => (
-                    quote! { #vr::EnumNumber(self.#id.map_or(0, |e| e.to_i32())) },
-                    quote! { self.#id.is_some() },
-                ),
+                Type::TYPE_ENUM => {
+                    let default = enum_default_number(ctx, field, current_package, nesting)?;
+                    (
+                        quote! {
+                            #vr::EnumNumber(self.#id.map_or_else(|| #default, |e| e.to_i32()))
+                        },
+                        quote! { self.#id.is_some() },
+                    )
+                }
                 _ => {
                     let variant = scalar_variant(ty);
                     let def = scalar_default(ty);
@@ -248,10 +254,13 @@ pub(crate) fn reflect_owned_impls(
                         },
                     )
                 }
-                Type::TYPE_ENUM => (
-                    quote! { #vr::EnumNumber(v.to_i32()) },
-                    quote! { #vr::EnumNumber(0) },
-                ),
+                Type::TYPE_ENUM => {
+                    let default = enum_default_number(ctx, field, current_package, nesting)?;
+                    (
+                        quote! { #vr::EnumNumber(v.to_i32()) },
+                        quote! { #vr::EnumNumber(#default) },
+                    )
+                }
                 _ => {
                     let variant_v = scalar_variant(ty);
                     let def = scalar_default(ty);
@@ -295,6 +304,7 @@ pub(crate) fn reflect_owned_impls(
     };
 
     Ok(quote! {
+        #deprecated_field_allow
         impl ::buffa_descriptor::reflect::ReflectMessage for #name_ident {
             fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
                 #pool.message(Self::__buffa_reflect_message_index())
