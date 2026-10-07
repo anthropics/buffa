@@ -5,7 +5,7 @@ use buffa_types::google::protobuf::__buffa::view::{BytesValueView, StringValueVi
 use buffa_types::google::protobuf::{BytesValue, StringValue};
 
 #[test]
-fn string_view_preserves_json_escaping() {
+fn string_view_escapes_json_like_owned() {
     for value in [
         "",
         "plain text",
@@ -26,7 +26,7 @@ fn string_view_preserves_json_escaping() {
 }
 
 #[test]
-fn bytes_view_preserves_standard_base64_and_padding() {
+fn bytes_view_emits_padded_standard_base64() {
     for (value, expected) in [
         (&b""[..], r#""""#),
         (&b"\x00"[..], r#""AA==""#),
