@@ -1936,9 +1936,8 @@ impl<E: crate::Enumeration> serde::Serialize for EnumProtoNameRef<'_, E> {
 /// Predicates for `#[serde(skip_serializing_if = "...")]` on implicit-presence
 /// fields.
 ///
-/// Proto3 JSON omits such a field at its protobuf default. For `float` and
-/// `double` the default is `+0.0` only: `-0.0` is written, as it is on the
-/// wire. Generated `Serialize` impls attach these to the matching field types.
+/// Proto3 JSON omits such a field at its protobuf default. Generated
+/// `Serialize` impls attach these to the matching field types.
 pub mod skip_if {
     pub fn is_zero_i32(v: &i32) -> bool {
         *v == 0
@@ -1962,7 +1961,7 @@ pub mod skip_if {
         v.to_bits() == 0
     }
     /// Returns `true` only for `+0.0` (all bits clear), and `false` for `-0.0`
-    /// and NaN. Same rule as [`is_zero_f32`].
+    /// and NaN.
     pub fn is_zero_f64(v: &f64) -> bool {
         v.to_bits() == 0
     }

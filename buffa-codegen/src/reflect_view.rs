@@ -205,8 +205,8 @@ pub(crate) fn reflect_view_impls(
                     let variant = scalar_variant(ty);
                     let has_val = match ty {
                         Type::TYPE_BOOL => quote! { self.#id },
-                        // By bit pattern, so `-0.0` and NaN are set: the
-                        // encoder's `is_non_default_expr` writes both.
+                        // By bit pattern, so `-0.0` and NaN are set, as in the
+                        // encoder's `is_non_default_expr`.
                         Type::TYPE_FLOAT | Type::TYPE_DOUBLE => {
                             quote! { self.#id.to_bits() != 0 }
                         }

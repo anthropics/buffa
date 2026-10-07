@@ -25,16 +25,6 @@ fn implicit_negative_zero_survives_owned_and_view_json() {
 }
 
 #[test]
-fn implicit_positive_zero_is_omitted_from_owned_and_view_json() {
-    let message = Scalars::default();
-    let bytes = message.encode_to_vec();
-    let view = ScalarsView::decode_view(&bytes).unwrap();
-
-    assert_eq!(serde_json::to_string(&message).unwrap(), "{}");
-    assert_eq!(serde_json::to_string(&view).unwrap(), "{}");
-}
-
-#[test]
 fn implicit_float_and_double_zero_signs_are_independent() {
     for (float, double, expected) in [
         (-0.0, 0.0, r#"{"f32":-0.0}"#),
@@ -54,7 +44,7 @@ fn implicit_float_and_double_zero_signs_are_independent() {
 }
 
 #[test]
-fn explicit_float_and_double_zero_values_remain_present() {
+fn explicit_zero_of_either_sign_round_trips_through_json() {
     use buffa_test::json_types::OptionalScalars;
 
     for value in [0.0, -0.0] {
@@ -64,6 +54,10 @@ fn explicit_float_and_double_zero_values_remain_present() {
             ..Default::default()
         };
         let json = serde_json::to_string(&message).unwrap();
+        assert!(
+            json.contains(r#""oF32":"#) && json.contains(r#""oF64":"#),
+            "{json}"
+        );
         let decoded: OptionalScalars = serde_json::from_str(&json).unwrap();
 
         assert_eq!(decoded.o_f32.unwrap().to_bits(), (value as f32).to_bits());

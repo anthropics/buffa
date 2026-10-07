@@ -1700,8 +1700,10 @@ The generated serde impls follow the [proto3 JSON mapping](https://protobuf.dev/
 - `int64`/`uint64` serialize as quoted strings (JavaScript precision)
 - `bytes` serialize as base64
 - Enums serialize as string names (`"ACTIVE"`, not `1`)
-- Default-valued fields are omitted from output. A `float` or `double` is at its default only when it is `+0.0`: `-0.0` is a distinct value, is encoded on the wire, and is written to JSON as `-0.0`. Arithmetic can produce it (`-1.0 * 0.0`); store `x + 0.0` to normalize
+- Default-valued fields are omitted from output; for `float` and `double` the default is `+0.0` only, so `-0.0` is written
 - Well-known types use their canonical JSON representations
+
+Arithmetic can produce `-0.0` (`-1.0 * 0.0`); store `x + 0.0` to normalize a value whose sign carries no meaning.
 
 ```rust,ignore
 // Encode to JSON

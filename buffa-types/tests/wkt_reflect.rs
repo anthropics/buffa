@@ -57,7 +57,7 @@ fn string_value_view_reflects_string() {
 }
 
 #[test]
-fn float_wrappers_report_negative_zero_as_set() {
+fn float_wrapper_presence_is_by_bit_pattern() {
     for (value, set) in [(-0.0, true), (0.0, false), (f64::NAN, true)] {
         let double = wkt::DoubleValue {
             value,

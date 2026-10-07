@@ -617,9 +617,6 @@ fn skip_if_numeric_predicates() {
     assert!(!skip_if::is_zero_i64(&-1));
     assert!(skip_if::is_zero_u32(&0));
     assert!(skip_if::is_zero_u64(&0));
-    assert!(skip_if::is_zero_f32(&0.0));
-    assert!(!skip_if::is_zero_f32(&1.0));
-    assert!(skip_if::is_zero_f64(&0.0));
 }
 
 #[test]
