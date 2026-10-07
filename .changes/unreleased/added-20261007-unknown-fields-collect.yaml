@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`UnknownFields` implements `FromIterator` and `Extend`.** Unknown fields can now be collected from or appended from an iterator.
+time: 2026-10-07T14:00:00+02:00
