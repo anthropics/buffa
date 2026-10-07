@@ -105,7 +105,8 @@ impl TryFrom<Timestamp> for std::time::SystemTime {
 impl TryFrom<&Timestamp> for std::time::SystemTime {
     type Error = TimestampError;
 
-    /// Convert a borrowed protobuf [`Timestamp`] without cloning or consuming it.
+    /// Convert a borrowed protobuf [`Timestamp`] to a
+    /// [`std::time::SystemTime`], leaving the message in place.
     ///
     /// # Errors
     ///

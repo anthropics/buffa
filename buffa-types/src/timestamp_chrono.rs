@@ -91,7 +91,20 @@ impl TryFrom<Timestamp> for chrono::DateTime<chrono::Utc> {
 impl TryFrom<&Timestamp> for chrono::DateTime<chrono::Utc> {
     type Error = TimestampError;
 
-    /// Convert a borrowed protobuf [`Timestamp`] without cloning or consuming it.
+    /// Convert a borrowed protobuf [`Timestamp`] to a
+    /// [`chrono::DateTime<Utc>`](chrono::DateTime), leaving the message in place.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use buffa_types::Timestamp;
+    /// use chrono::{DateTime, Utc};
+    ///
+    /// let ts = Timestamp::from_unix_secs(1_700_000_000);
+    /// let dt = DateTime::<Utc>::try_from(&ts).unwrap();
+    /// assert_eq!(dt.timestamp(), 1_700_000_000);
+    /// assert_eq!(ts.seconds, 1_700_000_000);
+    /// ```
     ///
     /// # Errors
     ///

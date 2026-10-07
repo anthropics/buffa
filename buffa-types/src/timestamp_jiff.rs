@@ -97,7 +97,19 @@ impl TryFrom<Timestamp> for jiff::Timestamp {
 impl TryFrom<&Timestamp> for jiff::Timestamp {
     type Error = TimestampError;
 
-    /// Convert a borrowed protobuf [`Timestamp`] without cloning or consuming it.
+    /// Convert a borrowed protobuf [`Timestamp`] to a [`jiff::Timestamp`],
+    /// leaving the message in place.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use buffa_types::Timestamp;
+    ///
+    /// let ts = Timestamp::from_unix_secs(1_700_000_000);
+    /// let jt = jiff::Timestamp::try_from(&ts).unwrap();
+    /// assert_eq!(jt.as_second(), 1_700_000_000);
+    /// assert_eq!(ts.seconds, 1_700_000_000);
+    /// ```
     ///
     /// # Errors
     ///
