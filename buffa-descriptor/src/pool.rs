@@ -388,6 +388,8 @@ pub enum PoolError {
     /// [`RequiredLabelOutsideProto2`](Self::RequiredLabelOutsideProto2)
     /// instead.
     RequiredExtension { field: String },
+    /// An extension of a MessageSet is not an optional message field.
+    InvalidMessageSetExtension { field: String },
     /// A field number, or a finite extension range, overlaps the field-number
     /// interval reserved for the protobuf implementation. The bounds are
     /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
@@ -721,6 +723,9 @@ impl core::fmt::Display for PoolError {
             ),
             Self::RequiredExtension { field } => {
                 write!(f, "extension {field} must not be required")
+            }
+            Self::InvalidMessageSetExtension { field } => {
+                write!(f, "MessageSet extension {field} must be an optional message")
             }
             Self::ReservedFieldNumber { field, number } => {
                 write!(
@@ -2427,9 +2432,17 @@ impl DescriptorPool {
         // there is exactly one valid interpretation of an extension's oneof
         // membership, and it is "none".
         field.oneof_index = None;
+        let extendee_message = &self.messages[extendee.0 as usize];
+        if extendee_message
+            .options()
+            .is_some_and(|options| options.message_set_wire_format == Some(true))
+            && (ext.r#type == Some(ProtoType::TYPE_GROUP)
+                || !matches!(field.kind, FieldKind::Singular(SingularKind::Message(_))))
+        {
+            return Err(PoolError::InvalidMessageSetExtension { field: fqn });
+        }
         // Validate the number falls inside one of the extendee's declared
         // extension ranges.
-        let extendee_message = &self.messages[extendee.0 as usize];
         if !extendee_message.in_extension_range(field.number) {
             return Err(PoolError::InvalidFieldNumber {
                 field: fqn,
