@@ -648,6 +648,136 @@ fn test_multi_file_same_package_merged() {
 }
 
 #[test]
+fn test_rejects_proto_paths_with_the_same_generated_stem() {
+    let mut nested_path = proto3_file("foo/bar.proto");
+    nested_path.package = Some("shared.pkg".to_string());
+    nested_path.message_type.push(DescriptorProto {
+        name: Some("FromDirectory".to_string()),
+        ..Default::default()
+    });
+    let mut dotted_path = proto3_file("foo.bar.proto");
+    dotted_path.package = Some("shared.pkg".to_string());
+    dotted_path.message_type.push(DescriptorProto {
+        name: Some("FromFilename".to_string()),
+        ..Default::default()
+    });
+
+    let err = generate(
+        &[nested_path, dotted_path],
+        &["foo/bar.proto".to_string(), "foo.bar.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("distinct proto paths must not overwrite the same content files");
+
+    assert!(matches!(
+        err,
+        CodeGenError::GeneratedFileNameCollision { ref file_name }
+            if file_name == "foo.bar.rs"
+    ));
+}
+
+#[test]
+fn test_rejects_content_file_that_collides_with_package_stitcher() {
+    let mut file = proto3_file("foo.mod.proto");
+    file.package = Some("foo".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Message".to_string()),
+        ..Default::default()
+    });
+
+    let err = generate(
+        &[file],
+        &["foo.mod.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("content file must not overwrite the package stitcher");
+
+    assert!(matches!(
+        err,
+        CodeGenError::GeneratedFileNameCollision { ref file_name }
+            if file_name == "foo.mod.rs"
+    ));
+}
+
+#[test]
+fn test_rejects_collisions_between_content_kinds() {
+    let mut view_path = proto3_file("foo.proto");
+    view_path.package = Some("shared.pkg".to_string());
+    view_path.message_type.push(DescriptorProto {
+        name: Some("ViewSource".to_string()),
+        ..Default::default()
+    });
+    let mut owned_path = proto3_file("foo.__view.proto");
+    owned_path.package = Some("shared.pkg".to_string());
+    owned_path.message_type.push(DescriptorProto {
+        name: Some("OwnedSource".to_string()),
+        ..Default::default()
+    });
+
+    let err = generate(
+        &[view_path, owned_path],
+        &["foo.proto".to_string(), "foo.__view.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("owned and view outputs must not share a path");
+
+    assert!(matches!(
+        err,
+        CodeGenError::GeneratedFileNameCollision { ref file_name }
+            if file_name == "foo.__view.rs"
+    ));
+}
+
+#[test]
+fn test_file_per_package_avoids_per_proto_path_collisions() {
+    let mut nested_path = proto3_file("foo/bar.proto");
+    nested_path.package = Some("shared.pkg".to_string());
+    nested_path.message_type.push(DescriptorProto {
+        name: Some("FromDirectory".to_string()),
+        ..Default::default()
+    });
+    let mut dotted_path = proto3_file("foo.bar.proto");
+    dotted_path.package = Some("shared.pkg".to_string());
+    dotted_path.message_type.push(DescriptorProto {
+        name: Some("FromFilename".to_string()),
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        file_per_package: true,
+        ..Default::default()
+    };
+
+    let files = generate(
+        &[nested_path, dotted_path],
+        &["foo/bar.proto".to_string(), "foo.bar.proto".to_string()],
+        &config,
+    )
+    .expect("inlined package output has no per-proto filename collision");
+
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].name, "shared.pkg.rs");
+    assert!(files[0].content.contains("pub struct FromDirectory"));
+    assert!(files[0].content.contains("pub struct FromFilename"));
+}
+
+#[test]
+fn test_empty_proto_does_not_claim_a_content_file_path() {
+    let mut file = proto3_file("foo.mod.proto");
+    file.package = Some("foo".to_string());
+
+    let files = generate(
+        &[file],
+        &["foo.mod.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("empty proto emits only its package stitcher");
+
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].name, "foo.mod.rs");
+    assert_eq!(files[0].kind, GeneratedFileKind::PackageMod);
+}
+
+#[test]
 fn test_package_to_filename() {
     assert_eq!(package_to_filename("google.protobuf"), "google.protobuf.rs");
     assert_eq!(package_to_filename("foo"), "foo.rs");
