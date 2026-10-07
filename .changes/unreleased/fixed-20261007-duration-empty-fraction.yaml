@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **ProtoJSON Duration parsing rejects empty fractions.** A value such as `1.s` was accepted as one second. Parsing now requires digits after the decimal point.
+time: 2026-10-07T20:13:17Z

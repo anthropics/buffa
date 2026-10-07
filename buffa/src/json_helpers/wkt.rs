@@ -199,7 +199,7 @@ pub fn fmt_duration(secs: i64, nanos: i32) -> Result<String, &'static str> {
 /// # Errors
 ///
 /// Returns an error on a malformed string or a value outside the `Duration`
-/// range.
+/// range. If a decimal point is present, it must be followed by 1–9 digits.
 pub fn parse_duration(s: &str) -> Result<(i64, i32), &'static str> {
     let body = s.strip_suffix('s').ok_or("missing 's' suffix")?;
     let negative = body.starts_with('-');
@@ -214,7 +214,13 @@ pub fn parse_duration(s: &str) -> Result<(i64, i32), &'static str> {
         return Err("malformed sign");
     }
     let (sec_str, nano_str) = match body.find('.') {
-        Some(dot) => (&body[..dot], &body[dot + 1..]),
+        Some(dot) => {
+            let fraction = &body[dot + 1..];
+            if fraction.is_empty() {
+                return Err("bad fractional seconds");
+            }
+            (&body[..dot], fraction)
+        }
         None => (body, ""),
     };
     let abs_secs: i64 = sec_str.parse().map_err(|_| "bad seconds")?;
@@ -567,8 +573,11 @@ mod tests {
         assert!(fmt_duration(1, -1).is_err()); // opposite signs
         assert!(fmt_duration(0, 1_000_000_000).is_err()); // nanos overflow
         assert!(parse_duration("--5s").is_err()); // double sign
+        assert!(parse_duration("1.s").is_err()); // empty fraction
+        assert!(parse_duration("-1.s").is_err()); // empty negative fraction
         assert!(parse_duration("1.5").is_err()); // no suffix
         assert!(parse_duration("1.5e9s").is_err()); // exponent
+        assert_eq!(parse_duration("1.0s"), Ok((1, 0)));
     }
 
     #[test]
