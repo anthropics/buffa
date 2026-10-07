@@ -2615,7 +2615,10 @@ fn proto_relative_name(file: &Path, includes: &[PathBuf]) -> String {
         .iter()
         .find_map(|include| {
             let include = normalize_proto_path(include);
-            if include.as_os_str().is_empty() && file.is_absolute() {
+            // `.` contains every relative path and no rooted one. `has_root`
+            // also covers a Windows path that starts at the root of the
+            // current drive, which `is_absolute` reports as relative.
+            if include.as_os_str().is_empty() && file.has_root() {
                 return None;
             }
             file.strip_prefix(include).ok().filter(|name| {
@@ -3210,6 +3213,19 @@ mod tests {
                 &[PathBuf::from("./proto/vendor"), PathBuf::from("proto")]
             ),
             "ext.proto"
+        );
+    }
+
+    #[test]
+    fn proto_relative_name_current_directory_include_contains_relative_files() {
+        // `.` listed first names the file by its full relative path, even
+        // when a later include is a closer match.
+        assert_eq!(
+            proto_relative_name(
+                Path::new("proto/my/service.proto"),
+                &[PathBuf::from("."), PathBuf::from("proto")]
+            ),
+            "proto/my/service.proto"
         );
     }
 

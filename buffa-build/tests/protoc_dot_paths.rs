@@ -44,6 +44,11 @@ message Requested { int32 value = 1; }
             vec![],
         ),
         (
+            "relative_file_after_current_directory_include",
+            input.clone(),
+            vec![PathBuf::from("."), root.clone()],
+        ),
+        (
             "absolute_file_after_current_directory_include",
             cwd.join(&input),
             vec![PathBuf::from("."), cwd.join(&root)],
