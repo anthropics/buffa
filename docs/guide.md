@@ -1080,8 +1080,8 @@ is itself `#[deprecated]`, so the builder API is not a quieter way to set it.
 
 Views are also covered. The field on `FooView` and on `FooLazyView` carries
 `#[deprecated]`, and so do its accessor on `FooOwnedView` and a `required`
-field's `has_*` method. Reading a deprecated field after `decode_view` therefore
-warns, as reading the owned field does.
+field's `has_*` method. So reading a deprecated field after `decode_view` warns,
+as reading the owned field does.
 
 The setter and the view markers are there whether the field's deprecation comes
 from the option or from your own `field_attribute`.
@@ -1096,10 +1096,10 @@ primary is live marks only the alias and the alias's own idiomatic const.
 Two things are not marked:
 
 - **Oneof variants are not marked.** `[deprecated = true]` on a `oneof` member
-  adds no `#[deprecated]`. `prost-build` marks these, so a deprecated oneof
+  does not add `#[deprecated]`. `prost-build` marks these, so a deprecated oneof
   member that warned under prost is silent here. A `#[deprecated]` that you
-  attach to the variant with `field_attribute` goes on the owned oneof enum only,
-  and the generated impls that match on it are not guarded, so
+  attach to the variant with `field_attribute` goes on the owned oneof enum only.
+  The generated impls that match on it are not guarded, so
   `examples/addressbook` keeps a module-level `#[allow(deprecated)]`.
 - **Whole-message and whole-enum deprecation is not emitted**, matching prost.
 
