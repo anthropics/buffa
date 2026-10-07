@@ -68,3 +68,45 @@ fn explicit_float_and_double_zero_values_remain_present() {
         assert_eq!(decoded.o_f64.unwrap().to_bits(), value.to_bits());
     }
 }
+
+#[test]
+fn implicit_zero_sign_decides_lazy_view_json_output() {
+    use buffa::view::LazyMessageView;
+    use buffa_test::basic_prefixed::{RpcAllScalars, RpcAllScalarsLazyView};
+
+    for (float, double, expected) in [
+        (-0.0, -0.0, r#"{"fFloat":-0.0,"fDouble":-0.0}"#),
+        (-0.0, 0.0, r#"{"fFloat":-0.0}"#),
+        (0.0, -0.0, r#"{"fDouble":-0.0}"#),
+        (0.0, 0.0, "{}"),
+    ] {
+        let message = RpcAllScalars {
+            f_float: float,
+            f_double: double,
+            ..Default::default()
+        };
+        let bytes = message.encode_to_vec();
+        let lazy = RpcAllScalarsLazyView::decode_lazy(&bytes).unwrap();
+
+        assert_eq!(serde_json::to_string(&lazy).unwrap(), expected);
+    }
+}
+
+#[test]
+fn negative_zero_json_input_parses_to_negative_zero() {
+    for literal in ["-0", "-0.0", r#""-0""#] {
+        let json = format!(r#"{{"f32":{literal},"f64":{literal}}}"#);
+        let decoded: Scalars = serde_json::from_str(&json).unwrap();
+
+        assert!(
+            decoded.f32 == 0.0 && decoded.f32.is_sign_negative(),
+            "float from {literal}: {:?}",
+            decoded.f32
+        );
+        assert!(
+            decoded.f64 == 0.0 && decoded.f64.is_sign_negative(),
+            "double from {literal}: {:?}",
+            decoded.f64
+        );
+    }
+}
