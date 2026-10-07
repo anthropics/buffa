@@ -255,6 +255,8 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// A oneof member has required or repeated cardinality instead of optional.
+    InvalidOneofCardinality { field: String },
     /// A field marked `proto3_optional` is not declared in a proto3 file.
     Proto3OptionalOutsideProto3 { field: String },
     /// A field marked `proto3_optional` does not have optional cardinality.
@@ -271,6 +273,8 @@ pub enum PoolError {
     RealOneofAfterSyntheticOneof { message: String, oneof: String },
     /// Two oneof declarations in one message have the same name.
     DuplicateOneofName { message: String, name: String },
+    /// A oneof declaration has no member fields.
+    EmptyOneof { oneof: String },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
@@ -493,6 +497,9 @@ impl core::fmt::Display for PoolError {
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
             ),
+            Self::InvalidOneofCardinality { field } => {
+                write!(f, "field {field} is a oneof member but is not optional")
+            }
             Self::Proto3OptionalOutsideProto3 { field } => write!(
                 f,
                 "field {field} is marked proto3_optional outside a proto3 file"
@@ -523,6 +530,7 @@ impl core::fmt::Display for PoolError {
                     "message {message} declares oneof name {name:?} more than once"
                 )
             }
+            Self::EmptyOneof { oneof } => write!(f, "oneof {oneof} has no fields"),
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
@@ -1825,6 +1833,14 @@ impl DescriptorPool {
         field_by_number.sort_unstable_by_key(|&(n, _)| n);
         field_by_name.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
+        for oneof in &oneofs {
+            if oneof.field_indices.is_empty() {
+                return Err(PoolError::EmptyOneof {
+                    oneof: format!("{fqn}.{}", oneof.name),
+                });
+            }
+        }
+
         // Validate and mark synthetic oneofs (proto3 optional). Per protobuf
         // semantics, a proto3 optional field must be the only member of its
         // oneof.
@@ -2290,6 +2306,9 @@ impl DescriptorPool {
             if containing_msg.is_some() && f.oneof_index.is_none() {
                 return Err(PoolError::Proto3OptionalWithoutOneof { field: field_fqn });
             }
+        }
+        if containing_msg.is_some() && f.oneof_index.is_some() && label != Label::LABEL_OPTIONAL {
+            return Err(PoolError::InvalidOneofCardinality { field: field_fqn });
         }
         let is_repeated = label == Label::LABEL_REPEATED;
 
