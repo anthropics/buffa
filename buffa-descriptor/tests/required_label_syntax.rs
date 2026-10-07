@@ -9,7 +9,7 @@ use buffa_descriptor::generated::descriptor::{
     DescriptorProto, Edition, FeatureSet, FieldDescriptorProto, FieldOptions, FileDescriptorProto,
     FileDescriptorSet,
 };
-use buffa_descriptor::{DescriptorPool, PoolError};
+use buffa_descriptor::{DescriptorPool, FieldKind, PoolError, ScalarType, SingularKind};
 
 fn required_field() -> FieldDescriptorProto {
     FieldDescriptorProto {
@@ -212,18 +212,20 @@ fn required_extension_labels_are_rejected_in_proto2() {
 
 #[test]
 fn encoded_required_extension_labels_are_rejected_in_proto2() {
-    for nested in [false, true] {
-        let (file, expected_field) = with_extension(file(Some("proto2")), flag_extension(), nested);
-        let bytes = FileDescriptorSet {
-            file: vec![extension_host(), file],
-            ..Default::default()
+    for syntax in [None, Some("proto2")] {
+        for nested in [false, true] {
+            let (file, expected_field) = with_extension(file(syntax), flag_extension(), nested);
+            let bytes = FileDescriptorSet {
+                file: vec![extension_host(), file],
+                ..Default::default()
+            }
+            .encode_to_vec();
+            let err = DescriptorPool::decode(&bytes).unwrap_err();
+            assert!(matches!(
+                err,
+                PoolError::RequiredExtension { field } if field == expected_field
+            ));
         }
-        .encode_to_vec();
-        let err = DescriptorPool::decode(&bytes).unwrap_err();
-        assert!(matches!(
-            err,
-            PoolError::RequiredExtension { field } if field == expected_field
-        ));
     }
 }
 
@@ -276,7 +278,7 @@ fn optional_and_repeated_extensions_link_in_every_syntax() {
 }
 
 #[test]
-fn extensions_with_an_unset_label_link_in_every_syntax() {
+fn extensions_with_an_unset_label_link_as_singular_in_every_syntax() {
     for file in [
         file(Some("proto2")),
         file(Some("proto3")),
@@ -292,7 +294,11 @@ fn extensions_with_an_unset_label_link_in_every_syntax() {
             ..Default::default()
         })
         .unwrap();
-        assert!(pool.extension_by_name(name).is_some());
+        let extension = pool.extension_by_name(name).unwrap();
+        assert_eq!(
+            extension.field().kind(),
+            FieldKind::Singular(SingularKind::Scalar(ScalarType::Int32))
+        );
     }
 }
 
