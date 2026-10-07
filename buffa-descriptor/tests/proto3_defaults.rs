@@ -54,12 +54,12 @@ fn set(file: FileDescriptorProto) -> FileDescriptorSet {
 
 fn assert_default_error(err: PoolError, expected_field: &str) {
     assert!(
-        matches!(&err, PoolError::ExplicitDefaultInProto3 { field } if field == expected_field),
+        matches!(&err, PoolError::Proto3FieldWithDefault { field } if field == expected_field),
         "unexpected error: {err}"
     );
     assert_eq!(
         err.to_string(),
-        format!("field {expected_field} declares an explicit default in a proto3 file")
+        format!("field {expected_field} declares a default value in a proto3 file")
     );
 }
 
@@ -187,7 +187,7 @@ fn proto3_extension_defaults_are_rejected_using_the_declaring_file_syntax() {
 }
 
 #[test]
-fn defaults_remain_valid_in_proto2_and_editions() {
+fn defaults_link_in_proto2_and_in_editions_with_explicit_presence() {
     for (syntax, edition) in [
         (None, None),
         (Some("proto2"), None),
@@ -256,12 +256,49 @@ fn editions_implicit_presence_fields_reject_defaults() {
                 );
                 assert_eq!(
                     err.to_string(),
-                    "field defaults.test.Defaults.value has implicit presence and declares an \
-                     explicit default"
+                    "field defaults.test.Defaults.value has implicit presence and declares a \
+                     default value"
                 );
             }
         }
     }
+}
+
+#[test]
+fn editions_extensions_keep_their_defaults_under_implicit_presence() {
+    // An extension has presence even when the file's `field_presence` is
+    // `IMPLICIT`; protoc builds this file.
+    let descriptor = FileDescriptorProto {
+        name: Some("foo.proto".into()),
+        syntax: Some("editions".into()),
+        edition: Some(Edition::EDITION_2023),
+        options: FileOptions {
+            features: presence_features(FieldPresence::IMPLICIT).into(),
+            ..Default::default()
+        }
+        .into(),
+        message_type: vec![DescriptorProto {
+            name: Some("Foo".into()),
+            extension_range: vec![ExtensionRange {
+                start: Some(1),
+                end: Some(100),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        extension: vec![FieldDescriptorProto {
+            name: Some("bar".into()),
+            number: Some(1),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_STRING),
+            default_value: Some("Hello world".into()),
+            extendee: Some("Foo".into()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let pool = DescriptorPool::new(set(descriptor)).unwrap();
+    assert!(pool.extension_by_name("bar").is_some());
 }
 
 #[test]
