@@ -1,0 +1,3 @@
+kind: Added
+body: Support collecting owned or borrowed field paths into a FieldMask with FromIterator, preserving input order and duplicates.
+time: 2026-10-07T12:40:48.040549+02:00
