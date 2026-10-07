@@ -1455,6 +1455,15 @@ impl<V: PartialEq> PartialEq for MessageFieldView<V> {
 
 impl<V: Eq> Eq for MessageFieldView<V> {}
 
+/// Hashes presence and the view, as `Option<&V>` does, so that it agrees with
+/// `==`, like [`MessageField`](crate::MessageField)'s `Hash`.
+impl<V: core::hash::Hash> core::hash::Hash for MessageFieldView<V> {
+    #[inline]
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.as_option().hash(state);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Lazy views (generated under the `lazy_views` codegen option)
 // ---------------------------------------------------------------------------
@@ -3363,6 +3372,20 @@ mod tests {
         // `==` needs no `DefaultViewInstance`.
         assert!(MessageFieldView::set(1i32) == MessageFieldView::set(1));
         assert!(MessageFieldView::set(1i32) != MessageFieldView::unset());
+    }
+
+    #[test]
+    fn message_field_view_hash_agrees_with_equality() {
+        fn hash_of<H: core::hash::Hash>(value: &H) -> u64 {
+            use core::hash::Hasher;
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            value.hash(&mut hasher);
+            hasher.finish()
+        }
+        let unset: MessageFieldView<i32> = MessageFieldView::unset();
+        assert_eq!(hash_of(&unset), hash_of(&None::<&i32>));
+        assert_eq!(hash_of(&MessageFieldView::set(7i32)), hash_of(&Some(&7i32)));
+        assert_ne!(hash_of(&unset), hash_of(&MessageFieldView::set(0i32)));
     }
 
     // ── RepeatedView ─────────────────────────────────────────────────────

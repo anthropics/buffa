@@ -311,13 +311,17 @@ const _: fn() = || {
 /// assert_eq!(empty.name, "");
 /// ```
 ///
-/// # Equality
+/// # Equality and hashing
 ///
 /// `==` includes presence, as for `Option<T>` and in Go's `proto.Equal`: an
 /// unset field differs from one set to its default, since only the set one is
 /// on the wire. Deref both sides to compare the values alone; that ignores
 /// presence at this level only, not in message fields nested inside. `Deref`
 /// needs `T: DefaultInstance`, which `==` does not.
+///
+/// `Hash` agrees with `==`: it covers presence and the value, as
+/// `Option<&T>` does. Hash `*field` instead to hash the value alone, matching
+/// `*a == *b`.
 ///
 /// ```rust
 /// # use buffa::__doctest_fixtures::Person;
@@ -608,6 +612,15 @@ impl<T: Default + PartialEq, P: ProtoBox<T>> PartialEq for MessageField<T, P> {
 
 impl<T: Default + Eq, P: ProtoBox<T>> Eq for MessageField<T, P> {}
 
+/// Hashes presence and the value, as `Option<&T>` does, so that it agrees with
+/// `==`: equal fields hash alike. Hash `*field` to hash the value alone.
+impl<T: Default + core::hash::Hash, P: ProtoBox<T>> core::hash::Hash for MessageField<T, P> {
+    #[inline]
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.as_option().hash(state);
+    }
+}
+
 impl<T: Default + fmt::Debug, P: ProtoBox<T>> fmt::Debug for MessageField<T, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.inner {
@@ -681,7 +694,7 @@ impl<'a, T: Default + arbitrary::Arbitrary<'a>, P: ProtoBox<T>> arbitrary::Arbit
 mod tests {
     use super::*;
 
-    #[derive(Clone, Debug, Default, PartialEq)]
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
     struct Inner {
         value: i32,
         name: alloc::string::String,
@@ -783,6 +796,35 @@ mod tests {
     #[test]
     fn test_equality_inline() {
         assert_equality_cases::<Inline<Inner>>();
+    }
+
+    fn hash_of<H: core::hash::Hash + ?Sized>(value: &H) -> u64 {
+        use core::hash::Hasher;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Hashes as `Option<&T>` does, so fields `==` calls equal hash alike and
+    /// unset hashes apart from set to the default.
+    fn assert_hash_cases<P: ProtoBox<Inner>>() {
+        let value = || Inner {
+            value: 7,
+            name: "x".into(),
+        };
+        let unset = MessageField::<Inner, P>::none();
+        let set = MessageField::<Inner, P>::some(value());
+        let set_default = MessageField::<Inner, P>::some(Inner::default());
+        assert_eq!(hash_of(&unset), hash_of(&None::<&Inner>));
+        assert_eq!(hash_of(&set), hash_of(&Some(&value())));
+        assert_eq!(hash_of(&set_default), hash_of(&Some(&Inner::default())));
+        assert_ne!(hash_of(&unset), hash_of(&set_default));
+    }
+
+    #[test]
+    fn test_hash_agrees_with_equality() {
+        assert_hash_cases::<Box<Inner>>();
+        assert_hash_cases::<Inline<Inner>>();
     }
 
     /// `==` needs no `DefaultInstance`: only `T: Default + PartialEq`.
