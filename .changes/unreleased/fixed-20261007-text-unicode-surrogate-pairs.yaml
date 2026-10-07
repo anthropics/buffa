@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Textproto string and bytes escapes accept valid UTF-16 surrogate pairs.** Unmatched surrogates remain invalid.
+time: 2026-10-07T14:54:53+02:00
