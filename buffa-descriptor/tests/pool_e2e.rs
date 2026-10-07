@@ -5899,3 +5899,99 @@ mod message_field_defaults {
         }
     }
 }
+
+mod proto3_messageset {
+    use super::assert_set_rejected_without_mutating_pool;
+    use buffa::Message;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet, MessageOptions,
+    };
+    use buffa_descriptor::{DescriptorPool, PoolError};
+
+    fn set(
+        syntax: Option<&str>,
+        edition: Option<Edition>,
+        enabled: Option<bool>,
+        nested: bool,
+    ) -> FileDescriptorSet {
+        let message = DescriptorProto {
+            name: Some("Legacy".into()),
+            options: MessageOptions {
+                message_set_wire_format: enabled,
+                ..Default::default()
+            }
+            .into(),
+            ..Default::default()
+        };
+        FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("messageset.proto".into()),
+                package: Some("messageset.test".into()),
+                syntax: syntax.map(str::to_owned),
+                edition,
+                message_type: vec![if nested {
+                    DescriptorProto {
+                        name: Some("Outer".into()),
+                        nested_type: vec![message],
+                        ..Default::default()
+                    }
+                } else {
+                    message
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn proto3_messagesets_are_rejected_transactionally() {
+        for nested in [false, true] {
+            let name = if nested {
+                "messageset.test.Outer.Legacy"
+            } else {
+                "messageset.test.Legacy"
+            };
+            let descriptors = set(Some("proto3"), None, Some(true), nested);
+            assert!(DescriptorPool::decode(&descriptors.encode_to_vec()).is_err());
+            assert_set_rejected_without_mutating_pool(
+                "messageset.proto",
+                name,
+                descriptors,
+                |err| {
+                    assert!(
+                        matches!(err, PoolError::MessageSetInProto3 { message } if message == name)
+                    );
+                    assert_eq!(
+                        err.to_string(),
+                        format!("message {name} enables MessageSet wire format in proto3")
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn proto2_and_editions_messagesets_remain_valid() {
+        for (syntax, edition) in [
+            (None, None),
+            (Some(""), None),
+            (Some("proto2"), None),
+            (Some("editions"), Some(Edition::EDITION_2023)),
+            (Some("editions"), Some(Edition::EDITION_2024)),
+        ] {
+            for nested in [false, true] {
+                DescriptorPool::new(set(syntax, edition, Some(true), nested)).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn proto3_without_messageset_remains_valid() {
+        for enabled in [None, Some(false)] {
+            for nested in [false, true] {
+                DescriptorPool::new(set(Some("proto3"), None, enabled, nested)).unwrap();
+            }
+        }
+    }
+}

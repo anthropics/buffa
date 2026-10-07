@@ -1,0 +1,2 @@
+Kind: Fixed
+Body: "DescriptorPool now rejects MessageSet wire format in proto3 messages, matching protoc. Proto2 and editions MessageSets remain supported."

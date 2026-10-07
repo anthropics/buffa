@@ -447,6 +447,8 @@ pub enum PoolError {
     },
     /// A message in a proto3 file declares an extension range.
     ExtensionRangeInProto3 { message: String },
+    /// A message in a proto3 file enables the legacy MessageSet wire format.
+    MessageSetInProto3 { message: String },
     /// Two extension ranges declared by the same message overlap. `end` is
     /// exclusive, as in `DescriptorProto.ExtensionRange`. Carries both ranges
     /// as declared: `start..end` is the later of the two in declaration
@@ -795,6 +797,9 @@ impl core::fmt::Display for PoolError {
             ),
             Self::ExtensionRangeInProto3 { message } => {
                 write!(f, "message {message} declares an extension range in proto3")
+            }
+            Self::MessageSetInProto3 { message } => {
+                write!(f, "message {message} enables MessageSet wire format in proto3")
             }
             Self::OverlappingExtensionRange {
                 message,
@@ -1933,6 +1938,14 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        if scope.proto3
+            && msg
+                .options
+                .as_option()
+                .is_some_and(|options| options.message_set_wire_format == Some(true))
+        {
+            return Err(PoolError::MessageSetInProto3 { message: fqn });
+        }
         if scope.proto3 && !msg.extension_range.is_empty() {
             return Err(PoolError::ExtensionRangeInProto3 { message: fqn });
         }
