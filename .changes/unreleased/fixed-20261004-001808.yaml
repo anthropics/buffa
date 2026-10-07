@@ -1,3 +1,0 @@
-kind: Fixed
-body: Reject JSON serialization of google.protobuf.Value when no kind is set, including nested values and views.
-time: 2026-10-04T00:18:08.646643+02:00

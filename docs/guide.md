@@ -1971,6 +1971,8 @@ let obj = Struct::from_fields([
 ]);
 ```
 
+`Value::default()` has no kind set, which `struct.proto` defines as an error. It encodes to zero bytes, and JSON serialization of it fails, also when it is an element of a `ListValue` or a field of a `Struct`. Use `Value::null()` for a JSON `null`. A `Value` decoded from binary can have no kind too: an empty payload, or one written with a kind that this version of `struct.proto` lacks. Serializing a decoded message to JSON returns an error for such a value.
+
 ## `no_std` usage
 
 Buffa works without `std` (requires `alloc`):
