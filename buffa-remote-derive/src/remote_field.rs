@@ -164,7 +164,9 @@ fn parse_attrs(
                 .find(|key| meta.path.is_ident(*key))
             {
                 let path: syn::Path = meta.value()?.parse()?;
-                overrides.insert((*key).to_string(), path);
+                if overrides.insert((*key).to_string(), path).is_some() {
+                    return Err(meta.error(format!("duplicate `{key}` override")));
+                }
                 Ok(())
             } else {
                 Err(meta.error(format!(
@@ -263,5 +265,48 @@ impl RemoteField {
             Some(name) => quote! { Self { #name: #value } },
             None => quote! { Self(#value) },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_override_in_one_attribute_is_rejected() {
+        let input: DeriveInput = syn::parse_quote! {
+            #[buffa(remote = Holder<T>, new = Holder::wrap, new = Holder::new)]
+            struct Wrapped<T>(Holder<T>);
+        };
+
+        let error = parse_with_overrides(&input, &["new"])
+            .err()
+            .expect("duplicate override should be rejected");
+        assert_eq!(error.to_string(), "duplicate `new` override");
+    }
+
+    #[test]
+    fn duplicate_override_across_attributes_is_rejected() {
+        let input: DeriveInput = syn::parse_quote! {
+            #[buffa(remote = Holder<T>, new = Holder::wrap)]
+            #[buffa(new = Holder::new)]
+            struct Wrapped<T>(Holder<T>);
+        };
+
+        let error = parse_with_overrides(&input, &["new"])
+            .err()
+            .expect("duplicate override should be rejected");
+        assert_eq!(error.to_string(), "duplicate `new` override");
+    }
+
+    #[test]
+    fn distinct_overrides_across_attributes_are_accepted() {
+        let input: DeriveInput = syn::parse_quote! {
+            #[buffa(remote = Holder<T>, new = Holder::wrap)]
+            #[buffa(into_inner = Holder::unwrap)]
+            struct Wrapped<T>(Holder<T>);
+        };
+
+        assert!(parse_with_overrides(&input, &["new", "into_inner"]).is_ok());
     }
 }
