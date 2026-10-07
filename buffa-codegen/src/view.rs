@@ -215,7 +215,9 @@ pub(crate) fn generate_view_with_nesting(
         None,
         &quote! {},
     )?;
+    let deprecated_view_allow = deprecated_view_field_allow(msg);
     let view_encode_impl = quote! {
+        #deprecated_view_allow
         impl<'a> ::buffa::ViewEncode<'a> for #view_ident<'a> {
             #view_encode_methods
         }
@@ -380,6 +382,7 @@ pub(crate) fn generate_view_with_nesting(
                 quote! { #[derive(Clone, Default)] }
             },
             quote! {
+                #deprecated_view_allow
                 impl<'a> ::core::fmt::Debug for #view_ident<'a> {
                     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         f.debug_struct(#view_name_str)
@@ -417,6 +420,7 @@ pub(crate) fn generate_view_with_nesting(
 
         #required_has_impl
 
+        #deprecated_view_allow
         impl<'a> ::buffa::MessageView<'a> for #view_ident<'a> {
             type Owned = #owned_path;
 
@@ -669,6 +673,37 @@ fn view_open_enum_default_expr(
 // View struct field declarations
 // ---------------------------------------------------------------------------
 
+/// `#[deprecated]` for a view struct field (eager or lazy) and its
+/// `FooOwnedView` accessor when the field carries `[deprecated = true]`.
+///
+/// Only the proto option counts. A `#[deprecated]` that the caller attaches
+/// with `field_attribute` goes on the owned struct's field alone, as every
+/// `field_attribute` does.
+pub(crate) fn view_field_deprecated_attr(field: &FieldDescriptorProto) -> Option<TokenStream> {
+    crate::message::is_deprecated(field).then(|| quote! { #[deprecated] })
+}
+
+/// `#[allow(deprecated)]` for the generated view items of `msg` that read or
+/// write the view struct's fields — decode, encode, `Debug`, JSON and
+/// reflection, on the eager and the lazy view — when one of those fields is
+/// `#[deprecated]`. Empty otherwise, so unaffected views keep identical
+/// output.
+///
+/// Real oneof members live in the view's oneof enum, which is not marked, so
+/// they do not count.
+pub(crate) fn deprecated_view_field_allow(msg: &DescriptorProto) -> TokenStream {
+    let has_deprecated_field = msg.field.iter().any(|f| {
+        crate::message::is_deprecated(f)
+            && !is_real_oneof_member(f)
+            && is_supported_field_type(f.r#type.unwrap_or_default())
+    });
+    if has_deprecated_field {
+        quote! { #[allow(deprecated)] }
+    } else {
+        quote! {}
+    }
+}
+
 fn view_struct_field(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
@@ -700,8 +735,10 @@ fn view_struct_field(
             &ctx.type_map,
         );
         let map_ty = view_map_type(scope, msg, field, &quote! { 'a })?;
+        let deprecated_attr = view_field_deprecated_attr(field);
         let tokens = quote! {
             #doc
+            #deprecated_attr
             pub #ident: #map_ty,
         };
         return Ok(Some((
@@ -743,8 +780,10 @@ fn view_struct_field(
         rust_type
     };
 
+    let deprecated_attr = view_field_deprecated_attr(field);
     let tokens = quote! {
         #doc
+        #deprecated_attr
         pub #ident: #struct_ty,
     };
     Ok(Some((
@@ -2398,6 +2437,7 @@ fn generate_view_serialize(
         });
     }
 
+    let deprecated_view_allow = deprecated_view_field_allow(msg);
     Ok(quote! {
         /// Serializes this view as protobuf JSON.
         ///
@@ -2410,6 +2450,7 @@ fn generate_view_serialize(
         /// fields depends on default-omission rules; serializers that require
         /// known map lengths (e.g. `bincode`) will return a runtime error.
         /// Use the owned message type for those formats.
+        #deprecated_view_allow
         impl<'__a> ::serde::Serialize for #view_ident<'__a> {
             fn serialize<__S: ::serde::Serializer>(
                 &self,

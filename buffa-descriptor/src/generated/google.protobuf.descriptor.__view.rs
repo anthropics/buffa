@@ -6564,6 +6564,7 @@ pub struct FileOptionsView<'a> {
     /// This option does nothing.
     ///
     /// Field 20: `java_generate_equals_and_hash`
+    #[deprecated]
     pub java_generate_equals_and_hash: ::core::option::Option<bool>,
     /// A proto2 file can set this to true to opt in to UTF-8 checking for Java,
     /// which will throw an exception if invalid UTF-8 is parsed from the wire or
@@ -6675,6 +6676,7 @@ pub struct FileOptionsView<'a> {
     >,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
+#[allow(deprecated)]
 impl<'a> ::buffa::MessageView<'a> for FileOptionsView<'a> {
     type Owned = super::super::FileOptions;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
@@ -6957,6 +6959,7 @@ impl<'a> ::buffa::MessageView<'a> for FileOptionsView<'a> {
         })
     }
 }
+#[allow(deprecated)]
 impl<'a> ::buffa::ViewEncode<'a> for FileOptionsView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -7135,6 +7138,7 @@ impl<'a> ::buffa::ViewEncode<'a> for FileOptionsView<'a> {
 /// fields depends on default-omission rules; serializers that require
 /// known map lengths (e.g. `bincode`) will return a runtime error.
 /// Use the owned message type for those formats.
+#[allow(deprecated)]
 impl<'__a> ::serde::Serialize for FileOptionsView<'__a> {
     fn serialize<__S: ::serde::Serializer>(
         &self,
@@ -7339,6 +7343,8 @@ impl FileOptionsOwnedView {
     /// This option does nothing.
     ///
     /// Field 20: `java_generate_equals_and_hash`
+    #[deprecated]
+    #[allow(deprecated)]
     #[must_use]
     pub fn java_generate_equals_and_hash(&self) -> ::core::option::Option<bool> {
         self.0.reborrow().java_generate_equals_and_hash
@@ -7616,6 +7622,7 @@ pub struct MessageOptionsView<'a> {
     /// teams have had time to migrate.
     ///
     /// Field 11: `deprecated_legacy_json_field_conflicts`
+    #[deprecated]
     pub deprecated_legacy_json_field_conflicts: ::core::option::Option<bool>,
     /// Any features defined in the specific edition.
     /// WARNING: This field should only be used by protobuf plugins or special
@@ -7635,6 +7642,7 @@ pub struct MessageOptionsView<'a> {
     >,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
+#[allow(deprecated)]
 impl<'a> ::buffa::MessageView<'a> for MessageOptionsView<'a> {
     type Owned = super::super::MessageOptions;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
@@ -7795,6 +7803,7 @@ impl<'a> ::buffa::MessageView<'a> for MessageOptionsView<'a> {
         })
     }
 }
+#[allow(deprecated)]
 impl<'a> ::buffa::ViewEncode<'a> for MessageOptionsView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -7889,6 +7898,7 @@ impl<'a> ::buffa::ViewEncode<'a> for MessageOptionsView<'a> {
 /// fields depends on default-omission rules; serializers that require
 /// known map lengths (e.g. `bincode`) will return a runtime error.
 /// Use the owned message type for those formats.
+#[allow(deprecated)]
 impl<'__a> ::serde::Serialize for MessageOptionsView<'__a> {
     fn serialize<__S: ::serde::Serializer>(
         &self,
@@ -8103,6 +8113,8 @@ impl MessageOptionsOwnedView {
     /// teams have had time to migrate.
     ///
     /// Field 11: `deprecated_legacy_json_field_conflicts`
+    #[deprecated]
+    #[allow(deprecated)]
     #[must_use]
     pub fn deprecated_legacy_json_field_conflicts(
         &self,
@@ -8243,6 +8255,7 @@ pub struct FieldOptionsView<'a> {
     /// For Google-internal migration only. Do not use.
     ///
     /// Field 10: `weak`
+    #[deprecated]
     pub weak: ::core::option::Option<bool>,
     /// Indicate that the field value should not be printed out when using debug
     /// formats, e.g. when the field contains sensitive credentials.
@@ -8283,6 +8296,7 @@ pub struct FieldOptionsView<'a> {
     >,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
+#[allow(deprecated)]
 impl<'a> ::buffa::MessageView<'a> for FieldOptionsView<'a> {
     type Owned = super::super::FieldOptions;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
@@ -8587,6 +8601,7 @@ impl<'a> ::buffa::MessageView<'a> for FieldOptionsView<'a> {
         })
     }
 }
+#[allow(deprecated)]
 impl<'a> ::buffa::ViewEncode<'a> for FieldOptionsView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -8743,6 +8758,7 @@ impl<'a> ::buffa::ViewEncode<'a> for FieldOptionsView<'a> {
 /// fields depends on default-omission rules; serializers that require
 /// known map lengths (e.g. `bincode`) will return a runtime error.
 /// Use the owned message type for those formats.
+#[allow(deprecated)]
 impl<'__a> ::serde::Serialize for FieldOptionsView<'__a> {
     fn serialize<__S: ::serde::Serializer>(
         &self,
@@ -8995,6 +9011,8 @@ impl FieldOptionsOwnedView {
     /// For Google-internal migration only. Do not use.
     ///
     /// Field 10: `weak`
+    #[deprecated]
+    #[allow(deprecated)]
     #[must_use]
     pub fn weak(&self) -> ::core::option::Option<bool> {
         self.0.reborrow().weak
@@ -10190,6 +10208,7 @@ pub struct EnumOptionsView<'a> {
     /// had time to migrate.
     ///
     /// Field 6: `deprecated_legacy_json_field_conflicts`
+    #[deprecated]
     pub deprecated_legacy_json_field_conflicts: ::core::option::Option<bool>,
     /// Any features defined in the specific edition.
     /// WARNING: This field should only be used by protobuf plugins or special
@@ -10209,6 +10228,7 @@ pub struct EnumOptionsView<'a> {
     >,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
+#[allow(deprecated)]
 impl<'a> ::buffa::MessageView<'a> for EnumOptionsView<'a> {
     type Owned = super::super::EnumOptions;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
@@ -10349,6 +10369,7 @@ impl<'a> ::buffa::MessageView<'a> for EnumOptionsView<'a> {
         })
     }
 }
+#[allow(deprecated)]
 impl<'a> ::buffa::ViewEncode<'a> for EnumOptionsView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -10431,6 +10452,7 @@ impl<'a> ::buffa::ViewEncode<'a> for EnumOptionsView<'a> {
 /// fields depends on default-omission rules; serializers that require
 /// known map lengths (e.g. `bincode`) will return a runtime error.
 /// Use the owned message type for those formats.
+#[allow(deprecated)]
 impl<'__a> ::serde::Serialize for EnumOptionsView<'__a> {
     fn serialize<__S: ::serde::Serializer>(
         &self,
@@ -10575,6 +10597,8 @@ impl EnumOptionsOwnedView {
     /// had time to migrate.
     ///
     /// Field 6: `deprecated_legacy_json_field_conflicts`
+    #[deprecated]
+    #[allow(deprecated)]
     #[must_use]
     pub fn deprecated_legacy_json_field_conflicts(
         &self,

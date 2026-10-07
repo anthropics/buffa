@@ -1078,6 +1078,12 @@ is itself `#[deprecated]`, so the builder API is not a quieter way to set it.
 This holds whether the field's deprecation comes from the option or from your own
 `field_attribute`.
 
+Views are covered as well: the field on `FooView` and on `FooLazyView`, and its
+accessor on `FooOwnedView`, carry `#[deprecated]`, so reading a deprecated field
+after `decode_view` warns as reading the owned field does. This follows the
+option only. A `#[deprecated]` that you attach with `field_attribute` goes on the
+owned struct's field, as every `field_attribute` does.
+
 Aliases inherit the marker. An `allow_alias` value names the same variant as its
 primary, so `demo::Size::TINY` is deprecated whenever `demo::Size::SMALL` is; so
 does its idiomatic `CamelCase` const (`Size::Tiny`) when
@@ -1085,15 +1091,11 @@ does its idiomatic `CamelCase` const (`Size::Tiny`) when
 value. The direction is per value: an alias marked `[deprecated = true]` whose
 primary is live marks only the alias and the alias's own idiomatic const.
 
-Three things are not marked:
+Two things are not marked:
 
 - **Oneof variants are not marked yet.** A deprecated `oneof` member neither
   carries `#[deprecated]` nor widens the owned message's guard, so
   `examples/addressbook` still needs its module-level `#[allow(deprecated)]`.
-- **The view read path is not marked.** `FooView` fields and the
-  `FooOwnedView` accessors borrow from the decode buffer, and their `to_owned`
-  conversion writes the owned field, so they stay silent for now — a consumer
-  reading a deprecated field through `decode_view` gets no warning.
 - **Whole-message and whole-enum deprecation is not emitted**, matching prost.
 
 A derive that you attach with `enum_attribute` or `type_attribute` can name a

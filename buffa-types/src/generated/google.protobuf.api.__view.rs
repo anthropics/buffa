@@ -729,6 +729,7 @@ pub struct MethodView<'a> {
     /// Api. This is similar to Field and EnumValue.
     ///
     /// Field 7: `syntax`
+    #[deprecated]
     pub syntax: ::buffa::EnumValue<super::super::Syntax>,
     /// The source edition string, only valid when syntax is SYNTAX_EDITIONS.
     ///
@@ -736,9 +737,11 @@ pub struct MethodView<'a> {
     /// Api. This is similar to Field and EnumValue.
     ///
     /// Field 8: `edition`
+    #[deprecated]
     pub edition: &'a str,
     pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
 }
+#[allow(deprecated)]
 impl<'a> ::buffa::MessageView<'a> for MethodView<'a> {
     type Owned = super::super::Method;
     fn decode_view(buf: &'a [u8]) -> ::core::result::Result<Self, ::buffa::DecodeError> {
@@ -878,6 +881,7 @@ impl<'a> ::buffa::MessageView<'a> for MethodView<'a> {
         })
     }
 }
+#[allow(deprecated)]
 impl<'a> ::buffa::ViewEncode<'a> for MethodView<'a> {
     #[allow(clippy::needless_borrow, clippy::let_and_return)]
     fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
@@ -1101,6 +1105,8 @@ impl MethodOwnedView {
     /// Api. This is similar to Field and EnumValue.
     ///
     /// Field 7: `syntax`
+    #[deprecated]
+    #[allow(deprecated)]
     #[must_use]
     pub fn syntax(&self) -> ::buffa::EnumValue<super::super::Syntax> {
         self.0.reborrow().syntax
@@ -1111,6 +1117,8 @@ impl MethodOwnedView {
     /// Api. This is similar to Field and EnumValue.
     ///
     /// Field 8: `edition`
+    #[deprecated]
+    #[allow(deprecated)]
     #[must_use]
     pub fn edition(&self) -> &'_ str {
         self.0.reborrow().edition
@@ -1138,6 +1146,7 @@ impl ::buffa::HasMessageView for super::super::Method {
 }
 #[cfg(feature = "reflect")]
 const _: () = {
+    #[allow(deprecated)]
     impl<'a> ::buffa_descriptor::reflect::ReflectMessage for MethodView<'a> {
         fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
             super::super::__buffa::reflect::descriptor_pool()

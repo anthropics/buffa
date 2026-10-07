@@ -2283,6 +2283,10 @@ fn references_deprecated(ctx: &CodeGenContext, msg: &DescriptorProto, proto_fqn:
 /// A deprecated oneof member is neither marked nor guarded here;
 /// `examples/addressbook`, whose variant is marked through `field_attribute`,
 /// needs its module-level `#[allow(deprecated)]` for that reason.
+///
+/// The view structs' own fields have a separate guard,
+/// [`deprecated_view_field_allow`](crate::view::deprecated_view_field_allow),
+/// because only the proto option marks them.
 pub(crate) fn deprecated_field_allow(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,

@@ -81,6 +81,23 @@ fn clean_file() -> FileDescriptorProto {
     file
 }
 
+/// `Widget` with the single live field `label`.
+fn clean_label_file() -> FileDescriptorProto {
+    let mut file = proto3_file("clean.proto");
+    file.package = Some("deprecate.test".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Widget".to_string()),
+        field: vec![make_field(
+            "label",
+            2,
+            Label::LABEL_OPTIONAL,
+            Type::TYPE_STRING,
+        )],
+        ..Default::default()
+    });
+    file
+}
+
 fn generate_squashed(file: FileDescriptorProto, config: &CodeGenConfig) -> String {
     let name = file.name.clone().unwrap_or_default();
     let files = generate(&[file], &[name], config).expect("should generate");
@@ -602,15 +619,149 @@ fn oneof_only_deprecation_is_out_of_scope() {
     );
 }
 
+// ── views ───────────────────────────────────────────────────────────
+
 #[test]
-fn view_fields_are_not_marked_yet() {
-    // The zero-copy read path (`FooView` fields and `FooOwnedView` accessors)
-    // does not carry the marker in this change, so a view read stays silent.
-    // Pinned because that is a documented limit, not an oversight.
+fn view_field_and_owned_view_accessor_carry_marker() {
     let content = generate_squashed(deprecated_file(), &CodeGenConfig::default());
     assert!(
-        !content.contains("#[deprecated]publegacy_name:&'astr"),
-        "view fields are deliberately unmarked for now: {content}"
+        content.contains("#[deprecated]publegacy_name:&'astr"),
+        "the view struct's field carries the marker"
+    );
+    assert!(
+        content.contains(
+            "#[deprecated]#[allow(deprecated)]#[must_use]pubfnlegacy_name(&self)->&'_str"
+        ),
+        "the `WidgetOwnedView` accessor carries the marker and guards its own read"
+    );
+    assert!(
+        !content.contains("#[deprecated]publabel:&'astr")
+            && content.contains("///Field2:`label`#[must_use]pubfnlabel(&self)"),
+        "a live field's view field and accessor stay unmarked"
+    );
+}
+
+#[test]
+fn view_impls_that_touch_fields_allow_deprecated() {
+    // `[debug_redact = true]` on another field swaps the view's `Debug`
+    // derive for an impl, which then reads the deprecated field by name.
+    let mut file = deprecated_file();
+    file.message_type[0].field[1].options = FieldOptions {
+        debug_redact: Some(true),
+        ..Default::default()
+    }
+    .into();
+    let config = CodeGenConfig {
+        generate_json: true,
+        generate_reflection: true,
+        generate_reflection_vtable: true,
+        ..Default::default()
+    };
+    let content = generate_squashed(file, &config);
+    for impl_head in [
+        "impl<'a>::buffa::MessageView<'a>forWidgetView<'a>",
+        "impl<'a>::buffa::ViewEncode<'a>forWidgetView<'a>",
+        "impl<'a>::core::fmt::DebugforWidgetView<'a>",
+        "impl<'__a>::serde::SerializeforWidgetView<'__a>",
+        "impl<'a>::buffa_descriptor::reflect::ReflectMessageforWidgetView<'a>",
+    ] {
+        assert!(
+            content.contains(&format!("#[allow(deprecated)]{impl_head}")),
+            "`{impl_head}` reads or writes the deprecated view field, so it must be guarded"
+        );
+    }
+}
+
+#[test]
+fn lazy_view_field_carries_marker_and_its_impls_allow_deprecated() {
+    let mut file = deprecated_file();
+    file.message_type[0].field[1].options = FieldOptions {
+        debug_redact: Some(true),
+        ..Default::default()
+    }
+    .into();
+    let config = CodeGenConfig {
+        lazy_views: true,
+        generate_json: true,
+        ..Default::default()
+    };
+    let content = generate_squashed(file, &config);
+    let lazy = &content[content
+        .find("pubstructWidgetLazyView<'a>")
+        .expect("the lazy view struct")..];
+    assert!(
+        lazy.contains("#[deprecated]publegacy_name:&'astr"),
+        "the lazy view struct's field carries the marker"
+    );
+    for impl_head in [
+        "impl<'a>::core::fmt::DebugforWidgetLazyView<'a>",
+        "impl<'__a>::serde::SerializeforWidgetLazyView<'__a>",
+    ] {
+        assert!(
+            content.contains(&format!("#[allow(deprecated)]{impl_head}")),
+            "`{impl_head}` reads or writes the deprecated lazy-view field, so it must be guarded"
+        );
+    }
+    assert_eq!(
+        content
+            .matches("#[allow(deprecated)]impl<'a>WidgetLazyView<'a>{")
+            .count(),
+        2,
+        "the decode and the encode inherent impls are both guarded"
+    );
+}
+
+#[test]
+fn view_of_a_message_with_only_a_deprecated_oneof_member_is_unguarded() {
+    // A oneof member lives in the view's oneof enum, which is not marked.
+    let mut member = make_field("legacy_choice", 3, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+    member.oneof_index = Some(0);
+    let mut msg = DescriptorProto {
+        name: Some("Widget".to_string()),
+        field: vec![
+            deprecated(member),
+            make_field("label", 2, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+        ],
+        ..Default::default()
+    };
+    msg.oneof_decl.push(OneofDescriptorProto {
+        name: Some("choice".to_string()),
+        ..Default::default()
+    });
+    let mut file = proto3_file("deprecated.proto");
+    file.package = Some("deprecate.test".to_string());
+    file.message_type.push(msg);
+
+    let content = generate_squashed(file, &CodeGenConfig::default());
+    assert!(
+        !content.contains("#[allow(deprecated)]impl<'a>::buffa::MessageView<'a>forWidgetView<'a>"),
+        "no view struct field is deprecated, so the view's impls need no guard"
+    );
+}
+
+#[test]
+fn caller_deprecated_attribute_does_not_reach_the_view() {
+    // `field_attribute` applies to the owned struct's field only, and so does
+    // a `#[deprecated]` attached through it.
+    let config = CodeGenConfig {
+        field_attributes: vec![(
+            ".deprecate.test.Widget.label".to_string(),
+            "#[deprecated(note = \"hand\")]".to_string(),
+        )],
+        ..Default::default()
+    };
+    let content = generate_squashed(clean_label_file(), &config);
+    assert!(
+        content.contains(r#"note="hand")]publabel:::buffa::alloc::string::String"#),
+        "the owned field carries the caller's attribute: {content}"
+    );
+    assert!(
+        !content.contains("#[deprecated]publabel:&'astr"),
+        "the view field stays unmarked"
+    );
+    assert!(
+        !content.contains("#[allow(deprecated)]impl<'a>::buffa::MessageView<'a>forWidgetView<'a>"),
+        "so the view's impls need no guard"
     );
 }
 
