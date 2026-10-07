@@ -1,3 +1,5 @@
+//! JSON for implicit-presence `float` and `double` fields holding `-0.0`.
+
 use buffa::{Message, MessageView};
 use buffa_test::view_json::{__buffa::view::ScalarsView, Scalars};
 
@@ -92,6 +94,7 @@ fn implicit_zero_sign_decides_lazy_view_json_output() {
     }
 }
 
+// serde_json reads `-0` as a float (`visit_f64`), so the sign survives parsing.
 #[test]
 fn negative_zero_json_input_parses_to_negative_zero() {
     for literal in ["-0", "-0.0", r#""-0""#] {
