@@ -535,6 +535,11 @@ impl<'de> serde::Deserialize<'de> for Any {
                         "Any with WKT type {type_url:?} requires a \"value\" key"
                     ))
                 })?;
+                if let Some(field) = obj.keys().next() {
+                    return Err(serde::de::Error::custom(alloc::format!(
+                        "Any with WKT type {type_url:?} has unexpected field {field:?}"
+                    )));
+                }
                 from_json(json_val).map_err(serde::de::Error::custom)?
             }
             Some((from_json, false)) => {
@@ -1268,6 +1273,33 @@ mod tests {
                 let dur: Duration = any.unpack_unchecked().unwrap();
                 assert_eq!(dur.seconds, 1);
                 assert_eq!(dur.nanos, 500_000_000);
+            });
+        }
+
+        #[test]
+        fn deserialize_wkt_rejects_extra_top_level_fields() {
+            with_registry(|| {
+                for json in [
+                    alloc::format!(
+                        r#"{{"@type":"{}","value":"1.5s","extra":true}}"#,
+                        Duration::TYPE_URL
+                    ),
+                    alloc::format!(
+                        r#"{{"extra":true,"value":"1.5s","@type":"{}"}}"#,
+                        Duration::TYPE_URL
+                    ),
+                    alloc::format!(
+                        r#"{{"@type":"{}","value":"1.5s","seconds":1}}"#,
+                        Duration::TYPE_URL
+                    ),
+                ] {
+                    let result = serde_json::from_str::<Any>(&json);
+                    let err = result.unwrap_err();
+                    assert!(
+                        err.to_string().contains("unexpected field"),
+                        "{json}: {err}"
+                    );
+                }
             });
         }
 
