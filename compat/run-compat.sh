@@ -16,6 +16,12 @@ PASS=0
 FAIL=0
 FAILURES=""
 
+PROTOC_VERSIONS="${PROTOC_VERSIONS:-}"
+if [[ -z "${PROTOC_VERSIONS//[[:space:]]/}" ]]; then
+  echo "PROTOC_VERSIONS must contain at least one protoc version" >&2
+  exit 2
+fi
+
 # Create editions test protos.
 EDITIONS_DIR=$(mktemp -d)
 trap 'rm -rf "$EDITIONS_DIR"' EXIT

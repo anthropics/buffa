@@ -76,6 +76,7 @@ COPY buffa-test/protos/ /test/protos/
 
 # Copy the test script.
 COPY compat/run-compat.sh /run-compat.sh
-RUN chmod +x /run-compat.sh
+COPY compat/test-run-compat.sh /test-run-compat.sh
+RUN chmod +x /run-compat.sh /test-run-compat.sh && /test-run-compat.sh
 
 CMD ["/run-compat.sh"]
