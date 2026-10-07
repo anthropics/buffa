@@ -22,6 +22,12 @@
 //! registered in the same pool — the spec permits failing on unregistered
 //! types, and CEL evaluation requires the pool to carry the full schema
 //! anyway.
+//!
+//! `no_std` limitation: deserializing a `google.protobuf.Any` value from JSON
+//! requires the `std` feature. Without it, any input containing an `Any`
+//! fails with ``Any JSON deserialization requires the `std` feature``.
+//! Serializing an `Any` has no such gate, so a `no_std` build can write JSON
+//! that it cannot read back.
 
 use core::cell::Cell;
 
@@ -377,6 +383,10 @@ impl DynamicMessage {
     /// [`with_element_memory_limit`](DynamicMessageSeed::with_element_memory_limit)
     /// gives each charge.
     ///
+    /// A `google.protobuf.Any` value in the input requires the `std`
+    /// feature to deserialize; without it the parse fails with ``Any JSON
+    /// deserialization requires the `std` feature``.
+    ///
     /// # Errors
     ///
     /// Returns a `serde_json::Error` if the input is not valid JSON, does
@@ -482,6 +492,10 @@ impl DynamicMessage {
     /// [`buffa::DEFAULT_ELEMENT_MEMORY_LIMIT`]. To ignore unknown fields
     /// under another limit, call
     /// `DynamicMessageSeed::new(pool, msg_idx).ignore_unknown_fields(true).with_element_memory_limit(n).parse_json(json)`.
+    ///
+    /// A `google.protobuf.Any` value in the input requires the `std`
+    /// feature to deserialize; without it the parse fails with ``Any JSON
+    /// deserialization requires the `std` feature``.
     ///
     /// # Errors
     ///
@@ -642,6 +656,10 @@ impl DynamicMessageSeed {
     /// Input after the document, other than whitespace, is an error. Driving
     /// the seed through [`DeserializeSeed::deserialize`] leaves that check to
     /// the caller.
+    ///
+    /// A `google.protobuf.Any` value in the input requires the `std`
+    /// feature to deserialize; without it the parse fails with ``Any JSON
+    /// deserialization requires the `std` feature``.
     ///
     /// # Errors
     ///

@@ -2102,6 +2102,7 @@ In `no_std` mode:
 - `Timestamp` conversions to/from `std::time::SystemTime` are unavailable; `Duration` conversions to/from `core::time::Duration` remain available
 - Scoped [`with_json_parse_options`] is unavailable (requires thread-local); use [`set_global_json_parse_options`] to set options process-wide once at startup. The options cannot vary between individual parse calls. The `buffa::json` module docs list how `ignore_unknown_enum_values` treats each field shape, and the one shape where `no_std` differs.
 - JSON serialization via serde works fully (both `serde` and `serde_json` support `no_std` + `alloc`)
+- Deserializing a `google.protobuf.Any` value from JSON requires the `std` feature; without it, parsing any input containing an `Any` fails with ``Any JSON deserialization requires the `std` feature`` (serializing an `Any` has no such gate)
 
 [`with_json_parse_options`]: https://docs.rs/buffa/latest/buffa/json/fn.with_json_parse_options.html
 [`set_global_json_parse_options`]: https://docs.rs/buffa/latest/buffa/json/fn.set_global_json_parse_options.html

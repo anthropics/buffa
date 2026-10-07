@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Document that deserializing `google.protobuf.Any` from JSON requires the `std` feature** (#644). The `no_std` limitation was previously only visible in the serde error text; it is now stated in the `from_json` / `from_json_ignoring_unknown` / `parse_json` rustdoc, the JSON module docs, and the `no_std` section of the guide.
+time: 2026-10-07T14:38:54+00:00
