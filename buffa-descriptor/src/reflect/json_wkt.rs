@@ -195,9 +195,11 @@ impl WktKind {
                 Ok(DynamicMessage::new(pool, midx))
             }
             Self::Wrapper(sc) => {
-                let v = deserialize_scalar(sc, d)?;
+                let v = deserialize_optional_scalar(sc, d)?;
                 let mut m = DynamicMessage::new(pool, midx);
-                m.set_by_number(1, v);
+                if let Some(v) = v {
+                    m.set_by_number(1, v);
+                }
                 Ok(m)
             }
             Self::Struct => deserialize_struct(pool, midx, d, budget),

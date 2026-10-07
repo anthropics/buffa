@@ -2,10 +2,12 @@
 
 use buffa::Message;
 use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+use buffa_descriptor::generated::descriptor::feature_set::FieldPresence;
 use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
 use buffa_descriptor::generated::descriptor::{
-    DescriptorProto, Edition, EnumDescriptorProto, EnumValueDescriptorProto, FieldDescriptorProto,
-    FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+    DescriptorProto, Edition, EnumDescriptorProto, EnumValueDescriptorProto, FeatureSet,
+    FieldDescriptorProto, FieldOptions, FileDescriptorProto, FileDescriptorSet, FileOptions,
+    OneofDescriptorProto,
 };
 use buffa_descriptor::{DescriptorPool, PoolError};
 
@@ -204,6 +206,93 @@ fn defaults_remain_valid_in_proto2_and_editions() {
                 .unwrap_or_else(|err| panic!("{syntax:?} {edition:?} {ty:?} {default:?}: {err}"));
         }
     }
+}
+
+fn presence_features(presence: FieldPresence) -> FeatureSet {
+    FeatureSet {
+        field_presence: Some(presence),
+        ..Default::default()
+    }
+}
+
+fn editions_file(field: FieldDescriptorProto, edition: Edition) -> FileDescriptorProto {
+    let mut descriptor = file(Some("editions"), field);
+    descriptor.edition = Some(edition);
+    descriptor
+}
+
+#[test]
+fn editions_implicit_presence_fields_reject_defaults() {
+    for edition in [Edition::EDITION_2023, Edition::EDITION_2024] {
+        for (ty, default) in [
+            (Type::TYPE_INT32, "7"),
+            (Type::TYPE_INT32, "0"),
+            (Type::TYPE_STRING, ""),
+        ] {
+            // The feature set on the field itself.
+            let mut on_field = field(ty, Some(default));
+            on_field.options = FieldOptions {
+                features: presence_features(FieldPresence::IMPLICIT).into(),
+                ..Default::default()
+            }
+            .into();
+            // The feature inherited from the file.
+            let mut inherited = editions_file(field(ty, Some(default)), edition);
+            inherited.options = FileOptions {
+                features: presence_features(FieldPresence::IMPLICIT).into(),
+                ..Default::default()
+            }
+            .into();
+
+            for descriptor in [editions_file(on_field, edition), inherited] {
+                let err = DescriptorPool::new(set(descriptor)).unwrap_err();
+                assert!(
+                    matches!(
+                        &err,
+                        PoolError::ImplicitPresenceFieldWithDefault { field }
+                            if field == "defaults.test.Defaults.value"
+                    ),
+                    "{edition:?} {ty:?} {default:?}: {err}"
+                );
+                assert_eq!(
+                    err.to_string(),
+                    "field defaults.test.Defaults.value has implicit presence and declares an \
+                     explicit default"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn editions_fields_with_presence_keep_their_defaults() {
+    for presence in [FieldPresence::EXPLICIT, FieldPresence::LEGACY_REQUIRED] {
+        let mut with_presence = field(Type::TYPE_INT32, Some("7"));
+        with_presence.options = FieldOptions {
+            features: presence_features(presence).into(),
+            ..Default::default()
+        }
+        .into();
+        DescriptorPool::new(set(editions_file(with_presence, Edition::EDITION_2023)))
+            .unwrap_or_else(|err| panic!("{presence:?}: {err}"));
+    }
+
+    // A oneof member has presence under a file-level `IMPLICIT`.
+    let mut member = field(Type::TYPE_INT32, Some("7"));
+    member.oneof_index = Some(0);
+    let mut descriptor = editions_file(member, Edition::EDITION_2023);
+    descriptor.message_type[0]
+        .oneof_decl
+        .push(OneofDescriptorProto {
+            name: Some("choice".into()),
+            ..Default::default()
+        });
+    descriptor.options = FileOptions {
+        features: presence_features(FieldPresence::IMPLICIT).into(),
+        ..Default::default()
+    }
+    .into();
+    DescriptorPool::new(set(descriptor)).unwrap();
 }
 
 #[test]

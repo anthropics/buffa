@@ -37,8 +37,8 @@ use crate::desc::{
 use crate::features::{self, ResolvedFeatures};
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type as ProtoType};
 use crate::generated::descriptor::{
-    feature_set, DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
-    FileDescriptorSet, ServiceDescriptorProto,
+    feature_set, DescriptorProto, Edition, EnumDescriptorProto, FieldDescriptorProto,
+    FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto,
 };
 use buffa::editions::{
     EnumType, FieldPresence, JsonFormat, MessageEncoding, RepeatedFieldEncoding,
@@ -170,6 +170,16 @@ pub enum PoolError {
     /// The `FileDescriptorSet` bytes did not decode. Carries the underlying
     /// wire-format error.
     Decode(buffa::DecodeError),
+    /// A file declares a syntax other than `proto2`, `proto3`, or `editions`.
+    /// An absent or empty syntax defaults to proto2.
+    UnrecognizedSyntax { file: String, syntax: String },
+    /// A file declares syntax `editions` and its `edition` is unset or
+    /// `EDITION_UNKNOWN`, so its feature defaults are undefined.
+    ///
+    /// An edition number that this version of buffa does not define is a
+    /// different case: decoding keeps it as an unknown field, and the file
+    /// links with the edition 2023 defaults.
+    MissingEdition { file: String },
     /// A file's `public_dependency` names an index outside its `dependency`
     /// list. The indices are positions in that list, so an out-of-range one
     /// names no import at all.
@@ -208,6 +218,8 @@ pub enum PoolError {
         type_name: String,
         defined_in: String,
     },
+    /// A message or group field declares an explicit default value.
+    MessageFieldWithDefault { field: String },
     /// A field had no `type_name` for a `TYPE_MESSAGE`/`TYPE_GROUP`/`TYPE_ENUM`.
     MissingTypeName { field: String },
     /// A field whose `type` is set to a scalar type also has a non-empty
@@ -238,6 +250,12 @@ pub enum PoolError {
     DuplicateFieldNumber { message: String, number: u32 },
     /// Two fields in one message claim the same proto or JSON name.
     DuplicateFieldName { message: String, name: String },
+    /// A field's JSON name contains NUL, or a message field's custom JSON
+    /// name has the form `[x]`, which a JSON parser reads as the key of an
+    /// extension.
+    InvalidJsonName { field: String, name: String },
+    /// A repeated field declares an explicit default value.
+    RepeatedFieldWithDefault { field: String },
     /// A field refers to a oneof declaration that does not exist in its
     /// containing message.
     InvalidOneofIndex {
@@ -245,8 +263,15 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// A oneof member has required or repeated cardinality instead of optional.
+    InvalidOneofCardinality { field: String },
     /// A field or extension declares an explicit default in a proto3 file.
     ExplicitDefaultInProto3 { field: String },
+    /// A singular field without presence declares an explicit default. An
+    /// editions field has no presence under
+    /// `features.field_presence = IMPLICIT`, where the default is the one
+    /// value that is never written.
+    ImplicitPresenceFieldWithDefault { field: String },
     /// A field marked `proto3_optional` is not declared in a proto3 file.
     Proto3OptionalOutsideProto3 { field: String },
     /// A field marked `proto3_optional` does not have optional cardinality.
@@ -263,16 +288,34 @@ pub enum PoolError {
     RealOneofAfterSyntheticOneof { message: String, oneof: String },
     /// Two oneof declarations in one message have the same name.
     DuplicateOneofName { message: String, name: String },
+    /// A oneof declaration has no member fields.
+    EmptyOneof { oneof: String },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
+    /// A field in a proto3 or Editions file uses a `required` label.
+    /// Editions express required presence through features instead of labels.
+    RequiredFieldOutsideProto2 { field: String },
+    /// An extension is required: it has a `required` label, or its
+    /// `field_presence` feature resolves to `LEGACY_REQUIRED`. A message
+    /// written before the extension existed could never satisfy it.
+    RequiredExtension { field: String },
     /// A field number, or a finite extension range, overlaps the field-number
     /// interval reserved for the protobuf implementation. The bounds are
     /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
     /// [`buffa::encoding::LAST_RESERVED_FIELD_NUMBER`].
     ReservedFieldNumber { field: String, number: i32 },
-    /// A map entry message did not have exactly fields 1 (key) and 2 (value),
-    /// or the key type is not a valid map key per the protobuf spec.
+    /// A field sets `packed = true` but is not a repeated numeric, bool, or
+    /// enum field. Strings, bytes, messages, and groups cannot be packed.
+    InvalidPackedOption { field: String },
+    /// A field sets `features.repeated_field_encoding` where it cannot apply:
+    /// the field is not repeated, or the value is `PACKED` and the field is
+    /// not a repeated numeric, bool, or enum field. The fields of a map entry
+    /// are exempt, because protoc copies the map field's features onto them.
+    InvalidRepeatedFieldEncoding { field: String },
+    /// A map entry message does not have exactly the optional fields `key`
+    /// (1) and `value` (2), in that order, or the key type is not a valid map
+    /// key per the protobuf spec.
     MalformedMapEntry { message: String },
     /// Two extensions claim the same field number on the same message.
     /// protoc rejects this within one compilation unit, but it can arise
@@ -390,6 +433,15 @@ impl core::fmt::Display for PoolError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Decode(e) => write!(f, "FileDescriptorSet decode failed: {e}"),
+            Self::UnrecognizedSyntax { file, syntax } => {
+                write!(f, "file {file} has unrecognized syntax {syntax:?}")
+            }
+            Self::MissingEdition { file } => {
+                write!(
+                    f,
+                    "file {file} has syntax \"editions\" but its edition is unset or EDITION_UNKNOWN"
+                )
+            }
             Self::InvalidPublicDependencyIndex {
                 file,
                 index,
@@ -411,6 +463,9 @@ impl core::fmt::Display for PoolError {
                     "file {file} weak_dependency index {index} is out of range \
                      ({dependency_count} dependencies declared)"
                 )
+            }
+            Self::MessageFieldWithDefault { field } => {
+                write!(f, "message field {field} declares a default value")
             }
             Self::MissingTypeName { field } => write!(f, "field {field} has no type_name"),
             Self::UnexpectedTypeName { field, type_name } => write!(
@@ -468,6 +523,19 @@ impl core::fmt::Display for PoolError {
                     "message {message} declares field name {name:?} more than once"
                 )
             }
+            Self::InvalidJsonName { field, name } => {
+                if name.contains('\0') {
+                    write!(f, "field {field} has JSON name {name:?} containing NUL")
+                } else {
+                    write!(
+                        f,
+                        "field {field} has JSON name {name:?}, which has the form of an extension key"
+                    )
+                }
+            }
+            Self::RepeatedFieldWithDefault { field } => {
+                write!(f, "repeated field {field} declares a default value")
+            }
             Self::InvalidOneofIndex {
                 message,
                 field,
@@ -476,9 +544,16 @@ impl core::fmt::Display for PoolError {
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
             ),
+            Self::InvalidOneofCardinality { field } => {
+                write!(f, "field {field} is a oneof member but is not optional")
+            }
             Self::ExplicitDefaultInProto3 { field } => write!(
                 f,
                 "field {field} declares an explicit default in a proto3 file"
+            ),
+            Self::ImplicitPresenceFieldWithDefault { field } => write!(
+                f,
+                "field {field} has implicit presence and declares an explicit default"
             ),
             Self::Proto3OptionalOutsideProto3 { field } => write!(
                 f,
@@ -510,8 +585,16 @@ impl core::fmt::Display for PoolError {
                     "message {message} declares oneof name {name:?} more than once"
                 )
             }
+            Self::EmptyOneof { oneof } => write!(f, "oneof {oneof} has no fields"),
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
+            }
+            Self::RequiredFieldOutsideProto2 { field } => write!(
+                f,
+                "field {field} uses a required label outside a proto2 file"
+            ),
+            Self::RequiredExtension { field } => {
+                write!(f, "extension {field} is required")
             }
             Self::ReservedFieldNumber { field, number } => {
                 write!(
@@ -519,6 +602,14 @@ impl core::fmt::Display for PoolError {
                     "field {field} uses field number {number}, which is reserved for the protobuf implementation"
                 )
             }
+            Self::InvalidPackedOption { field } => write!(
+                f,
+                "field {field} sets packed = true but is not a repeated primitive field"
+            ),
+            Self::InvalidRepeatedFieldEncoding { field } => write!(
+                f,
+                "field {field} sets features.repeated_field_encoding, which does not apply to it"
+            ),
             Self::MalformedMapEntry { message } => {
                 write!(f, "malformed map entry message {message}")
             }
@@ -667,6 +758,24 @@ impl std::error::Error for PoolError {
     }
 }
 
+/// Whether `file` carries an edition other than `EDITION_UNKNOWN`.
+///
+/// `Edition` is a closed enum, so decoding leaves a number that this crate
+/// does not define in the file's unknown fields with `edition` unset. Such a
+/// file has an edition, which [`features::for_file`] resolves to the edition
+/// 2023 defaults.
+fn has_edition(file: &FileDescriptorProto) -> bool {
+    /// Field number of `FileDescriptorProto.edition`.
+    const EDITION_FIELD_NUMBER: u32 = 14;
+    match file.edition {
+        Some(edition) => edition != Edition::EDITION_UNKNOWN,
+        None => file
+            .__buffa_unknown_fields
+            .iter()
+            .any(|field| field.number == EDITION_FIELD_NUMBER),
+    }
+}
+
 /// What a fully-qualified name resolves to within the pool.
 #[derive(Clone, Copy, Debug)]
 enum Definition {
@@ -772,6 +881,8 @@ struct LinkScope<'a> {
     file: usize,
     /// Whether the referring file declares proto3 syntax.
     proto3: bool,
+    /// Whether the referring file's syntax permits legacy `required` labels.
+    allows_required_labels: bool,
     /// Itself, its direct and weak dependencies, and their transitive
     /// `public_dependency` closure; `None` when visibility is not enforced.
     visible: Option<&'a BTreeSet<usize>>,
@@ -852,18 +963,12 @@ impl DescriptorPool {
     ///
     /// # Errors
     ///
-    /// Returns a [`PoolError`] if any type name fails to resolve or resolves
-    /// to a file the referring file does not import, a symbol or field
-    /// identity is declared twice, a field number is out of range or in
-    /// the implementation-reserved band (19000-19999), a field uses a name or
-    /// number its message reserved, an extension range overlaps a reserved
-    /// range, a message or enum declares a reserved name twice, an open enum's
-    /// first value is non-zero, an enum value reuses a reserved name or number
-    /// or a duplicate number without `allow_alias`, a oneof index is invalid,
-    /// a `proto3_optional` field is malformed, a message exceeds 65 535
-    /// fields, or a map entry is malformed.
-    /// An explicit default on a field or extension declared in a proto3 file
-    /// also returns an error, even if it equals the type's implicit default.
+    /// Returns a [`PoolError`] if a type name does not resolve, or names a type
+    /// in a file the referring file does not import. Also returns one if a file
+    /// breaks a descriptor rule that the pool checks. The rules are protoc's,
+    /// apart from the pool's own field-count limit
+    /// ([`PoolError::TooManyFields`]). Each [`PoolError`] variant documents one
+    /// rule.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -880,16 +985,8 @@ impl DescriptorPool {
     /// # Errors
     ///
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
-    /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
-    /// validation failure (dangling or unimported type names, out-of-range or
-    /// implementation-reserved field numbers, reserved message fields, an
-    /// overlapping extension range, duplicate symbols or field identities,
-    /// duplicate reserved names, an open enum whose first value is non-zero,
-    /// reserved enum values, duplicate enum numbers without `allow_alias`,
-    /// invalid oneof indices, malformed `proto3_optional` fields, or malformed
-    /// map entries).
-    /// Explicit defaults on fields or extensions declared in proto3 files are
-    /// also rejected, including zero and empty defaults.
+    /// `FileDescriptorSet`, and any other [`PoolError`] for the reasons
+    /// [`DescriptorPool::new`] gives.
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1009,6 +1106,22 @@ impl DescriptorPool {
                         });
                     }
                 }
+                match file.syntax.as_deref() {
+                    None | Some("" | "proto2" | "proto3") => {}
+                    Some("editions") => {
+                        if !has_edition(file) {
+                            return Err(PoolError::MissingEdition {
+                                file: file.name.clone().unwrap_or_default(),
+                            });
+                        }
+                    }
+                    Some(syntax) => {
+                        return Err(PoolError::UnrecognizedSyntax {
+                            file: file.name.clone().unwrap_or_default(),
+                            syntax: syntax.to_string(),
+                        });
+                    }
+                }
                 validate_dependency_indices(file)?;
             }
         }
@@ -1088,6 +1201,10 @@ impl DescriptorPool {
             let scope = LinkScope {
                 file: base + i,
                 proto3: file.syntax.as_deref() == Some("proto3"),
+                allows_required_labels: !matches!(
+                    file.syntax.as_deref(),
+                    Some("proto3" | "editions")
+                ),
                 visible: visible.as_ref(),
             };
             for msg in &file.message_type {
@@ -1112,6 +1229,10 @@ impl DescriptorPool {
             let scope = LinkScope {
                 file: base + i,
                 proto3: file.syntax.as_deref() == Some("proto3"),
+                allows_required_labels: !matches!(
+                    file.syntax.as_deref(),
+                    Some("proto3" | "editions")
+                ),
                 visible: visible.as_ref(),
             };
             for svc in &file.service {
@@ -1335,10 +1456,13 @@ impl DescriptorPool {
             format!("{scope}.{}", e.name.as_deref().unwrap_or(""))
         };
         for v in &e.value {
-            self.symbol_file.insert(
-                format!("{scope}.{}", v.name.as_deref().unwrap_or("")),
-                file_idx,
-            );
+            let name = v.name.as_deref().unwrap_or("");
+            let value_fqn = if scope.is_empty() {
+                name.to_string()
+            } else {
+                format!("{scope}.{name}")
+            };
+            self.symbol_file.insert(value_fqn, file_idx);
         }
         self.symbol_file.insert(fqn, file_idx);
     }
@@ -1755,6 +1879,9 @@ impl DescriptorPool {
                     name: fd.name.clone(),
                 });
             }
+            if oneof_names.contains(fd.name.as_str()) {
+                return Err(PoolError::DuplicateName(format!("{fqn}.{}", fd.name)));
+            }
             if enforce_json_names
                 && fd.json_name != fd.name
                 && field_names.insert(fd.json_name.clone(), i).is_some()
@@ -1785,6 +1912,14 @@ impl DescriptorPool {
         }
         field_by_number.sort_unstable_by_key(|&(n, _)| n);
         field_by_name.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+
+        for oneof in &oneofs {
+            if oneof.field_indices.is_empty() {
+                return Err(PoolError::EmptyOneof {
+                    oneof: format!("{fqn}.{}", oneof.name),
+                });
+            }
+        }
 
         // Validate and mark synthetic oneofs (proto3 optional). Per protobuf
         // semantics, a proto3 optional field must be the only member of its
@@ -2239,9 +2374,6 @@ impl DescriptorPool {
         let resolved = features::resolve_child(parent_features, features::field_features(f));
 
         let label = f.label.unwrap_or_default();
-        if scope.proto3 && f.default_value.is_some() {
-            return Err(PoolError::ExplicitDefaultInProto3 { field: field_fqn });
-        }
         if f.proto3_optional == Some(true) {
             if !scope.proto3 {
                 return Err(PoolError::Proto3OptionalOutsideProto3 { field: field_fqn });
@@ -2255,17 +2387,43 @@ impl DescriptorPool {
                 return Err(PoolError::Proto3OptionalWithoutOneof { field: field_fqn });
             }
         }
+        if containing_msg.is_some() && f.oneof_index.is_some() && label != Label::LABEL_OPTIONAL {
+            return Err(PoolError::InvalidOneofCardinality { field: field_fqn });
+        }
         let is_repeated = label == Label::LABEL_REPEATED;
+        if label == Label::LABEL_REQUIRED && !scope.allows_required_labels {
+            return Err(PoolError::RequiredFieldOutsideProto2 { field: field_fqn });
+        }
+        // `containing_msg` is `None` for an extension.
+        if containing_msg.is_none()
+            && (label == Label::LABEL_REQUIRED
+                || (!is_repeated && resolved.field_presence == FieldPresence::LegacyRequired))
+        {
+            return Err(PoolError::RequiredExtension { field: field_fqn });
+        }
+        if is_repeated && f.default_value.is_some() {
+            return Err(PoolError::RepeatedFieldWithDefault { field: field_fqn });
+        }
 
         // Resolve the singular kind (element type).
         let element = self.resolve_singular(f.r#type, f.type_name.as_deref(), &field_fqn, scope)?;
+        if matches!(element, SingularKind::Message(_)) && f.default_value.is_some() {
+            return Err(PoolError::MessageFieldWithDefault { field: field_fqn });
+        }
+        // After the two rules above, so that a repeated or message field
+        // reports the rule that holds in every syntax.
+        if scope.proto3 && f.default_value.is_some() {
+            return Err(PoolError::ExplicitDefaultInProto3 { field: field_fqn });
+        }
 
         // Detect map fields: repeated + message type + the message is a
         // map_entry. `containing_msg` is `None` for extensions, which cannot
         // be map fields — the lookup is skipped entirely.
         let (kind, enum_type) = if is_repeated {
             if let SingularKind::Message(midx) = element {
-                if let Some(entry) = containing_msg.and_then(|m| self.find_map_entry(m, f)) {
+                if let Some(entry) =
+                    containing_msg.and_then(|m| self.find_map_entry(msg_fqn, m, f, midx))
+                {
                     let (key_ty, value_kind) = self.resolve_map_entry(entry, &field_fqn, scope)?;
                     let enum_type = entry
                         .field
@@ -2275,7 +2433,6 @@ impl DescriptorPool {
                     // Map entry messages are synthetic — they're not real
                     // pool members for reflection purposes, but we leave
                     // them registered (consumers can ignore them).
-                    let _ = midx;
                     (
                         FieldKind::Map {
                             key: key_ty,
@@ -2320,6 +2477,9 @@ impl DescriptorPool {
         } else {
             resolved.field_presence
         };
+        if !is_repeated && presence == FieldPresence::Implicit && f.default_value.is_some() {
+            return Err(PoolError::ImplicitPresenceFieldWithDefault { field: field_fqn });
+        }
 
         // Resolve packed encoding.
         // Per the spec, only repeated scalar/enum fields are packable.
@@ -2327,9 +2487,29 @@ impl DescriptorPool {
             kind,
             FieldKind::List(SingularKind::Scalar(s)) if !matches!(s, ScalarType::String | ScalarType::Bytes)
         ) || matches!(kind, FieldKind::List(SingularKind::Enum(_)));
+        let packed_option = f.options.as_option().and_then(|o| o.packed);
+        if packed_option == Some(true) && !packable {
+            return Err(PoolError::InvalidPackedOption { field: field_fqn });
+        }
+        // The feature is the editions spelling of the option. Only the
+        // field's own setting counts: an inherited one applies to the fields
+        // it fits.
+        let in_map_entry = containing_msg
+            .and_then(|m| m.options.as_option())
+            .and_then(|o| o.map_entry)
+            == Some(true);
+        if let Some(encoding) =
+            features::field_features(f).and_then(|fs| fs.repeated_field_encoding)
+        {
+            let applies =
+                is_repeated && (packable || encoding != feature_set::RepeatedFieldEncoding::PACKED);
+            if !applies && !in_map_entry {
+                return Err(PoolError::InvalidRepeatedFieldEncoding { field: field_fqn });
+            }
+        }
         let packed = if packable {
             // An explicit [packed = ...] option wins over feature resolution.
-            match f.options.as_option().and_then(|o| o.packed) {
+            match packed_option {
                 Some(p) => p,
                 None => resolved.repeated_field_encoding == RepeatedFieldEncoding::Packed,
             }
@@ -2354,6 +2534,16 @@ impl DescriptorPool {
             .json_name
             .clone()
             .unwrap_or_else(|| derive_json_name(&name));
+        // A derived name is an identifier, so only a custom one can have the
+        // bracketed form. An extension is not serialized under its JSON name.
+        let looks_like_extension_key =
+            containing_msg.is_some() && json_name.starts_with('[') && json_name.ends_with(']');
+        if json_name.contains('\0') || looks_like_extension_key {
+            return Err(PoolError::InvalidJsonName {
+                field: field_fqn,
+                name: json_name,
+            });
+        }
 
         // Validate the field number. The wire format reserves 0, and the
         // upper bound is `(1 << 29) - 1`. Spec-compliant `protoc` never emits
@@ -2490,8 +2680,10 @@ impl DescriptorPool {
     /// Find the nested map-entry message for a repeated message field.
     fn find_map_entry<'a>(
         &self,
+        msg_fqn: &str,
         containing: &'a DescriptorProto,
         f: &FieldDescriptorProto,
+        element: MessageIndex,
     ) -> Option<&'a DescriptorProto> {
         if f.label.unwrap_or_default() != Label::LABEL_REPEATED {
             return None;
@@ -2501,11 +2693,14 @@ impl DescriptorPool {
         if f.r#type.is_some_and(|ty| ty != ProtoType::TYPE_MESSAGE) {
             return None;
         }
-        let tn = f.type_name.as_deref()?;
         // Map entry messages are nested inside the containing message and
-        // have name `<FieldName>Entry`. The type_name's last segment is the
-        // entry message name.
-        let entry_name = tn.rsplit('.').next()?;
+        // have name `<FieldName>Entry`. Match the resolved full name so an
+        // unrelated message with the same short name remains a list element.
+        let entry_name = self
+            .message(element)
+            .full_name()
+            .strip_prefix(msg_fqn)?
+            .strip_prefix('.')?;
         let entry = containing
             .nested_type
             .iter()
@@ -2523,13 +2718,25 @@ impl DescriptorPool {
         field_fqn: &str,
         scope: LinkScope<'_>,
     ) -> Result<(ScalarType, SingularKind), PoolError> {
-        let key_fd = entry.field.iter().find(|f| f.number == Some(1));
-        let val_fd = entry.field.iter().find(|f| f.number == Some(2));
-        let (Some(kf), Some(vf)) = (key_fd, val_fd) else {
+        // The key is the first field and the value the second, as protoc
+        // writes them and as it reads them back.
+        let [kf, vf] = entry.field.as_slice() else {
             return Err(PoolError::MalformedMapEntry {
                 message: field_fqn.to_string(),
             });
         };
+        if [("key", 1, kf), ("value", 2, vf)]
+            .into_iter()
+            .any(|(name, number, field)| {
+                field.name.as_deref() != Some(name)
+                    || field.number != Some(number)
+                    || field.label.unwrap_or_default() != Label::LABEL_OPTIONAL
+            })
+        {
+            return Err(PoolError::MalformedMapEntry {
+                message: field_fqn.to_string(),
+            });
+        }
         let key_ty = ScalarType::from_proto(kf.r#type.unwrap_or_default()).ok_or_else(|| {
             PoolError::MalformedMapEntry {
                 message: field_fqn.to_string(),
