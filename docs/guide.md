@@ -843,6 +843,8 @@ let maybe_address = Some(Address::default());
 msg.address = maybe_address.into();
 ```
 
+`==` includes presence, as on `Option`: an unset `address` differs from one set to `Address::default()`, since only the set one is encoded. Write `*a.address == *b.address` to compare the values alone; message fields nested inside `Address` still compare presence.
+
 See the [`MessageField` rustdoc](https://docs.rs/buffa/latest/buffa/struct.MessageField.html#construction-and-conversion) for the complete construction and consuming-conversion examples.
 
 ### `EnumValue<T>` — type-safe open enums
@@ -1045,6 +1047,85 @@ lists proto fields only. The reflective `DynamicMessage` `Debug` impl honors
 the option too, so descriptor-driven decode paths redact the same fields.
 This affects `Debug` formatting only — binary, JSON, and text-format
 serialization are unchanged.
+
+### `[deprecated = true]` and `#[deprecated]`
+
+Fields and enum values annotated with the standard `[deprecated = true]` option
+get `#[deprecated]` on their generated declaration, the way `prost-build` emits
+it: reading `method.syntax` from your code warns, which is how a deprecated proto
+field stays visible after migration. Encoding, decoding, JSON and text output are
+unaffected — the value still round-trips, and a deprecated enum value stays in
+`Enumeration::values()`, `from_i32` and `from_proto_name`, because the wire and
+JSON formats still have to accept it.
+
+The generated items that must visit every field carry `#[allow(deprecated)]`
+themselves, so one deprecated field does not flood the build with warnings from
+generated code: the `Message` codec impls, `Debug`, `Default` (owned and view),
+the `with_*` setters, the hand-written JSON `Deserialize` impl, the reflection
+vtable, the view and lazy-view `to_owned`, a table message's static, and — on the
+enum side — `Enumeration`, the `allow_alias` consts and the idiomatic consts. A
+message whose field declares `[default = DEPRECATED_VALUE]` needs the same guard
+even though no field of its own is deprecated, and so does an extension's default
+getter.
+
+`derive(Arbitrary)` takes no such guard on an enum, so under `generate_arbitrary`
+an enum with a deprecated variant gets a generated `Arbitrary` impl in place of
+the derive. The impl maps input to variants as the derive does, so marking a
+value deprecated does not change what a fuzz input builds.
+
+Writes are covered too: the `with_legacy_name(…)` setter for a deprecated field
+is itself `#[deprecated]`, so the builder API is not a quieter way to set it.
+This holds whether the field's deprecation comes from the option or from your own
+`field_attribute`.
+
+Aliases inherit the marker. An `allow_alias` value names the same variant as its
+primary, so `demo::Size::TINY` is deprecated whenever `demo::Size::SMALL` is; so
+does its idiomatic `CamelCase` const (`Size::Tiny`) when
+`idiomatic_enum_aliases` is on. An alias is not a quiet way to reach a deprecated
+value. The direction is per value: an alias marked `[deprecated = true]` whose
+primary is live marks only the alias and the alias's own idiomatic const.
+
+Three things are not marked:
+
+- **Oneof variants are not marked yet.** A deprecated `oneof` member neither
+  carries `#[deprecated]` nor widens the owned message's guard, so
+  `examples/addressbook` still needs its module-level `#[allow(deprecated)]`.
+- **The view read path is not marked.** `FooView` fields and the
+  `FooOwnedView` accessors borrow from the decode buffer, and their `to_owned`
+  conversion writes the owned field, so they stay silent for now — a consumer
+  reading a deprecated field through `decode_view` gets no warning.
+- **Whole-message and whole-enum deprecation is not emitted**, matching prost.
+
+A derive that you attach with `enum_attribute` or `type_attribute` can name a
+deprecated variant or field in code that the lint reports against your crate, as
+`derive(Arbitrary)` does for enum variants. If one warns, put
+`#[allow(deprecated)]` on the `mod` that includes the generated file.
+
+**Upgrading.** Code generated from your own `.proto` files, and from vendored
+ones, warns wherever your crate uses a deprecated field or enum value. Buffa's
+published types carry the marker too:
+`google.protobuf.Method::{syntax,edition}` and the deprecated option fields of
+`descriptor.proto` (`FieldOptions::weak`, `FileOptions::java_generate_equals_and_hash`,
+`{Message,Enum}Options::deprecated_legacy_json_field_conflicts`). If your crate
+builds under `-D warnings` or `#![deny(warnings)]`, an upgrade fails until you
+put `#[allow(deprecated)]` on the uses that it keeps. Codegen has no option that
+turns the markers off; pin the version if you cannot absorb the diagnostics.
+
+To attach your own note (prost's marker is bare too), use `field_attribute` —
+and note it wins over the option-derived marker, since rustc permits only one
+`deprecated` attribute per item:
+
+```rust,ignore
+buffa_build::Config::new()
+    .field_attribute(".pkg.Msg.legacy_name", "#[deprecated(note = \"use label\")]")
+    .files(&["proto/demo.proto"])
+    .includes(&["proto/"])
+    .compile()
+    .unwrap();
+```
+
+A field deprecated only through this hook still gets the generated-code guard and
+the deprecated setter, so the option and the hook behave alike from here.
 
 ### `skip_debug` and hand-written `Debug`
 
@@ -1970,6 +2051,8 @@ let obj = Struct::from_fields([
     ("age", Value::from(30.0)),
 ]);
 ```
+
+`Value::default()` has no kind set, which `struct.proto` defines as an error. It encodes to zero bytes, and JSON serialization of it fails, also when it is an element of a `ListValue` or a field of a `Struct`. Use `Value::null()` for a JSON `null`. A `Value` decoded from binary can have no kind too: an empty payload, or one written with a kind that this version of `struct.proto` lacks. Serializing a decoded message to JSON returns an error for such a value.
 
 ## `no_std` usage
 
