@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a field that has the name of a oneof in its message** (#565). A message that declares `oneof kind` and a field named `kind` linked, although the two names share one scope and protoc reports the second as already defined. It is now `PoolError::DuplicateName`, which also covers a field named like the synthetic oneof of a proto3 `optional` field. A field that shares its name with a nested message or enum still links.
+time: 2026-10-05T23:22:44.675048+02:00

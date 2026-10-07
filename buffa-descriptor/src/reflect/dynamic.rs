@@ -2482,7 +2482,10 @@ fn default_value_ref(kind: FieldKind, pool: &Arc<DescriptorPool>) -> ValueRef<'_
     static EMPTY_MAP: MapValue = MapValue::new();
     match kind {
         FieldKind::Singular(SingularKind::Scalar(s)) => default_scalar_ref(s),
-        FieldKind::Singular(SingularKind::Enum(_)) => ValueRef::EnumNumber(0),
+        FieldKind::Singular(SingularKind::Enum(eidx)) => {
+            // Linked enums are nonempty; their first declared value is the default.
+            ValueRef::EnumNumber(pool.enumeration(eidx).values()[0].number())
+        }
         FieldKind::Singular(SingularKind::Message(msg_idx)) => {
             ValueRef::Message(ReflectCow::Empty(EmptyMessage { pool, msg_idx }))
         }
