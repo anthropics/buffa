@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **Text format reads a `float` field with one rounding** (#520). `TextDecoder::read_f32` read the number as an `f64` and narrowed it, which rounds twice: a decimal just off the midpoint of two `f32` values came out one ulp from the nearest `f32`. `7.038531e-26`, the shortest decimal for the `f32` with bits `0x15ae43fd`, read back as `0x15ae43fe`. The number is now parsed as an `f32` directly, as protobuf-java parses it; protobuf C++ and protobuf-go parse an `f64` and narrow it.
+    Some `float` values read from text therefore differ by one ulp from earlier releases. The same applies at the ends of the range: a decimal just inside the overflow threshold now reads as `f32::MAX` where it read as infinity, and one just above half the smallest subnormal reads as that subnormal where it read as zero. `double` fields are unchanged.
+time: 2026-10-02T19:55:54.204+00:00

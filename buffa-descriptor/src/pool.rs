@@ -37,8 +37,8 @@ use crate::desc::{
 use crate::features::{self, ResolvedFeatures};
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type as ProtoType};
 use crate::generated::descriptor::{
-    feature_set, DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
-    FileDescriptorSet, ServiceDescriptorProto,
+    feature_set, DescriptorProto, Edition, EnumDescriptorProto, FieldDescriptorProto,
+    FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto,
 };
 use buffa::editions::{
     EnumType, FieldPresence, JsonFormat, MessageEncoding, RepeatedFieldEncoding,
@@ -170,6 +170,12 @@ pub enum PoolError {
     /// The `FileDescriptorSet` bytes did not decode. Carries the underlying
     /// wire-format error.
     Decode(buffa::DecodeError),
+    /// A file declares a syntax other than `proto2`, `proto3`, or `editions`.
+    /// An absent or empty syntax defaults to proto2.
+    UnrecognizedSyntax { file: String, syntax: String },
+    /// A file declares syntax `editions` and its `edition` is unset or
+    /// `EDITION_UNKNOWN`, so its feature defaults are undefined.
+    MissingEdition { file: String },
     /// A file's `public_dependency` names an index outside its `dependency`
     /// list. The indices are positions in that list, so an out-of-range one
     /// names no import at all.
@@ -263,6 +269,8 @@ pub enum PoolError {
     RealOneofAfterSyntheticOneof { message: String, oneof: String },
     /// Two oneof declarations in one message have the same name.
     DuplicateOneofName { message: String, name: String },
+    /// A oneof declaration has no member fields.
+    EmptyOneof { oneof: String },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
@@ -390,6 +398,12 @@ impl core::fmt::Display for PoolError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Decode(e) => write!(f, "FileDescriptorSet decode failed: {e}"),
+            Self::UnrecognizedSyntax { file, syntax } => {
+                write!(f, "file {file} has unrecognized syntax {syntax:?}")
+            }
+            Self::MissingEdition { file } => {
+                write!(f, "file {file} has syntax \"editions\" but no edition")
+            }
             Self::InvalidPublicDependencyIndex {
                 file,
                 index,
@@ -509,6 +523,7 @@ impl core::fmt::Display for PoolError {
                     "message {message} declares oneof name {name:?} more than once"
                 )
             }
+            Self::EmptyOneof { oneof } => write!(f, "oneof {oneof} has no fields"),
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
@@ -851,17 +866,9 @@ impl DescriptorPool {
     ///
     /// # Errors
     ///
-    /// Returns a [`PoolError`] if any type name fails to resolve or resolves
-    /// to a file the referring file does not import, a symbol or field
-    /// identity is declared twice, a field number is out of range or in
-    /// the implementation-reserved band (19000-19999), a field uses a name or
-    /// number its message reserved, an extension range overlaps a reserved
-    /// range, a message or enum declares a reserved name twice, an open enum's
-    /// first value is non-zero, an enum value reuses a reserved name or number
-    /// or a duplicate number without `allow_alias`, a oneof index is invalid
-    /// or a oneof member is not optional,
-    /// a `proto3_optional` field is malformed, a message exceeds 65 535
-    /// fields, or a map entry is malformed.
+    /// Returns a [`PoolError`] if a type name fails to resolve, or if the set
+    /// breaks one of the structural rules that protoc enforces on a `.proto`
+    /// file. Each [`PoolError`] variant documents one rule.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -878,14 +885,8 @@ impl DescriptorPool {
     /// # Errors
     ///
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
-    /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
-    /// validation failure (dangling or unimported type names, out-of-range or
-    /// implementation-reserved field numbers, reserved message fields, an
-    /// overlapping extension range, duplicate symbols or field identities,
-    /// duplicate reserved names, an open enum whose first value is non-zero,
-    /// reserved enum values, duplicate enum numbers without `allow_alias`,
-    /// invalid oneof indices, non-optional oneof members, malformed
-    /// `proto3_optional` fields, or malformed map entries).
+    /// `FileDescriptorSet`, and any other [`PoolError`] for the reasons
+    /// [`DescriptorPool::new`] gives.
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -1002,6 +1003,22 @@ impl DescriptorPool {
                     if !new_names.insert(n) {
                         return Err(PoolError::DuplicateFileName {
                             file: n.to_string(),
+                        });
+                    }
+                }
+                match file.syntax.as_deref() {
+                    None | Some("" | "proto2" | "proto3") => {}
+                    Some("editions") => {
+                        if matches!(file.edition, None | Some(Edition::EDITION_UNKNOWN)) {
+                            return Err(PoolError::MissingEdition {
+                                file: file.name.clone().unwrap_or_default(),
+                            });
+                        }
+                    }
+                    Some(syntax) => {
+                        return Err(PoolError::UnrecognizedSyntax {
+                            file: file.name.clone().unwrap_or_default(),
+                            syntax: syntax.to_string(),
                         });
                     }
                 }
@@ -1331,10 +1348,13 @@ impl DescriptorPool {
             format!("{scope}.{}", e.name.as_deref().unwrap_or(""))
         };
         for v in &e.value {
-            self.symbol_file.insert(
-                format!("{scope}.{}", v.name.as_deref().unwrap_or("")),
-                file_idx,
-            );
+            let name = v.name.as_deref().unwrap_or("");
+            let value_fqn = if scope.is_empty() {
+                name.to_string()
+            } else {
+                format!("{scope}.{name}")
+            };
+            self.symbol_file.insert(value_fqn, file_idx);
         }
         self.symbol_file.insert(fqn, file_idx);
     }
@@ -1751,6 +1771,9 @@ impl DescriptorPool {
                     name: fd.name.clone(),
                 });
             }
+            if oneof_names.contains(fd.name.as_str()) {
+                return Err(PoolError::DuplicateName(format!("{fqn}.{}", fd.name)));
+            }
             if enforce_json_names
                 && fd.json_name != fd.name
                 && field_names.insert(fd.json_name.clone(), i).is_some()
@@ -1781,6 +1804,14 @@ impl DescriptorPool {
         }
         field_by_number.sort_unstable_by_key(|&(n, _)| n);
         field_by_name.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+
+        for oneof in &oneofs {
+            if oneof.field_indices.is_empty() {
+                return Err(PoolError::EmptyOneof {
+                    oneof: format!("{fqn}.{}", oneof.name),
+                });
+            }
+        }
 
         // Validate and mark synthetic oneofs (proto3 optional). Per protobuf
         // semantics, a proto3 optional field must be the only member of its
@@ -2261,7 +2292,9 @@ impl DescriptorPool {
         // be map fields — the lookup is skipped entirely.
         let (kind, enum_type) = if is_repeated {
             if let SingularKind::Message(midx) = element {
-                if let Some(entry) = containing_msg.and_then(|m| self.find_map_entry(m, f)) {
+                if let Some(entry) =
+                    containing_msg.and_then(|m| self.find_map_entry(msg_fqn, m, f, midx))
+                {
                     let (key_ty, value_kind) = self.resolve_map_entry(entry, &field_fqn, scope)?;
                     let enum_type = entry
                         .field
@@ -2271,7 +2304,6 @@ impl DescriptorPool {
                     // Map entry messages are synthetic — they're not real
                     // pool members for reflection purposes, but we leave
                     // them registered (consumers can ignore them).
-                    let _ = midx;
                     (
                         FieldKind::Map {
                             key: key_ty,
@@ -2486,8 +2518,10 @@ impl DescriptorPool {
     /// Find the nested map-entry message for a repeated message field.
     fn find_map_entry<'a>(
         &self,
+        msg_fqn: &str,
         containing: &'a DescriptorProto,
         f: &FieldDescriptorProto,
+        element: MessageIndex,
     ) -> Option<&'a DescriptorProto> {
         if f.label.unwrap_or_default() != Label::LABEL_REPEATED {
             return None;
@@ -2497,11 +2531,14 @@ impl DescriptorPool {
         if f.r#type.is_some_and(|ty| ty != ProtoType::TYPE_MESSAGE) {
             return None;
         }
-        let tn = f.type_name.as_deref()?;
         // Map entry messages are nested inside the containing message and
-        // have name `<FieldName>Entry`. The type_name's last segment is the
-        // entry message name.
-        let entry_name = tn.rsplit('.').next()?;
+        // have name `<FieldName>Entry`. Match the resolved full name so an
+        // unrelated message with the same short name remains a list element.
+        let entry_name = self
+            .message(element)
+            .full_name()
+            .strip_prefix(msg_fqn)?
+            .strip_prefix('.')?;
         let entry = containing
             .nested_type
             .iter()
