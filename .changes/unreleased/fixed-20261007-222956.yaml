@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    Reject unknown fields when parsing `google.protobuf.Empty` as JSON.
+time: 2026-10-07T22:29:56+02:00
