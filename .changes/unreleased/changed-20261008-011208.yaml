@@ -1,0 +1,3 @@
+kind: Changed
+body: The buffa-descriptor README explains that runtime reflection requires the optional reflect feature.
+time: 2026-10-08T01:12:08.49225+02:00
