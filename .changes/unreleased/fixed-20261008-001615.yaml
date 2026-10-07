@@ -1,0 +1,3 @@
+kind: Fixed
+body: Limit map entry decoding to its declared payload.
+time: 2026-10-08T00:16:15.664164+02:00
