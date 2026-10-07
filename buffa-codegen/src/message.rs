@@ -2353,17 +2353,20 @@ fn field_deser_modules(
     (with_module, null_deser)
 }
 
-/// Does this scalar type need proto3-JSON special encoding in containers?
+/// Does this scalar type need proto3-JSON helpers in containers?
 ///
-/// int64/uint64 → quoted strings; float/double → NaN/Inf tokens; bytes →
-/// base64. For bool/string/int32/uint32/sint32/sfixed32/fixed32, derive
-/// serde is already proto3-JSON compliant — routing through ProtoElemJson
-/// adds trait-dispatch overhead (and for proto_map, a `.to_string()` alloc
-/// per key) for no correctness benefit.
+/// Integers accept quoted strings and integral decimal/exponent forms;
+/// int64/uint64 serialize as quoted strings; float/double use NaN/Inf tokens;
+/// bytes use base64. For bool/string, derive serde is already compliant.
 fn value_needs_proto_json(ty: Type) -> bool {
     matches!(
         ty,
-        Type::TYPE_INT64
+        Type::TYPE_INT32
+            | Type::TYPE_SINT32
+            | Type::TYPE_SFIXED32
+            | Type::TYPE_UINT32
+            | Type::TYPE_FIXED32
+            | Type::TYPE_INT64
             | Type::TYPE_SINT64
             | Type::TYPE_SFIXED64
             | Type::TYPE_UINT64
@@ -2377,10 +2380,10 @@ fn value_needs_proto_json(ty: Type) -> bool {
 /// Serde module for map fields (keyed by key/value types).
 ///
 /// Uses `proto_map` (generic over `V: ProtoElemJson`) only when the value
-/// type needs proto3-JSON special encoding (int64→quoted, float→NaN token,
-/// bytes→base64). For simple values (string, bool, 32-bit ints) with string
-/// keys, returns `None` to use derive — zero overhead. Non-string keys still
-/// use `string_key_map` for key stringification.
+/// type needs proto3-JSON parsing or encoding (integer numeric forms,
+/// int64→quoted, float→NaN token, bytes→base64). For string/bool values with
+/// string keys, returns `None` to use derive. Non-string keys still use
+/// `string_key_map` for key stringification.
 ///
 /// Open-enum map values keep `map_enum` for its ignore-unknown-values
 /// filtering behavior (a `JsonParseOptions` feature proto_map doesn't have).
@@ -2444,13 +2447,12 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
         };
     }
 
-    // Scalar value types: only route through proto_map if the value needs
-    // proto-JSON encoding. For simple values with string keys, derive is
-    // correct and avoids proto_map's per-key `.to_string()` allocation.
+    // Scalar value types: route through proto_map if the value needs
+    // proto-JSON parsing or encoding. String/bool values can use derive.
     let value_ty = info.map_value_type.unwrap_or(Type::TYPE_STRING);
     let is_string_key = matches!(info.map_key_type, Some(Type::TYPE_STRING));
     if value_needs_proto_json(value_ty) {
-        // Value needs special encoding (int64 quoted, bytes base64, etc.).
+        // Value needs special parsing or encoding.
         // A custom-`ProtoString` key lacks the `Display`/`FromStr` that
         // `proto_map` requires, so route it through the serde-keyed twin.
         Some(if info.map_key_custom_string {
@@ -2470,8 +2472,8 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
 /// Serde module for repeated fields.
 ///
 /// Uses `proto_seq` (generic over `T: ProtoElemJson`) only for element types
-/// that need proto3-JSON special encoding. For string/bool/32-bit ints,
-/// derive is correct and avoids trait-dispatch overhead.
+/// that need proto3-JSON parsing or encoding. For string/bool, derive is
+/// already compliant.
 ///
 /// Enums keep the `_enum` / `_closed_enum` modules for their
 /// ignore-unknown-values filtering behavior (JsonParseOptions).
@@ -2494,9 +2496,8 @@ fn repeated_serde_module(
         }
         // Other messages/groups: derived Serialize is already proto-JSON.
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => None,
-        // Simple scalar types (string, bool, 32-bit ints): derive is
-        // proto-JSON compliant. Only route through proto_seq for types
-        // that need special encoding (int64 quoted, bytes base64, etc.).
+        // Route scalar types needing special parsing or encoding through
+        // proto_seq. String/bool can use derive.
         ty if value_needs_proto_json(ty) => Some("::buffa::json_helpers::proto_seq"),
         _ => None,
     }

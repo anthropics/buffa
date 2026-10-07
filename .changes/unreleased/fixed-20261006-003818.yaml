@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`repeated` and `map` fields of 32-bit integers accept every ProtoJSON number form** (#572). Generated code parsed `repeated int32`, `map<string, int32>` and the other 32-bit integer collections (`uint32`, `sint32`, `fixed32`, `sfixed32`) with derived serde, which takes only a JSON number without a fraction or exponent: `["1"]`, `[1.0]` and `[1e0]` were rejected. Singular, `optional` and oneof fields, the reflective parser and protobuf-go accept those forms, and the collections now do too, through the helpers that 64-bit collections use. The cost is on parsing a map with a string key and a 32-bit integer value: each key is now read as a `String` and then converted to the key type, as for a map with a 64-bit value.
+time: 2026-10-06T00:38:18.848963+02:00
