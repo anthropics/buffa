@@ -144,8 +144,10 @@ pub trait ReflectMessage {
 
     /// Get a field's value.
     ///
-    /// For absent singular fields, returns the type's default value. For
-    /// absent repeated/map fields, returns an empty container.
+    /// An absent singular field reads as its type's default value. An absent
+    /// enum field reads as the enum's first declared value, which is nonzero
+    /// for some proto2 enums. An absent repeated or map field reads as an
+    /// empty container.
     ///
     /// # Panics
     ///

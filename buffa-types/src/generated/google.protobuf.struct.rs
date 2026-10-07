@@ -395,7 +395,13 @@ const _: () = {
                         ) => {
                             ::buffa_descriptor::reflect::ValueRef::EnumNumber(v.to_i32())
                         }
-                        _ => ::buffa_descriptor::reflect::ValueRef::EnumNumber(0),
+                        _ => {
+                            ::buffa_descriptor::reflect::ValueRef::EnumNumber(
+                                ::buffa::Enumeration::to_i32(
+                                    &<NullValue as ::core::default::Default>::default(),
+                                ),
+                            )
+                        }
                     }
                 }
                 2u32 => {
