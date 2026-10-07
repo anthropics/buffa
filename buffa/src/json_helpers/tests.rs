@@ -514,6 +514,84 @@ fn int64_rejects_huge_exponent_string() {
 }
 
 #[test]
+fn integer_helpers_deserialize_large_rescaled_significands() {
+    macro_rules! assert_rescaled {
+        ($holder:ty, $values:expr) => {
+            for value in $values {
+                for zeros in [20, 38, 39, 80, 1_000] {
+                    for fraction in ["", ".000"] {
+                        let json = format!(r#""{value}{}{fraction}e-{zeros}""#, "0".repeat(zeros));
+                        let parsed = serde_json::from_str::<$holder>(&json)
+                            .unwrap_or_else(|err| panic!("input {json}: {err}"));
+                        assert_eq!(parsed.0, value, "input: {json}");
+                    }
+                }
+            }
+        };
+    }
+
+    assert_rescaled!(SerdeInt32, [0, 1, -1, 1_200, i32::MIN, i32::MAX]);
+    assert_rescaled!(
+        SerdeInt64,
+        [0, 1, -1, 1_200, 9_007_199_254_740_993, i64::MIN, i64::MAX]
+    );
+    assert_rescaled!(SerdeUint32, [0, 1, 1_200, u32::MAX]);
+    assert_rescaled!(SerdeUint64, [0, 1, 1_200, 9_007_199_254_740_993, u64::MAX]);
+}
+
+#[test]
+fn exact_decimal_integers_normalize_trailing_zeros() {
+    let zeros = "0".repeat(80);
+    let cases = [
+        (format!("100{zeros}e-82"), Some(1)),
+        (format!("100{zeros}e-81"), Some(10)),
+        (format!("100{zeros}e-80"), Some(100)),
+        (format!("100{zeros}E-82"), Some(1)),
+        (format!("-100{zeros}.000e-82"), Some(-1)),
+        (format!("+100{zeros}.000e-82"), Some(1)),
+        (format!("000100{zeros}e-82"), Some(1)),
+        ("100.5e1".to_string(), Some(1_005)),
+        ("100.5".to_string(), None),
+        (format!("100{zeros}e-83"), None),
+        (format!("100{zeros}1e-83"), None),
+        (format!("100{zeros}.1e-82"), None),
+        (format!("100{zeros}e1"), None),
+        (format!("x{zeros}e-80"), None),
+        (format!("100{zeros}e-8x"), None),
+        (format!("100{zeros}e-82e0"), None),
+        (format!("100{zeros}.0.0e-82"), None),
+        (format!("100{zeros}e{}", i64::MAX), None),
+        (format!("100{zeros}e{}", i64::MIN), None),
+        (format!("{zeros}e{}", i64::MAX), Some(0)),
+        (format!("-{zeros}.000e{}", i64::MIN), Some(0)),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(parse_exact_decimal_int(&input), expected, "input: {input}");
+    }
+}
+
+#[test]
+fn integer_helpers_reject_rescaled_out_of_range_values() {
+    let zeros = "0".repeat(80);
+    for value in ["2147483648", "-2147483649"] {
+        let json = format!(r#""{value}{zeros}e-80""#);
+        assert!(serde_json::from_str::<SerdeInt32>(&json).is_err());
+    }
+    for value in ["9223372036854775808", "-9223372036854775809"] {
+        let json = format!(r#""{value}{zeros}e-80""#);
+        assert!(serde_json::from_str::<SerdeInt64>(&json).is_err());
+    }
+    for value in ["4294967296", "-1"] {
+        let json = format!(r#""{value}{zeros}e-80""#);
+        assert!(serde_json::from_str::<SerdeUint32>(&json).is_err());
+    }
+    for value in ["18446744073709551616", "-1"] {
+        let json = format!(r#""{value}{zeros}e-80""#);
+        assert!(serde_json::from_str::<SerdeUint64>(&json).is_err());
+    }
+}
+
+#[test]
 fn uint64_rejects_negative_string() {
     // "-1" parses as i64 but fails u64::try_from
     assert!(serde_json::from_str::<SerdeUint64>(r#""-1""#).is_err());

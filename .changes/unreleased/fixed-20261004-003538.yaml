@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Reflection reads an absent enum field as the enum's first declared value** (#535). `ReflectMessage::get` returned 0 for an unset `optional` enum field or an inactive oneof member, both through `DynamicMessage` and through generated vtable reflection. For a proto2 enum whose first value is nonzero (`enum E { A = 5; B = 6; }`), 0 is a number the enum does not declare; protobuf C++ and protobuf-go return 5. Encoded bytes and JSON output are unchanged, because an absent field is not written. A default declared on an `optional` field (`[default = B]`) is still ignored by reflection: `DescriptorPool` does not store it.
+time: 2026-10-04T00:35:38.494001+02:00

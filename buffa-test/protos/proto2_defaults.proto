@@ -65,6 +65,17 @@ message RequiredDefaults {
   required sfixed64 sfx64 = 18 [default = -200];
 }
 
+message RequiredBytesDefaults {
+  required bytes nonempty = 1 [default = "\x00\xFF\x41\n"];
+  required bytes empty = 2 [default = ""];
+  optional bytes maybe = 3 [default = "\xFF"];
+  required bytes without_default = 4;
+
+  message Nested {
+    required bytes data = 1 [default = "nested"];
+  }
+}
+
 // Regression: enum value name that is a Rust keyword. enumeration.rs uses
 // make_field_ident (escapes keywords → r#type or Self_); defaults.rs must
 // use the same escaping or the generated Default impl won't compile.
