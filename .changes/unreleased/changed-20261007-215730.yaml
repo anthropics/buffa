@@ -1,0 +1,3 @@
+kind: Changed
+body: Document the `text` feature and text-format conformance support in the `buffa` crate README.
+time: 2026-10-07T21:57:30.749375+02:00
