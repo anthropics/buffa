@@ -1966,6 +1966,16 @@ let duration = Duration::from(CoreDuration::new(3, 500_000_000));
 let time: CoreDuration = duration.try_into()?;
 ```
 
+Each conversion out of `Timestamp` or `Duration`, including the `chrono` and `jiff` ones, also takes a reference and leaves the message in place. A message-typed field is a `MessageField`, so borrow its value with `as_option()`:
+
+```rust,ignore
+let created: Option<std::time::SystemTime> = event
+    .created_at
+    .as_option()
+    .map(std::time::SystemTime::try_from)
+    .transpose()?;
+```
+
 ### Any
 
 Pack and unpack messages into `Any`:
