@@ -1,22 +1,9 @@
-use std::collections::HashSet;
-
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::quote;
-use syn::ext::IdentExt;
-use syn::visit::Visit;
-use syn::{parse_quote, DeriveInput, Lifetime};
+use syn::{parse_quote, DeriveInput};
 
 use crate::forwarders;
 use crate::remote_field::{self, RemoteField};
-
-#[derive(Default)]
-struct LifetimeNames(HashSet<String>);
-
-impl<'ast> Visit<'ast> for LifetimeNames {
-    fn visit_lifetime(&mut self, lifetime: &'ast Lifetime) {
-        self.0.insert(lifetime.ident.unraw().to_string());
-    }
-}
 
 pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let (remote, overrides) =
@@ -31,18 +18,6 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
 
     let (key_ty, value_ty) = remote_field::two_type_params(generics)?;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    let mut lifetime_names = LifetimeNames::default();
-    lifetime_names.visit_generics(generics);
-    lifetime_names.visit_type(field_ty);
-    if let Some(path) = overrides.get("iter") {
-        lifetime_names.visit_path(path);
-    }
-    let mut iter_lifetime_name = String::from("__buffa_storage_iter");
-    while lifetime_names.0.contains(&iter_lifetime_name) {
-        iter_lifetime_name.push('_');
-    }
-    let iter_lifetime = Lifetime::new(&format!("'{iter_lifetime_name}"), Span::call_site());
 
     // Defaults assume the near-universal map naming convention (`HashMap`,
     // `BTreeMap`, `indexmap::IndexMap`, `dashmap::DashMap` all use these
@@ -87,12 +62,12 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
             }
 
             #[inline]
-            fn storage_iter<#iter_lifetime>(
-                &#iter_lifetime self,
-            ) -> impl ::core::iter::Iterator<Item = (&#iter_lifetime #key_ty, &#iter_lifetime #value_ty)>
+            fn storage_iter<'__buffa_iter>(
+                &'__buffa_iter self,
+            ) -> impl ::core::iter::Iterator<Item = (&'__buffa_iter #key_ty, &'__buffa_iter #value_ty)>
             where
-                #key_ty: #iter_lifetime,
-                #value_ty: #iter_lifetime,
+                #key_ty: '__buffa_iter,
+                #value_ty: '__buffa_iter,
             {
                 #iter_call(&#accessor)
             }
