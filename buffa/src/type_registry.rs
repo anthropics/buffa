@@ -155,7 +155,7 @@ impl Drop for AnyExpansionGuard {
 #[doc(hidden)]
 #[must_use]
 pub fn enter_any_expansion() -> Option<AnyExpansionGuard> {
-    any_depth::enter(MAX_ANY_EXPANSION_DEPTH).then_some(AnyExpansionGuard(()))
+    any_depth::enter(MAX_ANY_EXPANSION_DEPTH).then(|| AnyExpansionGuard(()))
 }
 
 // A cap this high stops bounding anything: 100 levels of expansion is already
@@ -982,6 +982,17 @@ mod tests {
         let reg = TypeRegistry::new();
         let s = alloc::format!("{reg:?}");
         assert!(s.contains("TypeRegistry"), "{s}");
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn refusing_any_expansion_does_not_decrement_active_depth() {
+        let _guards: alloc::vec::Vec<_> = (0..MAX_ANY_EXPANSION_DEPTH)
+            .map(|_| enter_any_expansion().expect("entry below the cap must succeed"))
+            .collect();
+
+        assert!(enter_any_expansion().is_none());
+        assert!(enter_any_expansion().is_none());
     }
 
     // ── JSON half ───────────────────────────────────────────────────────────

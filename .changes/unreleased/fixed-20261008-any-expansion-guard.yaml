@@ -1,0 +1,4 @@
+kind: Fixed
+body: >-
+    Failed `Any` expansion attempts no longer release a live nesting slot.
+time: 2026-10-08T00:30:18+02:00
