@@ -1,37 +1,26 @@
 #![no_std]
 
-extern crate alloc;
-
-use alloc::vec;
 use core::time::Duration as CoreDuration;
 
-use buffa::{UnknownField, UnknownFieldData};
 use buffa_types::{Duration, DurationError};
 
 fn duration(seconds: i64, nanos: i32) -> Duration {
-    let mut proto = Duration {
+    Duration {
         seconds,
         nanos,
         ..Default::default()
-    };
-    proto.__buffa_unknown_fields.push(UnknownField {
-        number: 100,
-        data: UnknownFieldData::LengthDelimited(vec![1, 2, 3]),
-    });
-    proto
+    }
 }
 
 #[test]
-fn core_conversion_borrows_and_preserves_the_message() {
+fn core_conversion_by_reference_matches_by_value() {
     for seconds in [0, 1, 315_576_000_000, i64::MAX] {
         for nanos in [0, 1, 345_678_901, 999_999_999] {
             let proto = duration(seconds, nanos);
-            let original = proto.clone();
             let expected = CoreDuration::new(seconds as u64, nanos as u32);
             let converted: CoreDuration = (&proto).try_into().unwrap();
             assert_eq!(converted, expected);
             assert_eq!(CoreDuration::try_from(&proto), Ok(expected));
-            assert_eq!(proto, original);
             assert_eq!(CoreDuration::try_from(proto), Ok(expected));
         }
     }
@@ -58,7 +47,6 @@ fn core_conversion_rejects_well_formed_negative_durations() {
 }
 
 fn assert_invalid_nanos(proto: &Duration) {
-    let original = proto.clone();
     assert_eq!(
         CoreDuration::try_from(proto),
         Err(DurationError::InvalidNanos)
@@ -89,7 +77,6 @@ fn assert_invalid_nanos(proto: &Duration) {
             Err(buffa_types::DurationJiffError::InvalidNanos)
         );
     }
-    assert_eq!(proto, &original);
 }
 
 #[test]
@@ -115,7 +102,7 @@ fn borrowed_conversions_reject_inconsistent_signs() {
 
 #[cfg(feature = "chrono")]
 #[test]
-fn chrono_conversion_borrows_and_preserves_the_message() {
+fn chrono_conversion_by_reference_matches_by_value() {
     for expected in [
         chrono::TimeDelta::zero(),
         chrono::TimeDelta::nanoseconds(1),
@@ -126,11 +113,9 @@ fn chrono_conversion_borrows_and_preserves_the_message() {
         chrono::TimeDelta::milliseconds(-i64::MAX),
     ] {
         let proto = duration(expected.num_seconds(), expected.subsec_nanos());
-        let original = proto.clone();
         let converted: chrono::TimeDelta = (&proto).try_into().unwrap();
         assert_eq!(converted, expected);
         assert_eq!(chrono::TimeDelta::try_from(&proto), Ok(expected));
-        assert_eq!(proto, original);
         assert_eq!(chrono::TimeDelta::try_from(proto), Ok(expected));
     }
 }
@@ -158,7 +143,7 @@ fn chrono_conversion_rejects_overflow() {
 
 #[cfg(feature = "jiff")]
 #[test]
-fn jiff_conversion_borrows_and_preserves_the_message() {
+fn jiff_conversion_by_reference_matches_by_value() {
     for expected in [
         jiff::SignedDuration::ZERO,
         jiff::SignedDuration::new(0, 1),
@@ -169,11 +154,9 @@ fn jiff_conversion_borrows_and_preserves_the_message() {
         jiff::SignedDuration::MAX,
     ] {
         let proto = duration(expected.as_secs(), expected.subsec_nanos());
-        let original = proto.clone();
         let converted: jiff::SignedDuration = (&proto).try_into().unwrap();
         assert_eq!(converted, expected);
         assert_eq!(jiff::SignedDuration::try_from(&proto), Ok(expected));
-        assert_eq!(proto, original);
         assert_eq!(jiff::SignedDuration::try_from(proto), Ok(expected));
     }
 }

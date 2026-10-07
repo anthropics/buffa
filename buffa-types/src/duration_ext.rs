@@ -42,10 +42,10 @@ impl TryFrom<Duration> for core::time::Duration {
 impl TryFrom<&Duration> for core::time::Duration {
     type Error = DurationError;
 
-    /// Convert a borrowed protobuf [`Duration`] to a [`core::time::Duration`].
+    /// Convert a borrowed protobuf [`Duration`] to a [`core::time::Duration`],
+    /// leaving the message in place.
     ///
-    /// Available without the `std` feature. Reads only `seconds` and `nanos`,
-    /// leaving the message and its unknown fields untouched.
+    /// Available without the `std` feature.
     ///
     /// # Examples
     ///

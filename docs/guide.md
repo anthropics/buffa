@@ -1966,7 +1966,7 @@ let duration = Duration::from(CoreDuration::new(3, 500_000_000));
 let time: CoreDuration = duration.try_into()?;
 ```
 
-Each conversion out of `Timestamp` or `Duration`, including the `chrono` and `jiff` ones, also takes a reference and leaves the message in place. A message-typed field is a `MessageField`, so borrow its value with `as_option()`:
+The conversions out of `Timestamp` and `Duration` also accept a reference, so a message you still need is not consumed. This includes the conversions `buffa-types` provides behind its `chrono` and `jiff` features. A message-typed field is a `MessageField`; `as_option()` borrows its value:
 
 ```rust,ignore
 let created: Option<std::time::SystemTime> = event

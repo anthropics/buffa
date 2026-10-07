@@ -120,10 +120,8 @@ impl TryFrom<Duration> for chrono::TimeDelta {
 impl TryFrom<&Duration> for chrono::TimeDelta {
     type Error = DurationChronoError;
 
-    /// Convert a borrowed protobuf [`Duration`] to a [`chrono::TimeDelta`].
-    ///
-    /// Reads only `seconds` and `nanos`, leaving the message and its unknown
-    /// fields untouched.
+    /// Convert a borrowed protobuf [`Duration`] to a [`chrono::TimeDelta`],
+    /// leaving the message in place.
     ///
     /// # Examples
     ///

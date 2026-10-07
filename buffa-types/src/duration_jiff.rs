@@ -107,10 +107,8 @@ impl TryFrom<Duration> for jiff::SignedDuration {
 impl TryFrom<&Duration> for jiff::SignedDuration {
     type Error = DurationJiffError;
 
-    /// Convert a borrowed protobuf [`Duration`] to a [`jiff::SignedDuration`].
-    ///
-    /// Reads only `seconds` and `nanos`, leaving the message and its unknown
-    /// fields untouched.
+    /// Convert a borrowed protobuf [`Duration`] to a [`jiff::SignedDuration`],
+    /// leaving the message in place.
     ///
     /// # Examples
     ///
