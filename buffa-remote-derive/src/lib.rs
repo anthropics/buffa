@@ -259,8 +259,9 @@
 //! The generated impls declare lifetimes and type parameters of their own,
 //! and each of those names starts with `__buffa` or `__Buffa` (for example
 //! `'__buffa_iter` and `__BuffaIter`). Keep those two prefixes out of the
-//! newtype's own lifetime and generic parameter names and out of the types it
-//! names. A parameter such as `'a` or `T` cannot collide with a generated one.
+//! newtype's own lifetime and generic parameter names and out of the types and
+//! override paths it names. A parameter such as `'a` or `T` cannot collide with
+//! a generated one.
 //!
 //! # Why a `remote` attribute that just repeats the field's type?
 //!
