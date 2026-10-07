@@ -1,3 +1,4 @@
+use crate::error::{CapturedIo, IoErrorCapture};
 use crate::Error;
 use buffa::Message;
 use std::io;
@@ -45,5 +46,7 @@ where
     R: io::Read,
     M: Message + serde::de::DeserializeOwned,
 {
-    serde_norway::from_reader(r).map_err(Error::from_carrier)
+    let capture = IoErrorCapture::default();
+    serde_norway::from_reader(CapturedIo::new(r, capture.clone()))
+        .map_err(|inner| Error::from_carrier_with_io_error_kind(inner, capture.error_kind()))
 }
