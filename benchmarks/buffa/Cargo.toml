@@ -124,8 +124,3 @@ required-features = ["iso", "column_batch"]
 name = "encode_sink"
 harness = false
 required-features = ["encode_sink", "api_response", "log_record", "google_message1", "media_frame"]
-
-[[bench]]
-name = "rope_buf"
-harness = false
-required-features = ["encode_sink"]

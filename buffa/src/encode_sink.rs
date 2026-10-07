@@ -669,8 +669,11 @@ impl Buf for RopeBuf {
         }
     }
 
-    /// Return a prefix within one segment without copying its bytes.
-    /// Prefixes spanning segments are copied into a contiguous buffer.
+    /// Returns a prefix that lies within one segment without copying it. A
+    /// prefix that spans segments is copied into one contiguous buffer.
+    ///
+    /// An uncopied prefix shares its segment's allocation, so it keeps the
+    /// whole segment alive until it is dropped.
     #[inline]
     fn copy_to_bytes(&mut self, len: usize) -> Bytes {
         assert!(len <= self.remaining, "copy_to_bytes past end of RopeBuf");
