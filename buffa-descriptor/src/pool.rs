@@ -248,9 +248,12 @@ pub enum PoolError {
     DuplicateFieldNumber { message: String, number: u32 },
     /// Two fields in one message claim the same proto or JSON name.
     DuplicateFieldName { message: String, name: String },
-    /// A field's JSON name contains NUL, or a message field's custom JSON
-    /// name has the form `[x]`, which a JSON parser reads as the key of an
-    /// extension.
+    /// A field's JSON name contains NUL, or the JSON name of a field that is
+    /// not an extension starts with `[` and ends with `]`. A JSON parser reads
+    /// such a key as the name of an extension.
+    ///
+    /// The bracket rule is off for a message that sets the
+    /// `deprecated_legacy_json_field_conflicts` option, as it is in protoc.
     InvalidJsonName { field: String, name: String },
     /// A field refers to a oneof declaration that does not exist in its
     /// containing message.
@@ -2508,10 +2511,15 @@ impl DescriptorPool {
             .json_name
             .clone()
             .unwrap_or_else(|| derive_json_name(&name));
-        // A derived name is an identifier, so only a custom one can have the
-        // bracketed form. An extension is not serialized under its JSON name.
+        // protoc applies the bracket rule with its JSON name conflict checks,
+        // which the message option turns off.
+        let checks_json_name_form = containing_msg.is_some_and(|m| {
+            !m.options
+                .deprecated_legacy_json_field_conflicts
+                .unwrap_or(false)
+        });
         let looks_like_extension_key =
-            containing_msg.is_some() && json_name.starts_with('[') && json_name.ends_with(']');
+            checks_json_name_form && json_name.starts_with('[') && json_name.ends_with(']');
         if json_name.contains('\0') || looks_like_extension_key {
             return Err(PoolError::InvalidJsonName {
                 field: field_fqn,
