@@ -127,6 +127,8 @@ This is the biggest API change. Prost uses `Option<Box<M>>`, which requires expl
 +let addr = msg.address.ok_or_else(|| Error::missing("address"))?;  // same
 ```
 
+`==` on a `MessageField` includes presence, as it does on prost's `Option<Box<M>>`: an unset field differs from one set to `M::default()`.
+
 ## 4. Enum fields
 
 Prost represents all enum fields as `i32`. Buffa uses `EnumValue<E>` for open enums (proto3 default) and bare `E` for closed enums (proto2).
