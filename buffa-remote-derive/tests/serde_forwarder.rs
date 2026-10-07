@@ -87,6 +87,24 @@ impl<T> core::ops::DerefMut for Scoped<'_, T> {
 #[buffa(remote = Scoped<'s, T>, serde, arbitrary)]
 struct ScopedPointer<'s, T>(Scoped<'s, T>);
 
+#[derive(Clone, PartialEq, Debug, ProtoBox)]
+#[buffa(remote = Scoped<'__buffa_de, T>, serde)]
+struct DeserializeLifetimeCollision<'__buffa_de, T>(Scoped<'__buffa_de, T>);
+
+#[derive(Clone, PartialEq, Debug, ProtoBox)]
+#[buffa(remote = Scoped<'__buffa_arb, T>, arbitrary)]
+struct ArbitraryLifetimeCollision<'__buffa_arb, T>(Scoped<'__buffa_arb, T>);
+
+trait LifetimeBound<'a> {}
+
+impl<'a> LifetimeBound<'a> for u8 {}
+
+#[derive(Clone, PartialEq, Debug, ProtoBox)]
+#[buffa(remote = Scoped<'scope, T>, serde, arbitrary)]
+struct HigherRankedLifetimeCollision<'scope, T>(Scoped<'scope, T>)
+where
+    T: for<'__buffa_de> LifetimeBound<'__buffa_de> + for<'__buffa_arb> LifetimeBound<'__buffa_arb>;
+
 fn roundtrip<T: Serialize + DeserializeOwned + PartialEq + core::fmt::Debug>(value: T, json: &str) {
     assert_eq!(serde_json::to_string(&value).unwrap(), json);
     assert_eq!(serde_json::from_str::<T>(json).unwrap(), value);
@@ -235,6 +253,26 @@ fn lifetime_parameterised_newtype_borrows_from_the_input() {
     let pointer: ScopedPointer<'_, &str> = serde_json::from_str(&json).unwrap();
     assert_eq!(*pointer, "borrowed");
     assert_eq!(serde_json::to_string(&pointer).unwrap(), json);
+}
+
+#[test]
+fn generated_lifetime_parameters_do_not_collide_with_newtype_parameters() {
+    let value: DeserializeLifetimeCollision<'static, u8> = buffa::ProtoBox::new(7);
+    roundtrip(value, "7");
+
+    let _ = <ArbitraryLifetimeCollision<'static, u8> as arbitrary::Arbitrary<'static>>::arbitrary(
+        &mut arbitrary::Unstructured::new(&[7]),
+    )
+    .unwrap();
+
+    let value: HigherRankedLifetimeCollision<'static, u8> = buffa::ProtoBox::new(8);
+    roundtrip(value, "8");
+
+    let _ =
+        <HigherRankedLifetimeCollision<'static, u8> as arbitrary::Arbitrary<'static>>::arbitrary(
+            &mut arbitrary::Unstructured::new(&[8]),
+        )
+        .unwrap();
 }
 
 /// `serde` and `arbitrary` in one attribute each emit their impl.
