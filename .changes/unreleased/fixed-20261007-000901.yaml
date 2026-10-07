@@ -1,3 +1,4 @@
 kind: Fixed
-body: '**DescriptorPool** rejects overlapping message and enum reserved ranges while allowing adjacent ranges, matching protoc.'
+body: |-
+    **`DescriptorPool` rejects reserved ranges that overlap** (#581). Two `reserved` ranges of one message, or of one enum, that share a number linked and were merged into one, which protoc and protobuf-go refuse. It is now `PoolError::OverlappingMessageReservedRange` or `PoolError::OverlappingEnumReservedRange`. Each names the later-declared range first and the range it overlaps second, as protoc's message does. Ranges that only touch still link.
 time: 2026-10-07T00:09:01.743554+02:00
