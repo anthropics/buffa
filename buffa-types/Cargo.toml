@@ -61,8 +61,3 @@ criterion = "0.5"
 [[bench]]
 name = "any_clone"
 harness = false
-
-[[bench]]
-name = "wrapper_view_json"
-harness = false
-required-features = ["json"]
