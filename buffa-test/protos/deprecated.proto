@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package deprecated;
+
+// Exercises `[deprecated = true]`. Generated declarations carry `#[deprecated]`
+// (fields and enum values, as prost-build emits it) while the items that must
+// visit every field carry `#[allow(deprecated)]`, so this module compiles
+// warning-free — which is what `cargo clippy --workspace --all-targets -- -D
+// warnings` checks when it builds `buffa-test`.
+message LegacyProfile {
+  string display_name = 1 [deprecated = true];
+  string nick = 2;
+  repeated string old_tags = 3 [deprecated = true];
+  map<string, string> old_attrs = 4 [deprecated = true];
+  int32 counter = 5 [deprecated = true];
+  Levels levels = 6 [deprecated = true];
+  // `optional` gives the field a `with_*` setter, which must be deprecated too.
+  optional string legacy_note = 9 [deprecated = true];
+
+  // Deprecated oneof variants are a separate change. The oneof here is live, so
+  // this file covers the oneof codec paths only incidentally (they read the
+  // group field, not a deprecated member).
+  oneof channel {
+    string email = 7;
+    string sms = 8;
+  }
+}
+
+// A message-typed field is deprecated here; its own fields are live, so the
+// message's impls must stay unguarded while the containing codec visits it.
+message Levels {
+  int32 low = 1;
+  int32 high = 2;
+}
+
+// Compiled with the table codec on Rust 1.77 and later (see build.rs), where
+// field offsets are taken inside `::buffa::__table!` in a `static` initializer
+// rather than in an impl — the guard has to sit on the static for that path to
+// stay quiet.
+message Audit {
+  string actor = 1;
+  string legacy_action = 2 [deprecated = true];
+}
+
+enum Routing {
+  option allow_alias = true;
+
+  ROUTING_UNSPECIFIED = 0;
+  LEGACY = 1 [deprecated = true];
+  // `allow_alias` on a deprecated value: the alias inherits the marker, so it
+  // is not a quiet way to reach the deprecated value.
+  OLD_LEGACY = 1 [deprecated = true];
+  MODERN = 2;
+}
+
+// The declared default stays the first value even when that value is
+// deprecated.
+enum Degenerate {
+  DEAD = 0 [deprecated = true];
+  ALIVE = 1;
+}

@@ -232,6 +232,22 @@ fn optional_none_vs_some_zero_wire_distinguishable() {
 }
 
 #[test]
+fn message_field_unset_vs_set_empty_distinguishable() {
+    // A singular message field has explicit presence: an empty but set
+    // sub-message is on the wire, so it must not equal an unset one.
+    let unset = OptionalAllTypes::default();
+    let set_empty = OptionalAllTypes {
+        nested: buffa::MessageField::some(ImplicitScalars::default()),
+        ..Default::default()
+    };
+    assert_ne!(unset.encode_to_vec(), set_empty.encode_to_vec());
+    assert_ne!(unset, set_empty);
+    assert_eq!(round_trip(&set_empty), set_empty);
+    // Deref compares the values alone.
+    assert_eq!(*unset.nested, *set_empty.nested);
+}
+
+#[test]
 fn optional_nonzero_round_trip_all_types() {
     let msg = OptionalAllTypes {
         i32: Some(-1),

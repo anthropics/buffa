@@ -407,6 +407,7 @@ pub fn generate_message_impl(
     table_impl: Option<TokenStream>,
 ) -> Result<TokenStream, CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
+    let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, proto_fqn);
 
     let fields = classify_fields_ordered(msg, oneof_idents)?;
     // The lazy predicate applies to the lazy view family only; owned is eager.
@@ -681,6 +682,7 @@ pub fn generate_message_impl(
 
     let message_impl = table_impl.unwrap_or_else(|| {
         quote! {
+            #deprecated_field_allow
             impl ::buffa::Message for #name_ident {
                 /// Returns the total encoded size in bytes.
                 ///

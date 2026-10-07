@@ -326,9 +326,11 @@ pub(crate) fn generate_text_impl(
     } else {
         quote! { _enc }
     };
+    let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, proto_fqn);
 
     Ok(crate::feature_gates::cfg_block(
         quote! {
+            #deprecated_field_allow
             impl ::buffa::text::TextFormat for #name_ident {
                 fn encode_text(
                     &self,

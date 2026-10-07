@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a `default_value` on a message or group field** (#567). A singular message field, group or message-typed extension with `default_value` set linked, and the value was ignored. It is now `PoolError::MessageFieldWithDefault`, as protoc and protobuf-go reject it.
+time: 2026-10-05T23:40:55.918498+02:00
