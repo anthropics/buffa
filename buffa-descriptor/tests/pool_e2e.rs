@@ -177,6 +177,45 @@ fn unrecognized_file_syntax_is_rejected_without_mutating_pool() {
 }
 
 #[test]
+fn editions_file_without_edition_is_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for edition in [None, Some(Edition::EDITION_UNKNOWN)] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("no-edition.proto".into()),
+                package: Some("invalid.test".into()),
+                syntax: Some("editions".into()),
+                edition,
+                message_type: vec![DescriptorProto {
+                    name: Some("NoEdition".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_set_rejected_without_mutating_pool(
+            "no-edition.proto",
+            "invalid.test.NoEdition",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::MissingEdition { file } if file == "no-edition.proto"
+                ));
+                assert_eq!(
+                    err.to_string(),
+                    "file no-edition.proto has syntax \"editions\" but no edition"
+                );
+            },
+        );
+    }
+}
+
+#[test]
 fn recognized_file_syntax_keeps_its_field_presence() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
     use buffa_descriptor::generated::descriptor::{

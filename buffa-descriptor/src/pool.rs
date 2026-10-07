@@ -37,8 +37,8 @@ use crate::desc::{
 use crate::features::{self, ResolvedFeatures};
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type as ProtoType};
 use crate::generated::descriptor::{
-    feature_set, DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
-    FileDescriptorSet, ServiceDescriptorProto,
+    feature_set, DescriptorProto, Edition, EnumDescriptorProto, FieldDescriptorProto,
+    FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto,
 };
 use buffa::editions::{
     EnumType, FieldPresence, JsonFormat, MessageEncoding, RepeatedFieldEncoding,
@@ -173,6 +173,9 @@ pub enum PoolError {
     /// A file declares a syntax other than `proto2`, `proto3`, or `editions`.
     /// An absent or empty syntax defaults to proto2.
     UnrecognizedSyntax { file: String, syntax: String },
+    /// A file declares syntax `editions` and its `edition` is unset or
+    /// `EDITION_UNKNOWN`, so its feature defaults are undefined.
+    MissingEdition { file: String },
     /// A file's `public_dependency` names an index outside its `dependency`
     /// list. The indices are positions in that list, so an out-of-range one
     /// names no import at all.
@@ -393,6 +396,9 @@ impl core::fmt::Display for PoolError {
             Self::Decode(e) => write!(f, "FileDescriptorSet decode failed: {e}"),
             Self::UnrecognizedSyntax { file, syntax } => {
                 write!(f, "file {file} has unrecognized syntax {syntax:?}")
+            }
+            Self::MissingEdition { file } => {
+                write!(f, "file {file} has syntax \"editions\" but no edition")
             }
             Self::InvalidPublicDependencyIndex {
                 file,
@@ -852,16 +858,9 @@ impl DescriptorPool {
     ///
     /// # Errors
     ///
-    /// Returns a [`PoolError`] if any type name fails to resolve or resolves
-    /// to a file the referring file does not import, a symbol or field
-    /// identity is declared twice, a field number is out of range or in
-    /// the implementation-reserved band (19000-19999), a field uses a name or
-    /// number its message reserved, an extension range overlaps a reserved
-    /// range, a message or enum declares a reserved name twice, an open enum's
-    /// first value is non-zero, an enum value reuses a reserved name or number
-    /// or a duplicate number without `allow_alias`, a oneof index is invalid,
-    /// a `proto3_optional` field is malformed, a message exceeds 65 535
-    /// fields, a map entry is malformed, or a file has an unrecognized syntax.
+    /// Returns a [`PoolError`] if a type name fails to resolve, or if the set
+    /// breaks one of the structural rules that protoc enforces on a `.proto`
+    /// file. Each [`PoolError`] variant documents one rule.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -878,14 +877,8 @@ impl DescriptorPool {
     /// # Errors
     ///
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
-    /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
-    /// validation failure (dangling or unimported type names, out-of-range or
-    /// implementation-reserved field numbers, reserved message fields, an
-    /// overlapping extension range, duplicate symbols or field identities,
-    /// duplicate reserved names, an open enum whose first value is non-zero,
-    /// reserved enum values, duplicate enum numbers without `allow_alias`,
-    /// invalid oneof indices, malformed `proto3_optional` fields, or malformed
-    /// map entries, or unrecognized file syntax).
+    /// `FileDescriptorSet`, and any other [`PoolError`] for the reasons
+    /// [`DescriptorPool::new`] gives.
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -978,8 +971,7 @@ impl DescriptorPool {
     ///
     /// Returns a [`PoolError`] on resolution or structural validation
     /// failure, including a reference to a type in a file the referring file
-    /// does not import ([`PoolError::TypeNotImported`]) or an unrecognized
-    /// file syntax ([`PoolError::UnrecognizedSyntax`]).
+    /// does not import ([`PoolError::TypeNotImported`]).
     pub fn add_file_descriptor_set(&mut self, set: FileDescriptorSet) -> Result<(), PoolError> {
         // Pass 0: per-file structural checks that need no name resolution,
         // and the fast path for no-op re-adds. Both run ahead of the staged
@@ -1007,7 +999,14 @@ impl DescriptorPool {
                     }
                 }
                 match file.syntax.as_deref() {
-                    None | Some("" | "proto2" | "proto3" | "editions") => {}
+                    None | Some("" | "proto2" | "proto3") => {}
+                    Some("editions") => {
+                        if matches!(file.edition, None | Some(Edition::EDITION_UNKNOWN)) {
+                            return Err(PoolError::MissingEdition {
+                                file: file.name.clone().unwrap_or_default(),
+                            });
+                        }
+                    }
                     Some(syntax) => {
                         return Err(PoolError::UnrecognizedSyntax {
                             file: file.name.clone().unwrap_or_default(),
