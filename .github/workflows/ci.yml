@@ -26,7 +26,8 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     # 15 rather than 10: documenting the workspace (buffa-test's generated
-    # modules are large) adds a few minutes on top of a cold-cache build.
+    # modules are large) and building buffa-test a second time with its
+    # `arbitrary` feature each add a few minutes on top of a cold-cache build.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
@@ -65,6 +66,20 @@ jobs:
       # is sufficient to catch compile breaks without doubling the test time.
       - name: Check all features
         run: cargo check --workspace --all-features
+
+      # "Check all features" builds lib and bin targets and does not deny
+      # warnings, so these two are the only steps that lint
+      # `generate_arbitrary` output and run the tests behind buffa-test's
+      # `arbitrary` feature. They catch generated code that warns only under
+      # the feature, as `derive(Arbitrary)` does on an enum with a
+      # `#[deprecated]` variant (#564). Clippy also lints the workspace crates
+      # buffa-test depends on (buffa, buffa-types) with the feature on. Local
+      # equivalent: `task test-arbitrary`.
+      - name: Clippy (buffa-test, arbitrary)
+        run: cargo clippy -p buffa-test --all-targets --features arbitrary -- -D warnings
+
+      - name: Tests (buffa-test, arbitrary)
+        run: cargo test -p buffa-test --features arbitrary --lib --tests
 
       # Rustdoc warnings are errors, in generated docs too: buffa-test's
       # build include!s codegen output (views, lazy views, json, reflect), so

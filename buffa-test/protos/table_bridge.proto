@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+// build.rs renames this package to `bru` (everything unrolled) and `brt`
+// (`codec_strategy = Table`, with `Hot` set to unrolled by a rule), so a test
+// can compare the two codecs. In `brt`, `Cold` and `Leaf` are table messages
+// and `Hot` is not, so the messages hold each other across the two codecs in
+// both directions.
+package br;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+message Leaf {
+  int32 x = 1;
+  string s = 2;
+  repeated int32 tags = 3;
+}
+
+// Unrolled in `brt`, and holds a table message, and the table message that
+// holds it.
+message Hot {
+  int32 a = 1;
+  Leaf leaf = 2;
+  Cold back = 3;
+  repeated Leaf leaves = 4;
+  bytes blob = 5;
+}
+
+message Cold {
+  Hot hot = 1;
+  repeated Hot hots = 2;
+  Leaf leaf = 3;
+  repeated Leaf leaves = 4;
+  int32 tail = 5;
+}
+
+// Well-known types, which no run generates as table messages.
+message Wkt {
+  google.protobuf.Timestamp ts = 1;
+  google.protobuf.Duration dur = 2;
+  google.protobuf.Any any = 3;
+  google.protobuf.Struct st = 4;
+  google.protobuf.Value val = 5;
+  google.protobuf.FieldMask mask = 6;
+  google.protobuf.Int32Value wrapped = 7;
+  google.protobuf.StringValue wrapped_s = 8;
+  google.protobuf.Empty empty = 9;
+  repeated google.protobuf.Timestamp times = 10;
+  repeated google.protobuf.Any anys = 11;
+  repeated google.protobuf.Value values = 12;
+  Cold cold = 13;
+}
