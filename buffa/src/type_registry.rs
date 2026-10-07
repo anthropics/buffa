@@ -224,8 +224,8 @@ pub type AnyTextMergeFn =
 /// Registry entry for a single extension field's textproto conversion.
 ///
 /// Carries fn-ptrs for the `[pkg.ext] { ... }` bracket syntax. Covers
-/// message- and group-typed extensions, singular and repeated (the
-/// conformance-exercised forms).
+/// message- and group-typed extensions, singular and repeated. Scalar and
+/// enum extensions have no text entry.
 #[cfg(feature = "text")]
 pub struct TextExtEntry {
     /// Field number on the extendee.
@@ -700,9 +700,9 @@ fn oversized_message_error() -> crate::text::ParseError {
 
 // ── Text extension converters (codegen points TextExtEntry fields here) ────
 //
-// Conformance only exercises `[pkg.ext] { ... }` for message/group-typed
-// extensions. Scalar text helpers would mirror the JSON ones in
-// `extension_registry::helpers`; deferred until a use case appears.
+// Message- and group-typed extensions only, singular and repeated. Scalar
+// text helpers would mirror the JSON ones in `extension_registry::helpers`;
+// deferred until a use case appears.
 
 /// Textproto encode for a repeated message extension: write each element as
 /// its own `[full_name] { ... }` entry, in wire order.
@@ -805,11 +805,9 @@ where
     Ok(records)
 }
 
-/// Textproto merge for a repeated group extension. Accepts a message list
-/// or a single message and returns one group record per element.
-///
-/// Called once per `[full_name]` occurrence, so `[x] {..} [x] {..}` and
-/// `[x]: [{..}, {..}]` yield the same records.
+/// Textproto merge for a repeated group extension. Reads the same text as
+/// [`repeated_message_merge_text`] and returns one `Group` record per
+/// element.
 ///
 /// Codegen emits
 /// `text_merge: ::buffa::type_registry::repeated_group_merge_text::<Foo>`
@@ -818,8 +816,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns a parse error for invalid text, an exceeded decode budget, or a
-/// message that exceeds the protobuf encode-size limit.
+/// The same errors as [`repeated_message_merge_text`].
 #[cfg(feature = "text")]
 pub fn repeated_group_merge_text<M>(
     dec: &mut crate::text::TextDecoder<'_>,
@@ -1196,13 +1193,12 @@ mod tests {
             assert_eq!(s, "[pkg.groupfield] {n: 7}");
         }
 
-        /// `(encode, merge)` pairs of the repeated helpers, with the name
-        /// each one is registered under in these tests.
         type RepeatedHelpers = (
             &'static str,
             fn(u32, &UnknownFields, &mut crate::text::TextEncoder<'_>) -> core::fmt::Result,
             ExtTextMergeFn,
         );
+        /// Each repeated helper pair as (registered name, encode, merge).
         const REPEATED_HELPERS: [RepeatedHelpers; 2] = [
             (
                 "pkg.rep",
@@ -1399,7 +1395,6 @@ mod tests {
             let _: fn(u32, &UnknownFields, &mut crate::text::TextEncoder<'_>) -> core::fmt::Result =
                 group_encode_text::<Inner>;
             let _: ExtTextMergeFn = group_merge_text::<Inner>;
-            let _: [RepeatedHelpers; 2] = REPEATED_HELPERS;
         }
 
         #[test]

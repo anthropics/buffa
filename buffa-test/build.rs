@@ -1027,6 +1027,7 @@ fn main() {
     // Extension JSON registry — message/enum/repeated extensions with a local
     // extendee. `generate_json(true)` so the `#[serde(flatten)]` wrapper and
     // `register_extensions` are emitted alongside the `Extension<_>` consts.
+    // `generate_text(true)` for `tests/repeated_extension_text.rs`.
     buffa_build::Config::new()
         .files(&["protos/ext_json.proto"])
         .includes(&["protos/"])

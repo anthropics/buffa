@@ -1,4 +1,5 @@
-// Extension JSON registry integration: message/enum/repeated extension types.
+// Extension JSON and text registry integration: message/enum/repeated
+// extension types.
 //
 // A self-contained extendee (`Carrier`) so the generated `#[serde(flatten)]`
 // wrapper + `register_extensions` cover the full JSON path. proto2 syntax
@@ -40,8 +41,8 @@ extend Carrier {
   repeated google.protobuf.NullValue null_values = 110;
 }
 
-// A message that extends itself, so an element of the repeated extension
-// carries extensions of its own.
+// Extends itself, so an element of the repeated extension carries extensions
+// of its own (nested text-format entries).
 message Tree {
   extensions 100 to 200;
   optional int32 v = 1;

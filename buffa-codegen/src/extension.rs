@@ -464,10 +464,9 @@ fn json_helper_tokens(
     }))
 }
 
-/// Map a message/group extension to its `type_registry::*_{encode,merge}_text<M>`
-/// function-path token pair. Returns `None` for scalars and enums — textproto
-/// extension support currently covers only the `[pkg.ext] { ... }` form that
-/// conformance exercises.
+/// Map a message/group extension to its `type_registry` text helper pair, the
+/// `repeated_*` pair when `repeated` is set. Returns `None` for scalars and
+/// enums, which have no text helpers.
 fn text_helper_tokens(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,

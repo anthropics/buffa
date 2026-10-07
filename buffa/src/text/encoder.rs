@@ -221,12 +221,10 @@ impl<'a> TextEncoder<'a> {
     /// Write the elements of a repeated message or group extension, after
     /// the caller has written the extension's bracketed name once.
     ///
-    /// When [`write_extension_fields`](Self::write_extension_fields) wrote
-    /// the name, each element is its own `[name] { ... }` entry, which a
-    /// parser can read without support for message lists. The list form
-    /// `: [{ ... }, ...]` is written in the two other cases: `messages` is
-    /// empty, where `[]` is the one value that parses to zero elements, or
-    /// another caller wrote the name, so the encoder cannot repeat it.
+    /// The two forms are documented on
+    /// [`repeated_message_encode_text`](crate::type_registry::repeated_message_encode_text).
+    /// The per-element form is preferred because a parser reads it without
+    /// support for message lists.
     pub(crate) fn write_repeated_extension<M: super::TextFormat>(
         &mut self,
         messages: &[M],
@@ -326,8 +324,7 @@ impl<'a> TextEncoder<'a> {
 
     /// Write registered extensions from `fields` as `[full_name] { ... }`
     /// entries: one entry per extension, or one per element for a repeated
-    /// message or group extension. A repeated extension whose records in
-    /// `fields` all fail to decode is written as `[full_name]: []`.
+    /// message or group extension.
     /// Unregistered field numbers are left for the caller's
     /// [`write_unknown_fields`](Self::write_unknown_fields) (debug-only,
     /// default off).
@@ -350,9 +347,9 @@ impl<'a> TextEncoder<'a> {
         if fields.is_empty() {
             return Ok(());
         }
-        // One emit per field number — the entry's text_encode reads all
-        // records at that number (merge semantics). Mirrors JSON's
-        // serialize_extensions dedup loop.
+        // One `text_encode` call per field number: the entry reads every
+        // record at that number. Mirrors JSON's `serialize_extensions` dedup
+        // loop.
         let mut seen = alloc::collections::BTreeSet::new();
         for uf in fields.iter() {
             if !seen.insert(uf.number) {

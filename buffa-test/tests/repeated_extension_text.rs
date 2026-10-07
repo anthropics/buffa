@@ -93,16 +93,16 @@ fn repeated_group_extension_prints_one_entry_per_element() {
     }
 }
 
-/// The elements of a repeated extension that follows a singular one, and of
-/// one whose neighbours are regular fields, each carry their own name.
+/// The entries of a repeated extension between a regular field and a singular
+/// extension each carry their own name, including an empty middle element.
 #[test]
 fn repeated_extension_entries_keep_their_own_name_between_other_fields() {
     register_types();
     let text = "x: 7 \
-                [buffa.test.extjson.ann] {doc: \"single\"} \
                 [buffa.test.extjson.anns] {priority: 1} \
                 [buffa.test.extjson.anns] {} \
-                [buffa.test.extjson.anns] {priority: 3}";
+                [buffa.test.extjson.anns] {priority: 3} \
+                [buffa.test.extjson.ann] {doc: \"single\"}";
     let carrier: extjson::Carrier = decode_from_str(text).unwrap();
     assert_eq!(carrier.extension(&extjson::__buffa::ext::ANNS).len(), 3);
     assert_eq!(encode_to_string(&carrier), text);
@@ -484,55 +484,42 @@ fn singular_and_repeated_group_extensions_coexist() {
 #[test]
 fn repeated_extensions_charge_each_record_against_the_element_budget() {
     register_types();
-    let message = "[buffa.test.extjson.anns]: [{}, {}]";
-    let group = "[buffa.test.groupext.delim_repeated]: [{}, {}]";
     let record_size = core::mem::size_of::<buffa::UnknownField>();
-    for budget in [0, record_size, 2 * record_size - 1] {
-        let error = decode_from_str_with_element_memory_limit::<extjson::Carrier>(message, budget)
-            .unwrap_err();
-        assert_eq!(error.kind, ParseErrorKind::ElementMemoryLimitExceeded);
-        let error = decode_from_str_with_element_memory_limit::<groupext::Carrier>(group, budget)
-            .unwrap_err();
-        assert_eq!(error.kind, ParseErrorKind::ElementMemoryLimitExceeded);
+    // The list form and the single-value form charge one record per element.
+    for (message, group) in [
+        (
+            "[buffa.test.extjson.anns]: [{}, {}]",
+            "[buffa.test.groupext.delim_repeated]: [{}, {}]",
+        ),
+        (
+            "[buffa.test.extjson.anns] {} [buffa.test.extjson.anns] {}",
+            "[buffa.test.groupext.delim_repeated] {} [buffa.test.groupext.delim_repeated] {}",
+        ),
+    ] {
+        for budget in [0, record_size, 2 * record_size - 1] {
+            let error =
+                decode_from_str_with_element_memory_limit::<extjson::Carrier>(message, budget)
+                    .unwrap_err();
+            assert_eq!(error.kind, ParseErrorKind::ElementMemoryLimitExceeded);
+            let error =
+                decode_from_str_with_element_memory_limit::<groupext::Carrier>(group, budget)
+                    .unwrap_err();
+            assert_eq!(error.kind, ParseErrorKind::ElementMemoryLimitExceeded);
+        }
+        let carrier =
+            decode_from_str_with_element_memory_limit::<extjson::Carrier>(message, 2 * record_size)
+                .unwrap();
+        assert_eq!(carrier.extension(&extjson::__buffa::ext::ANNS).len(), 2);
+        let carrier =
+            decode_from_str_with_element_memory_limit::<groupext::Carrier>(group, 2 * record_size)
+                .unwrap();
+        assert_eq!(
+            carrier
+                .extension(&groupext::__buffa::ext::DELIM_REPEATED)
+                .len(),
+            2
+        );
     }
-    let carrier =
-        decode_from_str_with_element_memory_limit::<extjson::Carrier>(message, 2 * record_size)
-            .unwrap();
-    assert_eq!(carrier.extension(&extjson::__buffa::ext::ANNS).len(), 2);
-
-    // The single-value form charges one record per entry, on the same budget.
-    let message = "[buffa.test.extjson.anns] {} [buffa.test.extjson.anns] {}";
-    let group = "[buffa.test.groupext.delim_repeated] {} [buffa.test.groupext.delim_repeated] {}";
-    for budget in [0, record_size, 2 * record_size - 1] {
-        let error = decode_from_str_with_element_memory_limit::<extjson::Carrier>(message, budget)
-            .unwrap_err();
-        assert_eq!(error.kind, ParseErrorKind::ElementMemoryLimitExceeded);
-        let error = decode_from_str_with_element_memory_limit::<groupext::Carrier>(group, budget)
-            .unwrap_err();
-        assert_eq!(error.kind, ParseErrorKind::ElementMemoryLimitExceeded);
-    }
-    let carrier =
-        decode_from_str_with_element_memory_limit::<extjson::Carrier>(message, 2 * record_size)
-            .unwrap();
-    assert_eq!(carrier.extension(&extjson::__buffa::ext::ANNS).len(), 2);
-    let carrier =
-        decode_from_str_with_element_memory_limit::<groupext::Carrier>(group, 2 * record_size)
-            .unwrap();
-    assert_eq!(
-        carrier
-            .extension(&groupext::__buffa::ext::DELIM_REPEATED)
-            .len(),
-        2
-    );
-    let carrier =
-        decode_from_str_with_element_memory_limit::<groupext::Carrier>(group, 2 * record_size)
-            .unwrap();
-    assert_eq!(
-        carrier
-            .extension(&groupext::__buffa::ext::DELIM_REPEATED)
-            .len(),
-        2
-    );
 }
 
 #[test]
