@@ -179,6 +179,10 @@ For proto2 closed enums, Buffa follows closed-enum semantics by default and rout
 +let len = msg.encoded_len() as usize;
 ```
 
+### Map entries
+
+prost leaves a map entry's key or value out when it holds the default; buffa writes both, as the C++ and Java runtimes do. Both decode the same, but the bytes differ. If stored or hashed encodings must not change, turn on `.map_entries_omit_defaults(true)`, and keep the entry order with `.map_type(buffa_build::MapRepr::BTreeMap)` where prost used `btree_map`.
+
 ## 6. Decoding API
 
 ```diff
@@ -292,6 +296,7 @@ The buffa equivalent of each prost-build feature, or a note that there is none:
 | prost feature | buffa status |
 |---------------|-------------|
 | `btree_map(&[...])` | Supported. `.map_type(buffa_build::MapRepr::BTreeMap)` for all, or `.map_type_in(buffa_build::MapRepr::BTreeMap, &[...])` for specific fields. Paths are fully qualified (`".my_pkg.MyMessage.items"`), and the leading dot is optional. prost's suffix paths (`"items"`, `"MyMessage.items"`) are not supported: `"items"` is read as `".items"`, matches no field, and produces a build warning. |
+| map entry encoding (default key or value left out) | Opt-in: `.map_entries_omit_defaults(true)`. See [Map entries](#map-entries). |
 | `bytes(&[...])` | Supported. `.use_bytes_type()` for all, or `.use_bytes_type_in(&[...])` for specific fields. Paths are matched as for `map_type_in`. |
 | `extern_path(proto, rust)` | Supported. Same API, both package-level (`.extern_path(".pkg", "::crate")`) and per-type (`.extern_path(".google.protobuf.Timestamp", "::pbjson_types::Timestamp")`) mappings. A per-type mapping to a non-buffa crate requires `.generate_views(false)`, or map to a buffa-generated crate instead — see [External type paths](guide.md#external-type-paths). |
 | `type_attribute(path, attr)` | Supported. Same API, plus `message_attribute` / `enum_attribute` / `oneof_attribute` for narrower targeting. (For serde, prefer `generate_json(true)`, which emits the proto3-canonical JSON impls.) |

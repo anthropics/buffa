@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **Generated messages can encode map entries as prost does** (#562): `buffa_build::Config::map_entries_omit_defaults`, `map_entries_omit_defaults=true` in `protoc-gen-buffa`, `CodeGenConfig::map_entries_omit_defaults`; off by default. A key or value at its default (zero, `false`, empty, enum 0, or a message value that encodes to nothing) is left out of the entry, in both the owned and the view encoders; the entry itself is kept. Decoding is unchanged, except that a `-0.0` float value decodes as `0.0`, as it does from prost.
+time: 2026-10-04T21:00:00.000000000+00:00

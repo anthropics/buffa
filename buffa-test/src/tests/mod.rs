@@ -98,6 +98,7 @@ mod json_private_key;
 mod keyword;
 mod keyword_collisions;
 mod lazy_views;
+mod map_omit_defaults;
 mod map_type;
 mod map_type_custom;
 mod message_set;

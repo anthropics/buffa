@@ -3209,6 +3209,22 @@ fn map_element_encode_stmt(ty: Type, tag_num: u32, var: &Ident) -> TokenStream {
     quote! { #tag #payload }
 }
 
+/// Whether a view's map entry element bound to `var` is written, that is not
+/// its type's default, which `map_entries_omit_defaults` leaves out of the
+/// entry, as `MapCodec::is_default` decides for owned messages.
+fn map_element_is_written_expr(ty: Type, var: &Ident) -> TokenStream {
+    match ty {
+        Type::TYPE_STRING | Type::TYPE_BYTES => quote! { !#var.is_empty() },
+        Type::TYPE_ENUM => quote! { #var.to_i32() != 0 },
+        Type::TYPE_BOOL => quote! { *#var },
+        Type::TYPE_FLOAT | Type::TYPE_DOUBLE => quote! { *#var != 0.0 },
+        Type::TYPE_MESSAGE => {
+            unreachable!("message map values are handled per-phase by callers")
+        }
+        _ => quote! { *#var != 0 },
+    }
+}
+
 fn map_view_compute_size_stmt(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
@@ -3230,9 +3246,33 @@ fn map_view_compute_size_stmt(
     let k = format_ident!("k");
     let v = format_ident!("v");
     let key_size = map_element_size_expr(key_ty, &k);
-    let val_size = if val_ty == Type::TYPE_MESSAGE {
+    let omit_defaults = ctx.config.map_entries_omit_defaults;
+    let key_part = if omit_defaults {
+        let written = map_element_is_written_expr(key_ty, &k);
+        quote! { (if #written { #key_tag_len + #key_size } else { 0 }) }
+    } else {
+        quote! { #key_tag_len + #key_size }
+    };
+    let val_part = if val_ty == Type::TYPE_MESSAGE && omit_defaults {
+        // A message value that encodes to nothing reserved no slots of its
+        // own, so leaving it out keeps the slots in step.
         quote! {
             {
+                let __slot = __cache.reserve();
+                let inner = #v.compute_size(__cache);
+                __cache.set(__slot, inner);
+                if inner == 0 {
+                    0
+                } else {
+                    #val_tag_len
+                        + ::buffa::encoding::varint_len(inner as u64) as u64
+                        + inner as u64
+                }
+            }
+        }
+    } else if val_ty == Type::TYPE_MESSAGE {
+        quote! {
+            #val_tag_len + {
                 let __slot = __cache.reserve();
                 let inner = #v.compute_size(__cache);
                 __cache.set(__slot, inner);
@@ -3240,28 +3280,37 @@ fn map_view_compute_size_stmt(
             }
         }
     } else {
-        map_element_size_expr(val_ty, &v)
+        let val_size = map_element_size_expr(val_ty, &v);
+        if omit_defaults {
+            let written = map_element_is_written_expr(val_ty, &v);
+            quote! { (if #written { #val_tag_len + #val_size } else { 0 }) }
+        } else {
+            quote! { #val_tag_len + #val_size }
+        }
     };
     // Both passes iterate `for (k, v) in &self.#ident`, identical to
     // `map_view_write_to_stmt`, so SizeCache slot order matches by construction.
     // When both key and value are fixed-width (no cache slots reserved) the
-    // entry size is constant and we fold to `len() * const`.
-    if map_element_size_is_constant(key_ty) && map_element_size_is_constant(val_ty) {
+    // entry size is constant and we fold to `len() * const`, unless defaults
+    // are left out, which makes it depend on the values.
+    let key_constant = map_element_size_is_constant(key_ty) && !omit_defaults;
+    let val_constant = map_element_size_is_constant(val_ty) && !omit_defaults;
+    if key_constant && val_constant {
         return Ok(quote! {
             {
-                let entry_size: u64 = #key_tag_len + #key_size + #val_tag_len + #val_size;
+                let entry_size: u64 = #key_part + #val_part;
                 size += self.#ident.len() as u64 * (#outer_tag_len
                     + ::buffa::encoding::varint_len(entry_size) as u64
                     + entry_size);
             }
         });
     }
-    let k_bind = if map_element_size_is_constant(key_ty) {
+    let k_bind = if key_constant {
         format_ident!("_{}", k)
     } else {
         k
     };
-    let v_bind = if map_element_size_is_constant(val_ty) {
+    let v_bind = if val_constant {
         format_ident!("_{}", v)
     } else {
         v
@@ -3269,7 +3318,7 @@ fn map_view_compute_size_stmt(
     Ok(quote! {
         #[allow(clippy::for_kv_map)]
         for (#k_bind, #v_bind) in &self.#ident {
-            let entry_size: u64 = #key_tag_len + #key_size + #val_tag_len + #val_size;
+            let entry_size: u64 = #key_part + #val_part;
             size += #outer_tag_len
                 + ::buffa::encoding::varint_len(entry_size) as u64
                 + entry_size;
@@ -3305,12 +3354,40 @@ fn map_view_write_to_stmt(
     } else {
         (quote! {}, map_element_size_expr(val_ty, &v))
     };
-    let encode_key = map_element_encode_stmt(key_ty, 1, &k);
-    let encode_val = map_element_encode_stmt(val_ty, 2, &v);
+    let mut encode_key = map_element_encode_stmt(key_ty, 1, &k);
+    let mut encode_val = map_element_encode_stmt(val_ty, 2, &v);
+    let mut key_part = quote! { #key_tag_len + #key_size };
+    let mut val_part = quote! { #val_tag_len + #val_size };
+    if ctx.config.map_entries_omit_defaults {
+        let key_written = map_element_is_written_expr(key_ty, &k);
+        key_part = quote! { (if #key_written { #key_part } else { 0 }) };
+        encode_key = quote! { if #key_written { #encode_key } };
+        if val_ty == Type::TYPE_MESSAGE {
+            // A value that encodes to nothing loses its tag and length; its
+            // `write_to` still runs, writing nothing but consuming the slots
+            // its `compute_size` reserved.
+            val_part = quote! { (if __v_len == 0 { 0 } else { #val_part }) };
+            let val_tag = quote! {
+                ::buffa::encoding::Tag::new(2, ::buffa::encoding::WireType::LengthDelimited)
+                    .encode(buf);
+            };
+            encode_val = quote! {
+                if __v_len != 0 {
+                    #val_tag
+                    ::buffa::encoding::encode_varint(__v_len as u64, buf);
+                }
+                #v.write_to(__cache, buf);
+            };
+        } else {
+            let val_written = map_element_is_written_expr(val_ty, &v);
+            val_part = quote! { (if #val_written { #val_part } else { 0 }) };
+            encode_val = quote! { if #val_written { #encode_val } };
+        }
+    }
     Ok(quote! {
         for (#k, #v) in &self.#ident {
             #val_len_bind
-            let entry_size: u64 = #key_tag_len + #key_size + #val_tag_len + #val_size;
+            let entry_size: u64 = #key_part + #val_part;
             ::buffa::encoding::Tag::new(
                 #field_number,
                 ::buffa::encoding::WireType::LengthDelimited,
@@ -3320,6 +3397,33 @@ fn map_view_write_to_stmt(
             #encode_val
         }
     })
+}
+
+/// The `map_codec` functions the owned size and write passes call, picked
+/// together so that the two passes cannot disagree on leaving defaults out.
+struct MapEncoders {
+    field_len: TokenStream,
+    write_field: TokenStream,
+    message_field_len: TokenStream,
+    write_message_field: TokenStream,
+}
+
+fn map_encoders(ctx: &CodeGenContext) -> MapEncoders {
+    if ctx.config.map_entries_omit_defaults {
+        MapEncoders {
+            field_len: quote! { field_len_omitting_defaults },
+            write_field: quote! { write_field_omitting_defaults },
+            message_field_len: quote! { message_field_len_omitting_defaults },
+            write_message_field: quote! { write_message_field_omitting_defaults },
+        }
+    } else {
+        MapEncoders {
+            field_len: quote! { field_len },
+            write_field: quote! { write_field },
+            message_field_len: quote! { message_field_len },
+            write_message_field: quote! { write_message_field },
+        }
+    }
 }
 
 fn map_compute_size_stmt(
@@ -3340,9 +3444,14 @@ fn map_compute_size_stmt(
     // Message values are two-pass (SizeCache slot per entry, consumed by
     // `map_write_to_stmt` in identical iteration order — both helpers
     // iterate the same map, so slot order matches by construction).
+    let MapEncoders {
+        field_len,
+        message_field_len,
+        ..
+    } = map_encoders(ctx);
     if m.val_ty == Type::TYPE_MESSAGE {
         return Ok(quote! {
-            size += ::buffa::map_codec::message_field_len::<#key_codec, _, _>(
+            size += ::buffa::map_codec::#message_field_len::<#key_codec, _, _>(
                 &self.#ident,
                 #outer_tag_len,
                 __cache,
@@ -3350,7 +3459,7 @@ fn map_compute_size_stmt(
         });
     }
     Ok(quote! {
-        size += ::buffa::map_codec::field_len::<#key_codec, #val_codec, _>(
+        size += ::buffa::map_codec::#field_len::<#key_codec, #val_codec, _>(
             &self.#ident,
             #outer_tag_len,
         );
@@ -3372,9 +3481,14 @@ fn map_write_to_stmt(
         val_codec,
         ..
     } = &m;
+    let MapEncoders {
+        write_field,
+        write_message_field,
+        ..
+    } = map_encoders(ctx);
     if m.val_ty == Type::TYPE_MESSAGE {
         return Ok(quote! {
-            ::buffa::map_codec::write_message_field::<#key_codec, _, _>(
+            ::buffa::map_codec::#write_message_field::<#key_codec, _, _>(
                 &self.#ident,
                 #field_number,
                 __cache,
@@ -3383,7 +3497,7 @@ fn map_write_to_stmt(
         });
     }
     Ok(quote! {
-        ::buffa::map_codec::write_field::<#key_codec, #val_codec, _>(
+        ::buffa::map_codec::#write_field::<#key_codec, #val_codec, _>(
             &self.#ident,
             #field_number,
             buf,
