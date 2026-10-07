@@ -1480,7 +1480,7 @@ pub struct CodeGenConfig {
     /// to a specific type. The `attribute` is a raw Rust attribute string
     /// (e.g., `"#[derive(serde::Serialize)]"`).
     pub type_attributes: Vec<(String, String)>,
-    /// Custom attributes to inject on generated struct fields.
+    /// Custom attributes to inject on the fields of generated owned structs.
     ///
     /// Each entry is `(proto_path, attribute)`. The `proto_path` is matched
     /// as a prefix against the fully-qualified field path (e.g.,

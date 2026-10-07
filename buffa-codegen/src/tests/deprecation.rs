@@ -81,20 +81,37 @@ fn clean_file() -> FileDescriptorProto {
     file
 }
 
-/// `Widget` with the single live field `label`.
-fn clean_label_file() -> FileDescriptorProto {
-    let mut file = proto3_file("clean.proto");
-    file.package = Some("deprecate.test".to_string());
-    file.message_type.push(DescriptorProto {
+/// [`deprecated_file`] with `[debug_redact = true]` on the live field, which
+/// swaps each view's `Debug` derive for an impl that names every field.
+fn deprecated_file_with_redacted_label() -> FileDescriptorProto {
+    let mut file = deprecated_file();
+    file.message_type[0].field[1].options = FieldOptions {
+        debug_redact: Some(true),
+        ..Default::default()
+    }
+    .into();
+    file
+}
+
+/// `Widget` whose only deprecated field is a member of the oneof `choice`.
+fn oneof_only_file() -> FileDescriptorProto {
+    let mut member = make_field("legacy_choice", 3, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+    member.oneof_index = Some(0);
+    let mut msg = DescriptorProto {
         name: Some("Widget".to_string()),
-        field: vec![make_field(
-            "label",
-            2,
-            Label::LABEL_OPTIONAL,
-            Type::TYPE_STRING,
-        )],
+        field: vec![
+            deprecated(member),
+            make_field("label", 2, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+        ],
+        ..Default::default()
+    };
+    msg.oneof_decl.push(OneofDescriptorProto {
+        name: Some("choice".to_string()),
         ..Default::default()
     });
+    let mut file = proto3_file("deprecated.proto");
+    file.package = Some("deprecate.test".to_string());
+    file.message_type.push(msg);
     file
 }
 
@@ -136,15 +153,6 @@ fn codec_and_debug_impls_allow_deprecated() {
             "{impl_head} visits every field, so it must be guarded: {content}"
         );
     }
-}
-
-#[test]
-fn view_to_owned_allows_deprecated() {
-    let content = generate_squashed(deprecated_file(), &CodeGenConfig::default());
-    assert!(
-        content.contains("#[allow(deprecated)]fnto_owned_from_source"),
-        "the view's to_owned writes the owned struct's deprecated field: {content}"
-    );
 }
 
 #[test]
@@ -586,37 +594,23 @@ fn table_static_allows_deprecated() {
 }
 
 #[test]
-fn oneof_only_deprecation_is_out_of_scope() {
-    // A deprecated oneof member is neither marked nor guarded by this change;
-    // pinning it here makes the follow-up a deliberate widening.
-    let mut member = make_field("legacy_choice", 3, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
-    member.oneof_index = Some(0);
-    member.options = FieldOptions {
-        deprecated: Some(true),
-        ..Default::default()
-    }
-    .into();
-    let mut msg = DescriptorProto {
-        name: Some("Widget".to_string()),
-        field: vec![
-            member,
-            make_field("label", 2, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
-        ],
-        ..Default::default()
-    };
-    msg.oneof_decl.push(OneofDescriptorProto {
-        name: Some("choice".to_string()),
-        ..Default::default()
-    });
-    let mut file = proto3_file("deprecated.proto");
-    file.package = Some("deprecate.test".to_string());
-    file.message_type.push(msg);
-
-    let content = generate_squashed(file, &CodeGenConfig::default());
+fn oneof_only_deprecation_is_unmarked_and_unguarded() {
+    // A oneof member lives in the oneof enum (owned and view), which is not
+    // marked, so the message's impls name no deprecated field.
+    let content = generate_squashed(oneof_only_file(), &CodeGenConfig::default());
     assert!(
-        !content.contains("#[allow(deprecated)]impl::buffa::MessageforWidget"),
-        "a oneof-only deprecation must not widen the owned guard: {content}"
+        !content.contains("#[deprecated]"),
+        "a deprecated oneof member is not marked: {content}"
     );
+    for impl_head in [
+        "impl::buffa::MessageforWidget",
+        "impl<'a>::buffa::MessageView<'a>forWidgetView<'a>",
+    ] {
+        assert!(
+            !content.contains(&format!("#[allow(deprecated)]{impl_head}")),
+            "a oneof-only deprecation must not guard `{impl_head}`: {content}"
+        );
+    }
 }
 
 // ── views ───────────────────────────────────────────────────────────
@@ -643,14 +637,7 @@ fn view_field_and_owned_view_accessor_carry_marker() {
 
 #[test]
 fn view_impls_that_touch_fields_allow_deprecated() {
-    // `[debug_redact = true]` on another field swaps the view's `Debug`
-    // derive for an impl, which then reads the deprecated field by name.
-    let mut file = deprecated_file();
-    file.message_type[0].field[1].options = FieldOptions {
-        debug_redact: Some(true),
-        ..Default::default()
-    }
-    .into();
+    let file = deprecated_file_with_redacted_label();
     let config = CodeGenConfig {
         generate_json: true,
         generate_reflection: true,
@@ -674,12 +661,7 @@ fn view_impls_that_touch_fields_allow_deprecated() {
 
 #[test]
 fn lazy_view_field_carries_marker_and_its_impls_allow_deprecated() {
-    let mut file = deprecated_file();
-    file.message_type[0].field[1].options = FieldOptions {
-        debug_redact: Some(true),
-        ..Default::default()
-    }
-    .into();
+    let file = deprecated_file_with_redacted_label();
     let config = CodeGenConfig {
         lazy_views: true,
         generate_json: true,
@@ -709,59 +691,133 @@ fn lazy_view_field_carries_marker_and_its_impls_allow_deprecated() {
         2,
         "the decode and the encode inherent impls are both guarded"
     );
-}
-
-#[test]
-fn view_of_a_message_with_only_a_deprecated_oneof_member_is_unguarded() {
-    // A oneof member lives in the view's oneof enum, which is not marked.
-    let mut member = make_field("legacy_choice", 3, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
-    member.oneof_index = Some(0);
-    let mut msg = DescriptorProto {
-        name: Some("Widget".to_string()),
-        field: vec![
-            deprecated(member),
-            make_field("label", 2, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
-        ],
-        ..Default::default()
-    };
-    msg.oneof_decl.push(OneofDescriptorProto {
-        name: Some("choice".to_string()),
-        ..Default::default()
-    });
-    let mut file = proto3_file("deprecated.proto");
-    file.package = Some("deprecate.test".to_string());
-    file.message_type.push(msg);
-
-    let content = generate_squashed(file, &CodeGenConfig::default());
     assert!(
-        !content.contains("#[allow(deprecated)]impl<'a>::buffa::MessageView<'a>forWidgetView<'a>"),
-        "no view struct field is deprecated, so the view's impls need no guard"
+        !content.contains("#[allow(deprecated)]impl<'a>::buffa::LazyMessageView<'a>"),
+        "the `LazyMessageView` impl delegates; only its `to_owned_message` is guarded"
     );
 }
 
 #[test]
-fn caller_deprecated_attribute_does_not_reach_the_view() {
-    // `field_attribute` applies to the owned struct's field only, and so does
-    // a `#[deprecated]` attached through it.
+fn caller_deprecated_attribute_marks_the_view_without_its_note() {
+    // A `#[deprecated]` from `field_attribute` marks every generated way to
+    // reach the field. The attribute's own text stays on the owned field.
     let config = CodeGenConfig {
         field_attributes: vec![(
-            ".deprecate.test.Widget.label".to_string(),
+            ".deprecate.test.Widget.legacy_name".to_string(),
             "#[deprecated(note = \"hand\")]".to_string(),
         )],
         ..Default::default()
     };
-    let content = generate_squashed(clean_label_file(), &config);
-    assert!(
-        content.contains(r#"note="hand")]publabel:::buffa::alloc::string::String"#),
-        "the owned field carries the caller's attribute: {content}"
+    let content = generate_squashed(clean_file(), &config);
+    assert_eq!(
+        content.matches(r#"note="hand""#).count(),
+        1,
+        "the caller's attribute lands on the owned field only: {content}"
     );
     assert!(
-        !content.contains("#[deprecated]publabel:&'astr"),
-        "the view field stays unmarked"
+        content.contains("#[deprecated]publegacy_name:&'astr"),
+        "the view field carries a bare marker"
     );
     assert!(
-        !content.contains("#[allow(deprecated)]impl<'a>::buffa::MessageView<'a>forWidgetView<'a>"),
-        "so the view's impls need no guard"
+        content.contains("#[deprecated]#[allow(deprecated)]#[must_use]pubfnlegacy_name(&self)"),
+        "the `WidgetOwnedView` accessor carries a bare marker"
+    );
+    assert!(
+        content.contains("#[allow(deprecated)]impl<'a>::buffa::MessageView<'a>forWidgetView<'a>"),
+        "so the view's impls are guarded"
+    );
+}
+
+#[test]
+fn deprecated_map_field_carries_marker_on_each_struct() {
+    let mut key = make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+    key.json_name = Some("key".to_string());
+    let mut value = make_field("value", 2, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+    value.json_name = Some("value".to_string());
+    let entry = DescriptorProto {
+        name: Some("AttrsEntry".to_string()),
+        field: vec![key, value],
+        options: MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    };
+    let mut attrs = make_field("attrs", 1, Label::LABEL_REPEATED, Type::TYPE_MESSAGE);
+    attrs.type_name = Some(".deprecate.test.Widget.AttrsEntry".to_string());
+    let mut file = proto3_file("map.proto");
+    file.package = Some("deprecate.test".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Widget".to_string()),
+        field: vec![deprecated(attrs)],
+        nested_type: vec![entry],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        lazy_views: true,
+        ..Default::default()
+    };
+    let content = generate_squashed(file, &config);
+    assert_eq!(
+        content.matches("#[deprecated]pubattrs:").count(),
+        3,
+        "the owned struct, the view and the lazy view each mark the map field: {content}"
+    );
+}
+
+#[test]
+fn has_method_of_a_deprecated_required_field_is_deprecated() {
+    // `has_limits` reads the view field by name and `has_code` reads the seen
+    // bit. Both are reads of a deprecated field, on the view and the lazy view.
+    let mut limits = make_field("limits", 1, Label::LABEL_REQUIRED, Type::TYPE_MESSAGE);
+    limits.type_name = Some(".deprecate.test.Limits".to_string());
+    let mut file = proto3_file("required.proto");
+    file.syntax = Some("proto2".to_string());
+    file.package = Some("deprecate.test".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Limits".to_string()),
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Quota".to_string()),
+        field: vec![
+            deprecated(limits),
+            deprecated(make_field(
+                "code",
+                2,
+                Label::LABEL_REQUIRED,
+                Type::TYPE_INT32,
+            )),
+            make_field("live", 3, Label::LABEL_REQUIRED, Type::TYPE_INT32),
+        ],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        lazy_views: true,
+        ..Default::default()
+    };
+    let content = generate_squashed(file, &config);
+    let marked = "#[deprecated]#[allow(deprecated)]#[must_use]#[inline]pubconstfn";
+    for method in ["has_limits", "has_code"] {
+        assert_eq!(
+            content
+                .matches(&format!("{marked}{method}(&self)->bool"))
+                .count(),
+            2,
+            "`{method}` is marked and guarded on the view and the lazy view: {content}"
+        );
+    }
+    assert_eq!(
+        content
+            .matches("#[must_use]#[inline]pubconstfnhas_live(&self)->bool")
+            .count(),
+        2,
+        "the live field keeps its accessor on both views"
+    );
+    assert!(
+        !content.contains(&format!("{marked}has_live")),
+        "a live required field's `has_*` stays unmarked"
     );
 }
 
@@ -773,7 +829,7 @@ fn file_without_deprecation_emits_no_attributes() {
     assert!(!content.contains("#[deprecated]"), "no option, no marker");
     assert!(
         !content.contains("#[allow(deprecated)]"),
-        "guards must not leak into messages that need them: {content}"
+        "guards must not leak into messages that do not need them: {content}"
     );
 }
 
@@ -976,6 +1032,6 @@ fn message_level_deprecated_option_is_not_emitted() {
     let content = generate_squashed(file, &CodeGenConfig::default());
     assert!(
         !content.contains("#[deprecated]pubstructWidget"),
-        "message-level deprecation is not part of this change: {content}"
+        "message-level `deprecated` is not emitted: {content}"
     );
 }

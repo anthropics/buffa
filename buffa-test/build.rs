@@ -767,15 +767,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for deprecated.proto");
 
-    // The proto2 half: no field is deprecated, but a `[default = …]` names a
-    // deprecated enum variant or an alias of one, so the `Default` impl,
-    // `Message::clear` and the extension's default getter spell it out and
-    // need the guard. The enums are closed here, so `generate_arbitrary` puts
-    // their `Arbitrary` impls behind a bare enum field.
+    // The proto2 half. A `[default = …]` names a deprecated enum variant or
+    // an alias of one, so the `Default` impl, `Message::clear` and the
+    // extension's default getter spell it out and need the guard. The enums
+    // are closed here, so `generate_arbitrary` puts their `Arbitrary` impls
+    // behind a bare enum field. `Quota` has deprecated `required` fields, for
+    // the views' `has_*` accessors.
     buffa_build::Config::new()
         .files(&["protos/deprecated_proto2.proto"])
         .includes(&["protos/"])
         .generate_views(true)
+        .lazy_views(true)
         .generate_arbitrary(true)
         .compile()
         .expect("buffa_build failed for deprecated_proto2.proto");

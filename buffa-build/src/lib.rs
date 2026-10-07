@@ -1820,9 +1820,12 @@ impl Config {
     /// A `#[deprecated]` supplied here wins over the one codegen derives from
     /// the field's `[deprecated = true]` option — rustc permits only one
     /// `deprecated` attribute per item — so this is also how to attach a note
-    /// naming the replacement. Either source marks the field and its `with_*`
-    /// setter, and either one makes the generated items that visit the field
-    /// carry `#[allow(deprecated)]`.
+    /// naming the replacement. Either source marks every generated way to
+    /// reach the field: the `with_*` setter, the same field on the views, its
+    /// `OwnedView` accessor and its `has_*` method. Those carry a bare
+    /// `#[deprecated]`; the attribute given here, with its note, stays on the
+    /// owned struct's field. Either source also makes the generated items that
+    /// visit the field carry `#[allow(deprecated)]`.
     ///
     /// # Example
     ///

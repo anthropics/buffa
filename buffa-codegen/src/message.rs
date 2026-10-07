@@ -2117,6 +2117,21 @@ pub(crate) fn is_debug_redacted(
         .unwrap_or(false)
 }
 
+/// True when the owned struct's field for `field` ends up `#[deprecated]`: from
+/// `[deprecated = true]`, or from a `#[deprecated]` that the caller attaches
+/// with `field_attribute`. `field_fqn` is `<message FQN>.<field name>`.
+///
+/// Every other generated way to reach the field carries a bare `#[deprecated]`
+/// when this holds: the `with_*` setter, the field on the view structs, the
+/// `OwnedView` accessor and the view's `has_*` method.
+pub(crate) fn field_is_deprecated(
+    ctx: &CodeGenContext,
+    field: &crate::generated::descriptor::FieldDescriptorProto,
+    field_fqn: &str,
+) -> bool {
+    is_deprecated(field) || caller_deprecated_attr(ctx, field_fqn)
+}
+
 /// True when the field carries `[deprecated = true]`.
 pub(crate) fn is_deprecated(field: &crate::generated::descriptor::FieldDescriptorProto) -> bool {
     field
@@ -2265,9 +2280,10 @@ fn references_deprecated(ctx: &CodeGenContext, msg: &DescriptorProto, proto_fqn:
 }
 
 /// `#[allow(deprecated)]` for the generated items of `msg` that must visit its
-/// own deprecated members: the codec impls, the manual `Debug` and `Default`
-/// impls, the `with_*` setters, the reflection vtable, the view and lazy-view
-/// conversions, a table message's static, and a view's `Default` impl.
+/// own deprecated members, on the owned message and on its views: the codec
+/// impls, the manual `Debug` and `Default` impls, the `with_*` setters, the
+/// JSON and reflection impls, the view and lazy-view conversions, and a table
+/// message's static.
 ///
 /// Those visits are structural (an encoder has to touch every field), so
 /// without the guard a single `[deprecated = true]` field makes the generated
@@ -2283,10 +2299,6 @@ fn references_deprecated(ctx: &CodeGenContext, msg: &DescriptorProto, proto_fqn:
 /// A deprecated oneof member is neither marked nor guarded here;
 /// `examples/addressbook`, whose variant is marked through `field_attribute`,
 /// needs its module-level `#[allow(deprecated)]` for that reason.
-///
-/// The view structs' own fields have a separate guard,
-/// [`deprecated_view_field_allow`](crate::view::deprecated_view_field_allow),
-/// because only the proto option marks them.
 pub(crate) fn deprecated_field_allow(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,

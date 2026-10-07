@@ -76,7 +76,6 @@ pub(crate) fn generate_lazy_view_with_nesting(
 
     let oneof_idents = crate::oneof::resolve_oneof_idents(msg, proto_fqn)?;
     let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, proto_fqn);
-    let deprecated_view_allow = crate::view::deprecated_view_field_allow(msg);
     let lazy_ident = format_ident!("{}LazyView", rust_name);
 
     let view_depth = nesting + 2;
@@ -255,7 +254,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
                 quote! { #[derive(Clone, Default)] }
             },
             quote! {
-                #deprecated_view_allow
+                #deprecated_field_allow
                 impl<'a> ::core::fmt::Debug for #lazy_ident<'a> {
                     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         f.debug_struct(#name_str)
@@ -293,7 +292,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
         #custom_default_impl
 
         #non_snake_attr
-        #deprecated_view_allow
+        #deprecated_field_allow
         impl<'a> #lazy_ident<'a> {
             /// Decode from `buf` under the limits carried by `ctx`, recording
             /// nested/repeated message fields as byte ranges.
@@ -400,7 +399,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
         /// supertrait carries the eager whole-tree-validated contract); the
         /// fuller `ViewEncode` set (`encode_length_delimited`,
         /// `encode_with_cache`) lives on the eager view.
-        #deprecated_view_allow
+        #deprecated_field_allow
         impl<'a> #lazy_ident<'a> {
             #view_encode_methods
 
@@ -592,7 +591,7 @@ fn lazy_struct_field(
             &ctx.type_map,
         );
         let map_ty = view_map_type(scope, msg, field, &quote! { 'a })?;
-        let deprecated_attr = crate::view::view_field_deprecated_attr(field);
+        let deprecated_attr = crate::view::view_field_deprecated_attr(ctx, field, &field_fqn);
         return Ok(Some((
             quote! { #doc #deprecated_attr pub #ident: #map_ty, },
             ident,
@@ -632,7 +631,7 @@ fn lazy_struct_field(
         (false, false) => view_singular_type(scope, field, &quote! { 'a })?,
     };
 
-    let deprecated_attr = crate::view::view_field_deprecated_attr(field);
+    let deprecated_attr = crate::view::view_field_deprecated_attr(ctx, field, &field_fqn);
     Ok(Some((
         quote! { #doc #deprecated_attr pub #ident: #rust_type, },
         ident,
@@ -981,12 +980,13 @@ fn generate_lazy_view_serialize(
         });
     }
 
-    let deprecated_view_allow = crate::view::deprecated_view_field_allow(msg);
+    let deprecated_field_allow =
+        crate::message::deprecated_field_allow(scope.ctx, msg, scope.proto_fqn);
     Ok(quote! {
         /// Serializes this lazy view as protobuf JSON, decoding deferred
         /// message fields on the fly. Malformed or over-budget deferred
         /// bytes surface as a serializer error.
-        #deprecated_view_allow
+        #deprecated_field_allow
         impl<'__a> ::serde::Serialize for #lazy_ident<'__a> {
             fn serialize<__S: ::serde::Serializer>(
                 &self,

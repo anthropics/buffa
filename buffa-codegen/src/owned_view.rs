@@ -140,7 +140,7 @@ pub(crate) fn generate_owned_view_wrapper(
         );
         // The accessor is another way to read the view's field, so it carries
         // the field's marker, and a guard for its own read of that field.
-        let deprecated_attr = crate::view::view_field_deprecated_attr(field)
+        let deprecated_attr = crate::view::view_field_deprecated_attr(ctx, field, &field_fqn)
             .map(|deprecated| quote! { #deprecated #[allow(deprecated)] });
         accessors.push(quote! {
             #doc

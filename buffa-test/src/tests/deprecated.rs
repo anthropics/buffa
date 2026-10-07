@@ -70,6 +70,26 @@ fn deprecated_fields_read_through_the_view_and_its_owned_handle() {
 }
 
 #[test]
+fn has_accessors_of_deprecated_required_fields_report_presence() {
+    use crate::deprecated_proto2::__buffa::view::QuotaView;
+    use crate::deprecated_proto2::{Limits, Quota};
+
+    let absent = QuotaView::default();
+    assert!(!absent.has_limits());
+    assert!(!absent.has_code());
+
+    let bytes = Quota {
+        limits: Some(Limits::default()).into(),
+        code: 0,
+        ..Default::default()
+    }
+    .encode_to_vec();
+    let view = QuotaView::decode_view(&bytes).expect("view decode");
+    assert!(view.has_limits());
+    assert!(view.has_code());
+}
+
+#[test]
 fn deprecated_enum_value_keeps_name_and_default_semantics() {
     assert_eq!(Routing::LEGACY.to_i32(), 1);
     assert_eq!(Routing::LEGACY.proto_name(), "LEGACY");
