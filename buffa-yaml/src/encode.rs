@@ -1,3 +1,4 @@
+use crate::error::{CapturedIo, IoErrorCapture};
 use crate::Error;
 use buffa::{Message, MessageView};
 use std::io;
@@ -32,7 +33,9 @@ where
     W: io::Write,
     M: Message + serde::Serialize,
 {
-    serde_norway::to_writer(w, msg).map_err(Error::from_carrier)
+    let capture = IoErrorCapture::default();
+    serde_norway::to_writer(CapturedIo::new(w, capture.clone()), msg)
+        .map_err(|inner| Error::from_carrier_with_io_error_kind(inner, capture.error_kind()))
 }
 
 /// Serialize a zero-copy message view to a YAML string.
@@ -71,5 +74,7 @@ where
     W: io::Write,
     V: MessageView<'a> + serde::Serialize,
 {
-    serde_norway::to_writer(w, view).map_err(Error::from_carrier)
+    let capture = IoErrorCapture::default();
+    serde_norway::to_writer(CapturedIo::new(w, capture.clone()), view)
+        .map_err(|inner| Error::from_carrier_with_io_error_kind(inner, capture.error_kind()))
 }
