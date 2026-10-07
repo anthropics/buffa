@@ -1,0 +1,3 @@
+kind: Fixed
+body: Repeated message and group extension values now charge each output element to the shared decode memory budget.
+time: 2026-10-07T14:40:42.543076+02:00

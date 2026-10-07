@@ -215,6 +215,14 @@ impl<'a> DecodeContext<'a> {
         self.element_memory_remaining.map(core::cell::Cell::get)
     }
 
+    /// Restore an element-memory checkpoint after dropping a value that did
+    /// not decode successfully.
+    pub(crate) fn restore_element_memory(&self, remaining: usize) {
+        if let Some(cell) = self.element_memory_remaining {
+            cell.set(remaining);
+        }
+    }
+
     /// Charge `bytes` against the shared element-memory budget.
     ///
     /// Call **before** materializing an element of a repeated
