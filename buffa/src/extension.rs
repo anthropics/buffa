@@ -1505,7 +1505,7 @@ mod tests {
     }
 
     #[test]
-    fn string_invalid_last_record_does_not_restore_prior_value() {
+    fn string_invalid_last_record_is_none() {
         const E: Extension<StringCodec> = Extension::new(1, CARRIER);
         let invalid = [
             vec![0xFF],
