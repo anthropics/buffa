@@ -1,0 +1,3 @@
+kind: Changed
+body: Add a buffa-build package README with a build.rs quick start and compiler requirements.
+time: 2026-10-08T01:23:48.087628+02:00
