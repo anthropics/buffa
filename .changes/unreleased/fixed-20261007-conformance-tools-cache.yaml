@@ -1,0 +1,3 @@
+kind: Fixed
+body: Rebuild local conformance tools when the requested protobuf or JSONCPP version changes.
+time: 2026-10-07T22:45:05+02:00
