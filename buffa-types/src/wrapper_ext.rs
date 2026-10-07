@@ -221,6 +221,7 @@ impl<'de> serde::Deserialize<'de> for BytesValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn bool_value_roundtrip() {

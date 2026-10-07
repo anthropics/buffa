@@ -22,10 +22,11 @@ const FDS_BYTES: &[u8] = include_bytes!("protos/reflect_test.fds");
 mod packed_options {
     use super::{assert_set_rejected_without_mutating_pool, enum_value, scalar_field};
     use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::feature_set::RepeatedFieldEncoding;
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
     use buffa_descriptor::generated::descriptor::{
-        DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FieldOptions,
-        FileDescriptorProto, FileDescriptorSet, MessageOptions,
+        DescriptorProto, Edition, EnumDescriptorProto, FeatureSet, FieldDescriptorProto,
+        FieldOptions, FileDescriptorProto, FileDescriptorSet, FileOptions, MessageOptions,
     };
     use buffa_descriptor::{DescriptorPool, FieldKind, PoolError};
 
@@ -104,6 +105,162 @@ mod packed_options {
             }],
             ..Default::default()
         }
+    }
+
+    /// `field` with `features.repeated_field_encoding` set on the field itself.
+    fn with_encoding(
+        mut field: FieldDescriptorProto,
+        encoding: RepeatedFieldEncoding,
+    ) -> FieldDescriptorProto {
+        field.options = FieldOptions {
+            features: FeatureSet {
+                repeated_field_encoding: Some(encoding),
+                ..Default::default()
+            }
+            .into(),
+            ..Default::default()
+        }
+        .into();
+        field
+    }
+
+    fn editions_set(field: FieldDescriptorProto) -> FileDescriptorSet {
+        let mut set = set(Some("editions"), field);
+        set.file[0].edition = Some(Edition::EDITION_2023);
+        set
+    }
+
+    #[test]
+    fn repeated_field_encoding_feature_is_rejected_where_it_cannot_apply() {
+        let mut cases = Vec::new();
+        // `PACKED` on a repeated field whose elements cannot be packed.
+        for ty in [Type::TYPE_STRING, Type::TYPE_BYTES, Type::TYPE_MESSAGE] {
+            cases.push((ty, Label::LABEL_REPEATED, RepeatedFieldEncoding::PACKED));
+        }
+        // Either value on a field that is not repeated.
+        for ty in [Type::TYPE_INT32, Type::TYPE_STRING] {
+            for encoding in [
+                RepeatedFieldEncoding::PACKED,
+                RepeatedFieldEncoding::EXPANDED,
+            ] {
+                cases.push((ty, Label::LABEL_OPTIONAL, encoding));
+            }
+        }
+        for (ty, label, encoding) in cases {
+            assert_set_rejected_without_mutating_pool(
+                "packed-options.proto",
+                "packed.test.Sample",
+                editions_set(with_encoding(field(ty, label, None), encoding)),
+                |err| {
+                    assert!(
+                        matches!(
+                            err,
+                            PoolError::InvalidRepeatedFieldEncoding { field }
+                                if field == "packed.test.Sample.value"
+                        ),
+                        "type {ty:?}, label {label:?}, encoding {encoding:?}: {err}"
+                    );
+                    assert_eq!(
+                        err.to_string(),
+                        "field packed.test.Sample.value sets features.repeated_field_encoding, \
+                         which does not apply to it"
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn repeated_field_encoding_feature_is_accepted_where_it_applies() {
+        for (ty, encoding, packed) in [
+            (Type::TYPE_INT32, RepeatedFieldEncoding::PACKED, true),
+            (Type::TYPE_INT32, RepeatedFieldEncoding::EXPANDED, false),
+            (Type::TYPE_ENUM, RepeatedFieldEncoding::EXPANDED, false),
+            (Type::TYPE_STRING, RepeatedFieldEncoding::EXPANDED, false),
+            (Type::TYPE_MESSAGE, RepeatedFieldEncoding::EXPANDED, false),
+        ] {
+            let field = with_encoding(field(ty, Label::LABEL_REPEATED, None), encoding);
+            let p = DescriptorPool::new(editions_set(field)).unwrap();
+            assert_eq!(
+                p.message_by_name("packed.test.Sample")
+                    .unwrap()
+                    .field(1)
+                    .unwrap()
+                    .is_packed(),
+                packed,
+                "type {ty:?}, encoding {encoding:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn inherited_repeated_field_encoding_applies_only_to_the_fields_it_fits() {
+        // A file-level `PACKED` reaches every field; the ones it does not
+        // fit ignore it.
+        for (ty, label, packed) in [
+            (Type::TYPE_INT32, Label::LABEL_REPEATED, true),
+            (Type::TYPE_STRING, Label::LABEL_REPEATED, false),
+            (Type::TYPE_INT32, Label::LABEL_OPTIONAL, false),
+        ] {
+            let mut set = editions_set(field(ty, label, None));
+            set.file[0].options = FileOptions {
+                features: FeatureSet {
+                    repeated_field_encoding: Some(RepeatedFieldEncoding::PACKED),
+                    ..Default::default()
+                }
+                .into(),
+                ..Default::default()
+            }
+            .into();
+            let p = DescriptorPool::new(set).unwrap();
+            assert_eq!(
+                p.message_by_name("packed.test.Sample")
+                    .unwrap()
+                    .field(1)
+                    .unwrap()
+                    .is_packed(),
+                packed,
+                "type {ty:?}, label {label:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn map_entry_fields_may_carry_the_map_field_repeated_field_encoding() {
+        // protoc copies a map field's features onto its entry's key and value.
+        let mut map_field = field(Type::TYPE_MESSAGE, Label::LABEL_REPEATED, None);
+        map_field.type_name = Some(".packed.test.Sample.ValueEntry".into());
+        let map_field = with_encoding(map_field, RepeatedFieldEncoding::EXPANDED);
+        let mut set = editions_set(map_field);
+        let entry_field = |name: &str, number: i32, ty: Type| {
+            let mut f = scalar_field(name, number, ty);
+            f.label = Some(Label::LABEL_OPTIONAL);
+            with_encoding(f, RepeatedFieldEncoding::EXPANDED)
+        };
+        set.file[0].message_type[0]
+            .nested_type
+            .push(DescriptorProto {
+                name: Some("ValueEntry".into()),
+                field: vec![
+                    entry_field("key", 1, Type::TYPE_STRING),
+                    entry_field("value", 2, Type::TYPE_INT32),
+                ],
+                options: MessageOptions {
+                    map_entry: Some(true),
+                    ..Default::default()
+                }
+                .into(),
+                ..Default::default()
+            });
+        let p = DescriptorPool::new(set).unwrap();
+        assert!(matches!(
+            p.message_by_name("packed.test.Sample")
+                .unwrap()
+                .field(1)
+                .unwrap()
+                .kind(),
+            FieldKind::Map { .. }
+        ));
     }
 
     #[test]
@@ -449,6 +606,188 @@ fn assert_set_rejected_without_mutating_pool(
             .name(),
         baseline_field_name
     );
+}
+
+#[test]
+fn unrecognized_file_syntax_is_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for syntax in ["prot3", "proto4", "PROTO3", " proto3", "proto3 "] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("invalid-syntax.proto".into()),
+                package: Some("invalid.test".into()),
+                syntax: Some(syntax.into()),
+                message_type: vec![DescriptorProto {
+                    name: Some("InvalidSyntax".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_set_rejected_without_mutating_pool(
+            "invalid-syntax.proto",
+            "invalid.test.InvalidSyntax",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::UnrecognizedSyntax { file, syntax: found }
+                        if file == "invalid-syntax.proto" && found == syntax
+                ));
+                assert_eq!(
+                    err.to_string(),
+                    format!("file invalid-syntax.proto has unrecognized syntax {syntax:?}")
+                );
+            },
+        );
+    }
+}
+
+#[test]
+fn editions_file_without_edition_is_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for edition in [None, Some(Edition::EDITION_UNKNOWN)] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("no-edition.proto".into()),
+                package: Some("invalid.test".into()),
+                syntax: Some("editions".into()),
+                edition,
+                message_type: vec![DescriptorProto {
+                    name: Some("NoEdition".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_set_rejected_without_mutating_pool(
+            "no-edition.proto",
+            "invalid.test.NoEdition",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::MissingEdition { file } if file == "no-edition.proto"
+                ));
+                assert_eq!(
+                    err.to_string(),
+                    "file no-edition.proto has syntax \"editions\" but its edition is unset \
+                     or EDITION_UNKNOWN"
+                );
+            },
+        );
+    }
+}
+
+#[test]
+fn editions_file_with_an_undefined_edition_number_links_with_2023_defaults() {
+    use buffa::Message;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    // An edition number that `Edition` does not define.
+    const UNDEFINED_EDITION: i32 = 5000;
+    assert_eq!(
+        <Edition as buffa::Enumeration>::from_i32(UNDEFINED_EDITION),
+        None
+    );
+
+    let mut file = FileDescriptorProto {
+        name: Some("future-edition.proto".into()),
+        syntax: Some("editions".into()),
+        message_type: vec![DescriptorProto {
+            name: Some("FutureEdition".into()),
+            field: vec![scalar_field("value", 1, Type::TYPE_INT32)],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    file.__buffa_unknown_fields.push(buffa::UnknownField {
+        number: 14,
+        data: buffa::UnknownFieldData::Varint(UNDEFINED_EDITION as u64),
+    });
+    let bytes = FileDescriptorSet {
+        file: vec![file],
+        ..Default::default()
+    }
+    .encode_to_vec();
+
+    // The wire form carries the number, and decoding keeps it as an unknown
+    // field with `edition` unset.
+    let p = DescriptorPool::decode(&bytes).unwrap();
+    assert_eq!(
+        p.message_by_name("FutureEdition")
+            .unwrap()
+            .field(1)
+            .unwrap()
+            .presence(),
+        FieldPresence::Explicit
+    );
+}
+
+#[test]
+fn recognized_file_syntax_keeps_its_field_presence() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for (syntax, edition, presence) in [
+        (None, None, FieldPresence::Explicit),
+        (Some(""), None, FieldPresence::Explicit),
+        (Some("proto2"), None, FieldPresence::Explicit),
+        (Some("proto3"), None, FieldPresence::Implicit),
+        (
+            Some("editions"),
+            Some(Edition::EDITION_2023),
+            FieldPresence::Explicit,
+        ),
+        (
+            Some("editions"),
+            Some(Edition::EDITION_2024),
+            FieldPresence::Explicit,
+        ),
+    ] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("valid-syntax.proto".into()),
+                syntax: syntax.map(Into::into),
+                edition,
+                message_type: vec![DescriptorProto {
+                    name: Some("ValidSyntax".into()),
+                    field: vec![scalar_field("value", 1, Type::TYPE_INT32)],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut p = DescriptorPool::new(set.clone()).unwrap();
+        assert_eq!(
+            p.message_by_name("ValidSyntax")
+                .unwrap()
+                .field(1)
+                .unwrap()
+                .presence(),
+            presence,
+            "syntax {syntax:?}, edition {edition:?}"
+        );
+
+        let mut readded = set;
+        readded.file[0].syntax = Some("prot3".into());
+        p.add_file_descriptor_set(readded).unwrap();
+        assert_eq!(p.files().len(), 1);
+    }
 }
 
 #[test]
@@ -1393,9 +1732,182 @@ fn duplicate_oneof_names_are_rejected_transactionally() {
 }
 
 #[test]
-fn distinct_oneof_names_are_accepted() {
+fn field_oneof_name_collisions_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
     use buffa_descriptor::generated::descriptor::{
-        DescriptorProto, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+        DescriptorProto, Edition, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
+    };
+
+    for (syntax, edition) in [
+        ("proto2", None),
+        ("proto3", None),
+        ("editions", Some(Edition::EDITION_2023)),
+        ("editions", Some(Edition::EDITION_2024)),
+    ] {
+        for member in [false, true] {
+            for nested in [false, true] {
+                let mut fields = vec![FieldDescriptorProto {
+                    oneof_index: member.then_some(0),
+                    ..scalar_field("choice", 1, Type::TYPE_INT32)
+                }];
+                if !member {
+                    fields.push(FieldDescriptorProto {
+                        oneof_index: Some(0),
+                        ..scalar_field("value", 2, Type::TYPE_INT32)
+                    });
+                }
+                let message = DescriptorProto {
+                    name: Some("Collision".into()),
+                    field: fields,
+                    oneof_decl: vec![OneofDescriptorProto {
+                        name: Some("choice".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                };
+                let (message, symbol) = if nested {
+                    (
+                        DescriptorProto {
+                            name: Some("Outer".into()),
+                            nested_type: vec![message],
+                            ..Default::default()
+                        },
+                        "invalid.test.Outer.Collision.choice",
+                    )
+                } else {
+                    (message, "invalid.test.Collision.choice")
+                };
+                assert_set_rejected_without_mutating_pool(
+                    "field-oneof-collision.proto",
+                    symbol,
+                    FileDescriptorSet {
+                        file: vec![FileDescriptorProto {
+                            name: Some("field-oneof-collision.proto".into()),
+                            package: Some("invalid.test".into()),
+                            syntax: Some(syntax.into()),
+                            edition,
+                            message_type: vec![message],
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                    |err| {
+                        assert!(matches!(err, PoolError::DuplicateName(name) if name == symbol));
+                        assert_eq!(err.to_string(), format!("duplicate symbol name {symbol:?}"));
+                    },
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn synthetic_oneof_name_collisions_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, OneofDescriptorProto,
+    };
+
+    assert_rejected_without_mutating_pool(
+        "synthetic-oneof-name-collision.proto",
+        "invalid.test.Collision",
+        DescriptorProto {
+            name: Some("Collision".into()),
+            field: vec![
+                FieldDescriptorProto {
+                    oneof_index: Some(0),
+                    proto3_optional: Some(true),
+                    ..scalar_field("value", 1, Type::TYPE_INT32)
+                },
+                scalar_field("_value", 2, Type::TYPE_INT32),
+            ],
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("_value".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateName(name) if name == "invalid.test.Collision._value"
+            ));
+        },
+    );
+}
+
+#[test]
+fn oneof_names_do_not_conflict_with_json_names_or_other_message_scopes() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
+    };
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    p.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("valid-oneof-name-overlap.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("WithOneof".into()),
+                    field: vec![
+                        FieldDescriptorProto {
+                            oneof_index: Some(0),
+                            json_name: Some("choice".into()),
+                            ..scalar_field("value", 1, Type::TYPE_INT32)
+                        },
+                        scalar_field("choice_suffix", 2, Type::TYPE_INT32),
+                        scalar_field("Choice", 3, Type::TYPE_INT32),
+                    ],
+                    oneof_decl: vec![OneofDescriptorProto {
+                        name: Some("choice".into()),
+                        ..Default::default()
+                    }],
+                    nested_type: vec![DescriptorProto {
+                        name: Some("Inner".into()),
+                        field: vec![scalar_field("choice", 1, Type::TYPE_INT32)],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Sibling".into()),
+                    field: vec![scalar_field("choice", 1, Type::TYPE_INT32)],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .unwrap();
+
+    let message = p.message_by_name("valid.test.WithOneof").unwrap();
+    assert_eq!(message.oneofs()[0].name(), "choice");
+    assert_eq!(message.field_by_name("choice").unwrap().name(), "value");
+    assert_eq!(message.fields().len(), 3);
+    for name in ["valid.test.WithOneof.Inner", "valid.test.Sibling"] {
+        assert_eq!(
+            p.message_by_name(name)
+                .unwrap()
+                .field_by_name("choice")
+                .unwrap()
+                .name(),
+            "choice"
+        );
+    }
+}
+
+#[test]
+fn distinct_oneof_names_are_accepted() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
     };
 
     let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
@@ -1406,6 +1918,16 @@ fn distinct_oneof_names_are_accepted() {
             syntax: Some("proto3".into()),
             message_type: vec![DescriptorProto {
                 name: Some("DistinctOneofs".into()),
+                field: vec![
+                    FieldDescriptorProto {
+                        oneof_index: Some(0),
+                        ..scalar_field("a", 1, Type::TYPE_INT32)
+                    },
+                    FieldDescriptorProto {
+                        oneof_index: Some(1),
+                        ..scalar_field("b", 2, Type::TYPE_STRING)
+                    },
+                ],
                 oneof_decl: vec![
                     OneofDescriptorProto {
                         name: Some("first".into()),
@@ -1433,6 +1955,8 @@ fn distinct_oneof_names_are_accepted() {
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
+    assert_eq!(message.oneofs()[0].field_indices(), [0]);
+    assert_eq!(message.oneofs()[1].field_indices(), [1]);
 }
 
 #[test]
@@ -2433,6 +2957,168 @@ fn negative_oneof_indices_are_rejected_without_mutating_pool() {
             ));
         },
     );
+}
+
+fn oneof_cardinality_set(
+    syntax: Option<&str>,
+    label: Option<buffa_descriptor::generated::descriptor::field_descriptor_proto::Label>,
+) -> buffa_descriptor::generated::descriptor::FileDescriptorSet {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+    };
+
+    let mut member = scalar_field("member", 1, Type::TYPE_INT32);
+    member.label = label;
+    member.oneof_index = Some(0);
+    let mut other = scalar_field("other", 2, Type::TYPE_STRING);
+    other.oneof_index = Some(0);
+    FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("oneof-cardinality.proto".into()),
+            package: Some("cardinality.test".into()),
+            syntax: syntax.map(Into::into),
+            edition: (syntax == Some("editions")).then_some(Edition::EDITION_2023),
+            message_type: vec![DescriptorProto {
+                name: Some("Choice".into()),
+                field: vec![member, other],
+                oneof_decl: vec![OneofDescriptorProto {
+                    name: Some("choice".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn non_optional_oneof_fields_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+
+    for syntax in [None, Some("proto2"), Some("proto3"), Some("editions")] {
+        for label in [Label::LABEL_REQUIRED, Label::LABEL_REPEATED] {
+            assert_set_rejected_without_mutating_pool(
+                "oneof-cardinality.proto",
+                "cardinality.test.Choice",
+                oneof_cardinality_set(syntax, Some(label)),
+                |err| {
+                    assert!(matches!(
+                        err,
+                        PoolError::InvalidOneofCardinality { field }
+                            if field == "cardinality.test.Choice.member"
+                    ));
+                    assert_eq!(
+                        err.to_string(),
+                        "field cardinality.test.Choice.member is a oneof member but is not optional"
+                    );
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn non_optional_nested_message_oneof_fields_are_rejected() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    for label in [Label::LABEL_REQUIRED, Label::LABEL_REPEATED] {
+        let mut set = oneof_cardinality_set(Some("proto2"), Some(label));
+        let message = &mut set.file[0].message_type[0];
+        message.field[0].r#type = Some(Type::TYPE_MESSAGE);
+        message.field[0].type_name = Some(".cardinality.test.Outer.Child".into());
+        let choice = set.file[0].message_type.remove(0);
+        set.file[0].message_type.push(DescriptorProto {
+            name: Some("Outer".into()),
+            nested_type: vec![
+                DescriptorProto {
+                    name: Some("Child".into()),
+                    ..Default::default()
+                },
+                choice,
+            ],
+            ..Default::default()
+        });
+        assert_set_rejected_without_mutating_pool(
+            "oneof-cardinality.proto",
+            "cardinality.test.Outer",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidOneofCardinality { field }
+                        if field == "cardinality.test.Outer.Choice.member"
+                ));
+            },
+        );
+    }
+}
+
+#[test]
+fn invalid_proto3_optional_oneof_labels_keep_the_specific_error() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+
+    for label in [Label::LABEL_REQUIRED, Label::LABEL_REPEATED] {
+        let mut set = oneof_cardinality_set(Some("proto3"), Some(label));
+        set.file[0].message_type[0].field[0].proto3_optional = Some(true);
+        assert_set_rejected_without_mutating_pool(
+            "oneof-cardinality.proto",
+            "cardinality.test.Choice",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidProto3OptionalCardinality { field }
+                        if field == "cardinality.test.Choice.member"
+                ));
+            },
+        );
+    }
+}
+
+#[test]
+fn optional_and_unset_oneof_labels_link_with_explicit_presence() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+
+    for syntax in [None, Some("proto2"), Some("proto3"), Some("editions")] {
+        for label in [None, Some(Label::LABEL_OPTIONAL)] {
+            let p = DescriptorPool::new(oneof_cardinality_set(syntax, label)).unwrap();
+            let message = p.message_by_name("cardinality.test.Choice").unwrap();
+            for field in message.fields() {
+                assert!(matches!(field.kind(), FieldKind::Singular(_)));
+                assert_eq!(field.presence(), FieldPresence::Explicit);
+                assert_eq!(field.oneof_index(), Some(0));
+            }
+        }
+    }
+}
+
+#[test]
+fn required_and_repeated_fields_outside_oneofs_still_link() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+
+    for label in [Label::LABEL_REQUIRED, Label::LABEL_REPEATED] {
+        let mut set = oneof_cardinality_set(Some("proto2"), Some(label));
+        let message = &mut set.file[0].message_type[0];
+        message.field[0].oneof_index = None;
+        let p = DescriptorPool::new(set).unwrap();
+        let field = p
+            .message_by_name("cardinality.test.Choice")
+            .unwrap()
+            .field(1)
+            .unwrap();
+        assert_eq!(field.oneof_index(), None);
+        if label == Label::LABEL_REPEATED {
+            assert!(matches!(field.kind(), FieldKind::List(_)));
+            assert_eq!(field.presence(), FieldPresence::Implicit);
+        } else {
+            assert!(matches!(field.kind(), FieldKind::Singular(_)));
+            assert_eq!(field.presence(), FieldPresence::LegacyRequired);
+        }
+    }
 }
 
 #[test]
@@ -4455,4 +5141,193 @@ fn index_ordinals_survive_adding_a_file() {
     let late = pool.message_index("ordinal.append.Late").expect("added");
     assert_eq!(late.index(), before.len());
     assert_eq!(pool.messages().len(), before.len() + 1);
+}
+
+#[test]
+fn empty_oneofs_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{DescriptorProto, OneofDescriptorProto};
+
+    assert_rejected_without_mutating_pool(
+        "empty-oneof.proto",
+        "invalid.test.EmptyOneof",
+        DescriptorProto {
+            name: Some("EmptyOneof".into()),
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("choice".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::EmptyOneof { oneof }
+                    if oneof == "invalid.test.EmptyOneof.choice"
+            ));
+            assert_eq!(
+                err.to_string(),
+                "oneof invalid.test.EmptyOneof.choice has no fields"
+            );
+        },
+    );
+}
+
+#[test]
+fn empty_oneof_validation_covers_syntax_nesting_and_declaration_order() {
+    use buffa::Message;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+    };
+
+    for (syntax, edition) in [
+        (None, None),
+        (Some("proto2"), None),
+        (Some("proto3"), None),
+        (Some("editions"), Some(Edition::EDITION_2023)),
+        (Some("editions"), Some(Edition::EDITION_2024)),
+    ] {
+        for nested in [false, true] {
+            for empty_index in 0..3 {
+                let field = |name: &str, number: i32, oneof_index: i32| {
+                    buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+                        oneof_index: Some(oneof_index),
+                        ..scalar_field(name, number, Type::TYPE_INT32)
+                    }
+                };
+                let mut message = DescriptorProto {
+                    name: Some("EmptyOneof".into()),
+                    field: vec![scalar_field("ordinary", 1, Type::TYPE_STRING)],
+                    oneof_decl: vec![],
+                    ..Default::default()
+                };
+                for index in 0..3 {
+                    let name = if index == empty_index {
+                        "empty".to_owned()
+                    } else {
+                        format!("choice_{index}")
+                    };
+                    message.oneof_decl.push(OneofDescriptorProto {
+                        name: Some(name),
+                        ..Default::default()
+                    });
+                    if index != empty_index {
+                        message
+                            .field
+                            .push(field(&format!("value_{index}"), index + 2, index));
+                    }
+                }
+                let message_name = if nested {
+                    "invalid.test.Outer.EmptyOneof"
+                } else {
+                    "invalid.test.EmptyOneof"
+                };
+                if nested {
+                    message = DescriptorProto {
+                        name: Some("Outer".into()),
+                        nested_type: vec![message],
+                        ..Default::default()
+                    };
+                }
+                let set = FileDescriptorSet {
+                    file: vec![FileDescriptorProto {
+                        name: Some("empty-oneof-syntax.proto".into()),
+                        package: Some("invalid.test".into()),
+                        syntax: syntax.map(Into::into),
+                        edition,
+                        message_type: vec![message],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                };
+                let expected_oneof = format!("{message_name}.empty");
+                for err in [
+                    DescriptorPool::new(set.clone()).unwrap_err(),
+                    DescriptorPool::decode(&set.encode_to_vec()).unwrap_err(),
+                ] {
+                    assert!(
+                        matches!(err, PoolError::EmptyOneof { ref oneof }
+                            if oneof == &expected_oneof),
+                        "syntax {syntax:?}, nested {nested}, index {empty_index}: {err}"
+                    );
+                }
+                assert_set_rejected_without_mutating_pool(
+                    "empty-oneof-syntax.proto",
+                    message_name,
+                    set.clone(),
+                    |err| {
+                        assert!(
+                            matches!(err, PoolError::EmptyOneof { oneof }
+                                if oneof == &format!("{message_name}.empty")),
+                            "syntax {syntax:?}, nested {nested}, index {empty_index}: {err}"
+                        );
+                    },
+                );
+
+                let mut valid_set = set;
+                let message = &mut valid_set.file[0].message_type[0];
+                let message = if nested {
+                    &mut message.nested_type[0]
+                } else {
+                    message
+                };
+                message.oneof_decl.remove(empty_index as usize);
+                for field in &mut message.field {
+                    if let Some(index) = &mut field.oneof_index {
+                        if *index > empty_index {
+                            *index -= 1;
+                        }
+                    }
+                }
+                let valid_pool = DescriptorPool::new(valid_set).unwrap();
+                let message = valid_pool.message_by_name(message_name).unwrap();
+                assert_eq!(message.oneofs().len(), 2);
+                assert!(message
+                    .oneofs()
+                    .iter()
+                    .all(|oneof| oneof.field_indices().len() == 1));
+            }
+        }
+    }
+}
+
+#[test]
+fn empty_oneof_rejection_allows_retry_with_a_member() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
+    };
+
+    let mut set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("retry-oneof.proto".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Retry".into()),
+                oneof_decl: vec![OneofDescriptorProto {
+                    name: Some("choice".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    assert!(matches!(
+        p.add_file_descriptor_set(set.clone()),
+        Err(PoolError::EmptyOneof { oneof }) if oneof == "Retry.choice"
+    ));
+    set.file[0].message_type[0]
+        .field
+        .push(FieldDescriptorProto {
+            oneof_index: Some(0),
+            ..scalar_field("value", 1, Type::TYPE_INT32)
+        });
+    p.add_file_descriptor_set(set).unwrap();
+    let message = p.message_by_name("Retry").unwrap();
+    assert_eq!(message.oneofs()[0].field_indices(), [0]);
+    assert_eq!(message.field(1).unwrap().oneof_index(), Some(0));
 }

@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`Duration` converts to and from `core::time::Duration` without the `std` feature** (#573). `TryFrom<Duration> for core::time::Duration` and `From<core::time::Duration> for Duration` were compiled only with `std`, although they use `core` types alone. `std::time::Duration` is the same type, so `std` builds are unchanged. `Timestamp` and `SystemTime` conversions still require `std`.
+time: 2026-10-06T10:33:31.821987+02:00

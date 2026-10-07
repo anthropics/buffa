@@ -106,6 +106,44 @@ fn test_proto2_required_custom_defaults() {
     assert!(decoded.d_nan.is_nan());
 }
 
+macro_rules! bytes_defaults_test {
+    ($test:ident, $module:ident) => {
+        #[test]
+        fn $test() {
+            use crate::$module::{required_bytes_defaults::Nested, RequiredBytesDefaults};
+
+            fn replacement<T: From<Vec<u8>>>() -> T {
+                vec![42].into()
+            }
+
+            let mut msg = RequiredBytesDefaults::default();
+            assert_eq!(&msg.nonempty[..], &[0, 255, b'A', b'\n']);
+            assert!(msg.empty.is_empty());
+            assert!(msg.maybe.is_none());
+            assert!(msg.without_default.is_empty());
+            assert_eq!(round_trip(&msg), msg);
+
+            msg.nonempty = replacement();
+            msg.empty = replacement();
+            msg.maybe = Some(replacement());
+            msg.without_default = replacement();
+            msg.clear();
+            assert_eq!(msg, RequiredBytesDefaults::default());
+
+            let mut nested = Nested::default();
+            assert_eq!(&nested.data[..], b"nested");
+            assert_eq!(round_trip(&nested), nested);
+            nested.data = replacement();
+            nested.clear();
+            assert_eq!(&nested.data[..], b"nested");
+        }
+    };
+}
+
+bytes_defaults_test!(test_proto2_vec_bytes_defaults, proto2);
+bytes_defaults_test!(test_proto2_bytes_defaults, bytes_proto2);
+bytes_defaults_test!(test_proto2_custom_bytes_defaults, custom_bytes_proto2);
+
 #[test]
 fn test_proto2_keyword_enum_value_default() {
     // Regression: defaults.rs previously used format_ident! directly on the

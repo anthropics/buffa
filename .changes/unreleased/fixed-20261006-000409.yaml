@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **A quoted JSON integer with a long significand and a negative exponent parses when its value is in range** (#569). `"1000000000000000000000000000000000000000e-39"` is 1, and was rejected because the 40-digit significand overflowed the exact parser. Trailing zeros of the significand now move into the exponent first. This is the quoted form; an unquoted number still goes through `f64`.
+time: 2026-10-06T00:04:09.23557+02:00
