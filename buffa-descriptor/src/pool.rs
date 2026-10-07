@@ -85,6 +85,13 @@ pub const MAX_SYMBOL_LEN: usize = 512;
 /// range count.
 struct ReservedRanges(Vec<(i64, i64)>);
 
+/// Two reserved ranges of one declaration that overlap, as positions in its
+/// `reserved_range` list.
+struct OverlappingPair {
+    later: usize,
+    earlier: usize,
+}
+
 impl ReservedRanges {
     /// Index a message's reserved ranges, validating each as protoc does: an
     /// unset bound reads as 0, and the half-open range must satisfy
@@ -93,25 +100,35 @@ impl ReservedRanges {
         message_fqn: &str,
         ranges: &[crate::generated::descriptor::descriptor_proto::ReservedRange],
     ) -> Result<Self, PoolError> {
-        let mut checked = Vec::with_capacity(ranges.len());
+        let mut checked: Vec<(u32, u32)> = Vec::with_capacity(ranges.len());
         for r in ranges {
-            let (start, end) = (r.start.unwrap_or(0), r.end.unwrap_or(0));
-            if start <= 0 || start >= end {
+            let bounds = match (
+                u32::try_from(r.start.unwrap_or(0)),
+                u32::try_from(r.end.unwrap_or(0)),
+            ) {
+                (Ok(start), Ok(end)) if start > 0 && start < end => Some((start, end)),
+                _ => None,
+            };
+            let Some(bounds) = bounds else {
                 return Err(PoolError::InvalidMessageReservedRange {
                     message: message_fqn.to_string(),
                     start: r.start,
                     end: r.end,
                 });
-            }
-            checked.push((i64::from(start), i64::from(end)));
+            };
+            checked.push(bounds);
         }
-        Self::from_disjoint(checked).map_err(|[(other_start, other_end), (start, end)]| {
+        let half_open = checked
+            .iter()
+            .map(|&(start, end)| (i64::from(start), i64::from(end)));
+        Self::from_disjoint(half_open).map_err(|OverlappingPair { later, earlier }| {
+            let ((start, end), (other_start, other_end)) = (checked[later], checked[earlier]);
             PoolError::OverlappingMessageReservedRange {
                 message: message_fqn.to_string(),
-                start: start as i32,
-                end: end as i32,
-                other_start: other_start as i32,
-                other_end: other_end as i32,
+                start,
+                end,
+                other_start,
+                other_end,
             }
         })
     }
@@ -135,27 +152,42 @@ impl ReservedRanges {
             }
             checked.push((i64::from(start), i64::from(end) + 1));
         }
-        Self::from_disjoint(checked).map_err(|[(other_start, other_end), (start, end)]| {
+        Self::from_disjoint(checked.into_iter()).map_err(|OverlappingPair { later, earlier }| {
             PoolError::OverlappingEnumReservedRange {
                 enum_name: enum_fqn.to_string(),
-                start: start as i32,
-                end: (end - 1) as i32,
-                other_start: other_start as i32,
-                other_end: (other_end - 1) as i32,
+                start: ranges[later].start,
+                end: ranges[later].end,
+                other_start: ranges[earlier].start,
+                other_end: ranges[earlier].end,
             }
         })
     }
 
-    /// Validate overlap before coalescing hides it. Once sorted by start,
-    /// any overlap is visible between neighboring ranges.
-    fn from_disjoint(mut ranges: Vec<(i64, i64)>) -> Result<Self, [(i64, i64); 2]> {
-        ranges.sort_unstable();
-        for pair in ranges.windows(2) {
-            if pair[1].0 < pair[0].1 {
-                return Err([pair[0], pair[1]]);
+    /// Index validated half-open ranges, given in declaration order, that
+    /// must not overlap. The check runs before coalescing hides an overlap:
+    /// once sorted by start, any overlap is visible between neighboring
+    /// ranges. The declaration index rides along so the error can tell the
+    /// later-declared range of the pair from the earlier one.
+    fn from_disjoint(ranges: impl Iterator<Item = (i64, i64)>) -> Result<Self, OverlappingPair> {
+        let mut by_start: Vec<(i64, i64, usize)> = ranges
+            .enumerate()
+            .map(|(i, (start, end))| (start, end, i))
+            .collect();
+        by_start.sort_unstable();
+        for pair in by_start.windows(2) {
+            let ((_, prev_end, i), (start, _, j)) = (pair[0], pair[1]);
+            if start < prev_end {
+                return Err(OverlappingPair {
+                    later: i.max(j),
+                    earlier: i.min(j),
+                });
             }
         }
-        Ok(Self::from_sorted(ranges))
+        let sorted = by_start
+            .into_iter()
+            .map(|(start, end, _)| (start, end))
+            .collect();
+        Ok(Self::from_sorted(sorted))
     }
 
     /// Sort and coalesce validated half-open ranges. Callers validate first;
@@ -459,16 +491,19 @@ pub enum PoolError {
         start: Option<i32>,
         end: Option<i32>,
     },
-    /// Two reserved ranges declared by the same message overlap. Both ranges
-    /// have exclusive ends, as in `DescriptorProto.ReservedRange`.
-    /// The pair is ordered by `(start, end)`, with the second range in
-    /// `start`/`end`, independently of declaration order.
+    /// Two reserved ranges declared by the same message overlap. `end` is
+    /// exclusive, as in `DescriptorProto.ReservedRange`. Carries both ranges
+    /// as declared: `start..end` is the later of the two in declaration
+    /// order, `other_start..other_end` the earlier one it collides with.
+    /// When three or more ranges overlap, the pair is the first two
+    /// neighbors that overlap once the ranges are ordered by `start`, then
+    /// by `end`.
     OverlappingMessageReservedRange {
         message: String,
-        start: i32,
-        end: i32,
-        other_start: i32,
-        other_end: i32,
+        start: u32,
+        end: u32,
+        other_start: u32,
+        other_end: u32,
     },
     /// An enum reserved range has `start > end`. Both bounds are inclusive,
     /// as in `EnumDescriptorProto.EnumReservedRange`, may be negative, and an
@@ -478,17 +513,20 @@ pub enum PoolError {
         start: Option<i32>,
         end: Option<i32>,
     },
-    /// Two reserved ranges declared by the same enum overlap. Both ranges
-    /// have inclusive bounds, as in `EnumDescriptorProto.EnumReservedRange`.
-    /// Unset bounds are reported as 0.
-    /// The pair is ordered by `(start, end)`, with the second range in
-    /// `start`/`end`, independently of declaration order.
+    /// Two reserved ranges declared by the same enum overlap. Both bounds are
+    /// inclusive, as in `EnumDescriptorProto.EnumReservedRange`, may be
+    /// negative, and an unset bound reads as 0. Carries both ranges as
+    /// declared: `start` to `end` is the later of the two in declaration
+    /// order, `other_start` to `other_end` the earlier one it collides with.
+    /// When three or more ranges overlap, the pair is the first two
+    /// neighbors that overlap once the ranges are ordered by `start`, then
+    /// by `end`.
     OverlappingEnumReservedRange {
         enum_name: String,
-        start: i32,
-        end: i32,
-        other_start: i32,
-        other_end: i32,
+        start: Option<i32>,
+        end: Option<i32>,
+        other_start: Option<i32>,
+        other_end: Option<i32>,
     },
     /// An enum declares no values.
     EmptyEnum { enum_name: String },
@@ -835,8 +873,11 @@ impl core::fmt::Display for PoolError {
                 other_end,
             } => write!(
                 f,
-                "enum {enum_name} reserved range {start} to {end} overlaps reserved range \
-                 {other_start} to {other_end}"
+                "enum {enum_name} reserved range {} to {} overlaps reserved range {} to {}",
+                Bound(*start),
+                Bound(*end),
+                Bound(*other_start),
+                Bound(*other_end),
             ),
             Self::EmptyEnum { enum_name } => {
                 write!(f, "enum {enum_name} declares no values")
