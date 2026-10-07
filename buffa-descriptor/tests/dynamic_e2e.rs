@@ -227,6 +227,46 @@ fn dynamic_message_containers_round_trip() {
 }
 
 #[test]
+fn dynamic_message_map_duplicate_entries_keep_last_value() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let mut wire = Vec::new();
+    for (key, value) in [
+        ("b", 1),
+        ("a", 2),
+        ("b", 3),
+        ("a", 4),
+        ("b", 5),
+        ("a", 6),
+        ("b", 7),
+    ] {
+        let mut entry = Vec::new();
+        Tag::new(1, WireType::LengthDelimited).encode(&mut entry);
+        buffa::types::encode_string(key, &mut entry);
+        Tag::new(2, WireType::Varint).encode(&mut entry);
+        encode_varint(value, &mut entry);
+        Tag::new(3, WireType::LengthDelimited).encode(&mut wire);
+        encode_varint(entry.len() as u64, &mut wire);
+        wire.extend_from_slice(&entry);
+    }
+    let msg = DynamicMessage::decode(Arc::clone(&p), idx, &wire).unwrap();
+    let Some(Value::Map(tags)) = msg.field_by_number(3) else {
+        panic!("tags must be a map");
+    };
+    assert_eq!(
+        tags.entries(),
+        &[
+            (MapKey::String("a".into()), Value::I32(6)),
+            (MapKey::String("b".into()), Value::I32(7)),
+        ]
+    );
+    assert_eq!(
+        DynamicMessage::decode(p, idx, &msg.encode_to_vec()).unwrap(),
+        msg
+    );
+}
+
+#[test]
 fn map_message_values_reject_group_wire_encoding() {
     let p = pool();
     let idx = p.message_index("reflect.test.Containers").unwrap();
