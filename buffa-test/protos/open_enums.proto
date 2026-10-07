@@ -32,6 +32,19 @@ message LazyChild {
   required Priority level = 2 [default = HIGH];
 }
 
+// An absent enum field reads as the enum's first declared value, which is
+// nonzero here. `opened` and `opened_member` use the open representation.
+message AbsentEnums {
+  optional NonZeroFirst closed = 1;
+  optional NonZeroFirst opened = 2;
+
+  oneof choice {
+    NonZeroFirst closed_member = 3;
+    NonZeroFirst opened_member = 4;
+    int32 other = 5;
+  }
+}
+
 enum Priority {
   LOW = 0;
   MEDIUM = 1;

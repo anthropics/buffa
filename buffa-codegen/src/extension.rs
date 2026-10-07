@@ -312,6 +312,7 @@ fn default_fn_tokens(
         features,
         nesting,
         crate::StringRepr::String,
+        &crate::BytesRepr::Vec,
     )?
     .ok_or_else(|| {
         // default_value was non-empty but parse returned None —

@@ -83,16 +83,14 @@
 //!
 //! [`ProtoBytes`](macro@ProtoBytes) and [`ProtoList`](macro@ProtoList) follow
 //! the same shape for `bytes` and `repeated` fields respectively.
-//! `ProtoBytes`'s generated `from_wire` always copies the payload via
-//! `to_vec()` before handing it to the remote type's `From<Vec<u8>>` — there
-//! is no generic way to ask an arbitrary remote type to take ownership of a
-//! borrowed/`Bytes`-backed payload without copying, so this derive can't
-//! reach the zero-copy decode path the built-in `bytes::Bytes` representation
-//! gets. A hand-written `from_wire` doesn't escape the copy either:
-//! `WirePayload::into_bytes` is zero-copy only for an owned multi-chunk
-//! payload, and the common single-chunk source arrives borrowed and is
-//! copied there too. When that copy matters, use the built-in `bytes::Bytes`
-//! representation for the field rather than a custom type.
+//! `ProtoBytes`'s generated `from_wire` always copies the payload with
+//! `to_vec()` before handing it to the remote type's `From<Vec<u8>>`. A remote
+//! type that wraps `bytes::Bytes` can decode without that copy, but not
+//! through this derive: replace the derive with hand-written
+//! `Deref<Target = [u8]>`, `AsRef<[u8]>`, `From<Vec<u8>>` and
+//! `buffa::ProtoBytes` impls, and set
+//! `buffa::ProtoBytes::PREFERS_OWNED_PAYLOAD` to `true`. That const's
+//! documentation in `buffa` has an example.
 //!
 //! The encode side has the mirror-image limitation with an escape hatch: by
 //! default the generated `ProtoBytes` impl inherits the trait's `as_shared`
@@ -297,6 +295,9 @@ pub fn derive_proto_string(input: TokenStream) -> TokenStream {
 /// `as_shared = path` key generates the encode-side
 /// `buffa::ProtoBytes::as_shared` override — see the crate docs for the
 /// callable's contract.
+/// The generated impl leaves `buffa::ProtoBytes::PREFERS_OWNED_PAYLOAD` at
+/// `false` and copies each payload; the crate docs say what a type that
+/// should share the input does instead.
 /// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
 /// the `arbitrary` crate wherever the key is active; the crate docs' section
 /// on the key shows how to make it conditional.
