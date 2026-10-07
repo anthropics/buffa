@@ -294,9 +294,13 @@ pub enum PoolError {
     /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
     /// [`buffa::encoding::LAST_RESERVED_FIELD_NUMBER`].
     ReservedFieldNumber { field: String, number: i32 },
-    /// A map entry message does not have exactly the optional fields `key`
-    /// (1) and `value` (2), in that order, or the key type is not a valid map
-    /// key per the protobuf spec.
+    /// A map field's entry message is malformed. The entry must have exactly
+    /// two fields, in this order: `key` with number 1, then `value` with
+    /// number 2. Each must be optional, and the key type must be an integer
+    /// type, `bool`, or `string` (see [`ScalarType::is_valid_map_key`]).
+    ///
+    /// `message` is the full name of the map field that uses the entry, and
+    /// the entry message is the field's type.
     MalformedMapEntry { message: String },
     /// Two extensions claim the same field number on the same message.
     /// protoc rejects this within one compilation unit, but it can arise
@@ -559,9 +563,12 @@ impl core::fmt::Display for PoolError {
                     "field {field} uses field number {number}, which is reserved for the protobuf implementation"
                 )
             }
-            Self::MalformedMapEntry { message } => {
-                write!(f, "malformed map entry message {message}")
-            }
+            Self::MalformedMapEntry { message } => write!(
+                f,
+                "map field {message} has a malformed entry message: it needs exactly the optional \
+                 fields key = 1 and value = 2, in that order, and a key of an integer type, bool, \
+                 or string"
+            ),
             Self::DuplicateExtensionNumber { extendee, number } => {
                 write!(
                     f,
