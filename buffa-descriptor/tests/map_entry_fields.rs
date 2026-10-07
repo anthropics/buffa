@@ -141,6 +141,13 @@ fn map_entries_require_exactly_key_and_value_fields() {
 }
 
 #[test]
+fn map_entry_key_must_be_declared_before_value() {
+    let mut reversed = entry();
+    reversed.field.reverse();
+    assert_malformed(reversed);
+}
+
+#[test]
 fn map_entry_fields_must_be_optional() {
     for index in 0..2 {
         for label in [Label::LABEL_REPEATED, Label::LABEL_REQUIRED] {
@@ -192,38 +199,33 @@ fn valid_map_entry_fields_link_and_round_trip() {
         ("editions", Some(Edition::EDITION_2023)),
         ("editions", Some(Edition::EDITION_2024)),
     ] {
-        for reverse in [false, true] {
-            for omit_labels in [false, true] {
-                let mut valid = entry();
-                if reverse {
-                    valid.field.reverse();
+        for omit_labels in [false, true] {
+            let mut valid = entry();
+            if omit_labels {
+                for field in &mut valid.field {
+                    field.label = None;
                 }
-                if omit_labels {
-                    for field in &mut valid.field {
-                        field.label = None;
-                    }
-                }
-                let mut set = descriptor_set(valid);
-                set.file[0].syntax = Some(syntax.into());
-                set.file[0].edition = edition;
-                let pool = Arc::new(DescriptorPool::new(set).unwrap());
-                let holder = pool.message_by_name("map.entry.test.Holder").unwrap();
-                assert_eq!(
-                    holder.field(1).unwrap().kind(),
-                    FieldKind::Map {
-                        key: ScalarType::String,
-                        value: SingularKind::Scalar(ScalarType::Int32),
-                    }
-                );
-                let index = pool.message_index("map.entry.test.Holder").unwrap();
-                let wire = [0x0a, 5, 0x0a, 1, b'k', 0x10, 7];
-                let message = DynamicMessage::decode(pool, index, &wire).unwrap();
-                let Some(Value::Map(map)) = message.field_by_number(1) else {
-                    panic!("expected a map");
-                };
-                assert_eq!(map.get_str("k"), Some(&Value::I32(7)));
-                assert_eq!(message.encode_to_vec(), wire);
             }
+            let mut set = descriptor_set(valid);
+            set.file[0].syntax = Some(syntax.into());
+            set.file[0].edition = edition;
+            let pool = Arc::new(DescriptorPool::new(set).unwrap());
+            let holder = pool.message_by_name("map.entry.test.Holder").unwrap();
+            assert_eq!(
+                holder.field(1).unwrap().kind(),
+                FieldKind::Map {
+                    key: ScalarType::String,
+                    value: SingularKind::Scalar(ScalarType::Int32),
+                }
+            );
+            let index = pool.message_index("map.entry.test.Holder").unwrap();
+            let wire = [0x0a, 5, 0x0a, 1, b'k', 0x10, 7];
+            let message = DynamicMessage::decode(pool, index, &wire).unwrap();
+            let Some(Value::Map(map)) = message.field_by_number(1) else {
+                panic!("expected a map");
+            };
+            assert_eq!(map.get_str("k"), Some(&Value::I32(7)));
+            assert_eq!(message.encode_to_vec(), wire);
         }
     }
 }

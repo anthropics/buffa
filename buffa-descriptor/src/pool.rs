@@ -291,8 +291,8 @@ pub enum PoolError {
     /// [`buffa::encoding::LAST_RESERVED_FIELD_NUMBER`].
     ReservedFieldNumber { field: String, number: i32 },
     /// A map entry message does not have exactly the optional fields `key`
-    /// (1) and `value` (2), or the key type is not a valid map key per the
-    /// protobuf spec.
+    /// (1) and `value` (2), in that order, or the key type is not a valid map
+    /// key per the protobuf spec.
     MalformedMapEntry { message: String },
     /// Two extensions claim the same field number on the same message.
     /// protoc rejects this within one compilation unit, but it can arise
@@ -2619,22 +2619,18 @@ impl DescriptorPool {
         field_fqn: &str,
         scope: LinkScope<'_>,
     ) -> Result<(ScalarType, SingularKind), PoolError> {
-        if entry.field.len() != 2 {
-            return Err(PoolError::MalformedMapEntry {
-                message: field_fqn.to_string(),
-            });
-        }
-        let key_fd = entry.field.iter().find(|f| f.number == Some(1));
-        let val_fd = entry.field.iter().find(|f| f.number == Some(2));
-        let (Some(kf), Some(vf)) = (key_fd, val_fd) else {
+        // The key is the first field and the value the second, as protoc
+        // writes them and as it reads them back.
+        let [kf, vf] = entry.field.as_slice() else {
             return Err(PoolError::MalformedMapEntry {
                 message: field_fqn.to_string(),
             });
         };
-        if [("key", kf), ("value", vf)]
+        if [("key", 1, kf), ("value", 2, vf)]
             .into_iter()
-            .any(|(name, field)| {
+            .any(|(name, number, field)| {
                 field.name.as_deref() != Some(name)
+                    || field.number != Some(number)
                     || field.label.unwrap_or_default() != Label::LABEL_OPTIONAL
             })
         {
