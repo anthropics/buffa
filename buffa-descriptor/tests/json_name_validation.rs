@@ -185,10 +185,57 @@ fn invalid_json_names_do_not_mutate_an_existing_pool() {
 }
 
 #[test]
+fn bracketed_custom_json_names_are_rejected() {
+    for name in ["[x]", "[]", "[json.test.ext]", "[a][b]"] {
+        let err = DescriptorPool::new(descriptor_set(file_with_json_name(Some(name))))
+            .expect_err("a bracketed JSON name reads back as an extension key");
+        assert!(matches!(
+            &err,
+            PoolError::InvalidJsonName { field, name: actual }
+                if field == "json.test.Item.field_name" && actual == name
+        ));
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "field json.test.Item.field_name has JSON name {name:?}, \
+                 which has the form of an extension key"
+            )
+        );
+    }
+}
+
+#[test]
+fn bracketed_extension_json_names_link() {
+    let mut file = file_with_json_name(None);
+    file.syntax = Some("proto2".into());
+    file.message_type[0].extension_range.push(ExtensionRange {
+        start: Some(100),
+        end: Some(200),
+        ..Default::default()
+    });
+    file.extension.push(FieldDescriptorProto {
+        name: Some("ext".into()),
+        number: Some(100),
+        label: Some(Label::LABEL_OPTIONAL),
+        r#type: Some(Type::TYPE_INT32),
+        extendee: Some(".json.test.Item".into()),
+        json_name: Some("[json.test.ext]".into()),
+        ..Default::default()
+    });
+    let pool = DescriptorPool::new(descriptor_set(file)).unwrap();
+    assert!(pool.extension_by_name("json.test.ext").is_some());
+}
+
+#[test]
 fn valid_custom_json_names_are_preserved() {
     for name in [
         "",
         "customName",
+        "[",
+        "]",
+        "[open",
+        "close]",
+        "a[x]",
         "雪",
         "with spaces",
         "with-dash",
@@ -197,7 +244,7 @@ fn valid_custom_json_names_are_preserved() {
         r"literal\0text",
     ] {
         let pool = DescriptorPool::new(descriptor_set(file_with_json_name(Some(name))))
-            .expect("only NUL is forbidden in JSON names");
+            .expect("the name has no NUL and is not bracketed");
         let message = pool.message_by_name("json.test.Item").unwrap();
         let field = message.field(1).unwrap();
         assert_eq!(field.json_name(), name);
