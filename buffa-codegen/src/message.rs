@@ -223,10 +223,16 @@ fn generate_message_with_nesting(
                 quote! { Some(value) }
             };
             let param = &s.param_type;
+            // The setter writes the deprecated field, so it is deprecated too:
+            // without this, `msg.with_x(v)` stays silent while `msg.x = v`
+            // warns, and the builder API becomes the quiet way to reach a
+            // deprecated field. The impl-level guard covers the assignment.
+            let setter_deprecated = f.deprecated.then(|| quote! { #[deprecated] });
             quote! {
                 #[must_use = "with_* setters return `self` by value; assign or chain the result"]
                 #[inline]
                 #[doc = #doc]
+                #setter_deprecated
                 pub fn #setter_ident(mut self, value: #param) -> Self {
                     self.#field_ident = #body;
                     self
@@ -804,10 +810,14 @@ fn generate_message_with_nesting(
             }
         })
         .collect();
+    // Generated impls that have to visit every field would otherwise warn on
+    // their own deprecated fields; see `deprecated_field_allow`.
+    let deprecated_field_allow = deprecated_field_allow(ctx, msg, proto_fqn);
     let debug_impl = if ctx.skip_debug(proto_fqn) {
         quote! {}
     } else {
         quote! {
+            #deprecated_field_allow
             impl ::core::fmt::Debug for #name_ident {
                 fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                     f.debug_struct(#struct_name_str)
@@ -830,6 +840,7 @@ fn generate_message_with_nesting(
     let with_setters_impl = if ctx.config.generate_with_setters && !setter_methods.is_empty() {
         quote! {
             #non_snake_attr
+            #deprecated_field_allow
             impl #name_ident {
                 #setter_methods
             }
@@ -1251,9 +1262,11 @@ fn generate_custom_deserialize(
     // `__oneof_<name>` locals bound inside the visitor.
     let expecting_msg = format!("struct {name_ident}");
     let non_snake_attr = ctx.message_non_snake_attr(msg);
+    let deprecated_field_allow = deprecated_field_allow(ctx, msg, proto_fqn);
 
     Ok(quote! {
         #non_snake_attr
+        #deprecated_field_allow
         impl<'de> ::serde::Deserialize<'de> for #name_ident {
             fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> ::core::result::Result<Self, D::Error> {
                 struct _V;
@@ -1956,6 +1969,11 @@ struct GeneratedField {
     /// Field carries `[debug_redact = true]`; the generated `Debug` impl
     /// prints [`DEBUG_REDACT_PLACEHOLDER`] instead of the value.
     debug_redact: bool,
+    /// Field ends up deprecated — from `[deprecated = true]` or from a
+    /// caller-supplied `#[deprecated]` via `field_attribute`. Its declaration
+    /// and its `with_*` setter carry `#[deprecated]`, and the message's
+    /// field-visiting impls carry `#[allow(deprecated)]`.
+    deprecated: bool,
 }
 
 fn generate_field(
@@ -1999,6 +2017,18 @@ fn generate_field(
     };
     let custom_field_attrs =
         CodeGenContext::matching_attributes(&ctx.config.field_attributes, &field_fqn)?;
+    // Deprecation reaches a generated field from two sources: the
+    // `[deprecated = true]` option, and a caller-supplied `#[deprecated]` from
+    // `field_attribute` (the documented workaround for the option having been
+    // dropped). rustc permits only one `deprecated` attribute per item, so when
+    // both apply the caller's — which can carry a note naming the replacement —
+    // wins. Either source marks the field and its `with_*` setter, and either
+    // one makes the generated items that visit this message's fields need a
+    // guard, so neither the field nor the setter can be reached quietly.
+    let option_deprecated = is_deprecated(field);
+    let caller_deprecated = caller_deprecated_attr(ctx, &field_fqn);
+    let deprecated_attr =
+        (option_deprecated && !caller_deprecated).then(|| quote! { #[deprecated] });
     let arbitrary_field_attr = ctx
         .config
         .generate_arbitrary
@@ -2022,6 +2052,7 @@ fn generate_field(
     let tokens = quote! {
         #doc
         #rename_note
+        #deprecated_attr
         #serde_attr
         #arbitrary_field_attr
         #custom_field_attrs
@@ -2058,6 +2089,7 @@ fn generate_field(
         ident: rust_name,
         setter,
         debug_redact: is_debug_redacted(field),
+        deprecated: option_deprecated || caller_deprecated,
     }))
 }
 
@@ -2083,6 +2115,184 @@ pub(crate) fn is_debug_redacted(
         .as_option()
         .and_then(|o| o.debug_redact)
         .unwrap_or(false)
+}
+
+/// True when the field carries `[deprecated = true]`.
+pub(crate) fn is_deprecated(field: &crate::generated::descriptor::FieldDescriptorProto) -> bool {
+    field
+        .options
+        .as_option()
+        .and_then(|o| o.deprecated)
+        .unwrap_or(false)
+}
+
+/// True when a caller-supplied `field_attribute` that matches `fqn` already
+/// carries a `#[deprecated]` marker.
+///
+/// rustc rejects an item with two `deprecated` attributes, so the option-
+/// derived marker has to yield to a hand-restored one rather than stack on top
+/// of it. Unparseable attribute strings are ignored here — they are reported
+/// by [`CodeGenContext::matching_attributes`] on the way to the same field.
+pub(crate) fn caller_deprecated_attr(ctx: &CodeGenContext, fqn: &str) -> bool {
+    let fqn_dotted = format!(".{fqn}");
+    ctx.config.field_attributes.iter().any(|(prefix, attr)| {
+        crate::context::matches_proto_prefix(prefix, &fqn_dotted) && is_deprecated_attr_str(attr)
+    })
+}
+
+/// True when an attribute string contains a built-in `#[deprecated]` — at any
+/// position, since `matching_attributes` accepts a stream of attributes such as
+/// `#[serde(skip)] #[deprecated(note = "x")]`, and in any `cfg_attr` arm, since
+/// `#[cfg_attr(feature = "x", deprecated)]` expands to the same attribute.
+///
+/// Matched by token shape rather than substring; see [`names_deprecated`].
+pub(crate) fn is_deprecated_attr_str(attr: &str) -> bool {
+    let Ok(tokens) = syn::parse_str::<proc_macro2::TokenStream>(attr) else {
+        return false;
+    };
+    let mut iter = tokens.into_iter().peekable();
+    while let Some(tree) = iter.next() {
+        let proc_macro2::TokenTree::Punct(punct) = tree else {
+            continue;
+        };
+        if punct.as_char() != '#' {
+            continue;
+        }
+        // `#![…]` is an inner attribute: a `!` sits between the `#` and the
+        // group. Skip that pair and keep scanning — the caller's string is a
+        // stream, and stopping here would miss a later `#[deprecated]`.
+        if matches!(iter.peek(), Some(proc_macro2::TokenTree::Punct(bang)) if bang.as_char() == '!')
+        {
+            let _ = iter.next();
+        }
+        let Some(proc_macro2::TokenTree::Group(group)) = iter.next() else {
+            continue;
+        };
+        if group.delimiter() == proc_macro2::Delimiter::Bracket
+            && names_deprecated(group.stream().into_iter())
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether any comma-separated segment of an attribute body starts with the
+/// built-in `deprecated` ident, recursing into parenthesised arguments so
+/// `cfg_attr(feature = "x", deprecated)` is recognized.
+///
+/// Starting-with is what keeps the neighbours honest: `#[deprecated_alias]` is
+/// a different ident, `#[some_tool::deprecated]` starts with `some_tool`, and
+/// `#[cfg_attr(x, allow(deprecated))]` reaches an `allow` segment, not a
+/// `deprecated` one.
+fn names_deprecated(iter: impl Iterator<Item = proc_macro2::TokenTree>) -> bool {
+    let stream: Vec<proc_macro2::TokenTree> = iter.collect();
+    stream
+        .split(|t| matches!(t, proc_macro2::TokenTree::Punct(p) if p.as_char() == ','))
+        .any(|segment| {
+            let mut it = segment.iter();
+            let Some(proc_macro2::TokenTree::Ident(id)) = it.next() else {
+                return false;
+            };
+            if id == "deprecated" && !matches!(it.next(), Some(proc_macro2::TokenTree::Punct(p)) if p.as_char() == ':')
+            {
+                return true;
+            }
+            match it.next() {
+                Some(proc_macro2::TokenTree::Group(group))
+                    if group.delimiter() == proc_macro2::Delimiter::Parenthesis
+                        // `allow(deprecated)` names a *lint*, not an attribute,
+                        // so its arguments must not be scanned — otherwise a
+                        // suppression would look like a marker and codegen would
+                        // drop the option-derived one.
+                        && !matches!(
+                            id.to_string().as_str(),
+                            "allow" | "expect" | "warn" | "deny" | "forbid"
+                        ) =>
+                {
+                    names_deprecated(group.stream().into_iter())
+                }
+                _ => false,
+            }
+        })
+}
+
+/// True when generating code for `field` emits a reference to a *deprecated*
+/// enum variant, which warns exactly like a field read does.
+///
+/// This is the `[default = DEPRECATED_VALUE]` case: `defaults.rs` spells the
+/// default out as `Enum::DEPRECATED_VALUE` inside the containing message's
+/// `Default` impl and `merge_field` arm, so a message can need the guard
+/// without owning a single deprecated field.
+pub(crate) fn default_names_deprecated_value(
+    ctx: &CodeGenContext,
+    field: &crate::generated::descriptor::FieldDescriptorProto,
+) -> bool {
+    if field.r#type.unwrap_or_default() != Type::TYPE_ENUM {
+        return false;
+    }
+    // protoc rejects `default` on repeated and map fields, so only a singular
+    // field can spell a variant out. An explicit-presence (`optional`) field is
+    // `Option<T>` in the generated struct and its default never appears as an
+    // expression, which makes the guard slightly wider than strictly needed for
+    // that shape — cheaper than threading per-field features through every
+    // call site, and it can only silence a lint inside code that visits fields.
+    if field.label.unwrap_or_default() == Label::LABEL_REPEATED {
+        return false;
+    }
+    match (field.type_name.as_deref(), field.default_value.as_deref()) {
+        (Some(type_name), Some(default)) => ctx.enum_value_is_deprecated(type_name, default),
+        _ => false,
+    }
+}
+
+/// Whether generated code for `msg` touches anything marked deprecated: one of
+/// its own non-oneof fields (from the option or from a caller's
+/// `field_attribute`), or an enum variant named by a field's `[default = …]`.
+fn references_deprecated(ctx: &CodeGenContext, msg: &DescriptorProto, proto_fqn: &str) -> bool {
+    msg.field.iter().any(|f| {
+        if crate::impl_message::is_real_oneof_member(f) {
+            return false;
+        }
+        if is_deprecated(f) || default_names_deprecated_value(ctx, f) {
+            return true;
+        }
+        match f.name.as_deref() {
+            Some(field_name) => caller_deprecated_attr(ctx, &format!("{proto_fqn}.{field_name}")),
+            None => false,
+        }
+    })
+}
+
+/// `#[allow(deprecated)]` for the generated items of `msg` that must visit its
+/// own deprecated members: the codec impls, the manual `Debug` and `Default`
+/// impls, the `with_*` setters, the reflection vtable, the view and lazy-view
+/// conversions, a table message's static, and a view's `Default` impl.
+///
+/// Those visits are structural (an encoder has to touch every field), so
+/// without the guard a single `[deprecated = true]` field makes the generated
+/// module itself warn. Empty unless `msg` needs it, so unaffected messages
+/// keep byte-identical output.
+///
+/// Inside these impls the lint is quiet for every item, so a *foreign*
+/// deprecated item reached through a `string_type`/`extern_path` remap or a
+/// custom default expression is not reported from generated code. Narrowing
+/// the guard to per-field statements would touch every statement builder in
+/// `impl_message.rs`.
+///
+/// A deprecated oneof member is neither marked nor guarded here;
+/// `examples/addressbook`, whose variant is marked through `field_attribute`,
+/// needs its module-level `#[allow(deprecated)]` for that reason.
+pub(crate) fn deprecated_field_allow(
+    ctx: &CodeGenContext,
+    msg: &DescriptorProto,
+    proto_fqn: &str,
+) -> TokenStream {
+    if references_deprecated(ctx, msg, proto_fqn) {
+        quote! { #[allow(deprecated)] }
+    } else {
+        TokenStream::new()
+    }
 }
 
 /// Find the synthetic map-entry nested message for a map field.
@@ -2810,8 +3020,10 @@ fn generate_custom_default(
     } else {
         quote! {}
     };
+    let deprecated_field_allow = deprecated_field_allow(ctx, msg, proto_fqn);
 
     Ok(Some(quote! {
+        #deprecated_field_allow
         impl ::core::default::Default for #name_ident {
             fn default() -> Self {
                 Self {

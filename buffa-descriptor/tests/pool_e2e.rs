@@ -3913,6 +3913,9 @@ fn proto2_json_name_conflicts_are_accepted_as_protoc_emits_them() {
 /// `deprecated_legacy_json_field_conflicts` is protoc's own opt-out: it
 /// downgrades the conflict to a warning and emits the set. Honour it rather
 /// than reject a descriptor set the author explicitly asked protoc to produce.
+// The option is `[deprecated = true]` in descriptor.proto, so setting it here
+// warns by design — this test is about honoring the deprecated knob.
+#[allow(deprecated)]
 #[test]
 fn deprecated_legacy_json_field_conflicts_opts_a_proto3_message_out() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;

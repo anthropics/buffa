@@ -7073,6 +7073,7 @@ pub struct FileOptions {
     /// This option does nothing.
     ///
     /// Field 20: `java_generate_equals_and_hash`
+    #[deprecated]
     #[cfg_attr(
         feature = "json",
         serde(
@@ -7325,6 +7326,7 @@ pub struct FileOptions {
     #[doc(hidden)]
     pub __buffa_unknown_fields: __FileOptionsExtJson,
 }
+#[allow(deprecated)]
 impl ::core::fmt::Debug for FileOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("FileOptions")
@@ -7359,6 +7361,7 @@ impl FileOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileOptions";
 }
+#[allow(deprecated)]
 impl FileOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
@@ -7390,6 +7393,7 @@ impl FileOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::java_generate_equals_and_hash`] to `Some(value)`, consuming and returning `self`.
+    #[deprecated]
     pub fn with_java_generate_equals_and_hash(mut self, value: bool) -> Self {
         self.java_generate_equals_and_hash = Some(value);
         self
@@ -7534,6 +7538,7 @@ impl ::buffa::MessageName for FileOptions {
     const FULL_NAME: &'static str = "google.protobuf.FileOptions";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileOptions";
 }
+#[allow(deprecated)]
 impl ::buffa::Message for FileOptions {
     /// Returns the total encoded size in bytes.
     ///
@@ -7992,6 +7997,7 @@ impl ::buffa::ExtensionSet for FileOptions {
     }
 }
 #[cfg(feature = "text")]
+#[allow(deprecated)]
 impl ::buffa::text::TextFormat for FileOptions {
     fn encode_text(
         &self,
@@ -8217,6 +8223,7 @@ impl ::buffa::text::TextFormat for FileOptions {
     }
 }
 #[cfg(feature = "json")]
+#[allow(deprecated)]
 impl<'de> ::serde::Deserialize<'de> for FileOptions {
     fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
@@ -8920,6 +8927,7 @@ pub struct MessageOptions {
     /// teams have had time to migrate.
     ///
     /// Field 11: `deprecated_legacy_json_field_conflicts`
+    #[deprecated]
     #[cfg_attr(
         feature = "json",
         serde(
@@ -8960,6 +8968,7 @@ pub struct MessageOptions {
     #[doc(hidden)]
     pub __buffa_unknown_fields: __MessageOptionsExtJson,
 }
+#[allow(deprecated)]
 impl ::core::fmt::Debug for MessageOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("MessageOptions")
@@ -8986,6 +8995,7 @@ impl MessageOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MessageOptions";
 }
+#[allow(deprecated)]
 impl MessageOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
@@ -9018,6 +9028,7 @@ impl MessageOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::deprecated_legacy_json_field_conflicts`] to `Some(value)`, consuming and returning `self`.
+    #[deprecated]
     pub fn with_deprecated_legacy_json_field_conflicts(mut self, value: bool) -> Self {
         self.deprecated_legacy_json_field_conflicts = Some(value);
         self
@@ -9030,6 +9041,7 @@ impl ::buffa::MessageName for MessageOptions {
     const FULL_NAME: &'static str = "google.protobuf.MessageOptions";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MessageOptions";
 }
+#[allow(deprecated)]
 impl ::buffa::Message for MessageOptions {
     /// Returns the total encoded size in bytes.
     ///
@@ -9224,6 +9236,7 @@ impl ::buffa::ExtensionSet for MessageOptions {
     }
 }
 #[cfg(feature = "text")]
+#[allow(deprecated)]
 impl ::buffa::text::TextFormat for MessageOptions {
     fn encode_text(
         &self,
@@ -9324,6 +9337,7 @@ impl ::buffa::text::TextFormat for MessageOptions {
     }
 }
 #[cfg(feature = "json")]
+#[allow(deprecated)]
 impl<'de> ::serde::Deserialize<'de> for MessageOptions {
     fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
@@ -9678,6 +9692,7 @@ pub struct FieldOptions {
     /// For Google-internal migration only. Do not use.
     ///
     /// Field 10: `weak`
+    #[deprecated]
     #[cfg_attr(
         feature = "json",
         serde(rename = "weak", skip_serializing_if = "::core::option::Option::is_none")
@@ -9771,6 +9786,7 @@ pub struct FieldOptions {
     #[doc(hidden)]
     pub __buffa_unknown_fields: __FieldOptionsExtJson,
 }
+#[allow(deprecated)]
 impl ::core::fmt::Debug for FieldOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("FieldOptions")
@@ -9798,6 +9814,7 @@ impl FieldOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions";
 }
+#[allow(deprecated)]
 impl FieldOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
@@ -9844,6 +9861,7 @@ impl FieldOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::weak`] to `Some(value)`, consuming and returning `self`.
+    #[deprecated]
     pub fn with_weak(mut self, value: bool) -> Self {
         self.weak = Some(value);
         self
@@ -9873,6 +9891,7 @@ impl ::buffa::MessageName for FieldOptions {
     const FULL_NAME: &'static str = "google.protobuf.FieldOptions";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions";
 }
+#[allow(deprecated)]
 impl ::buffa::Message for FieldOptions {
     /// Returns the total encoded size in bytes.
     ///
@@ -10279,6 +10298,7 @@ impl ::buffa::ExtensionSet for FieldOptions {
     }
 }
 #[cfg(feature = "text")]
+#[allow(deprecated)]
 impl ::buffa::text::TextFormat for FieldOptions {
     fn encode_text(
         &self,
@@ -10433,6 +10453,7 @@ impl ::buffa::text::TextFormat for FieldOptions {
     }
 }
 #[cfg(feature = "json")]
+#[allow(deprecated)]
 impl<'de> ::serde::Deserialize<'de> for FieldOptions {
     fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,
@@ -12591,6 +12612,7 @@ pub struct EnumOptions {
     /// had time to migrate.
     ///
     /// Field 6: `deprecated_legacy_json_field_conflicts`
+    #[deprecated]
     #[cfg_attr(
         feature = "json",
         serde(
@@ -12631,6 +12653,7 @@ pub struct EnumOptions {
     #[doc(hidden)]
     pub __buffa_unknown_fields: __EnumOptionsExtJson,
 }
+#[allow(deprecated)]
 impl ::core::fmt::Debug for EnumOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("EnumOptions")
@@ -12652,6 +12675,7 @@ impl EnumOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumOptions";
 }
+#[allow(deprecated)]
 impl EnumOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
@@ -12670,6 +12694,7 @@ impl EnumOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::deprecated_legacy_json_field_conflicts`] to `Some(value)`, consuming and returning `self`.
+    #[deprecated]
     pub fn with_deprecated_legacy_json_field_conflicts(mut self, value: bool) -> Self {
         self.deprecated_legacy_json_field_conflicts = Some(value);
         self
@@ -12682,6 +12707,7 @@ impl ::buffa::MessageName for EnumOptions {
     const FULL_NAME: &'static str = "google.protobuf.EnumOptions";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumOptions";
 }
+#[allow(deprecated)]
 impl ::buffa::Message for EnumOptions {
     /// Returns the total encoded size in bytes.
     ///
@@ -12844,6 +12870,7 @@ impl ::buffa::ExtensionSet for EnumOptions {
     }
 }
 #[cfg(feature = "text")]
+#[allow(deprecated)]
 impl ::buffa::text::TextFormat for EnumOptions {
     fn encode_text(
         &self,
@@ -12923,6 +12950,7 @@ impl ::buffa::text::TextFormat for EnumOptions {
     }
 }
 #[cfg(feature = "json")]
+#[allow(deprecated)]
 impl<'de> ::serde::Deserialize<'de> for EnumOptions {
     fn deserialize<D: ::serde::Deserializer<'de>>(
         d: D,

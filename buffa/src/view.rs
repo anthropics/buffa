@@ -1431,30 +1431,29 @@ impl<V: DefaultViewInstance> core::ops::Deref for MessageFieldView<V> {
     }
 }
 
-/// Wire-equivalent equality: `Unset` equals `Set(v)` when `v` equals the
-/// default instance.
+/// Presence-aware equality, matching [`MessageField`](crate::MessageField):
+/// two unset fields are equal, two set fields are equal when their views are,
+/// and an unset field never equals a set one, not even one set to the default,
+/// since only the set field is on the wire. Compare `*a == *b` (needs
+/// [`DefaultViewInstance`]) to ignore presence.
 ///
-/// This matches [`MessageField::eq`](crate::MessageField) on the owned side,
-/// so `view_a == view_b` agrees with
+/// `view_a == view_b` agrees with
 /// `view_a.to_owned_message() == view_b.to_owned_message()`.
-///
-/// The comparison against the default routes through the
-/// [`Deref`](core::ops::Deref) impl.
-impl<V: PartialEq + DefaultViewInstance> PartialEq for MessageFieldView<V> {
+impl<V: PartialEq> PartialEq for MessageFieldView<V> {
     fn eq(&self, other: &Self) -> bool {
+        // Presence is part of the value, as for `MessageField`: an unset field
+        // differs from one set to its default.
         match (&self.inner, &other.inner) {
-            // Short-circuit: two unset fields are equal regardless of whether
-            // V::PartialEq is reflexive (e.g. a view containing an f64 NaN).
+            // Two unset fields are equal regardless of whether V::PartialEq is
+            // reflexive (e.g. a view containing an f64 NaN).
             (None, None) => true,
-            // At least one side is set. Deref handles None → default.
-            _ => {
-                <Self as core::ops::Deref>::deref(self) == <Self as core::ops::Deref>::deref(other)
-            }
+            (Some(a), Some(b)) => a == b,
+            _ => false,
         }
     }
 }
 
-impl<V: Eq + DefaultViewInstance> Eq for MessageFieldView<V> {}
+impl<V: Eq> Eq for MessageFieldView<V> {}
 
 // ---------------------------------------------------------------------------
 // Lazy views (generated under the `lazy_views` codegen option)
@@ -3326,7 +3325,7 @@ mod tests {
         assert_eq!(len, 0);
     }
 
-    // ── MessageFieldView PartialEq (wire-equivalent) ───────────────────
+    // ── MessageFieldView PartialEq (presence-aware) ────────────────────
 
     #[test]
     fn message_field_view_equality() {
@@ -3341,11 +3340,11 @@ mod tests {
 
         #[rustfmt::skip]
         let cases: &[(Option<&str>, Option<&str>, bool)] = &[
-            // Wire-equivalent semantics: Unset == Set(default), matching
-            // MessageField::PartialEq on the owned side.
+            // Presence is part of the value, matching MessageField::PartialEq
+            // on the owned side: Set(default) is on the wire, Unset is not.
             (None,      None,        true ),  // Unset == Unset
-            (None,      Some(""),    true ),  // Unset == Set(default)
-            (Some(""),  None,        true ),  // Set(default) == Unset (symmetric)
+            (None,      Some(""),    false),  // Unset != Set(default)
+            (Some(""),  None,        false),  // Set(default) != Unset (symmetric)
             (Some(""),  Some(""),    true ),  // Set(default) == Set(default)
             (None,      Some("x"),   false),  // Unset != Set(nondefault)
             (Some("x"), None,        false),  // Set(nondefault) != Unset (symmetric)
@@ -3360,6 +3359,10 @@ mod tests {
                 "({l:?} == {r:?}) should be {expect}"
             );
         }
+
+        // `==` needs no `DefaultViewInstance`.
+        assert!(MessageFieldView::set(1i32) == MessageFieldView::set(1));
+        assert!(MessageFieldView::set(1i32) != MessageFieldView::unset());
     }
 
     // ── RepeatedView ─────────────────────────────────────────────────────

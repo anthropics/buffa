@@ -310,6 +310,24 @@ const _: fn() = || {
 /// assert!(empty.is_unset());
 /// assert_eq!(empty.name, "");
 /// ```
+///
+/// # Equality
+///
+/// `==` includes presence, as for `Option<T>` and in Go's `proto.Equal`: an
+/// unset field differs from one set to its default, since only the set one is
+/// on the wire. Deref both sides to compare the values alone; that ignores
+/// presence at this level only, not in message fields nested inside. `Deref`
+/// needs `T: DefaultInstance`, which `==` does not.
+///
+/// ```rust
+/// # use buffa::__doctest_fixtures::Person;
+/// use buffa::MessageField;
+///
+/// let unset: MessageField<Person> = MessageField::none();
+/// let set_empty: MessageField<Person> = MessageField::some(Person::default());
+/// assert!(unset != set_empty);
+/// assert!(*unset == *set_empty);
+/// ```
 pub struct MessageField<T: Default, P = Box<T>> {
     inner: Option<P>,
     _marker: core::marker::PhantomData<T>,
@@ -569,41 +587,26 @@ impl<T: Default + Clone, P: ProtoBox<T> + Clone> Clone for MessageField<T, P> {
     }
 }
 
-// The mixed set/unset arms of `PartialEq::eq`. The set side is compared against
-// `T::default_instance()`, so no temporary `T` is allocated. They are out of
-// line to keep `default_instance()`'s one-time initialisation out of `eq`: with
-// it inlined there, `eq` was not inlined into its callers even when marked
-// `#[inline]`, and a loop comparing message fields paid for a call each time.
-//
-// There are two functions because each keeps the operand order of the `eq`
-// arm it serves, which matters when `T`'s `PartialEq` is not symmetric. They
-// are generic over `T` alone so both pointer representations share one copy.
-#[inline(never)]
-fn value_eq_default_instance<T: DefaultInstance + PartialEq>(value: &T) -> bool {
-    *value == *T::default_instance()
-}
-
-#[inline(never)]
-fn default_instance_eq_value<T: DefaultInstance + PartialEq>(value: &T) -> bool {
-    *T::default_instance() == *value
-}
-
-impl<T: DefaultInstance + PartialEq, P: ProtoBox<T>> PartialEq for MessageField<T, P> {
+/// Presence-aware equality: two unset fields are equal, two set fields are
+/// equal when their values are, and an unset field never equals a set one,
+/// not even one set to the default. See [`MessageField`]'s "Equality" section.
+impl<T: Default + PartialEq, P: ProtoBox<T>> PartialEq for MessageField<T, P> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        // Compare the pointed-to `T` values (via `**`), not the pointers, so no
-        // `P: PartialEq` bound is needed and a set-to-default field equals an
-        // unset one.
+        // Presence is part of the value, as in Go's `proto.Equal` and C++'s
+        // `MessageDifferencer::Equals`: an unset field and one set to its
+        // default encode differently, so they are not equal. Compare the
+        // pointed-to `T` values (via `**`), not the pointers, so no
+        // `P: PartialEq` bound is needed.
         match (&self.inner, &other.inner) {
             (Some(a), Some(b)) => **a == **b,
             (None, None) => true,
-            (Some(a), None) => value_eq_default_instance(&**a),
-            (None, Some(b)) => default_instance_eq_value(&**b),
+            _ => false,
         }
     }
 }
 
-impl<T: DefaultInstance + Eq + PartialEq, P: ProtoBox<T>> Eq for MessageField<T, P> {}
+impl<T: Default + Eq, P: ProtoBox<T>> Eq for MessageField<T, P> {}
 
 impl<T: Default + fmt::Debug, P: ProtoBox<T>> fmt::Debug for MessageField<T, P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -758,9 +761,11 @@ mod tests {
 
         assert_eq!(unset, other_unset);
 
-        // An unset field and a set-to-default field are equal in both directions.
-        assert_eq!(unset, default);
-        assert_eq!(default, unset);
+        // Presence is part of the value: unset differs from set-to-default in
+        // both directions, while the values behind them compare equal.
+        assert_ne!(unset, default);
+        assert_ne!(default, unset);
+        assert_eq!(*unset, *default);
 
         assert_ne!(unset, value);
         assert_ne!(value, unset);
@@ -775,32 +780,20 @@ mod tests {
         assert_equality_cases::<Box<Inner>>();
     }
 
-    /// `eq` is "self is at most other", which is not symmetric, so the result
-    /// shows which operand each mixed arm puts first.
-    #[derive(Clone, Debug, Default)]
-    struct AtMost(i32);
-
-    impl PartialEq for AtMost {
-        fn eq(&self, other: &Self) -> bool {
-            self.0 <= other.0
-        }
-    }
-
-    crate::impl_default_instance!(AtMost);
-
-    #[test]
-    fn mixed_arms_keep_operand_order() {
-        let unset: MessageField<AtMost> = MessageField::none();
-        let negative: MessageField<AtMost> = MessageField::some(AtMost(-1));
-
-        // `AtMost(-1) == AtMost(0)` holds; `AtMost(0) == AtMost(-1)` does not.
-        assert!(negative == unset);
-        assert!(unset != negative);
-    }
-
     #[test]
     fn test_equality_inline() {
         assert_equality_cases::<Inline<Inner>>();
+    }
+
+    /// `==` needs no `DefaultInstance`: only `T: Default + PartialEq`.
+    #[test]
+    fn test_equality_without_default_instance() {
+        #[derive(Debug, Default, PartialEq)]
+        struct Plain(u8);
+
+        let set: MessageField<Plain> = MessageField::some(Plain(1));
+        assert_eq!(set, MessageField::some(Plain(1)));
+        assert_ne!(set, MessageField::none());
     }
 
     #[test]
@@ -858,9 +851,9 @@ mod tests {
         let unset: MessageField<Inner, P> = MessageField::none();
         assert!(unset.clone().is_unset());
 
-        // Equality cannot tell set-to-default from unset, so check presence.
         let default: MessageField<Inner, P> = MessageField::some(Inner::default());
         assert!(default.clone().is_set());
+        assert_eq!(default.clone(), default);
 
         let set: MessageField<Inner, P> = MessageField::some(Inner {
             value: 7,
