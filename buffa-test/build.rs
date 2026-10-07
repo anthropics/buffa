@@ -261,10 +261,10 @@ fn main() {
     // `ProtoElemJson`) impl for the element path (`Vec<LocalStr>`). A foreign
     // type here would be an orphan-rule error — only local types are reflectable
     // in a repeated field. Singular string fields reflect via deref. The rule is
-    // scoped to the singular + repeated fields so the `map<string, string> attrs`
-    // field stays the `String`-keyed control here (`LocalStr` is not `Hash`, so
-    // it could not be a map key); custom string map keys/values get their own
-    // dedicated fixture in `string_map.proto`.
+    // scoped to the singular, repeated and optional fields so the
+    // `map<string, string> attrs` field stays the `String`-keyed control here
+    // (`LocalStr` is not `Hash`, so it could not be a map key); custom string
+    // map keys/values get their own dedicated fixture in `string_map.proto`.
     buffa_build::Config::new()
         .files(&["protos/vtable_string_repr.proto"])
         .includes(&["protos/"])
@@ -273,6 +273,7 @@ fn main() {
             &[
                 ".vtable_string_repr.Labels.name",
                 ".vtable_string_repr.Labels.items",
+                ".vtable_string_repr.Labels.alias",
             ],
         )
         .generate_json(true)

@@ -73,7 +73,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         &[],
     );
 
-    let serde_impl = forwarders::serde(&remote, None);
+    let serde_impl = forwarders::serde(&remote, forwarders::SerdeForm::Wrapped);
 
     Ok(quote! {
         impl #impl_generics ::core::ops::Deref for #ident #ty_generics #where_clause {

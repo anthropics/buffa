@@ -129,48 +129,14 @@ pub mod inline_field {
     non_camel_case_types
 )]
 pub mod vtable_string_repr {
-    /// `String`-backed newtype satisfying `buffa::ProtoString` (`Deref<str>` +
-    /// `AsRef<str>` + `From<String>`/`From<&str>`). It derives `Serialize` /
-    /// `Deserialize` because a `repeated string` JSON field serializes its
-    /// elements through their native serde impls (singular fields use the
+    /// `String`-backed newtype whose `buffa::ProtoString` impl and conversions
+    /// come from the remote derive. The `serde` key supplies `Serialize` /
+    /// `Deserialize`, because the `repeated` and `optional` JSON fields call
+    /// the string type's own serde impls (a singular field uses the
     /// `proto_string` with-module instead, which needs only `AsRef`/`From`).
-    #[derive(Clone, PartialEq, Eq, Default, Debug, ::serde::Serialize, ::serde::Deserialize)]
+    #[derive(Clone, PartialEq, Eq, Default, Debug, ::buffa_remote_derive::ProtoString)]
+    #[buffa(remote = ::buffa::alloc::string::String, serde)]
     pub struct LocalStr(pub ::buffa::alloc::string::String);
-
-    impl ::core::ops::Deref for LocalStr {
-        type Target = str;
-        fn deref(&self) -> &str {
-            &self.0
-        }
-    }
-    impl ::core::convert::AsRef<str> for LocalStr {
-        fn as_ref(&self) -> &str {
-            &self.0
-        }
-    }
-    impl ::core::convert::From<::buffa::alloc::string::String> for LocalStr {
-        fn from(s: ::buffa::alloc::string::String) -> Self {
-            LocalStr(s)
-        }
-    }
-    impl ::core::convert::From<&str> for LocalStr {
-        fn from(s: &str) -> Self {
-            LocalStr(::buffa::alloc::string::String::from(s))
-        }
-    }
-    impl ::buffa::ProtoString for LocalStr {
-        fn copy_from_str(value: &str) -> Self {
-            Self::from(value)
-        }
-
-        fn from_wire(
-            payload: ::buffa::WirePayload<'_>,
-        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-            ::core::str::from_utf8(payload.as_slice())
-                .map(|s| LocalStr(::buffa::alloc::string::String::from(s)))
-                .map_err(|_| ::buffa::DecodeError::InvalidUtf8)
-        }
-    }
 
     buffa::include_proto!("vtable_string_repr");
 }
@@ -424,9 +390,9 @@ pub mod map_type {
 /// `src/tests/string_map.rs`.
 #[allow(clippy::derivable_impls, non_camel_case_types)]
 pub mod string_map {
-    /// `String`-backed newtype satisfying `buffa::ProtoString`, plus the
-    /// `Hash + Eq + Ord` a map key needs and `Serialize`/`Deserialize` the JSON
-    /// paths need.
+    /// `String`-backed newtype with the `Hash + Eq + Ord` a map key needs. The
+    /// remote derive supplies its `buffa::ProtoString` impl and conversions,
+    /// and the `serde` key the `Serialize`/`Deserialize` the JSON paths need.
     ///
     /// It has no `Arbitrary` impl. The fixture is compiled with
     /// `generate_arbitrary`, so under the `arbitrary` feature the crate builds
@@ -441,45 +407,10 @@ pub mod string_map {
         Hash,
         Default,
         Debug,
-        ::serde::Serialize,
-        ::serde::Deserialize,
+        ::buffa_remote_derive::ProtoString,
     )]
+    #[buffa(remote = ::buffa::alloc::string::String, serde)]
     pub struct MapStr(pub ::buffa::alloc::string::String);
-
-    impl ::core::ops::Deref for MapStr {
-        type Target = str;
-        fn deref(&self) -> &str {
-            &self.0
-        }
-    }
-    impl ::core::convert::AsRef<str> for MapStr {
-        fn as_ref(&self) -> &str {
-            &self.0
-        }
-    }
-    impl ::core::convert::From<::buffa::alloc::string::String> for MapStr {
-        fn from(s: ::buffa::alloc::string::String) -> Self {
-            MapStr(s)
-        }
-    }
-    impl ::core::convert::From<&str> for MapStr {
-        fn from(s: &str) -> Self {
-            MapStr(::buffa::alloc::string::String::from(s))
-        }
-    }
-    impl ::buffa::ProtoString for MapStr {
-        fn copy_from_str(value: &str) -> Self {
-            Self::from(value)
-        }
-
-        fn from_wire(
-            payload: ::buffa::WirePayload<'_>,
-        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-            ::core::str::from_utf8(payload.as_slice())
-                .map(|s| MapStr(::buffa::alloc::string::String::from(s)))
-                .map_err(|_| ::buffa::DecodeError::InvalidUtf8)
-        }
-    }
 
     buffa::include_proto!("string_map");
 }

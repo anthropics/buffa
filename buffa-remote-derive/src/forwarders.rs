@@ -20,9 +20,30 @@ pub struct Flags {
     pub serde: Option<Span>,
 }
 
-/// Emit serde impls. Strings and bytes use protobuf JSON helpers; containers
-/// transparently delegate to the wrapped type's own serde representation.
-pub fn serde(remote: &RemoteField, json_helper: Option<&str>) -> TokenStream {
+/// The JSON form the `serde` impls give a newtype, chosen per family.
+#[derive(Clone, Copy)]
+pub enum SerdeForm {
+    /// A JSON string, for the string family.
+    String,
+    /// A base64 JSON string, for the bytes family.
+    Bytes,
+    /// The wrapped field's own serde representation, for the list, box and
+    /// map families.
+    Wrapped,
+}
+
+/// Emits `impl serde::Serialize` and `impl serde::Deserialize` for the
+/// newtype, or nothing when `#[buffa(serde)]` is absent.
+///
+/// The string and bytes forms deserialize from a JSON string only. A
+/// generated message calls the string impl in the positions the crate docs
+/// list, such as a `repeated` element, and proto3 JSON forbids `null` in
+/// each of them. The generated field code or `Option` handles the `null` of
+/// a whole field, before the newtype's impl runs.
+///
+/// The wrapped form bounds each impl on the field type's own serde impl. So
+/// the binary codec can use the newtype when that bound does not hold.
+pub fn serde(remote: &RemoteField, form: SerdeForm) -> TokenStream {
     let Some(span) = remote.flags.serde else {
         return quote! {};
     };
@@ -34,28 +55,7 @@ pub fn serde(remote: &RemoteField, json_helper: Option<&str>) -> TokenStream {
         ..
     } = remote;
     let krate = Ident::new("serde", span);
-    // Scan nested tokens too: HRTB lifetimes in bounds/where clauses can
-    // shadow a new impl lifetime even when not declared as outer parameters.
-    fn contains_ident(tokens: TokenStream, name: &str) -> bool {
-        tokens.into_iter().any(|token| match token {
-            proc_macro2::TokenTree::Ident(ident) => ident == name,
-            proc_macro2::TokenTree::Group(group) => contains_ident(group.stream(), name),
-            _ => false,
-        })
-    }
-    let where_clause = &generics.where_clause;
-    let fresh = |base: &str| {
-        let mut name = base.to_owned();
-        while contains_ident(quote! { #generics }, &name)
-            || contains_ident(quote! { #where_clause }, &name)
-        {
-            name.push('_');
-        }
-        name
-    };
-    let serializer = Ident::new(&fresh("__BuffaSerializer"), span);
-    let deserializer = Ident::new(&fresh("__BuffaDeserializer"), span);
-    let lifetime = Lifetime::new(&format!("'{}", fresh("__buffa_de")), span);
+    let lifetime: Lifetime = parse_quote!('__buffa_de);
     let mut ser_generics = generics.clone();
     let mut de_generics = generics.clone();
     de_generics.params.insert(
@@ -63,46 +63,134 @@ pub fn serde(remote: &RemoteField, json_helper: Option<&str>) -> TokenStream {
         GenericParam::Lifetime(LifetimeParam::new(lifetime.clone())),
     );
 
-    let (serialize, deserialize) = if let Some(helper) = json_helper {
-        let helper = Ident::new(helper, span);
-        (
-            quote! { ::buffa::json_helpers::#helper::serialize(self, serializer) },
-            quote! { ::buffa::json_helpers::#helper::deserialize(deserializer) },
-        )
-    } else {
-        ser_generics
-            .make_where_clause()
-            .predicates
-            .push(parse_quote! { #field_ty: ::#krate::Serialize });
-        de_generics
-            .make_where_clause()
-            .predicates
-            .push(parse_quote! { #field_ty: ::#krate::Deserialize<#lifetime> });
-        let construct = remote.construct(
-            quote! { <#field_ty as ::#krate::Deserialize<#lifetime>>::deserialize(deserializer)? },
-        );
-        (
-            quote! { ::#krate::Serialize::serialize(&#accessor, serializer) },
-            quote! { ::core::result::Result::Ok(#construct) },
-        )
+    let (serialize, deserialize) = match form {
+        SerdeForm::String => (
+            quote! { ::buffa::json_helpers::proto_string::serialize(self, serializer) },
+            string_only_deserialize(
+                &krate,
+                &lifetime,
+                &quote! { ::buffa::ProtoString },
+                "a string",
+                // `deserialize_string` asks for an owned string, which
+                // `visit_string` moves into the newtype without a copy.
+                &quote! { deserialize_string },
+                &quote! {
+                    fn visit_str<__BuffaError: ::#krate::de::Error>(
+                        self,
+                        __buffa_value: &str,
+                    ) -> ::core::result::Result<__BuffaValue, __BuffaError> {
+                        ::core::result::Result::Ok(
+                            <__BuffaValue as ::buffa::ProtoString>::copy_from_str(__buffa_value),
+                        )
+                    }
+                    fn visit_string<__BuffaError: ::#krate::de::Error>(
+                        self,
+                        __buffa_value: ::buffa::alloc::string::String,
+                    ) -> ::core::result::Result<__BuffaValue, __BuffaError> {
+                        ::core::result::Result::Ok(<__BuffaValue as ::core::convert::From<
+                            ::buffa::alloc::string::String,
+                        >>::from(__buffa_value))
+                    }
+                },
+            ),
+        ),
+        SerdeForm::Bytes => (
+            quote! { ::buffa::json_helpers::bytes::serialize(self, serializer) },
+            string_only_deserialize(
+                &krate,
+                &lifetime,
+                &quote! { ::core::convert::From<::buffa::alloc::vec::Vec<u8>> },
+                "a base64-encoded string",
+                &quote! { deserialize_str },
+                // `bytes::deserialize` owns the base64 alphabets and padding
+                // rules that proto3 JSON accepts. It reads `null` as empty, so
+                // it is handed the string and never the caller's deserializer.
+                &quote! {
+                    fn visit_str<__BuffaError: ::#krate::de::Error>(
+                        self,
+                        __buffa_value: &str,
+                    ) -> ::core::result::Result<__BuffaValue, __BuffaError> {
+                        ::buffa::json_helpers::bytes::deserialize(
+                            <&str as ::#krate::de::IntoDeserializer<'_, __BuffaError>>
+                                ::into_deserializer(__buffa_value),
+                        )
+                    }
+                },
+            ),
+        ),
+        SerdeForm::Wrapped => {
+            ser_generics
+                .make_where_clause()
+                .predicates
+                .push(parse_quote! { #field_ty: ::#krate::Serialize });
+            de_generics
+                .make_where_clause()
+                .predicates
+                .push(parse_quote! { #field_ty: ::#krate::Deserialize<#lifetime> });
+            let construct = remote.construct(quote! {
+                <#field_ty as ::#krate::Deserialize<#lifetime>>::deserialize(deserializer)?
+            });
+            (
+                quote! { ::#krate::Serialize::serialize(&#accessor, serializer) },
+                quote! { ::core::result::Result::Ok(#construct) },
+            )
+        }
     };
     let (ser_impl, ty_generics, ser_where) = ser_generics.split_for_impl();
     let (de_impl, _, de_where) = de_generics.split_for_impl();
     quote! {
         impl #ser_impl ::#krate::Serialize for #ident #ty_generics #ser_where {
-            fn serialize<#serializer: ::#krate::Serializer>(&self, serializer: #serializer)
-                -> ::core::result::Result<#serializer::Ok, #serializer::Error>
-            {
+            fn serialize<__BuffaSerializer: ::#krate::Serializer>(
+                &self,
+                serializer: __BuffaSerializer,
+            ) -> ::core::result::Result<__BuffaSerializer::Ok, __BuffaSerializer::Error> {
                 #serialize
             }
         }
         impl #de_impl ::#krate::Deserialize<#lifetime> for #ident #ty_generics #de_where {
-            fn deserialize<#deserializer: ::#krate::Deserializer<#lifetime>>(deserializer: #deserializer)
-                -> ::core::result::Result<Self, #deserializer::Error>
-            {
+            fn deserialize<__BuffaDeserializer: ::#krate::Deserializer<#lifetime>>(
+                deserializer: __BuffaDeserializer,
+            ) -> ::core::result::Result<Self, __BuffaDeserializer::Error> {
                 #deserialize
             }
         }
+    }
+}
+
+/// The body of a `deserialize` that accepts a string and rejects every other
+/// input, `null` included.
+///
+/// `visit_methods` are the `Visitor` methods that build a `__BuffaValue` from
+/// the string, `bound` is what they need of `__BuffaValue`, and `hint` is the
+/// `Deserializer` method that drives the visitor. The visitor is generic over
+/// the value it builds, because an item in a function body cannot name the
+/// newtype's generic parameters.
+fn string_only_deserialize(
+    krate: &Ident,
+    lifetime: &Lifetime,
+    bound: &TokenStream,
+    expecting: &str,
+    hint: &TokenStream,
+    visit_methods: &TokenStream,
+) -> TokenStream {
+    quote! {
+        struct __BuffaVisitor<__BuffaValue>(::core::marker::PhantomData<__BuffaValue>);
+        impl<#lifetime, __BuffaValue: #bound> ::#krate::de::Visitor<#lifetime>
+            for __BuffaVisitor<__BuffaValue>
+        {
+            type Value = __BuffaValue;
+            fn expecting(
+                &self,
+                __buffa_formatter: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
+                __buffa_formatter.write_str(#expecting)
+            }
+            #visit_methods
+        }
+        ::#krate::Deserializer::#hint(
+            deserializer,
+            __BuffaVisitor::<Self>(::core::marker::PhantomData),
+        )
     }
 }
 
@@ -246,16 +334,85 @@ mod tests {
             .contains("takes no value"));
     }
 
+    /// Expands every derive with the `serde` key. Returns `(family, expansion)`.
+    fn serde_expansions() -> Vec<(&'static str, String)> {
+        macro_rules! keyed {
+            ($name:literal, $derive:path, { $($decl:tt)* }) => {{
+                let input: syn::DeriveInput = parse_quote! {
+                    #[buffa(remote = Remote, serde)]
+                    $($decl)*
+                };
+                ($name, $derive(input).expect("keyed expansion").to_string())
+            }};
+        }
+        vec![
+            keyed!("string", crate::string::derive, {
+                struct S(Remote);
+            }),
+            keyed!("bytes", crate::bytes::derive, {
+                struct B(Remote);
+            }),
+            keyed!("list", crate::list::derive, {
+                struct L<T>(Remote);
+            }),
+            keyed!("box", crate::box_ptr::derive, {
+                struct P<T>(Remote);
+            }),
+            keyed!("map", crate::map::derive, {
+                struct M<K, V>(Remote);
+            }),
+        ]
+    }
+
+    /// The impls introduce exactly the reserved `__buffa` / `__Buffa` names,
+    /// whatever the newtype declares.
     #[test]
-    fn serde_deserialize_lifetime_avoids_outer_lifetime() {
-        let input = parse_quote! {
+    fn serde_impls_use_the_reserved_names() {
+        for (name, keyed) in serde_expansions() {
+            for want in [
+                ":: serde :: Deserialize < '__buffa_de > for",
+                "fn serialize < __BuffaSerializer : :: serde :: Serializer >",
+                "fn deserialize < __BuffaDeserializer : :: serde :: Deserializer < '__buffa_de >>",
+            ] {
+                assert!(keyed.contains(want), "{name}: expected `{want}`:\n{keyed}");
+            }
+        }
+        let input: syn::DeriveInput = parse_quote! {
             #[buffa(remote = Remote, serde)]
-            struct S<'__buffa_de, T: '__buffa_de>(Remote<'__buffa_de, T>);
+            struct L<'__buffa_de, __BuffaSerializer>(Remote);
         };
-        let remote = crate::remote_field::parse(&input).unwrap();
-        let output = super::serde(&remote, None);
-        syn::parse2::<syn::File>(output.clone()).unwrap();
-        assert!(output.to_string().contains("Deserialize < '__buffa_de_ >"));
+        let colliding = crate::list::derive(input)
+            .expect("the derive does not inspect parameter names")
+            .to_string();
+        assert!(
+            colliding.contains("impl < '__buffa_de , '__buffa_de , __BuffaSerializer >"),
+            "{colliding}"
+        );
+    }
+
+    /// The string and bytes impls build the value in a visitor that has only
+    /// string methods, so `null` reaches serde's default `invalid type` error.
+    /// The container impls call the wrapped type's `Deserialize`.
+    #[test]
+    fn string_and_bytes_deserialize_through_a_string_only_visitor() {
+        for (name, keyed) in serde_expansions() {
+            let wants_visitor = matches!(name, "string" | "bytes");
+            assert_eq!(
+                keyed.contains("de :: Visitor < '__buffa_de > for __BuffaVisitor"),
+                wants_visitor,
+                "{name}:\n{keyed}"
+            );
+            for absent in [
+                "fn visit_unit",
+                "fn visit_none",
+                "proto_string :: deserialize",
+            ] {
+                assert!(
+                    !keyed.contains(absent),
+                    "{name}: expansion contains `{absent}`:\n{keyed}"
+                );
+            }
+        }
     }
 
     /// Expands every derive over the same newtype shapes the integration tests

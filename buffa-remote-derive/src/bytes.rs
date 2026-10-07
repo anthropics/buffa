@@ -49,7 +49,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         &[],
     );
 
-    let serde_impl = forwarders::serde(&remote, Some("bytes"));
+    let serde_impl = forwarders::serde(&remote, forwarders::SerdeForm::Bytes);
 
     Ok(quote! {
         impl #impl_generics ::core::ops::Deref for #ident #ty_generics #where_clause {

@@ -41,7 +41,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         &[parse_quote! { Self: ::core::iter::FromIterator<(#key_ty, #value_ty)> }],
     );
 
-    let serde_impl = forwarders::serde(&remote, None);
+    let serde_impl = forwarders::serde(&remote, forwarders::SerdeForm::Wrapped);
 
     Ok(quote! {
         impl #impl_generics ::buffa::MapStorage for #ident #ty_generics #where_clause {

@@ -22,19 +22,57 @@
 //! ## The `serde` key
 //!
 //! `#[buffa(remote = ..., serde)]` emits `serde::Serialize` and
-//! `serde::Deserialize` impls. The consumer must depend on `serde` under
-//! that name. `ProtoString` and `ProtoBytes` use buffa's protobuf JSON
-//! helpers, so they also require `buffa/json`. Strings serialize as strings,
-//! bytes as base64 strings, and JSON `null` deserializes to empty storage.
-//! The remote string/bytes type needs no serde support of its own.
+//! `serde::Deserialize` impls for the newtype. The crate that defines the
+//! newtype must depend on `serde` under that name. The JSON form depends on
+//! the derive:
 //!
-//! `ProtoList`, `ProtoBox`, and `MapStorage` transparently delegate to the
-//! wrapped type's serde impls. Enable the remote crate's serde feature when
-//! required. Their generated bounds apply only to the serde impls, so a
-//! container with non-serde elements can still be used by the binary codec.
-//! These forwarders use the remote representation's serde semantics; they
-//! do not implement protobuf-specific integer, enum, or message mappings.
-//! Generated messages still use their field-specific JSON helpers.
+//! - [`ProtoString`](macro@ProtoString): a string.
+//! - [`ProtoBytes`](macro@ProtoBytes): a base64 string. Serializing writes
+//!   the standard alphabet with padding. Deserializing accepts the standard
+//!   and the URL-safe alphabet, each with or without padding.
+//! - [`ProtoList`](macro@ProtoList), [`ProtoBox`](macro@ProtoBox) and
+//!   [`MapStorage`](macro@MapStorage): the form of the wrapped type. The
+//!   impls call the wrapped type's own `Serialize` and `Deserialize`.
+//!
+//! The string and bytes forms are the proto3 JSON forms. They come from
+//! `buffa::json_helpers`, so the crate must also enable `buffa/json`. The
+//! remote type does not need serde support of its own.
+//!
+//! Both `Deserialize` impls reject JSON `null`. Proto3 JSON reads a `null`
+//! field as the field's default, and forbids `null` as a `repeated` element
+//! or a map value. A generated message handles a `null` field before it
+//! calls the newtype's impl, so `null` reaches the impl only where proto3
+//! JSON forbids it.
+//!
+//! The list, box and map impls need the wrapped type to implement serde. For
+//! a foreign type, that usually means enabling a `serde` feature of its
+//! crate. Each impl is bounded on the wrapped type's impl, such as
+//! `Vec<T>: Serialize` for a newtype over `Vec<T>`. So a newtype whose
+//! wrapped type lacks one still works with the binary codec. The wrapped
+//! type's impls decide the JSON, and they do not apply the proto3 JSON rules
+//! for integers, floats, enums or bytes.
+//!
+//! Message code generated with `generate_json(true)` calls these impls for
+//! some field shapes, and its own per-field helpers for the rest:
+//!
+//! - `ProtoString`: called for a `repeated` element, an `optional` field, a
+//!   oneof variant, and a map key or value. A singular field uses a helper
+//!   that needs only `ProtoString`.
+//! - `ProtoBytes`: not called. A helper base64-encodes every `bytes`
+//!   position.
+//! - `ProtoList`: called for a `repeated` field of strings, bools, or
+//!   messages other than the `google.protobuf` wrapper types. Other element
+//!   types use a helper that builds the collection from a `Vec`.
+//! - `MapStorage`: called for a string-keyed map whose values are strings,
+//!   bools, or messages other than the wrapper types. Other maps use a helper
+//!   that builds the map through `MapStorage`.
+//! - `ProtoBox`: not called. Message JSON serializes the pointee, and builds
+//!   the pointer with `ProtoBox::new`.
+//!
+//! A string newtype in one of those positions needs serde impls, and so does
+//! a list or map newtype used for one of those fields. The key is one way to
+//! supply them. On a `ProtoBytes` or `ProtoBox` newtype the impls are for the
+//! caller's own use, such as a field of a hand-written serde struct.
 //!
 //! For an optional dependency, put the key behind the consumer's feature:
 //!
@@ -49,11 +87,6 @@
 //! on the proc-macro crate controls the emitted impls, so another dependency
 //! cannot accidentally enable them through Cargo feature unification.
 //! Do not also derive serde on the same type: that creates conflicting impls.
-//!
-//! The opt-in is useful for string newtypes in repeated, optional, and map
-//! value positions, where generated messages need the newtype's serde impls.
-//! Singular/oneof strings and bytes in all field positions already use
-//! buffa's field helpers and do not require standalone serde impls.
 //!
 //! Skipping a *required* impl on a JSON/reflect/fuzz build surfaces as a
 //! trait-bound error deep in *generated message code*

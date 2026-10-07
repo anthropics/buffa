@@ -138,7 +138,6 @@ dependencies = [
  "smallbox",
  "smallvec",
  "syn",
- "tempfile",
 ]
 
 [[package]]
@@ -158,6 +157,7 @@ dependencies = [
  "buffa",
  "buffa-build",
  "buffa-descriptor",
+ "buffa-remote-derive",
  "buffa-smolstr",
  "buffa-types",
  "bytes",
