@@ -1,0 +1,25 @@
+name: Conformance tools cache
+
+on:
+  pull_request:
+    paths:
+      - scripts/build-conformance-tools.sh
+      - scripts/test-conformance-tools-cache.sh
+      - .github/workflows/conformance-tools-cache.yml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/build-conformance-tools.sh
+      - scripts/test-conformance-tools-cache.sh
+      - .github/workflows/conformance-tools-cache.yml
+
+permissions:
+  contents: read
+
+jobs:
+  cache:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - run: scripts/test-conformance-tools-cache.sh
