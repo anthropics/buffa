@@ -556,6 +556,11 @@ pub mod keywords {
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod keyword_collisions {
+    buffa::include_proto!("test.keyword_collisions");
+}
+
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod nested {
     buffa::include_proto!("test.nested");
 }
@@ -1042,6 +1047,22 @@ pub mod string_proto2 {
     include!(concat!(
         env!("OUT_DIR"),
         "/string_proto2_variant/stringproto2.mod.rs"
+    ));
+}
+
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod bytes_proto2 {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/bytes_proto2_variant/test.proto2.mod.rs"
+    ));
+}
+
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod custom_bytes_proto2 {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/custom_bytes_proto2_variant/test.proto2.mod.rs"
     ));
 }
 

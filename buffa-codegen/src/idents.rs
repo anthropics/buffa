@@ -64,6 +64,11 @@ pub fn rust_path_to_tokens(path: &str) -> TokenStream {
 /// Most keywords use raw identifiers (`r#type`). The keywords `self`, `super`,
 /// `Self`, `crate` cannot be raw identifiers and are suffixed with `_` instead
 /// (e.g. `self_`), matching prost's convention.
+///
+/// This is the escaping step alone. The member that buffa generates for a
+/// field or oneof can have another name: `idiomatic_field_names` converts the
+/// name first, and a keyword member next to a member named `self_` is
+/// `self__`.
 pub fn make_field_ident(name: &str) -> Ident {
     if is_rust_keyword(name) {
         if can_be_raw_ident(name) {
@@ -239,12 +244,20 @@ pub fn is_rust_keyword(name: &str) -> bool {
     )
 }
 
+/// The keywords that cannot be raw identifiers. They are valid path segments,
+/// so `r#self` is rejected; they get a `_` suffix in field/mod position
+/// instead.
+pub(crate) const SUFFIX_ESCAPED_KEYWORDS: [&str; 4] = ["self", "super", "Self", "crate"];
+
 /// Can `name` be used as a raw identifier (`r#name`)?
-///
-/// `self`, `super`, `Self`, `crate` are valid path segments and cannot be
-/// prefixed with `r#`. They get a `_` suffix in field/mod position instead.
 fn can_be_raw_ident(name: &str) -> bool {
-    !matches!(name, "self" | "super" | "Self" | "crate")
+    !SUFFIX_ESCAPED_KEYWORDS.contains(&name)
+}
+
+/// Whether [`make_field_ident`] escapes `name` with a `_` suffix: a keyword
+/// that cannot be a raw identifier.
+pub(crate) fn is_suffix_escaped(name: &str) -> bool {
+    is_rust_keyword(name) && !can_be_raw_ident(name)
 }
 
 #[cfg(test)]

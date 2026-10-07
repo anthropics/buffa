@@ -81,6 +81,7 @@ mod tests {
         Int32Value, Int64Value, ListValue, StringValue, Struct, Timestamp, UInt32Value,
         UInt64Value, Value,
     };
+    use alloc::{string::ToString, vec};
     use buffa::Message;
 
     /// Encode `$owned`, decode it as `$view`, serialize both to JSON, and
@@ -202,6 +203,36 @@ mod tests {
                 ..Default::default()
             }
         );
+    }
+
+    #[test]
+    fn unset_value_views_serialize_is_error() {
+        let view = ValueView::decode_view(&[]).unwrap();
+        assert!(serde_json::to_string(&view).is_err());
+
+        let st = Struct::from_fields([("unset", Value::default())]);
+        let bytes = st.encode_to_vec();
+        let view = StructView::decode_view(&bytes).unwrap();
+        assert!(serde_json::to_string(&view).is_err());
+
+        let list = ListValue::from_values([Value::null(), Value::default()]);
+        let bytes = list.encode_to_vec();
+        let view = ListValueView::decode_view(&bytes).unwrap();
+        assert!(serde_json::to_string(&view).is_err());
+    }
+
+    #[test]
+    fn value_default_variant_views_serialize_match_owned() {
+        for value in [
+            Value::null(),
+            Value::from(0.0_f64),
+            Value::from(false),
+            Value::from(""),
+            Value::from(Struct::new()),
+            Value::from(ListValue::default()),
+        ] {
+            assert_view_json_parity!(ValueView, value);
+        }
     }
 
     #[test]

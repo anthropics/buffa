@@ -592,3 +592,34 @@ fn open_enum_override_required_vtable_reflection_uses_generated_default() {
     assert!(reflected_view.has(field));
     assert!(matches!(reflected_view.get(field), ValueRef::EnumNumber(2)));
 }
+
+#[test]
+fn absent_enum_reads_first_declared_value_owned_view_dynamic() {
+    use crate::open_enums::{AbsentEnums, AbsentEnumsView};
+    use buffa_descriptor::reflect::{ReflectMessage, Reflectable, ValueRef};
+
+    // `NonZeroFirst` declares `NZ_HIGH = 2` first. Fields 1 and 2 are
+    // optional, 3 and 4 are members of a oneof whose active member is 5.
+    let msg = AbsentEnums {
+        choice: Some(crate::open_enums::absent_enums::Choice::Other(1)),
+        ..Default::default()
+    };
+    let wire = msg.encode_to_vec();
+    let view = AbsentEnumsView::decode_view(&wire).unwrap();
+    let owned = msg.reflect();
+    let dynamic = owned.to_dynamic();
+    let readers: [(&str, &dyn ReflectMessage); 3] =
+        [("owned", &*owned), ("view", &view), ("dynamic", &dynamic)];
+
+    let md = owned.message_descriptor();
+    for (reader, message) in readers {
+        for number in 1..=4 {
+            let field = md.field(number).unwrap();
+            assert!(!message.has(field), "{reader} field {number}");
+            assert!(
+                matches!(message.get(field), ValueRef::EnumNumber(2)),
+                "{reader} field {number}"
+            );
+        }
+    }
+}

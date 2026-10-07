@@ -1,0 +1,42 @@
+syntax = "proto2";
+
+package reflect.enum_defaults;
+
+enum Nonzero {
+  FIRST = 7;
+  ZERO = 0;
+  LAST = 9;
+}
+
+enum Negative {
+  NEGATIVE_FIRST = -7;
+  NEGATIVE_LAST = -9;
+}
+
+enum Extreme {
+  EXTREME_FIRST = -2147483648;
+  EXTREME_LAST = 2147483647;
+}
+
+enum Zero {
+  ZERO_FIRST = 0;
+  ZERO_LAST = 1;
+}
+
+message Defaults {
+  optional Nonzero positive = 1;
+  optional Negative negative = 2;
+  optional Extreme extreme = 3;
+  optional Zero zero = 4;
+  oneof choice {
+    Nonzero selected = 5;
+  }
+  optional Defaults nested = 6;
+  repeated Nonzero repeated = 7;
+  map<string, Zero> mapping = 8;
+  extensions 100 to 199;
+}
+
+extend Defaults {
+  optional Nonzero extension = 100;
+}

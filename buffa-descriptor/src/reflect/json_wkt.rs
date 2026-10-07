@@ -195,9 +195,11 @@ impl WktKind {
                 Ok(DynamicMessage::new(pool, midx))
             }
             Self::Wrapper(sc) => {
-                let v = deserialize_scalar(sc, d)?;
+                let v = deserialize_optional_scalar(sc, d)?;
                 let mut m = DynamicMessage::new(pool, midx);
-                m.set_by_number(1, v);
+                if let Some(v) = v {
+                    m.set_by_number(1, v);
+                }
                 Ok(m)
             }
             Self::Struct => deserialize_struct(pool, midx, d, budget),
@@ -295,8 +297,9 @@ fn serialize_json_value<S: Serializer>(
     if let Some(Value::Message(inner)) = msg.field_by_number(6) {
         return Nested::charge(inner, depth)?.serialize(s);
     }
-    // Unset Value: spec is ambiguous; serialize as null.
-    s.serialize_none()
+    Err(serde::ser::Error::custom(
+        "google.protobuf.Value.kind must be set",
+    ))
 }
 
 fn deserialize_json_value<'de, D: Deserializer<'de>>(
