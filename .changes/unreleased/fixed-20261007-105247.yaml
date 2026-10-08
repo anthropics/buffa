@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Reject group fields in proto3 descriptor files.** `DescriptorPool` now returns `PoolError::GroupFieldInProto3` for fields and extensions with `TYPE_GROUP`, matching protoc. Proto2 groups and editions delimited message fields still link.'
+time: 2026-10-07T10:52:47.325489+02:00
