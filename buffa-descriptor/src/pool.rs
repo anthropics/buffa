@@ -374,6 +374,8 @@ pub enum PoolError {
     DuplicateOneofName { message: String, name: String },
     /// A oneof declaration has no member fields.
     EmptyOneof { oneof: String },
+    /// A proto3 message enables the proto2-only MessageSet wire format.
+    MessageSetInProto3 { message: String },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
@@ -711,6 +713,9 @@ impl core::fmt::Display for PoolError {
                     "message {message} declares oneof name {name:?} more than once"
                 )
             }
+            Self::MessageSetInProto3 { message } => write!(
+                f, "message {message} uses MessageSet wire format in proto3"
+            ),
             Self::EmptyOneof { oneof } => write!(f, "oneof {oneof} has no fields"),
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
@@ -1933,6 +1938,15 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        if scope.proto3
+            && msg
+                .options
+                .as_option()
+                .and_then(|o| o.message_set_wire_format)
+                == Some(true)
+        {
+            return Err(PoolError::MessageSetInProto3 { message: fqn });
+        }
         if scope.proto3 && !msg.extension_range.is_empty() {
             return Err(PoolError::ExtensionRangeInProto3 { message: fqn });
         }

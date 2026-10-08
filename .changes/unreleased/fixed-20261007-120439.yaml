@@ -1,0 +1,3 @@
+kind: Fixed
+body: Reject proto3 messages that enable the proto2-only MessageSet wire format in DescriptorPool.
+time: 2026-10-07T12:04:39.241378+02:00
