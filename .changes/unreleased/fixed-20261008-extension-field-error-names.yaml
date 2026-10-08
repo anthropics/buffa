@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` reports file-level extension errors without a leading dot when the declaring file has no package** (#639). Errors raised while linking the extension's field now name it `flag` instead of `.flag`, matching its registration name. Qualified names for packaged and nested fields, extension registration, and lookups are unchanged.
+time: 2026-10-08T00:00:00+08:00

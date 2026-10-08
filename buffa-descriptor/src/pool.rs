@@ -2532,7 +2532,11 @@ impl DescriptorPool {
         scope: LinkScope<'_>,
     ) -> Result<FieldDescriptor, PoolError> {
         let name = f.name.clone().unwrap_or_default();
-        let field_fqn = format!("{msg_fqn}.{name}");
+        let field_fqn = if msg_fqn.is_empty() {
+            name.clone()
+        } else {
+            format!("{msg_fqn}.{name}")
+        };
         let resolved = features::resolve_child(parent_features, features::field_features(f));
 
         let label = f.label.unwrap_or_default();
