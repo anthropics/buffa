@@ -121,6 +121,31 @@ fn main() {
         ".google.protobuf.Any.value".to_string(),
         buffa_codegen::BytesRepr::Bytes,
     )];
+    // Keep this allowlist explicit: floating-point wrappers and
+    // Value/Struct/ListValue cannot derive Eq or Hash.
+    config.message_attributes = [
+        "Timestamp",
+        "Duration",
+        "FieldMask",
+        "Empty",
+        "Any",
+        "SourceContext",
+        "Int32Value",
+        "Int64Value",
+        "UInt32Value",
+        "UInt64Value",
+        "BoolValue",
+        "StringValue",
+        "BytesValue",
+    ]
+    .into_iter()
+    .map(|name| {
+        (
+            format!(".google.protobuf.{name}"),
+            "#[derive(Eq, Hash)]".to_string(),
+        )
+    })
+    .collect();
 
     let files_to_generate: Vec<String> = WKT_PROTOS.iter().map(|s| s.to_string()).collect();
 

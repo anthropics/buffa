@@ -12,6 +12,12 @@ import "google/protobuf/struct.proto";
 import "google/protobuf/wrappers.proto";
 import "google/protobuf/field_mask.proto";
 
+// A float-free consumer message that can derive Eq and Hash.
+message TimestampKey {
+  google.protobuf.Timestamp at = 1;
+  string id = 2;
+}
+
 // Message using various well-known types.
 message Event {
   google.protobuf.Timestamp created_at = 1;
