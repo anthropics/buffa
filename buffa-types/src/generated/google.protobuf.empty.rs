@@ -12,6 +12,7 @@
 /// ```
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Empty {
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,

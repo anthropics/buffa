@@ -239,6 +239,96 @@ fn codegen_wkt_auto_mapping() {
     let content = &files[0].content;
     assert!(content.contains("::buffa_types::google::protobuf::Timestamp"));
     assert!(content.contains("::buffa_types::google::protobuf::Duration"));
+    assert!(!content.contains("#[derive(Eq, Hash)]"));
+}
+
+#[test]
+fn gen_wkt_types_derives_eq_and_hash_only_for_selected_owned_messages() {
+    let expected = [
+        "Any",
+        "BoolValue",
+        "BytesValue",
+        "Duration",
+        "Empty",
+        "FieldMask",
+        "Int32Value",
+        "Int64Value",
+        "SourceContext",
+        "StringValue",
+        "Timestamp",
+        "UInt32Value",
+        "UInt64Value",
+    ];
+    let excluded = ["DoubleValue", "FloatValue", "ListValue", "Struct", "Value"];
+    let protos_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../buffa-types/protos");
+    let fds = compile_protos(
+        &[
+            "google/protobuf/any.proto",
+            "google/protobuf/api.proto",
+            "google/protobuf/duration.proto",
+            "google/protobuf/empty.proto",
+            "google/protobuf/field_mask.proto",
+            "google/protobuf/source_context.proto",
+            "google/protobuf/struct.proto",
+            "google/protobuf/timestamp.proto",
+            "google/protobuf/type.proto",
+            "google/protobuf/wrappers.proto",
+        ],
+        &[protos_dir],
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let descriptor_path = dir.path().join("wkt.pb");
+    let output_dir = dir.path().join("generated");
+    std::fs::write(&descriptor_path, fds.encode_to_vec()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_gen_wkt_types"))
+        .arg(&descriptor_path)
+        .arg(&output_dir)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "gen_wkt_types failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut actual = Vec::new();
+    let mut actual_excluded = Vec::new();
+    for entry in std::fs::read_dir(output_dir).unwrap() {
+        let content = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+        for item in syn::parse_file(&content).unwrap().items {
+            let syn::Item::Struct(message) = item else {
+                continue;
+            };
+            let name = message.ident.to_string();
+            let mut derives = Vec::new();
+            for attr in &message.attrs {
+                if attr.path().is_ident("derive") {
+                    derives.extend(
+                        attr.parse_args_with(
+                            syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
+                        )
+                        .unwrap(),
+                    );
+                }
+            }
+            let has_trait = |name: &str| derives.iter().any(|path| path.is_ident(name));
+            let selected = expected.contains(&name.as_str());
+            assert_eq!(has_trait("Eq"), selected, "Eq derive for {name}");
+            assert_eq!(has_trait("Hash"), selected, "Hash derive for {name}");
+            if !name.ends_with("View") {
+                assert!(has_trait("PartialEq"), "PartialEq derive for {name}");
+            }
+            if selected {
+                actual.push(name);
+            } else if excluded.contains(&name.as_str()) {
+                actual_excluded.push(name);
+            }
+        }
+    }
+    actual.sort();
+    assert_eq!(actual, expected);
+    actual_excluded.sort();
+    assert_eq!(actual_excluded, excluded);
 }
 
 #[test]

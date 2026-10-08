@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Float-free well-known types implement `Eq` and `Hash`** (#651). `Timestamp`, `Duration`, `FieldMask`, `Empty`, `Any`, `SourceContext`, and the integer, bool, string, and bytes wrappers can now be used as hash collection keys, and messages containing them can derive `Eq` and `Hash` when all their fields support those traits. Equality and hashing include unknown fields. Floating-point wrappers and `Value`/`Struct`/`ListValue` remain `PartialEq` only.
+time: 2026-10-08T00:00:00Z
