@@ -4591,6 +4591,241 @@ fn extensions_link() {
     assert_eq!(p.extensions_of(inner).count(), 0);
 }
 
+mod extension_field_names {
+    use super::{scalar_field, DescriptorPool, FieldKind, PoolError, ScalarType, SingularKind};
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FieldOptions, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    const SCOPES: &[(Option<&str>, bool, &str)] = &[
+        (None, false, "flag"),
+        (Some(""), false, "flag"),
+        (Some("test"), false, "test.flag"),
+        (None, true, "Outer.Inner.flag"),
+        (Some("test"), true, "test.Outer.Inner.flag"),
+    ];
+
+    fn extension() -> FieldDescriptorProto {
+        FieldDescriptorProto {
+            extendee: Some(".host.Host".into()),
+            ..scalar_field("flag", 100, Type::TYPE_BOOL)
+        }
+    }
+
+    fn set(
+        package: Option<&str>,
+        nested: bool,
+        extension: FieldDescriptorProto,
+    ) -> FileDescriptorSet {
+        let mut file = FileDescriptorProto {
+            name: Some("extension-field-names.proto".into()),
+            package: package.map(str::to_owned),
+            syntax: Some("proto2".into()),
+            dependency: vec!["host.proto".into()],
+            ..Default::default()
+        };
+        if nested {
+            file.message_type.push(DescriptorProto {
+                name: Some("Outer".into()),
+                nested_type: vec![DescriptorProto {
+                    name: Some("Inner".into()),
+                    extension: vec![extension],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            });
+        } else {
+            file.extension.push(extension);
+        }
+        FileDescriptorSet {
+            file: vec![
+                FileDescriptorProto {
+                    name: Some("host.proto".into()),
+                    package: Some("host".into()),
+                    syntax: Some("proto2".into()),
+                    message_type: vec![DescriptorProto {
+                        name: Some("Host".into()),
+                        extension_range: vec![ExtensionRange {
+                            start: Some(100),
+                            end: Some(200),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                file,
+            ],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn required_extension_errors_use_declaration_scope() {
+        for &(package, nested, expected_field) in SCOPES {
+            let extension = FieldDescriptorProto {
+                label: Some(Label::LABEL_REQUIRED),
+                ..extension()
+            };
+            let err = DescriptorPool::new(set(package, nested, extension)).unwrap_err();
+            assert!(
+                matches!(&err, PoolError::RequiredExtension { field } if field == expected_field),
+                "unexpected error: {err}"
+            );
+            assert_eq!(
+                err.to_string(),
+                format!("extension {expected_field} must not be required")
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_extension_numbers_use_bare_names() {
+        // 0 fails in link_field; 99 fails the extendee range check in link_extension.
+        for number in [0, 99, 19000] {
+            let extension = FieldDescriptorProto {
+                number: Some(number),
+                ..extension()
+            };
+            let err = DescriptorPool::new(set(None, false, extension)).unwrap_err();
+            if number == 19000 {
+                assert!(matches!(
+                    err,
+                    PoolError::ReservedFieldNumber { field, number: 19000 } if field == "flag"
+                ));
+            } else {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidFieldNumber { field, number: got }
+                        if field == "flag" && got == number
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_extension_options_use_bare_names() {
+        let packed = FieldDescriptorProto {
+            options: FieldOptions {
+                packed: Some(true),
+                ..Default::default()
+            }
+            .into(),
+            ..extension()
+        };
+        let err = DescriptorPool::new(set(None, false, packed)).unwrap_err();
+        assert!(matches!(err, PoolError::InvalidPackedOption { field } if field == "flag"));
+
+        let json_name = FieldDescriptorProto {
+            json_name: Some("bad\0name".into()),
+            ..extension()
+        };
+        let err = DescriptorPool::new(set(None, false, json_name)).unwrap_err();
+        assert!(matches!(
+            err,
+            PoolError::InvalidJsonName { field, name } if field == "flag" && name == "bad\0name"
+        ));
+    }
+
+    #[test]
+    fn extension_type_resolution_errors_use_bare_names() {
+        for (ty, type_name) in [
+            (Type::TYPE_MESSAGE, ".Missing"),
+            (Type::TYPE_ENUM, ".host.Host"),
+        ] {
+            let extension = FieldDescriptorProto {
+                r#type: Some(ty),
+                type_name: Some(type_name.into()),
+                ..extension()
+            };
+            let err = DescriptorPool::new(set(None, false, extension)).unwrap_err();
+            if ty == Type::TYPE_MESSAGE {
+                assert!(matches!(
+                    err,
+                    PoolError::UnresolvedTypeName { field, type_name: got }
+                        if field == "flag" && got == type_name
+                ));
+            } else {
+                assert!(matches!(
+                    err,
+                    PoolError::WrongTypeKind { field, type_name: got }
+                        if field == "flag" && got == type_name
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn extension_type_import_errors_use_bare_names() {
+        let extension = FieldDescriptorProto {
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(".Payload".into()),
+            ..extension()
+        };
+        let mut set = set(None, false, extension);
+        set.file.push(FileDescriptorProto {
+            name: Some("payload.proto".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Payload".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+        let err = DescriptorPool::new(set).unwrap_err();
+        assert!(matches!(
+            err,
+            PoolError::TypeNotImported { field, type_name, defined_in, .. }
+                if field == "flag" && type_name == ".Payload" && defined_in == "payload.proto"
+        ));
+    }
+
+    #[test]
+    fn nested_message_field_errors_preserve_declaration_scope() {
+        for (package, expected_field) in [
+            (None, "Outer.Inner.flag"),
+            (Some("test"), "test.Outer.Inner.flag"),
+        ] {
+            let mut set = set(package, true, extension());
+            let inner = &mut set.file[1].message_type[0].nested_type[0];
+            let mut field = inner.extension.pop().unwrap();
+            field.extendee = None;
+            field.number = Some(0);
+            inner.field.push(field);
+            let err = DescriptorPool::new(set).unwrap_err();
+            assert!(matches!(
+                err,
+                PoolError::InvalidFieldNumber { field, number: 0 } if field == expected_field
+            ));
+        }
+    }
+
+    #[test]
+    fn valid_extensions_preserve_registration_and_lookup() {
+        for &(package, nested, expected_name) in SCOPES {
+            let pool = DescriptorPool::new(set(package, nested, extension())).unwrap();
+            let ext = pool.extension_by_name(expected_name).unwrap();
+            assert_eq!(ext.full_name(), expected_name);
+            assert_eq!(ext.json_key(), format!("[{expected_name}]"));
+            assert_eq!(ext.field().name(), "flag");
+            assert_eq!(ext.field().number(), 100);
+            assert_eq!(
+                ext.field().kind(),
+                FieldKind::Singular(SingularKind::Scalar(ScalarType::Bool))
+            );
+            assert!(std::ptr::eq(
+                pool.extension_by_name(&format!(".{expected_name}"))
+                    .unwrap(),
+                ext
+            ));
+            let host = pool.message_index("host.Host").unwrap();
+            assert_eq!(ext.extendee(), host);
+            assert!(std::ptr::eq(pool.extension_for(host, 100).unwrap(), ext));
+        }
+    }
+}
+
 /// Build a one-message file with the given syntax and add it to a fresh pool.
 fn add_message_with_syntax(
     syntax: &str,
