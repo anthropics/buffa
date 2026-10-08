@@ -80,7 +80,11 @@ fn unknown_fields_participate_in_equality_and_hashing() {
     assert_eq!(first, same);
     assert_eq!(hash(&first), hash(&same));
     assert_ne!(first, plain);
-    assert_ne!(hash(&first), hash(&plain));
     assert_ne!(first, different);
-    assert_ne!(hash(&first), hash(&different));
+
+    let mut set = HashSet::new();
+    assert!(set.insert(first));
+    assert!(!set.insert(same));
+    assert!(set.insert(plain));
+    assert!(set.insert(different));
 }
