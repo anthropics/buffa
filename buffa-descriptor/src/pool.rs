@@ -374,6 +374,9 @@ pub enum PoolError {
     DuplicateOneofName { message: String, name: String },
     /// A oneof declaration has no member fields.
     EmptyOneof { oneof: String },
+    /// Members of a oneof are not consecutive in declaration order.
+    /// Field numbers need not be consecutive or sorted.
+    NonconsecutiveOneofFields { oneof: String },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
@@ -712,6 +715,9 @@ impl core::fmt::Display for PoolError {
                 )
             }
             Self::EmptyOneof { oneof } => write!(f, "oneof {oneof} has no fields"),
+            Self::NonconsecutiveOneofFields { oneof } => {
+                write!(f, "oneof {oneof} has member fields that are not declared consecutively")
+            }
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
@@ -2078,6 +2084,15 @@ impl DescriptorPool {
         for oneof in &oneofs {
             if oneof.field_indices.is_empty() {
                 return Err(PoolError::EmptyOneof {
+                    oneof: format!("{fqn}.{}", oneof.name),
+                });
+            }
+            if oneof
+                .field_indices
+                .windows(2)
+                .any(|pair| pair[1] - pair[0] != 1)
+            {
+                return Err(PoolError::NonconsecutiveOneofFields {
                     oneof: format!("{fqn}.{}", oneof.name),
                 });
             }

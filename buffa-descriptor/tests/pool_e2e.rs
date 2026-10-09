@@ -5431,6 +5431,128 @@ fn empty_oneofs_are_rejected_transactionally() {
 }
 
 #[test]
+fn nonconsecutive_oneof_fields_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
+    };
+
+    for (syntax, edition) in [
+        ("proto2", None),
+        ("proto3", None),
+        ("editions", Some(Edition::EDITION_2023)),
+    ] {
+        for separator_oneof in [None, Some(1)] {
+            for nested in [false, true] {
+                let mut message = DescriptorProto {
+                    name: Some("Split".into()),
+                    field: [Some(0), separator_oneof, Some(0)]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, oneof_index)| FieldDescriptorProto {
+                            oneof_index,
+                            ..scalar_field(&format!("field_{i}"), i as i32 + 1, Type::TYPE_INT32)
+                        })
+                        .collect(),
+                    oneof_decl: vec![OneofDescriptorProto {
+                        name: Some("choice".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                };
+                if separator_oneof.is_some() {
+                    message.oneof_decl.push(OneofDescriptorProto {
+                        name: Some("other".into()),
+                        ..Default::default()
+                    });
+                }
+                let name = if nested {
+                    "invalid.test.Outer.Split"
+                } else {
+                    "invalid.test.Split"
+                };
+                if nested {
+                    message = DescriptorProto {
+                        name: Some("Outer".into()),
+                        nested_type: vec![message],
+                        ..Default::default()
+                    };
+                }
+                let set = FileDescriptorSet {
+                    file: vec![FileDescriptorProto {
+                        name: Some("split-oneof.proto".into()),
+                        package: Some("invalid.test".into()),
+                        syntax: Some(syntax.into()),
+                        edition,
+                        message_type: vec![message],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                };
+                assert!(matches!(DescriptorPool::new(set.clone()),
+                    Err(PoolError::NonconsecutiveOneofFields { oneof })
+                        if oneof == format!("{name}.choice")));
+                assert_set_rejected_without_mutating_pool("split-oneof.proto", name, set, |err| {
+                    assert!(matches!(err, PoolError::NonconsecutiveOneofFields { oneof }
+                            if oneof == &format!("{name}.choice")));
+                    assert_eq!(
+                        err.to_string(),
+                            format!("oneof {name}.choice has member fields that are not declared consecutively")
+                    );
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn consecutive_oneof_fields_allow_unsorted_field_numbers() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, OneofDescriptorProto,
+    };
+
+    let message = DescriptorProto {
+        name: Some("Consecutive".into()),
+        field: [
+            (None, 10),
+            (Some(0), 7),
+            (Some(0), 2),
+            (Some(1), 4),
+            (None, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (oneof_index, number))| FieldDescriptorProto {
+            oneof_index,
+            ..scalar_field(&format!("field_{i}"), number, Type::TYPE_INT32)
+        })
+        .collect(),
+        oneof_decl: ["choice", "single"]
+            .into_iter()
+            .map(|name| OneofDescriptorProto {
+                name: Some(name.into()),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    };
+    let set = buffa_descriptor::generated::descriptor::FileDescriptorSet {
+        file: vec![
+            buffa_descriptor::generated::descriptor::FileDescriptorProto {
+                name: Some("consecutive.proto".into()),
+                syntax: Some("proto3".into()),
+                message_type: vec![message],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    DescriptorPool::new(set).expect("contiguity depends on declaration order, not field numbers");
+}
+
+#[test]
 fn empty_oneof_validation_covers_syntax_nesting_and_declaration_order() {
     use buffa::Message;
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
