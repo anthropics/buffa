@@ -2622,8 +2622,19 @@ impl DescriptorPool {
         let presence = if is_repeated {
             // Repeated/map fields have no presence.
             FieldPresence::Implicit
-        } else if label == Label::LABEL_REQUIRED {
+        } else if label == Label::LABEL_REQUIRED
+            || resolved.field_presence == FieldPresence::LegacyRequired
+        {
+            // A proto2 `required` label or an editions `LEGACY_REQUIRED`
+            // feature makes any singular field required, message fields
+            // included, so this arm runs before the message arm below.
             FieldPresence::LegacyRequired
+        } else if is_extension {
+            // A singular extension has presence whatever the file's
+            // features resolve to (protoc `FieldDescriptor::has_presence`),
+            // so a proto3 or implicit-presence editions file does not make
+            // its extensions implicit.
+            FieldPresence::Explicit
         } else if f.proto3_optional == Some(true) || f.oneof_index.is_some() {
             // proto3 `optional` and any oneof member always have explicit
             // presence regardless of edition features. A oneof field set
@@ -2639,13 +2650,7 @@ impl DescriptorPool {
         } else {
             resolved.field_presence
         };
-        // An extension has presence whatever its features resolve to, which
-        // the ladder above does not model.
-        if !is_repeated
-            && !is_extension
-            && presence == FieldPresence::Implicit
-            && f.default_value.is_some()
-        {
+        if !is_repeated && presence == FieldPresence::Implicit && f.default_value.is_some() {
             return Err(PoolError::ImplicitPresenceFieldWithDefault { field: field_fqn });
         }
 
