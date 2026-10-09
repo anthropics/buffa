@@ -361,7 +361,7 @@ fn collect_variant_info(
         })
         .collect();
 
-    fields
+    let variants: Vec<VariantInfo> = fields
         .iter()
         .map(|field| {
             let proto_name = field
@@ -446,7 +446,25 @@ fn collect_variant_info(
                 debug_redact: crate::message::is_debug_redacted(field),
             })
         })
-        .collect()
+        .collect::<Result<_, _>>()?;
+
+    // `oneof_variant_ident` is lossy (`foo` / `foo_`, `foo_bar` / `foo__bar`,
+    // `self` / `self_`), so two members can map to one variant. Every
+    // member's name was checked above, so `unwrap_or_default` never fires.
+    let mut seen = std::collections::HashMap::<String, &str>::new();
+    for (field, variant) in fields.iter().zip(&variants) {
+        let proto_name = field.name.as_deref().unwrap_or_default();
+        if let Some(first_field) = seen.insert(variant.variant_ident.to_string(), proto_name) {
+            return Err(CodeGenError::OneofVariantNameConflict {
+                message_name: proto_fqn.to_string(),
+                oneof_name: oneof_name.to_string(),
+                first_field: first_field.to_string(),
+                second_field: proto_name.to_string(),
+                rust_name: variant.variant_ident.to_string(),
+            });
+        }
+    }
+    Ok(variants)
 }
 
 /// Generate a Rust enum for a protobuf oneof.

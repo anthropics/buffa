@@ -1015,6 +1015,8 @@ Adding or removing sibling types never changes the Rust name of an existing oneo
 
 Two oneofs of one message can still collide with each other: `oneof foo_bar` and `oneof foo__bar` both map to `FooBar`, and `oneof self` and `oneof self_` both map to `Self_`. Code generation rejects such a message with `CodeGenError::OneofEnumNameConflict`, which names both oneofs. Rename one of them; a oneof's name is in neither the wire format nor JSON, so the rename changes generated code only.
 
+The members of one oneof collide the same way: `foo` and `foo_` both map to the variant `Foo`, and `self` and `self_` to `Self_`. Code generation rejects the message with `CodeGenError::OneofVariantNameConflict`, which names the oneof and both members. Rename one of the members; a member's name is its default JSON name and its text-format name, so set a `json_name` if the JSON name must stay.
+
 ### Nested types and module structure
 
 Nested proto messages are scoped in Rust modules named after the parent:
