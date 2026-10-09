@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **codegen: two members of one oneof whose Rust variant names collide are rejected with `CodeGenError::OneofVariantNameConflict`** (#622).
+    The PascalCase conversion of a member name is lossy, so `foo` and `foo_`, `foo_bar` and `foo__bar`, or `self` and `self_` in one oneof produced a duplicate enum variant, and generation succeeded while the consumer's build failed with E0428 in generated code. Code generation now rejects the message with an error that names the message, the oneof, both members and the shared variant name, as it already did for two sibling oneofs with one enum name.
+time: 2026-10-10T04:51:38.579506+05:00

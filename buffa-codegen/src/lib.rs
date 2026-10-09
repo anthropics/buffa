@@ -3271,6 +3271,7 @@ fn warn_excluded_refs_msg(
 ///   corpus or different rules than this call uses.
 /// - For a valid schema whose names collide in the generated Rust:
 ///   [`CodeGenError::OneofEnumNameConflict`],
+///   [`CodeGenError::OneofVariantNameConflict`],
 ///   [`CodeGenError::TypeNameConflict`],
 ///   [`CodeGenError::ModuleNameConflict`],
 ///   [`CodeGenError::ReservedFieldName`] or
@@ -5308,6 +5309,30 @@ pub enum CodeGenError {
         /// Proto name of the oneof declared second.
         second_oneof: String,
         /// The Rust enum name that both oneofs map to.
+        rust_name: String,
+    },
+    /// Two members of one oneof produce the same Rust variant name after
+    /// PascalCase conversion and keyword escaping (e.g., `foo` and `foo_`
+    /// both become `Foo`; `foo_bar` and `foo__bar` both become `FooBar`;
+    /// `self` and `self_` both become `Self_`). Resolve by renaming one of
+    /// the members. A member's name is its default JSON and text-format
+    /// name, so the rename changes those too unless the field sets a
+    /// `json_name`; the wire format is unaffected.
+    #[error(
+        "oneof variant name conflict in message '{message_name}': members \
+         '{first_field}' and '{second_field}' of oneof '{oneof_name}' both map \
+         to Rust variant '{rust_name}'; rename one of them"
+    )]
+    OneofVariantNameConflict {
+        /// Fully-qualified proto name of the message, without a leading dot.
+        message_name: String,
+        /// Proto name of the oneof that declares both members.
+        oneof_name: String,
+        /// Proto name of the member declared first.
+        first_field: String,
+        /// Proto name of the member declared second.
+        second_field: String,
+        /// The Rust variant name that both members map to.
         rust_name: String,
     },
     /// Two types, each a message or an enum, declared at package level in
