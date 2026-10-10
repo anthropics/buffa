@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**An unknown enum name in JSON is reported as `invalid value: string "X", expected a known enum variant name` on every path** (#645). `EnumValue<E>`, the generated `Deserialize` of every enum and the `closed_enum` / `opt_closed_enum` / `repeated_closed_enum` / `map_closed_enum` helpers reported it as "unknown variant `X`, there are no variants", which is false: the expected-variant list passed to serde was empty. The reflective parser said `unknown enum value "X"`. All of them now use the wording `proto_enum` already produced.'
+time: 2026-10-10T10:07:35.861435+08:00
