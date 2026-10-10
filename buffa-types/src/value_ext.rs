@@ -278,6 +278,21 @@ impl Struct {
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.fields.get(key)
     }
+
+    /// Returns a mutable reference to the value for `key` if present.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::google::protobuf::{Struct, Value};
+    ///
+    /// let mut s = Struct::from_fields([("enabled", false)]);
+    /// *s.get_mut("enabled").unwrap() = Value::from(true);
+    /// assert_eq!(s.get("enabled").and_then(Value::as_bool), Some(true));
+    /// ```
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
+        self.fields.get_mut(key)
+    }
 }
 
 impl FromIterator<(String, Value)> for Struct {
@@ -461,6 +476,56 @@ impl<'de> serde::Deserialize<'de> for ListValue {
 mod tests {
     use super::*;
     use alloc::{vec, vec::Vec};
+
+    #[test]
+    fn struct_get_mut_replaces_existing_value() {
+        let mut s = Struct::from_fields([("enabled", false), ("other", true)]);
+        *s.get_mut("enabled").unwrap() = Value::from(true);
+        assert_eq!(s.get("enabled").and_then(Value::as_bool), Some(true));
+        assert_eq!(s.get("other").and_then(Value::as_bool), Some(true));
+        assert_eq!(s.fields.len(), 2);
+    }
+
+    #[test]
+    fn struct_get_mut_missing_key_does_not_insert() {
+        let mut empty = Struct::new();
+        assert!(empty.get_mut("missing").is_none());
+        assert!(empty.fields.is_empty());
+
+        let mut s = Struct::from_fields([("key", 1_i32)]);
+        let before = s.clone();
+        assert!(s.get_mut("Key").is_none());
+        assert!(s.get_mut("missing").is_none());
+        assert_eq!(s, before);
+    }
+
+    #[test]
+    fn struct_get_mut_edits_nested_value() {
+        let mut s = Struct::from_fields([("nested", Struct::from_fields([("count", 1_i32)]))]);
+        s.get_mut("nested")
+            .unwrap()
+            .as_struct_mut()
+            .unwrap()
+            .insert("count", 2_i32);
+        assert_eq!(
+            s.get("nested")
+                .unwrap()
+                .as_struct()
+                .unwrap()
+                .get("count")
+                .and_then(Value::as_number),
+            Some(2.0)
+        );
+    }
+
+    #[test]
+    fn struct_get_mut_accepts_empty_and_unicode_keys() {
+        let mut s = Struct::from_fields([("", 1_i32), ("日本語", 2_i32)]);
+        for key in ["", "日本語"] {
+            *s.get_mut(key).unwrap() = Value::null();
+            assert!(s.get(key).unwrap().is_null());
+        }
+    }
 
     #[test]
     fn value_null() {
