@@ -9,14 +9,17 @@
 //!
 //! When views and JSON are both enabled in `buffa-build`, generated view types
 //! reference WKT view types (`TimestampView<'_>`, …) directly, so those WKT
-//! views also need `Serialize`.  These impls delegate to the owned type via
+//! views also need `Serialize`. [`StringValueView`] and [`BytesValueView`]
+//! serialize their borrowed payloads directly. The remaining impls delegate
+//! to the owned type via
 //! [`MessageView::to_owned_message`](buffa::MessageView::to_owned_message),
-//! trading a per-WKT-field allocation for parity with the owned proto3 JSON
-//! encoding.  The rest of the parent message stays zero-copy.
+//! materializing each WKT field for parity with the owned proto3 JSON
+//! encoding. The rest of the parent message stays zero-copy.
 //!
 //! For the flat WKTs ([`Timestamp`](crate::Timestamp),
 //! [`Duration`](crate::Duration), [`FieldMask`](crate::FieldMask), the
-//! wrappers, [`Empty`](crate::Empty)) the allocation is a few words.  For
+//! scalar wrappers, [`Empty`](crate::Empty)) this copies the fields and any
+//! retained unknown fields. For
 //! [`Struct`](crate::Struct) / [`Value`](crate::Value) /
 //! [`ListValue`](crate::ListValue) / [`Any`](crate::Any) the entire owned
 //! tree is materialized before serde sees it — large nested `Struct` payloads
@@ -56,7 +59,6 @@ macro_rules! wkt_view_serialize {
 wkt_view_serialize!(
     AnyView,
     BoolValueView,
-    BytesValueView,
     DoubleValueView,
     DurationView,
     EmptyView,
@@ -65,13 +67,26 @@ wkt_view_serialize!(
     Int32ValueView,
     Int64ValueView,
     ListValueView,
-    StringValueView,
     StructView,
     TimestampView,
     UInt32ValueView,
     UInt64ValueView,
     ValueView,
 );
+
+impl serde::Serialize for StringValueView<'_> {
+    /// Serializes the borrowed string without constructing an owned wrapper.
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.value)
+    }
+}
+
+impl serde::Serialize for BytesValueView<'_> {
+    /// Serializes the borrowed bytes as base64 without constructing an owned wrapper.
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        buffa::json_helpers::bytes::serialize(self.value, s)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -81,6 +96,7 @@ mod tests {
         Int32Value, Int64Value, ListValue, StringValue, Struct, Timestamp, UInt32Value,
         UInt64Value, Value,
     };
+    use alloc::{string::ToString, vec};
     use buffa::Message;
 
     /// Encode `$owned`, decode it as `$view`, serialize both to JSON, and
@@ -202,6 +218,36 @@ mod tests {
                 ..Default::default()
             }
         );
+    }
+
+    #[test]
+    fn unset_value_views_serialize_is_error() {
+        let view = ValueView::decode_view(&[]).unwrap();
+        assert!(serde_json::to_string(&view).is_err());
+
+        let st = Struct::from_fields([("unset", Value::default())]);
+        let bytes = st.encode_to_vec();
+        let view = StructView::decode_view(&bytes).unwrap();
+        assert!(serde_json::to_string(&view).is_err());
+
+        let list = ListValue::from_values([Value::null(), Value::default()]);
+        let bytes = list.encode_to_vec();
+        let view = ListValueView::decode_view(&bytes).unwrap();
+        assert!(serde_json::to_string(&view).is_err());
+    }
+
+    #[test]
+    fn value_default_variant_views_serialize_match_owned() {
+        for value in [
+            Value::null(),
+            Value::from(0.0_f64),
+            Value::from(false),
+            Value::from(""),
+            Value::from(Struct::new()),
+            Value::from(ListValue::default()),
+        ] {
+            assert_view_json_parity!(ValueView, value);
+        }
     }
 
     #[test]

@@ -530,7 +530,11 @@ impl<'de> serde::Deserialize<'de> for Any {
 
         let value = match lookup {
             Some((from_json, true)) => {
-                let json_val = obj.remove("value").unwrap_or(serde_json::Value::Null);
+                let json_val = obj.remove("value").ok_or_else(|| {
+                    serde::de::Error::custom(alloc::format!(
+                        "Any with WKT type {type_url:?} requires a \"value\" key"
+                    ))
+                })?;
                 from_json(json_val).map_err(serde::de::Error::custom)?
             }
             Some((from_json, false)) => {
@@ -927,8 +931,12 @@ mod tests {
 
     #[cfg(feature = "json")]
     mod serde_tests {
+        #[cfg(not(feature = "std"))]
+        extern crate std;
+
         use super::*;
         use crate::google::protobuf::Duration;
+        use alloc::{string::ToString, vec};
         use buffa::any_registry::clear_any_registry;
         use buffa::type_registry::{
             clear_text_registry, set_type_registry, TypeRegistry, MAX_ANY_EXPANSION_DEPTH,
@@ -1154,6 +1162,23 @@ mod tests {
                 let json = serde_json::to_value(&any).unwrap();
                 assert_eq!(json["@type"], Duration::TYPE_URL);
                 assert_eq!(json["value"], "1.500s");
+            });
+        }
+
+        #[test]
+        fn serialize_value_wkt_requires_kind() {
+            use crate::google::protobuf::Value;
+
+            with_registry(|| {
+                let unset = Any::pack_message(&Value::default());
+                assert!(serde_json::to_string(&unset).is_err());
+
+                let null = Any::pack_message(&Value::null());
+                let json = serde_json::to_value(&null).unwrap();
+                assert_eq!(
+                    json,
+                    serde_json::json!({ "@type": Value::TYPE_URL, "value": null })
+                );
             });
         }
 

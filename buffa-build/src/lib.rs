@@ -94,6 +94,9 @@ impl Config {
     }
 
     /// Add include directories for protoc to search for imports.
+    ///
+    /// Directories are searched in order. If directories overlap, the first
+    /// matching directory determines the proto-relative file name.
     #[must_use]
     pub fn includes(mut self, includes: &[impl AsRef<Path>]) -> Self {
         self.includes
@@ -187,6 +190,9 @@ impl Config {
     ///
     /// The derive is gated behind `#[cfg_attr(feature = "arbitrary", ...)]`
     /// so the downstream crate compiles with or without the feature enabled.
+    /// An enum with a `[deprecated = true]` variant gets a generated impl
+    /// under the same gate instead, because the derive would warn on that
+    /// variant. The impl maps input to variants as the derive does.
     ///
     /// Your crate's Cargo feature **must be named exactly `"arbitrary"`** —
     /// the generated `cfg_attr` uses that literal string and cannot be
@@ -1408,12 +1414,15 @@ impl Config {
     ///   `ReflectElement` or `ReflectMapKey` impl for it, which the orphan rule
     ///   forbids for a foreign type. Wrap it in a crate-local newtype for
     ///   those cases; singular / optional / oneof uses work directly.
-    /// - **JSON of an `optional`, `repeated` or `oneof` custom string, or of
-    ///   one in a `map`,** serializes through the type's own `serde` impls, so
-    ///   such a type must derive `Serialize` / `Deserialize` (and an external
-    ///   type must enable its `serde` feature). A singular field without
-    ///   `optional` uses the `proto_string` with-module and needs no `serde`
-    ///   impl.
+    /// - **JSON of a custom string with explicit presence (proto3 or proto2
+    ///   `optional`, and the edition 2023 default), in a `repeated` field, in
+    ///   a oneof, or in a `map`,** serializes through the type's own `serde`
+    ///   impls, so such a type must implement `Serialize` / `Deserialize`. A
+    ///   `buffa-remote-derive` newtype gets them from
+    ///   `#[buffa(remote = ..., serde)]`; any other type derives them (an
+    ///   external type enables its `serde` feature). A singular field with
+    ///   implicit presence, or a proto2 `required` field, uses the
+    ///   `proto_string` with-module and needs no `serde` impl.
     /// - A custom type used as a `map` key must implement `Hash + Eq` for the
     ///   default `HashMap` container, or `Ord` for `BTreeMap`.
     /// - A `path` that does not parse as a Rust type is reported as a codegen
@@ -1552,14 +1561,13 @@ impl Config {
     /// Choose how the binary `Message` implementation of every message is
     /// generated (default: [`CodecStrategy::Unrolled`]).
     ///
-    /// On a schema it fully covers, [`CodecStrategy::Table`] makes the
-    /// compiled size about half as big at `opt-level = "z"`, and it slows
-    /// messages made of many small fields; a message that cannot use it keeps
-    /// its size. [`CodecStrategy::Table`] has the measurements, says which
-    /// messages stay unrolled, and lists how a table message behaves
-    /// differently. This build reports
-    /// those in one `cargo:warning`. The option never changes the wire
-    /// format. The generated code needs Rust 1.77 or later, and `compile`
+    /// On a large schema, [`CodecStrategy::Table`] makes the compiled code
+    /// about 40% smaller at `opt-level = "z"`, and it slows messages made of
+    /// many small fields; a message that cannot use it keeps its size.
+    /// [`CodecStrategy::Table`] says which messages stay unrolled and how a
+    /// table message behaves differently, and this build reports the messages
+    /// that stay unrolled in one `cargo:warning`. The option never changes the
+    /// wire format. The generated code needs Rust 1.77 or later, and `compile`
     /// returns an error on an older compiler when a build script runs it (the
     /// compiler is read from `RUSTC`).
     ///
@@ -1599,13 +1607,8 @@ impl Config {
     /// names the message by its exact path. A rule that matches no message
     /// produces a warning.
     ///
-    /// A table message holds only table messages, and a rule does not extend
-    /// to the messages a message holds. Selecting a message with a rule
-    /// therefore also needs rules for everything it holds, unless the global
-    /// setting is [`CodecStrategy::Table`]. Choosing [`CodecStrategy::Unrolled`]
-    /// for a message keeps every message that holds it unrolled, with no
-    /// warning, and that usually includes the root message an application
-    /// encodes.
+    /// A rule does not extend to the messages a message holds; see
+    /// [`CodecStrategy::Table`].
     #[must_use]
     pub fn codec_strategy_in(mut self, strategy: CodecStrategy, paths: &[impl AsRef<str>]) -> Self {
         for raw in paths.iter().map(AsRef::as_ref) {
@@ -1812,6 +1815,26 @@ impl Config {
     /// `".pkg.Msg.my_oneof.variant_name"`, but not to the struct field holding
     /// the oneof; use [`oneof_field_attribute`](Self::oneof_field_attribute)
     /// for that.
+    ///
+    /// A `#[deprecated]` supplied here wins over the one codegen derives from
+    /// the field's `[deprecated = true]` option — rustc permits only one
+    /// `deprecated` attribute per item — so this is also how to attach a note
+    /// naming the replacement. Either source marks every generated way to
+    /// reach a message field: the `with_*` setter, the same field on the
+    /// views, its `OwnedView` accessor and, for a `required` field, the views'
+    /// `has_*` method. Those carry a bare `#[deprecated]`; the attribute given
+    /// here, with its note, stays on the owned struct's field. Either source
+    /// also makes the generated items that visit the field carry
+    /// `#[allow(deprecated)]`.
+    ///
+    /// A `deprecated` inside `cfg_attr` counts too: it replaces the
+    /// option-derived marker on the owned field, and the setter and view
+    /// markers stay unconditional.
+    ///
+    /// A oneof variant gets only the attribute given here. Its view variant is
+    /// unmarked and the generated impls that match on it are not guarded, so
+    /// put `#[allow(deprecated)]` on the `mod` that includes the generated
+    /// file.
     ///
     /// # Example
     ///
@@ -2298,7 +2321,7 @@ impl Config {
         // `FileDescriptorProto.name` contains the path relative to the proto
         // source root (protoc: `--proto_path`; buf: the module root). For
         // Precompiled, Bytes, and Buf mode, `.files()` are expected to already be
-        // proto-relative names. For Protoc mode, strip the longest matching
+        // proto-relative names. For Protoc mode, strip the first matching
         // include prefix.
         let files_to_generate: Vec<String> = if matches!(
             self.descriptor_source,
@@ -2353,6 +2376,7 @@ impl Config {
 
         // Generate the include file if requested.
         if let Some(ref include_name) = self.include_file {
+            std::fs::create_dir_all(&out_dir)?;
             let tree = generate_include_file(&output_entries, relative_includes);
             let include_content = if let Some(sidecar) = sidecar {
                 // Embed the descriptor set once, at the tree root, instead of a
@@ -2638,22 +2662,44 @@ fn emit_buf_rerun_if_changed() {
 /// Convert a filesystem proto path to the name protoc uses in the descriptor.
 ///
 /// `FileDescriptorProto.name` is relative to the `--proto_path` include
-/// directory. This strips the longest matching include prefix; if no include
-/// matches, returns the path as-is (not just file_name — that would break
-/// nested proto directories).
+/// directory. The name is what remains after the first include that is a
+/// prefix of the file and leaves no `..` in the remainder: protoc refuses to
+/// map a file through an include when the result would contain `..`, and
+/// tries the next one. If no include qualifies, the name is the full path
+/// (not just file_name — that would break nested proto directories).
+/// Current-directory components and redundant separators are removed first,
+/// as protoc does, without resolving symlinks or `..`.
 fn proto_relative_name(file: &Path, includes: &[PathBuf]) -> String {
-    // Longest prefix wins: a file under both "proto/" and "proto/vendor/"
-    // should strip "proto/vendor/" for a correct relative name.
-    let mut best: Option<&Path> = None;
-    for include in includes {
-        if let Ok(rel) = file.strip_prefix(include) {
-            match best {
-                Some(prev) if prev.as_os_str().len() <= rel.as_os_str().len() => {}
-                _ => best = Some(rel),
+    let file = normalize_proto_path(file);
+    let name = includes
+        .iter()
+        .find_map(|include| {
+            let include = normalize_proto_path(include);
+            // `.` contains every relative path and no rooted one. `has_root`
+            // also covers a Windows path that starts at the root of the
+            // current drive, which `is_absolute` reports as relative.
+            if include.as_os_str().is_empty() && file.has_root() {
+                return None;
             }
-        }
-    }
-    best.unwrap_or(file).to_str().unwrap_or("").to_string()
+            file.strip_prefix(include).ok().filter(|name| {
+                !name
+                    .components()
+                    .any(|component| component == Component::ParentDir)
+            })
+        })
+        .unwrap_or(&file)
+        .to_str()
+        .unwrap_or("")
+        .to_string();
+    #[cfg(windows)]
+    let name = name.replace('\\', "/");
+    name
+}
+
+fn normalize_proto_path(path: &Path) -> PathBuf {
+    path.components()
+        .filter(|component| *component != Component::CurDir)
+        .collect()
 }
 
 /// Files Cargo should watch for protoc-based builds.
@@ -3175,15 +3221,121 @@ mod tests {
     }
 
     #[test]
-    fn proto_relative_name_longest_prefix_wins() {
-        // Overlapping includes: file under both proto/ and proto/vendor/.
-        // Must strip the LONGER prefix for the correct relative name.
+    fn proto_relative_name_normalizes_current_directory_components() {
+        for (file, includes, expected) in [
+            (
+                "./proto/my/service.proto",
+                vec!["proto"],
+                "my/service.proto",
+            ),
+            (
+                "proto/my/service.proto",
+                vec!["./proto"],
+                "my/service.proto",
+            ),
+            (
+                "./proto/my/service.proto",
+                vec!["./proto"],
+                "my/service.proto",
+            ),
+            (
+                "proto/my/./service.proto",
+                vec!["proto"],
+                "my/service.proto",
+            ),
+            ("./my//pkg/./service.proto", vec![], "my/pkg/service.proto"),
+            ("./my/pkg/service.proto", vec!["."], "my/pkg/service.proto"),
+            ("my/pkg/service.proto", vec!["./."], "my/pkg/service.proto"),
+            (
+                "./my/pkg/service.proto",
+                vec!["other"],
+                "my/pkg/service.proto",
+            ),
+        ] {
+            let includes = includes.into_iter().map(PathBuf::from).collect::<Vec<_>>();
+            assert_eq!(proto_relative_name(Path::new(file), &includes), expected);
+        }
+    }
+
+    #[test]
+    fn proto_relative_name_normalization_preserves_include_order() {
+        let file = Path::new("./proto/vendor/./ext.proto");
+        assert_eq!(
+            proto_relative_name(
+                file,
+                &[PathBuf::from("./proto"), PathBuf::from("proto/vendor")]
+            ),
+            "vendor/ext.proto"
+        );
+        assert_eq!(
+            proto_relative_name(
+                file,
+                &[PathBuf::from("./proto/vendor"), PathBuf::from("proto")]
+            ),
+            "ext.proto"
+        );
+    }
+
+    #[test]
+    fn proto_relative_name_current_directory_include_contains_relative_files() {
+        // `.` listed first names the file by its full relative path, even
+        // when a later include is a closer match.
+        assert_eq!(
+            proto_relative_name(
+                Path::new("proto/my/service.proto"),
+                &[PathBuf::from("."), PathBuf::from("proto")]
+            ),
+            "proto/my/service.proto"
+        );
+    }
+
+    #[test]
+    fn proto_relative_name_current_directory_does_not_match_absolute_path() {
+        let root = std::env::current_dir().unwrap().join("proto");
+        let file = root.join("my/service.proto");
+        assert_eq!(
+            proto_relative_name(&file, &[PathBuf::from("."), root]),
+            "my/service.proto"
+        );
+    }
+
+    #[test]
+    fn proto_relative_name_preserves_parent_directory_components() {
+        assert_eq!(
+            proto_relative_name(Path::new("./proto/../vendor/service.proto"), &[]),
+            "proto/../vendor/service.proto"
+        );
+        assert_eq!(
+            proto_relative_name(
+                Path::new("./proto/../vendor/service.proto"),
+                &[PathBuf::from("proto/../vendor")],
+            ),
+            "service.proto"
+        );
+    }
+
+    #[test]
+    fn proto_relative_name_skips_prefixes_leaving_parent_components() {
+        assert_eq!(
+            proto_relative_name(
+                Path::new("./proto/../vendor/service.proto"),
+                &[
+                    PathBuf::from("."),
+                    PathBuf::from("proto"),
+                    PathBuf::from("proto/../vendor"),
+                ],
+            ),
+            "service.proto"
+        );
+    }
+
+    #[test]
+    fn proto_relative_name_first_matching_prefix_wins() {
         let got = proto_relative_name(
             Path::new("proto/vendor/ext.proto"),
             &[PathBuf::from("proto/"), PathBuf::from("proto/vendor/")],
         );
-        assert_eq!(got, "ext.proto");
-        // Same with reversed include order.
+        assert_eq!(got, "vendor/ext.proto");
         let got = proto_relative_name(
             Path::new("proto/vendor/ext.proto"),
             &[PathBuf::from("proto/vendor/"), PathBuf::from("proto/")],
@@ -3192,10 +3344,56 @@ mod tests {
     }
 
     #[test]
+    fn proto_relative_name_skips_unmatched_prefixes() {
+        let got = proto_relative_name(
+            Path::new("proto/vendor/ext.proto"),
+            &[
+                PathBuf::from("unrelated"),
+                PathBuf::from("proto/"),
+                PathBuf::from("proto/vendor/"),
+            ],
+        );
+        assert_eq!(got, "vendor/ext.proto");
+    }
+
+    #[test]
+    fn proto_relative_name_requires_a_complete_path_component() {
+        let got = proto_relative_name(
+            Path::new("proto/vendor2/ext.proto"),
+            &[PathBuf::from("proto/vendor"), PathBuf::from("proto/")],
+        );
+        assert_eq!(got, "vendor2/ext.proto");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn proto_relative_name_normalizes_windows_separators() {
+        let got = proto_relative_name(
+            Path::new(r"C:\proto\vendor\ext.proto"),
+            &[
+                PathBuf::from(r"C:\proto"),
+                PathBuf::from(r"C:\proto\vendor"),
+            ],
+        );
+        assert_eq!(got, "vendor/ext.proto");
+        let got = proto_relative_name(Path::new(r"vendor\ext.proto"), &[]);
+        assert_eq!(got, "vendor/ext.proto");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn proto_relative_name_preserves_literal_backslashes() {
+        let got = proto_relative_name(
+            Path::new(r"proto/vendor\ext.proto"),
+            &[PathBuf::from("proto")],
+        );
+        assert_eq!(got, r"vendor\ext.proto");
+    }
+
+    #[test]
     fn proto_relative_name_no_match_returns_full_path() {
-        // Regression: previously fell back to file_name(), which stripped
-        // directory components and broke descriptor_set() mode with nested
-        // proto packages. Now returns the full path as-is.
+        // The fallback is the whole path: file_name() alone would drop the
+        // directories that descriptor_set() mode needs for nested packages.
         let got = proto_relative_name(Path::new("my/pkg/service.proto"), &[]);
         assert_eq!(got, "my/pkg/service.proto");
     }
@@ -3313,6 +3511,128 @@ mod tests {
             !out.contains("OUT_DIR"),
             "relative mode must not reference OUT_DIR: {out}"
         );
+    }
+
+    fn config_with_excluded_package() -> Config {
+        use buffa_codegen::generated::descriptor::{DescriptorProto, FileDescriptorProto};
+
+        let file = FileDescriptorProto {
+            name: Some("example.proto".into()),
+            package: Some("example".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Message".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        Config::new()
+            .descriptor_set_bytes(buffa_codegen::encode_descriptor_set(&[file], &[]))
+            .files(&["example.proto"])
+            .exclude_package("example")
+    }
+
+    #[test]
+    fn include_file_creates_output_directory_without_generated_files() {
+        for config in [
+            Config::new().descriptor_set_bytes(Vec::new()),
+            config_with_excluded_package(),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let out = dir.path().join("nested/gen");
+            assert!(!out.exists());
+
+            config
+                .out_dir(&out)
+                .include_file("gen_mod.rs")
+                .compile()
+                .unwrap();
+
+            assert_eq!(
+                std::fs::read_to_string(out.join("gen_mod.rs")).unwrap(),
+                generate_include_file(&[], true)
+            );
+            assert_eq!(std::fs::read_dir(&out).unwrap().count(), 1);
+        }
+    }
+
+    #[test]
+    fn shared_descriptor_pool_writes_output_without_generated_files() {
+        let config = config_with_excluded_package();
+        let DescriptorSource::Bytes(ref bytes) = config.descriptor_source else {
+            unreachable!();
+        };
+        let expected_bytes = bytes.clone();
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("nested/gen");
+
+        config
+            .out_dir(&out)
+            .include_file("gen_mod.rs")
+            .generate_reflection(true)
+            .shared_descriptor_pool(true)
+            .compile()
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read(out.join("gen_mod.descriptor_set.binpb")).unwrap(),
+            expected_bytes
+        );
+        let include = std::fs::read_to_string(out.join("gen_mod.rs")).unwrap();
+        assert!(include.contains("pub mod __buffa_fds"), "{include}");
+        assert!(
+            include.contains("\"gen_mod.descriptor_set.binpb\""),
+            "{include}"
+        );
+        assert_eq!(std::fs::read_dir(&out).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn include_file_preserves_existing_directory_without_generated_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let preserved = dir.path().join("existing.rs");
+        std::fs::write(&preserved, b"existing content").unwrap();
+
+        config_with_excluded_package()
+            .out_dir(dir.path())
+            .include_file("gen_mod.rs")
+            .compile()
+            .unwrap();
+
+        assert_eq!(std::fs::read(&preserved).unwrap(), b"existing content");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("gen_mod.rs")).unwrap(),
+            generate_include_file(&[], true)
+        );
+    }
+
+    #[test]
+    fn include_file_reports_output_directory_that_is_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("gen");
+        std::fs::write(&out, b"existing content").unwrap();
+
+        let err = config_with_excluded_package()
+            .out_dir(&out)
+            .include_file("gen_mod.rs")
+            .compile()
+            .unwrap_err();
+
+        assert!(err.downcast_ref::<std::io::Error>().is_some(), "{err}");
+        assert_eq!(std::fs::read(&out).unwrap(), b"existing content");
+    }
+
+    #[test]
+    fn compile_without_include_file_does_not_create_empty_output_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("nested/gen");
+
+        config_with_excluded_package()
+            .out_dir(&out)
+            .compile()
+            .unwrap();
+
+        assert!(!out.exists());
     }
 
     #[test]

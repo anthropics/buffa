@@ -152,7 +152,7 @@ For the 32-bit tasks, run `task install-targets` first to install the additional
 
 GitHub Actions CI (`.github/workflows/ci.yml`) runs on every push to `main` and on all pull requests. Jobs:
 
-- **lint-and-test** — clippy + strict rustdoc (`task doc` locally) + `cargo test --workspace` on stable
+- **lint-and-test** — clippy, `cargo test --workspace`, clippy and tests for `buffa-test` with its `arbitrary` feature (`task test-arbitrary` locally), and strict rustdoc (`task doc` locally), on the pinned toolchain
 - **lint-markdown** — markdownlint over all `*.md` (config: `.markdownlint.json`)
 - **msrv-check** — `cargo check --workspace` on Rust 1.75 (the declared `rust-version`), then the table codec's tests on Rust 1.77, the oldest compiler that builds it
 - **check-nostd** — no_std (host + bare-metal ARM) and 32-bit compilation checks

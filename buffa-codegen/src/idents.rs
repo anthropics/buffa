@@ -64,6 +64,11 @@ pub fn rust_path_to_tokens(path: &str) -> TokenStream {
 /// Most keywords use raw identifiers (`r#type`). The keywords `self`, `super`,
 /// `Self`, `crate` cannot be raw identifiers and are suffixed with `_` instead
 /// (e.g. `self_`), matching prost's convention.
+///
+/// This is the escaping step alone. The member that buffa generates for a
+/// field or oneof can have another name: `idiomatic_field_names` converts the
+/// name first, and a keyword member next to a member named `self_` is
+/// `self__`.
 pub fn make_field_ident(name: &str) -> Ident {
     if is_rust_keyword(name) {
         if can_be_raw_ident(name) {
@@ -74,6 +79,45 @@ pub fn make_field_ident(name: &str) -> Ident {
     } else {
         format_ident!("{}", name)
     }
+}
+
+/// Returns the Rust name of a generated message or enum type.
+///
+/// A Rust keyword (`type`, `Self`) and the name of a primitive type that
+/// generated code uses (`bool`, `u32`, `str`) get a trailing `_`. A struct
+/// named `bool` would otherwise replace the primitive for every item in its
+/// module, including the code that derive macros expand there. Unlike a
+/// field name, which [`make_field_ident`] makes a raw identifier, a keyword
+/// gets the suffix: a derive macro that builds an identifier from the
+/// type's name, as `derive(Arbitrary)` does, panics on `r#type`. Any other
+/// name is returned unchanged.
+pub(crate) fn escape_type_name(name: &str) -> std::borrow::Cow<'_, str> {
+    if is_generated_primitive(name) || is_rust_keyword(name) {
+        std::borrow::Cow::Owned(format!("{name}_"))
+    } else {
+        std::borrow::Cow::Borrowed(name)
+    }
+}
+
+/// Returns the Rust name of a locally generated message or enum type:
+/// [`CodeGenConfig::type_name_prefix`](crate::CodeGenConfig::type_name_prefix),
+/// then the proto simple name, with [`escape_type_name`] applied to the two
+/// joined. Prefix `Pb` and `bool` give `Pbbool`, with the suffix left off.
+pub(crate) fn local_type_name(type_name_prefix: &str, proto_name: &str) -> String {
+    escape_type_name(&format!("{type_name_prefix}{proto_name}")).into_owned()
+}
+
+/// Is `name` a primitive type that generated code names without a path?
+///
+/// These are the Rust types of the proto scalars, plus `u8` and `usize`.
+/// The other primitive type names (`char`, `i8`, `u16`) are left out:
+/// generated code does not name them, so a message with one of those names
+/// compiles as written.
+fn is_generated_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "bool" | "str" | "u8" | "usize" | "i32" | "i64" | "u32" | "u64" | "f32" | "f64"
+    )
 }
 
 /// Convert a protobuf enum value name to `UpperCamelCase`.
@@ -239,12 +283,20 @@ pub fn is_rust_keyword(name: &str) -> bool {
     )
 }
 
+/// The keywords that cannot be raw identifiers. They are valid path segments,
+/// so `r#self` is rejected; they get a `_` suffix in field/mod position
+/// instead.
+pub(crate) const SUFFIX_ESCAPED_KEYWORDS: [&str; 4] = ["self", "super", "Self", "crate"];
+
 /// Can `name` be used as a raw identifier (`r#name`)?
-///
-/// `self`, `super`, `Self`, `crate` are valid path segments and cannot be
-/// prefixed with `r#`. They get a `_` suffix in field/mod position instead.
 fn can_be_raw_ident(name: &str) -> bool {
-    !matches!(name, "self" | "super" | "Self" | "crate")
+    !SUFFIX_ESCAPED_KEYWORDS.contains(&name)
+}
+
+/// Whether [`make_field_ident`] escapes `name` with a `_` suffix: a keyword
+/// that cannot be a raw identifier.
+pub(crate) fn is_suffix_escaped(name: &str) -> bool {
+    is_rust_keyword(name) && !can_be_raw_ident(name)
 }
 
 #[cfg(test)]
@@ -288,6 +340,35 @@ mod tests {
             rust_path_to_tokens("super::super::Foo").to_string(),
             "super :: super :: Foo"
         );
+    }
+
+    #[test]
+    fn type_name_escape() {
+        for name in [
+            "bool", "str", "u8", "usize", "i32", "i64", "u32", "u64", "f32", "f64",
+        ] {
+            assert_eq!(escape_type_name(name), format!("{name}_"), "{name}");
+        }
+        for name in ["Self", "self", "super", "crate", "type", "match", "async"] {
+            assert_eq!(escape_type_name(name), format!("{name}_"), "{name}");
+        }
+        // Case-sensitive. Generated code does not name the last six, so they
+        // stay as written.
+        for name in [
+            "Bool", "U32", "Str", "Crate", "Type", "Foo", "char", "i8", "u16", "i128", "isize",
+            "f16",
+        ] {
+            assert_eq!(escape_type_name(name), name, "{name}");
+        }
+    }
+
+    #[test]
+    fn local_type_name_escapes_the_prefixed_name() {
+        assert_eq!(local_type_name("", "bool"), "bool_");
+        assert_eq!(local_type_name("", "type"), "type_");
+        assert_eq!(local_type_name("Pb", "bool"), "Pbbool");
+        assert_eq!(local_type_name("Pb", "type"), "Pbtype");
+        assert_eq!(local_type_name("Pb", "Foo"), "PbFoo");
     }
 
     #[test]

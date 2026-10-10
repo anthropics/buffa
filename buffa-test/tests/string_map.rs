@@ -15,8 +15,8 @@
 //!   sbytes string→bytes  : `proto_str_key_map` (base64 `bytes::Bytes` value)
 //!
 //! The checks below pin the field types and the binary / JSON / text / view→owned
-//! / reflection round-trips. `MapStr` is `Hash + Eq + Ord` (map key) and derives
-//! serde.
+//! / reflection round-trips. `MapStr` is `Hash + Eq + Ord` (map key) and takes
+//! its serde impls from the remote derive's `serde` key.
 
 use buffa::{Map, Message};
 use buffa_test::string_map::{Color, Inner, MapStr, Maps};

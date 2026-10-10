@@ -1,8 +1,9 @@
 /// Compile a schema twice, with its `package <base>` renamed to `<base>u` and
 /// generated with the default unrolled codec, and to `<base>t` and generated
-/// with `codec_strategy = Table`. A test compares the two codecs on the same
-/// schema. `file` names the schema in messages.
-fn compile_both_codecs(file: &str, source: &str, base: &str) {
+/// with `codec_strategy = Table`, except for the messages in `unrolled` (paths
+/// below the package, such as `Hot`), which stay unrolled. A test compares the
+/// two codecs on the same schema. `file` names the schema in messages.
+fn compile_both_codecs(file: &str, source: &str, base: &str, unrolled: &[&str]) {
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let package = format!("package {base};");
     assert!(source.contains(&package), "{file} must declare `{package}`");
@@ -16,14 +17,61 @@ fn compile_both_codecs(file: &str, source: &str, base: &str) {
             source.replace(&package, &format!("package {base}{suffix};")),
         )
         .expect("write renamed proto");
+        let rules: Vec<String> = unrolled
+            .iter()
+            .map(|path| format!(".{base}{suffix}.{path}"))
+            .collect();
         buffa_build::Config::new()
             .files(&[renamed])
             .includes(&[&out])
             .generate_json(true)
             .generate_text(true)
             .codec_strategy(strategy)
+            .codec_strategy_in(buffa_build::CodecStrategy::Unrolled, &rules)
             .compile()
             .unwrap_or_else(|e| panic!("buffa_build failed for {file} ({suffix}): {e}"));
+    }
+}
+
+/// A package `xe` of table messages, and packages `xfu` (unrolled) and `xft`
+/// (table) with messages that hold them, generated in their own runs with `xe`
+/// mapped to the crate's `xe` module. A table message then holds messages from
+/// another crate, whose table it cannot name.
+fn compile_extern_children() {
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    let leaf = out.join("xe.proto");
+    std::fs::write(
+        &leaf,
+        "syntax = \"proto3\";\npackage xe;\n\
+         message Leaf { int32 x = 1; string s = 2; repeated Leaf kids = 3; }\n",
+    )
+    .expect("write proto");
+    buffa_build::Config::new()
+        .files(&[&leaf])
+        .includes(&[&out])
+        .codec_strategy(buffa_build::CodecStrategy::Table)
+        .compile()
+        .expect("buffa_build failed for xe.proto");
+    for (suffix, strategy) in [
+        ("u", buffa_build::CodecStrategy::Unrolled),
+        ("t", buffa_build::CodecStrategy::Table),
+    ] {
+        let holder = out.join(format!("xf{suffix}.proto"));
+        std::fs::write(
+            &holder,
+            format!(
+                "syntax = \"proto3\";\npackage xf{suffix};\nimport \"xe.proto\";\n\
+                 message Holder {{ xe.Leaf leaf = 1; repeated xe.Leaf leaves = 2; int32 tail = 3; }}\n"
+            ),
+        )
+        .expect("write proto");
+        buffa_build::Config::new()
+            .files(&[&holder])
+            .includes(&[&out])
+            .extern_path(".xe", "crate::xe")
+            .codec_strategy(strategy)
+            .compile()
+            .unwrap_or_else(|e| panic!("buffa_build failed for xf{suffix}.proto: {e}"));
     }
 }
 
@@ -31,14 +79,17 @@ fn compile_both_codecs(file: &str, source: &str, base: &str) {
 /// ways: unrolled (`xau`, `xbu`), table (`xat`, `xbt`), and table with
 /// `file_per_package` and `idiomatic_imports` (`xati`, `xbti`), which shortens
 /// the paths of types in other packages and so changes what a table path may
-/// be.
+/// be. `Cold`, which `Holder` holds singly and in a list, stays unrolled in
+/// all three, so the table holders reach it through its `Message` impl with
+/// the shortened path.
 fn compile_cross_package() {
     let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let sources = |suffix: &str| {
         let dep = format!(
             "syntax = \"proto3\";\npackage xa{suffix};\n\
              message Leaf {{ int32 x = 1; string s = 2; }}\n\
-             message Wrap {{ Leaf leaf = 1; repeated Leaf leaves = 2; }}\n"
+             message Wrap {{ Leaf leaf = 1; repeated Leaf leaves = 2; }}\n\
+             message Cold {{ int64 c = 1; string s = 2; }}\n"
         );
         let user = format!(
             "syntax = \"proto3\";\npackage xb{suffix};\nimport \"xa{suffix}.proto\";\n\
@@ -47,6 +98,8 @@ fn compile_cross_package() {
                repeated xa{suffix}.Leaf leaves = 2;\n\
                xa{suffix}.Wrap wrap = 3;\n\
                Sub sub = 4;\n\
+               xa{suffix}.Cold cold = 5;\n\
+               repeated xa{suffix}.Cold colds = 6;\n\
                message Sub {{ xa{suffix}.Leaf l = 1; }}\n\
              }}\n"
         );
@@ -67,7 +120,11 @@ fn compile_cross_package() {
         let mut config = buffa_build::Config::new()
             .files(&[dep_path, user_path])
             .includes(&[&out])
-            .codec_strategy(strategy);
+            .codec_strategy(strategy)
+            .codec_strategy_in(
+                buffa_build::CodecStrategy::Unrolled,
+                &[format!(".xa{suffix}.Cold")],
+            );
         if idiomatic {
             let dir = out.join("cross_package_idiomatic");
             std::fs::create_dir_all(&dir).expect("create dir");
@@ -165,21 +222,45 @@ fn main() {
     // Generated table code needs `core::mem::offset_of!`, stable in Rust 1.77,
     // and the workspace MSRV is 1.75, where it is a compile error by design.
     println!("cargo:rustc-check-cfg=cfg(has_table_codec)");
-    if rustc_minor() >= 77 {
+    let table_codec = rustc_minor() >= 77;
+    if table_codec {
         println!("cargo:rustc-cfg=has_table_codec");
-        compile_both_codecs("table_codec.proto", &read_proto("table_codec.proto"), "tc");
+        compile_both_codecs(
+            "table_codec.proto",
+            &read_proto("table_codec.proto"),
+            "tc",
+            &[],
+        );
         compile_both_codecs(
             "table_codec2.proto",
             &read_proto("table_codec2.proto"),
             "tc2",
+            &[],
         );
         compile_both_codecs(
             "table_codec3.proto",
             &read_proto("table_codec3.proto"),
             "tc3",
+            &[],
         );
-        compile_both_codecs("the generated wide schema", &wide_proto(), "wide");
+        compile_both_codecs("the generated wide schema", &wide_proto(), "wide", &[]);
+        compile_both_codecs(
+            "table_bridge.proto",
+            &read_proto("table_bridge.proto"),
+            "br",
+            &["Hot"],
+        );
         compile_cross_package();
+        compile_extern_children();
+        // `bytes` fields as `bytes::Bytes`, which the messages that hold one
+        // must keep unrolled.
+        buffa_build::Config::new()
+            .files(&["protos/table_bytes.proto"])
+            .includes(&["protos/"])
+            .codec_strategy(buffa_build::CodecStrategy::Table)
+            .use_bytes_type()
+            .compile()
+            .expect("buffa_build failed for table_bytes.proto");
         compile_table_with_options("table_codec.proto", "tc");
     }
 
@@ -260,10 +341,10 @@ fn main() {
     // `ProtoElemJson`) impl for the element path (`Vec<LocalStr>`). A foreign
     // type here would be an orphan-rule error — only local types are reflectable
     // in a repeated field. Singular string fields reflect via deref. The rule is
-    // scoped to the singular + repeated fields so the `map<string, string> attrs`
-    // field stays the `String`-keyed control here (`LocalStr` is not `Hash`, so
-    // it could not be a map key); custom string map keys/values get their own
-    // dedicated fixture in `string_map.proto`.
+    // scoped to the singular, repeated, optional and oneof fields so the
+    // `map<string, string> attrs` field stays the `String`-keyed control here
+    // (`LocalStr` is not `Hash`, so it could not be a map key); custom string
+    // map keys/values get their own dedicated fixture in `string_map.proto`.
     buffa_build::Config::new()
         .files(&["protos/vtable_string_repr.proto"])
         .includes(&["protos/"])
@@ -272,6 +353,8 @@ fn main() {
             &[
                 ".vtable_string_repr.Labels.name",
                 ".vtable_string_repr.Labels.items",
+                ".vtable_string_repr.Labels.alias",
+                ".vtable_string_repr.Labels.tag",
             ],
         )
         .generate_json(true)
@@ -380,6 +463,19 @@ fn main() {
         .compile()
         .expect("buffa_build failed for keywords.proto");
 
+    // Members that share a name after keyword escaping (`self` next to
+    // `self_`). JSON, text, lazy views and vtable reflection each resolve
+    // the member name separately, so all four are on.
+    buffa_build::Config::new()
+        .files(&["protos/keyword_collisions.proto"])
+        .includes(&["protos/"])
+        .generate_json(true)
+        .generate_text(true)
+        .lazy_views(true)
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for keyword_collisions.proto");
+
     // Deep nesting — 3+ levels, oneof with same-package message variants,
     // direct and mutual recursion through a oneof. Views enabled to test
     // boxed view-enum variants.
@@ -445,7 +541,8 @@ fn main() {
     // emission paths are exercised. The sibling file shares the package, so
     // its `Wrapper.kind: Option<...>` would resolve to the proto-defined
     // `Option` struct unless the codegen path is fully qualified.
-    // Compilation is the assertion.
+    // Setters are on so `with_*(impl Into<..>)` signatures are emitted beside
+    // the `Into` struct. Compilation is the assertion.
     buffa_build::Config::new()
         .files(&[
             "protos/prelude_shadow.proto",
@@ -453,8 +550,24 @@ fn main() {
         ])
         .includes(&["protos/"])
         .generate_json(true)
+        .generate_with_setters(true)
         .compile()
         .expect("buffa_build failed for prelude_shadow.proto");
+
+    // Messages and enums named after primitive types and keywords. JSON,
+    // text and setters are on because the serde derives and the generated
+    // text and setter code name the primitives. `Arbitrary` is on so that
+    // the build fails if a keyword-named type is declared as a raw
+    // identifier, which its derive panics on.
+    buffa_build::Config::new()
+        .files(&["protos/type_name_escapes.proto"])
+        .includes(&["protos/"])
+        .generate_json(true)
+        .generate_text(true)
+        .generate_with_setters(true)
+        .generate_arbitrary(true)
+        .compile()
+        .expect("buffa_build failed for type_name_escapes.proto");
 
     // Special float defaults in a package named `f32` must not resolve
     // against generated `f32`/`f64` modules. The nested extension constants
@@ -617,6 +730,8 @@ fn main() {
             ".test.openenums.RequiredImplicitDefault.level",
             ".test.openenums.LazyChild.opt",
             ".test.openenums.LazyChild.level",
+            ".test.openenums.AbsentEnums.opened",
+            ".test.openenums.AbsentEnums.opened_member",
         ])
         .generate_json(true)
         .generate_text(true)
@@ -726,6 +841,53 @@ fn main() {
         .compile()
         .expect("buffa_build failed for debug_redact.proto");
 
+    // `[deprecated = true]` — generated declarations carry `#[deprecated]` and
+    // the impls that visit every field carry `#[allow(deprecated)]`. Views,
+    // text, JSON, lazy views and vtable reflection are on so every guarded
+    // surface is compiled. The proof is that this crate compiles clean under
+    // `-D warnings`. `generate_arbitrary` adds the `Arbitrary` impls, which
+    // only a build with the `arbitrary` feature compiles. One field takes its
+    // `#[deprecated]` from `field_attribute`, which marks and guards the same
+    // items as the option.
+    let mut deprecated = buffa_build::Config::new()
+        .files(&["protos/deprecated.proto"])
+        .includes(&["protos/"])
+        .field_attribute(
+            ".deprecated.LegacyProfile.hand_marked",
+            "#[deprecated(note = \"marked in build.rs\")]",
+        )
+        .generate_views(true)
+        .generate_text(true)
+        .generate_json(true)
+        .lazy_views(true)
+        .generate_reflection(true)
+        .generate_arbitrary(true);
+    // `Audit` takes the table codec, where the field offsets are taken inside
+    // a `static` rather than an impl.
+    if table_codec {
+        deprecated =
+            deprecated.codec_strategy_in(buffa_build::CodecStrategy::Table, &[".deprecated.Audit"]);
+    }
+    deprecated
+        .compile()
+        .expect("buffa_build failed for deprecated.proto");
+
+    // The proto2 half. A `[default = …]` names a deprecated enum variant or
+    // an alias of one, so the `Default` impl, `Message::clear` and the
+    // extension's default getter spell it out and need the guard. The enums
+    // are closed here, so `generate_arbitrary` puts their `Arbitrary` impls
+    // behind a bare enum field. `Quota` has deprecated `required` fields, for
+    // the views' `has_*` accessors, which the reflection vtable calls.
+    buffa_build::Config::new()
+        .files(&["protos/deprecated_proto2.proto"])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .lazy_views(true)
+        .generate_reflection(true)
+        .generate_arbitrary(true)
+        .compile()
+        .expect("buffa_build failed for deprecated_proto2.proto");
+
     // `skip_debug` — the hand-written `Debug` impls in `src/lib.rs` compile
     // only if the generated ones are omitted. Views enabled so the view of a
     // matched message compiles too.
@@ -830,6 +992,28 @@ fn main() {
         .out_dir(string_p2_out)
         .compile()
         .expect("buffa_build failed for string_proto2.proto with string_type");
+
+    for (dir, custom) in [
+        ("bytes_proto2_variant", false),
+        ("custom_bytes_proto2_variant", true),
+    ] {
+        let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join(dir);
+        std::fs::create_dir_all(&out).expect("create proto2 bytes variant dir");
+        let config = buffa_build::Config::new();
+        let config = if custom {
+            config.bytes_type_custom("crate::vtable_bytes_repr::LocalBytes")
+        } else {
+            config.use_bytes_type()
+        };
+        config
+            .files(&["protos/proto2_defaults.proto"])
+            .includes(&["protos/"])
+            .generate_json(true)
+            .generate_text(true)
+            .out_dir(out)
+            .compile()
+            .expect("buffa_build failed for proto2 defaults with bytes_type");
+    }
 
     // Regression #88: bytes_fields + generate_arbitrary(true).
     // BytesContexts in basic.proto has singular, optional, repeated, and oneof
@@ -951,11 +1135,13 @@ fn main() {
     // Extension JSON registry — message/enum/repeated extensions with a local
     // extendee. `generate_json(true)` so the `#[serde(flatten)]` wrapper and
     // `register_extensions` are emitted alongside the `Extension<_>` consts.
+    // `generate_text(true)` for `tests/repeated_extension_text.rs`.
     buffa_build::Config::new()
         .files(&["protos/ext_json.proto"])
         .includes(&["protos/"])
         .generate_views(false)
         .generate_json(true)
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for ext_json.proto");
 
@@ -990,6 +1176,7 @@ fn main() {
         .files(&["protos/group_ext.proto"])
         .includes(&["protos/"])
         .generate_views(false)
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for group_ext.proto");
 

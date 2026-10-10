@@ -55,6 +55,14 @@ pub struct TextEncoder<'a> {
     pretty: bool,
     emit_unknown: bool,
     last: Last,
+    /// The extension name that
+    /// [`write_extension_fields`](Self::write_extension_fields) wrote. It is
+    /// set only while that entry's `text_encode` runs and the name is still
+    /// the last thing written: the next write clears it, and so does the
+    /// return of `text_encode`.
+    /// [`write_repeated_extension`](Self::write_repeated_extension) writes it
+    /// again before each element after the first.
+    ext_name: Option<&'static str>,
 }
 
 impl<'a> TextEncoder<'a> {
@@ -67,6 +75,7 @@ impl<'a> TextEncoder<'a> {
             pretty: false,
             emit_unknown: false,
             last: Last::Open,
+            ext_name: None,
         }
     }
 
@@ -80,6 +89,7 @@ impl<'a> TextEncoder<'a> {
             pretty: true,
             emit_unknown: false,
             last: Last::Open,
+            ext_name: None,
         }
     }
 
@@ -102,6 +112,7 @@ impl<'a> TextEncoder<'a> {
     fn prepare(&mut self, next: Last) -> core::fmt::Result {
         let prev = self.last;
         self.last = next;
+        self.ext_name = None;
         if !self.pretty {
             // Single line: space between end-of-field and start of next name.
             if prev == Last::Value && next == Last::Name {
@@ -203,7 +214,52 @@ impl<'a> TextEncoder<'a> {
     ) -> core::fmt::Result {
         // No `:` before a message value — just a space before `{`.
         self.prepare(Last::Value)?;
-        self.w.write_str(" {")?;
+        self.w.write_char(' ')?;
+        self.write_message_body(f)
+    }
+
+    /// Write the elements of a repeated message or group extension, after
+    /// the caller has written the extension's bracketed name once.
+    ///
+    /// The two forms are documented on
+    /// [`repeated_message_encode_text`](crate::type_registry::repeated_message_encode_text).
+    /// The per-element form is preferred because a parser reads it without
+    /// support for message lists.
+    pub(crate) fn write_repeated_extension<M: super::TextFormat>(
+        &mut self,
+        messages: &[M],
+    ) -> core::fmt::Result {
+        debug_assert!(self.ext_name.is_none() || self.last == Last::Name);
+        match (self.ext_name, messages) {
+            (Some(name), [first, rest @ ..]) => {
+                self.write_message(first)?;
+                for message in rest {
+                    self.write_extension_name(name)?;
+                    self.write_message(message)?;
+                }
+                Ok(())
+            }
+            (None, _) | (Some(_), []) => self.write_message_list(messages),
+        }
+    }
+
+    fn write_message_list<M: super::TextFormat>(&mut self, messages: &[M]) -> core::fmt::Result {
+        self.prepare(Last::Value)?;
+        self.w.write_str(": [")?;
+        for (index, message) in messages.iter().enumerate() {
+            if index > 0 {
+                self.w.write_str(", ")?;
+            }
+            self.write_message_body(|enc| message.encode_text(enc))?;
+        }
+        self.w.write_char(']')
+    }
+
+    fn write_message_body(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> core::fmt::Result,
+    ) -> core::fmt::Result {
+        self.w.write_char('{')?;
         self.depth += 1;
         let outer_last = self.last;
         self.last = Last::Open;
@@ -267,7 +323,9 @@ impl<'a> TextEncoder<'a> {
     }
 
     /// Write registered extensions from `fields` as `[full_name] { ... }`
-    /// entries. Unregistered field numbers are left for the caller's
+    /// entries: one entry per extension, or one per element for a repeated
+    /// message or group extension.
+    /// Unregistered field numbers are left for the caller's
     /// [`write_unknown_fields`](Self::write_unknown_fields) (debug-only,
     /// default off).
     ///
@@ -289,9 +347,9 @@ impl<'a> TextEncoder<'a> {
         if fields.is_empty() {
             return Ok(());
         }
-        // One emit per field number — the entry's text_encode reads all
-        // records at that number (merge semantics). Mirrors JSON's
-        // serialize_extensions dedup loop.
+        // One `text_encode` call per field number: the entry reads every
+        // record at that number. Mirrors JSON's `serialize_extensions` dedup
+        // loop.
         let mut seen = alloc::collections::BTreeSet::new();
         for uf in fields.iter() {
             if !seen.insert(uf.number) {
@@ -302,7 +360,9 @@ impl<'a> TextEncoder<'a> {
                 continue;
             };
             self.write_extension_name(entry.full_name)?;
+            self.ext_name = Some(entry.full_name);
             (entry.text_encode)(uf.number, fields, self)?;
+            self.ext_name = None;
         }
         Ok(())
     }

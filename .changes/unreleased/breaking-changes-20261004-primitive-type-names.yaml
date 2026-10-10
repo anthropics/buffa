@@ -1,0 +1,3 @@
+kind: Breaking changes
+body: '**A message or enum named `bool`, `i32`, `i64`, `f32`, `f64`, `usize`, `u8` or `gen` is generated with a trailing underscore** (#556). A type named after one of the primitives compiled before only when the generated code around it did not use that primitive, for example `message bool` in a package with no `bool` field. `gen` compiled in a crate on edition 2021 or earlier. Rename uses of the generated type: `pkg::bool` becomes `pkg::bool_`, and its view `boolView` becomes `bool_View`. A crate that reaches such a type through a prefix-mapped `extern_path` regenerates together with the crate that owns it.'
+time: 2026-10-04T10:56:45.726473047-07:00

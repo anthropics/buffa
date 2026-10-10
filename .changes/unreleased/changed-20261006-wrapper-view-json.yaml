@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`StringValueView` and `BytesValueView` serialize to JSON from the borrowed payload** (#579). Each view was converted to its owned message first, which copied the payload and any unknown fields. The string view now serializes without allocating, and the bytes view allocates only the base64 text. The JSON output is the same.
+time: 2026-10-06T23:42:43+02:00

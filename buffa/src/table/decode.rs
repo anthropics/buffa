@@ -121,7 +121,7 @@ unsafe fn merge_slice(
 /// # Safety
 ///
 /// `base` points to a live message of the type `table` describes.
-unsafe fn merge_sub(
+pub(super) unsafe fn merge_sub(
     table: &MessageTable,
     base: *mut u8,
     buf: &mut &[u8],
@@ -351,7 +351,7 @@ unsafe fn merge_msg<const C: u8>(
             let vt = table.rep_vt(e);
             ctx.register_element_memory(vt.size)?;
             let elem = (vt.push)(slot);
-            let decoded = merge_sub(vt.table, elem, buf, ctx);
+            let decoded = vt.child.merge_sub(elem, buf, ctx);
             if decoded.is_err() {
                 // Like unrolled code, which decodes into a local and pushes
                 // it only on success, leave no partial element behind.
@@ -361,7 +361,7 @@ unsafe fn merge_msg<const C: u8>(
         } else {
             let vt = table.msg_vt(e);
             let child = (vt.place)(slot);
-            merge_sub(vt.table, child, buf, ctx)
+            vt.child.merge_sub(child, buf, ctx)
         }
     }
 }

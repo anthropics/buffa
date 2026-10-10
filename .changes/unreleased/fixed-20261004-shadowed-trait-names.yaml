@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**A message named `From` or `Into`, a oneof named `from`, a message named `D` or an enum named `E` no longer breaks the generated code** (#555). The oneof `From` impls and the `with_*` setters named the `From` and `Into` traits with no path, and the generated serde impls declared generic parameters `S`, `D`, `E` and `A`, so a schema type of the same name replaced them. They are now `::core::convert::From`, `::core::convert::Into`, `__S`, `__D`, `__E` and `__A`. Checked-in generated code changes in those spellings.'
+time: 2026-10-04T10:56:44.620133014-07:00

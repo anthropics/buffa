@@ -1465,3 +1465,282 @@ fn test_synthetic_oneof_name_collision_is_ignored() {
     // One owned enum, for the real oneof. The view enum is `FooBar<'a>`.
     assert_eq!(joined(&files).matches("pub enum FooBar {").count(), 1);
 }
+
+/// A file in `my.pkg` whose `Holder` message has one singular field per
+/// entry of `messages` and `enums`, each declared at file level.
+fn type_name_file(messages: &[&str], enums: &[&str]) -> FileDescriptorProto {
+    let mut file = proto3_file("type_names.proto");
+    file.package = Some("my.pkg".to_string());
+    let mut holder = DescriptorProto {
+        name: Some("Holder".to_string()),
+        ..Default::default()
+    };
+    for name in messages {
+        file.message_type.push(DescriptorProto {
+            name: Some((*name).to_string()),
+            ..Default::default()
+        });
+    }
+    for name in enums {
+        file.enum_type.push(EnumDescriptorProto {
+            name: Some((*name).to_string()),
+            value: vec![enum_value("UNSPECIFIED", 0)],
+            ..Default::default()
+        });
+    }
+    let kinds = messages
+        .iter()
+        .map(|name| (name, Type::TYPE_MESSAGE))
+        .chain(enums.iter().map(|name| (name, Type::TYPE_ENUM)));
+    for (number, (name, ty)) in (1..).zip(kinds) {
+        let mut field = make_field(&format!("f{number}"), number, Label::LABEL_OPTIONAL, ty);
+        field.type_name = Some(format!(".my.pkg.{name}"));
+        holder.field.push(field);
+    }
+    file.message_type.push(holder);
+    file
+}
+
+#[test]
+fn test_primitive_type_names_get_a_trailing_underscore() {
+    let files = generate(
+        &[type_name_file(&["bool", "str", "usize"], &["u32", "f64"])],
+        &["type_names.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("primitive-named types generate");
+    let content = joined(&files);
+    for decl in [
+        "pub struct bool_ {",
+        "pub struct str_ {",
+        "pub struct usize_ {",
+        "pub enum u32_ {",
+        "pub enum f64_ {",
+    ] {
+        assert!(content.contains(decl), "missing `{decl}`: {content}");
+    }
+    // References use the escaped name.
+    assert!(
+        content.contains("pub f1: ::buffa::MessageField<bool_"),
+        "{content}"
+    );
+    assert!(
+        content.contains("pub f4: ::buffa::EnumValue<u32_>"),
+        "{content}"
+    );
+    assert!(!content.contains("pub struct bool {"), "{content}");
+}
+
+#[test]
+fn test_keyword_type_names_get_a_trailing_underscore() {
+    let files = generate(
+        &[type_name_file(
+            &["Self", "super", "type", "match"],
+            &["crate", "async"],
+        )],
+        &["type_names.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("keyword-named types generate");
+    let content = joined(&files);
+    for decl in [
+        "pub struct Self_ {",
+        "pub struct super_ {",
+        "pub struct type_ {",
+        "pub struct match_ {",
+        "pub enum crate_ {",
+        "pub enum async_ {",
+    ] {
+        assert!(content.contains(decl), "missing `{decl}`: {content}");
+    }
+    assert!(
+        content.contains("pub f3: ::buffa::MessageField<type_"),
+        "{content}"
+    );
+    assert!(!content.contains("struct r#type"), "{content}");
+}
+
+#[test]
+fn test_type_name_prefix_is_applied_before_the_escape() {
+    // `Pbbool` is not a primitive, so it needs no suffix.
+    let config = CodeGenConfig {
+        type_name_prefix: "Pb".to_string(),
+        ..Default::default()
+    };
+    let files = generate(
+        &[type_name_file(&["bool", "bool_"], &[])],
+        &["type_names.proto".to_string()],
+        &config,
+    )
+    .expect("prefixed names do not collide");
+    let content = joined(&files);
+    assert!(content.contains("pub struct Pbbool {"), "{content}");
+    assert!(content.contains("pub struct Pbbool_ {"), "{content}");
+}
+
+#[track_caller]
+fn assert_type_name_conflict(file: FileDescriptorProto, expected: (&str, &str, &str, &str)) {
+    let err = generate(
+        &[file],
+        &["type_names.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("types that escape to one Rust name must be rejected");
+    let CodeGenError::TypeNameConflict {
+        scope,
+        first_type,
+        second_type,
+        rust_name,
+    } = &err
+    else {
+        panic!("expected TypeNameConflict, got: {err}");
+    };
+    assert_eq!(
+        (
+            scope.as_str(),
+            first_type.as_str(),
+            second_type.as_str(),
+            rust_name.as_str()
+        ),
+        expected
+    );
+}
+
+#[test]
+fn test_types_that_escape_to_one_name_are_rejected() {
+    assert_type_name_conflict(
+        type_name_file(&["bool", "bool_"], &[]),
+        ("my.pkg", "bool", "bool_", "bool_"),
+    );
+    assert_type_name_conflict(
+        type_name_file(&["type", "type_"], &[]),
+        ("my.pkg", "type", "type_", "type_"),
+    );
+    // A message and an enum share the type namespace.
+    assert_type_name_conflict(
+        type_name_file(&["Self"], &["Self_"]),
+        ("my.pkg", "Self", "Self_", "Self_"),
+    );
+}
+
+#[test]
+fn test_nested_type_name_conflict_reports_the_enclosing_message() {
+    let mut file = type_name_file(&[], &[]);
+    let holder = &mut file.message_type[0];
+    for name in ["u8_", "u8"] {
+        holder.nested_type.push(DescriptorProto {
+            name: Some(name.to_string()),
+            ..Default::default()
+        });
+    }
+    assert_type_name_conflict(file, ("my.pkg.Holder", "u8_", "u8", "u8_"));
+}
+
+#[test]
+fn test_type_name_conflict_message_names_both_types_and_the_remedy() {
+    let err = generate(
+        &[type_name_file(&["bool", "bool_"], &[])],
+        &["type_names.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("types that escape to one Rust name must be rejected");
+    assert_eq!(
+        err.to_string(),
+        "type name conflict in 'my.pkg': 'bool' and 'bool_' both map to Rust type 'bool_'; \
+         rename one of them"
+    );
+}
+
+#[test]
+fn test_unused_primitive_names_keep_their_spelling() {
+    // Generated code does not name these primitives, so a type of that name
+    // compiles as written and a suffix would rename a working type.
+    let files = generate(
+        &[type_name_file(&["char", "u16", "isize"], &["i8"])],
+        &["type_names.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("these names generate as written");
+    let content = joined(&files);
+    for decl in [
+        "pub struct char {",
+        "pub struct u16 {",
+        "pub struct isize {",
+        "pub enum i8 {",
+    ] {
+        assert!(content.contains(decl), "missing `{decl}`: {content}");
+    }
+}
+
+#[test]
+fn test_type_name_conflict_spans_the_files_of_a_package() {
+    let mut first = type_name_file(&["bool"], &[]);
+    first.name = Some("a.proto".to_string());
+    first
+        .message_type
+        .retain(|m| m.name.as_deref() == Some("bool"));
+    let mut second = type_name_file(&["bool_"], &[]);
+    second.name = Some("b.proto".to_string());
+    second
+        .message_type
+        .retain(|m| m.name.as_deref() == Some("bool_"));
+    let err = generate(
+        &[first, second],
+        &["a.proto".to_string(), "b.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("two files of one package share its module");
+    assert!(
+        matches!(
+            &err,
+            CodeGenError::TypeNameConflict { scope, rust_name, .. }
+                if scope == "my.pkg" && rust_name == "bool_"
+        ),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_escaped_and_similar_names_get_distinct_any_registry_constants() {
+    // `bool` is declared as `bool_`; a sibling `Bool_` snake_cases to the
+    // same text, and the registry constants are named from the proto names.
+    let config = CodeGenConfig {
+        generate_json: true,
+        generate_text: true,
+        ..Default::default()
+    };
+    let files = generate(
+        &[type_name_file(&["bool", "Bool_"], &[])],
+        &["type_names.proto".to_string()],
+        &config,
+    )
+    .expect("`bool` and `Bool_` generate side by side");
+    let content = joined(&files);
+    for constant in [
+        "pub const __BOOL_JSON_ANY:",
+        "pub const __BOOL__JSON_ANY:",
+        "pub const __BOOL_TEXT_ANY:",
+        "pub const __BOOL__TEXT_ANY:",
+    ] {
+        assert_eq!(
+            content.matches(constant).count(),
+            1,
+            "{constant}: {content}"
+        );
+    }
+}
+
+#[test]
+fn test_missing_type_name_is_reported_before_a_type_name_conflict() {
+    let mut file = type_name_file(&[], &[]);
+    for _ in 0..2 {
+        file.message_type.push(DescriptorProto::default());
+    }
+    let err = generate(
+        &[file],
+        &["type_names.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("an unnamed message is rejected");
+    assert!(matches!(err, CodeGenError::MissingField(_)), "{err}");
+}
