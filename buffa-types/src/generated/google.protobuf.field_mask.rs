@@ -447,7 +447,7 @@ impl ::buffa::text::TextFormat for FieldMask {
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "paths" => {
-                    dec.read_repeated_into(
+                    dec.read_repeated_scalar_into(
                         &mut self.paths,
                         |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
                     )?

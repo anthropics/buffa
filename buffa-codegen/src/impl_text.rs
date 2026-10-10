@@ -742,10 +742,14 @@ fn repeated_merge_arm(
     let ty = effective_type(ctx, field, features);
     let (_, name_pat) = text_field_name(proto_name, field, ty);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, proto_name);
+    let read_repeated = match ty {
+        Type::TYPE_MESSAGE | Type::TYPE_GROUP => format_ident!("read_repeated_into"),
+        _ => format_ident!("read_repeated_scalar_into"),
+    };
 
-    // read_repeated_into handles both `f: [a, b]` and `f: a` forms. The
-    // closure takes `&mut TextDecoder` as `__d` (not `dec`, which is already
-    // borrowed by the outer loop).
+    // The type-specific repeated reader handles both `f: [a, b]` and `f: a`
+    // forms. The closure takes `&mut TextDecoder` as `__d` (not `dec`, which
+    // is already borrowed by the outer loop).
     let elem = match ty {
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => quote! {
             {
@@ -805,7 +809,7 @@ fn repeated_merge_arm(
         }
     };
     Ok(quote! {
-        #name_pat => dec.read_repeated_into(&mut self.#ident, |__d| #elem)?,
+        #name_pat => dec.#read_repeated(&mut self.#ident, |__d| #elem)?,
     })
 }
 

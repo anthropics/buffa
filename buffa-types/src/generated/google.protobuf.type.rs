@@ -530,7 +530,7 @@ impl ::buffa::text::TextFormat for Type {
                     )?
                 }
                 "oneofs" => {
-                    dec.read_repeated_into(
+                    dec.read_repeated_scalar_into(
                         &mut self.oneofs,
                         |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
                     )?

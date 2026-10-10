@@ -29,6 +29,8 @@ pub struct TextDecoder<'a> {
     /// Byte position of the last name returned by `read_field_name`, for
     /// [`unknown_field`](Self::unknown_field) error reporting.
     last_name_pos: usize,
+    /// Whether the last name returned by `read_field_name` had a `:`.
+    last_name_has_separator: bool,
     /// Remaining element-memory budget, shared across the whole parse.
     ///
     /// The binary decoder's equivalent rides on `DecodeContext`, which never
@@ -44,6 +46,7 @@ impl<'a> TextDecoder<'a> {
         Self {
             tok: Tokenizer::new(input),
             last_name_pos: 0,
+            last_name_has_separator: false,
             elem_remaining: crate::DEFAULT_ELEMENT_MEMORY_LIMIT,
         }
     }
@@ -112,10 +115,9 @@ impl<'a> TextDecoder<'a> {
     /// matches against `"[pkg.ext]"` literally.
     ///
     /// The `:` after the name is optional before a message value or a list
-    /// of message values. This method returns the name either way; for a
-    /// scalar value, or a scalar list element, that follows a name without
-    /// one, the call that reads the value returns the error. An empty list
-    /// parses with or without the colon.
+    /// of message values. This method returns the name either way; scalar
+    /// values and scalar lists require it. An empty scalar list also requires
+    /// the colon, while an empty message list may omit it.
     ///
     /// # Errors
     ///
@@ -127,6 +129,7 @@ impl<'a> TextDecoder<'a> {
             TokenKind::Name => {
                 self.tok.read()?;
                 self.last_name_pos = tok.pos;
+                self.last_name_has_separator = tok.has_separator;
                 Ok(Some(tok.raw))
             }
             _ => Err(self.err_at(
@@ -612,7 +615,9 @@ impl<'a> TextDecoder<'a> {
     /// Handles both repeated-scalar forms: `f: [1, 2, 3]` (consumes `[` and
     /// `]`) and `f: 1` (reads exactly one element). Generated code calls this
     /// once per `f` occurrence; the `f: 1 f: 2` form is handled by the outer
-    /// `read_field_name` loop seeing `f` twice.
+    /// `read_field_name` loop seeing `f` twice. Scalar fields use
+    /// [`read_repeated_scalar_into`](Self::read_repeated_scalar_into) so an
+    /// empty list can be checked against the field's type.
     ///
     /// # Errors
     ///
@@ -620,11 +625,43 @@ impl<'a> TextDecoder<'a> {
     pub fn read_repeated_into<T>(
         &mut self,
         out: &mut Vec<T>,
+        read_one: impl FnMut(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<(), ParseError> {
+        self.read_repeated_inner(out, read_one, false)
+    }
+
+    /// Read repeated scalar values, requiring `:` even for an empty list.
+    ///
+    /// Generated code uses this instead of
+    /// [`read_repeated_into`](Self::read_repeated_into) when the field's
+    /// element type is scalar. The tokenizer cannot infer the field type
+    /// from `[]`, so this method applies the type-aware check.
+    #[doc(hidden)]
+    pub fn read_repeated_scalar_into<T>(
+        &mut self,
+        out: &mut Vec<T>,
+        read_one: impl FnMut(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<(), ParseError> {
+        self.read_repeated_inner(out, read_one, true)
+    }
+
+    fn read_repeated_inner<T>(
+        &mut self,
+        out: &mut Vec<T>,
         mut read_one: impl FnMut(&mut Self) -> Result<T, ParseError>,
+        empty_list_requires_separator: bool,
     ) -> Result<(), ParseError> {
         if self.tok.peek()?.kind == TokenKind::ListOpen {
-            self.tok.read()?; // consume `[`
+            let open = self.tok.read()?;
             if self.tok.peek()?.kind == TokenKind::ListClose {
+                if empty_list_requires_separator && !self.last_name_has_separator {
+                    return Err(self.err_at(
+                        &open,
+                        ParseErrorKind::UnexpectedToken {
+                            expected: super::token::COLON_BEFORE_SCALAR,
+                        },
+                    ));
+                }
                 self.tok.read()?; // empty: `[]`
                 return Ok(());
             }
@@ -880,7 +917,7 @@ mod tests {
                 match name {
                     "i" => self.i = dec.read_i32()?,
                     "s" => self.s = dec.read_string()?.into_owned(),
-                    "items" => dec.read_repeated_into(&mut self.items, |d| d.read_i64())?,
+                    "items" => dec.read_repeated_scalar_into(&mut self.items, |d| d.read_i64())?,
                     "child" => {
                         let child = self.child.get_or_insert_with(Default::default);
                         dec.merge_message(child.as_mut())?;

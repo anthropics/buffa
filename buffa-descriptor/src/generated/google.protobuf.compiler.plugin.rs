@@ -664,7 +664,7 @@ impl ::buffa::text::TextFormat for CodeGeneratorRequest {
                     dec.merge_message(self.compiler_version.get_or_insert_default())?
                 }
                 "file_to_generate" => {
-                    dec.read_repeated_into(
+                    dec.read_repeated_scalar_into(
                         &mut self.file_to_generate,
                         |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
                     )?

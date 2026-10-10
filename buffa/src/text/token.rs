@@ -107,7 +107,7 @@ const MESSAGE_LIST: u8 = b'(';
 
 /// `expected` text of the error for a scalar that follows a field name, or
 /// opens a list element, without a `:` after the name.
-const COLON_BEFORE_SCALAR: &str = "':' before scalar value";
+pub(super) const COLON_BEFORE_SCALAR: &str = "':' before scalar value";
 
 /// Internal: the last-emitted token kind, driving the state machine.
 /// Slightly richer than [`TokenKind`] because it tracks the consumed
