@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Reject path-qualified `include_file` names when shared descriptor pools are enabled.** The descriptor sidecar stays at the output root, so nested include files cannot resolve it.'
+time: 2026-10-07T14:27:57.12335+02:00
