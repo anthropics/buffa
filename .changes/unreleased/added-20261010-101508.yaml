@@ -1,0 +1,3 @@
+kind: Added
+body: '**`JsonParseOptions::strict_any_type_urls` and `DynamicMessageSeed::strict_any_type_urls`** (#692) reject a `google.protobuf.Any` `@type` that has no `/` when parsing JSON, as C++ and Java do. Both are off by default, and the default accepts a bare message full name that resolves. The first covers generated messages and the second a `DynamicMessage`; each covers an `Any` nested at any depth.'
+time: 2026-10-10T10:15:08.176026492-07:00

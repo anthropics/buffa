@@ -2030,6 +2030,13 @@ prefix. `type_name()` returns that name; for a name known only at run time,
 write `any.type_name() == Some(name)`. `is_type` and `unpack_if` take a URL and
 compare the whole of it, prefix included.
 
+`any.proto` says that a type URL contains at least one `/`, and `pack_message`
+and `try_pack_message` write one; `pack` and `try_pack` store the string you
+pass. A `type_url` that is only a full name, such as
+`my.package.MyMessage`, is read as that name: `type_name()` returns it, and
+`is_message` and `unpack_message` match it. protobuf-go and Python read such
+an `Any` the same way; C++ and Java do not match it to a message.
+
 JSON and text format write an `Any` with the fields of the packed message
 expanded: `{"@type": "type.googleapis.com/my.package.MyMessage", "name": "x"}`
 in JSON, and `[type.googleapis.com/my.package.MyMessage] { name: "x" }` in
@@ -2044,6 +2051,26 @@ The lookup checks the exact URL first. If that URL is not registered, the
 lookup uses the message name after the last `/`. So a type registered under
 one prefix is found under any other. The lookup does not rewrite `type_url`:
 the `Any` keeps the URL it was given.
+
+JSON also resolves a bare full name: `{"@type": "my.package.MyMessage", "name":
+"x"}` parses when `my.package.MyMessage` has a JSON entry in the registry, and
+an `Any` with that `type_url` is written in the same form. A bare name with no
+JSON entry is a parse error, even in the base64 form described below, which is
+read only for an `@type` that contains a `/`. To reject every `@type` without a
+`/` when parsing, as C++ and Java do, set `strict_any_type_urls`:
+
+```rust,ignore
+use buffa::json::{JsonParseOptions, with_json_parse_options};
+
+let opts = JsonParseOptions::new().strict_any_type_urls(true);
+let msg = with_json_parse_options(&opts, || serde_json::from_str::<MyMsg>(json))?;
+```
+
+`DynamicMessageSeed::strict_any_type_urls` is the same setting for a
+`DynamicMessage`; `JsonParseOptions` does not cover one. Text format does not
+resolve a bare name to a registered message, because
+`[my.package.MyMessage] { ... }` is the syntax of an extension field: such an
+`Any` is written with its `type_url` and `value` fields.
 
 For a type with no JSON entry in the registry, buffa writes
 `{"@type": "...", "value": "<base64>"}`: the encoded message as base64 under

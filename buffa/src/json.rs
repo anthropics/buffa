@@ -6,8 +6,10 @@
 //! implementations.
 //!
 //! The options here are runtime ones: unknown enum *values*
-//! ([`JsonParseOptions::ignore_unknown_enum_values`]) and unregistered
-//! extension keys ([`JsonParseOptions::strict_extension_keys`]). Unknown
+//! ([`JsonParseOptions::ignore_unknown_enum_values`]), unregistered
+//! extension keys ([`JsonParseOptions::strict_extension_keys`]) and
+//! `google.protobuf.Any` `@type` values without a `/`
+//! ([`JsonParseOptions::strict_any_type_urls`]). Unknown
 //! *field names* are not governed here: generated deserializers ignore them
 //! unless the code was generated with
 //! `buffa_build::Config::deny_unknown_json_fields` (or its path-scoped
@@ -131,10 +133,32 @@ pub struct JsonParseOptions {
     /// which also rejects `"[pkg.ext]"` keys on a message generated with
     /// preservation off.
     pub strict_extension_keys: bool,
+    /// When `true`, the `@type` of a `google.protobuf.Any` must be a type
+    /// URL: it must contain a `/`. A bare message full name such as
+    /// `"pkg.Message"` is a parse error.
+    ///
+    /// With the default (`false`), a bare full name is accepted when the
+    /// type registry has a JSON entry for a message of that name, and the
+    /// `Any` keeps it as its `type_url`. protobuf-go and Python read such a
+    /// name. C++ and Java reject it, and `any.proto` says that a type URL
+    /// contains at least one `/`. Set `true` to reject what C++ and Java
+    /// reject.
+    ///
+    /// A bare name without a JSON entry is a parse error with the option on
+    /// or off, and so is an `@type` that is empty or ends in `/`.
+    ///
+    /// The option covers parsing, and generated message types only.
+    /// Serialization writes the `type_url` an `Any` holds, and
+    /// `Any::type_name` and `Any::is_message` in `buffa-types` read a bare
+    /// name with the option on or off: test `type_url` for a `/` yourself
+    /// where that matters. JSON parsing of a `DynamicMessage` does not read
+    /// the option. Set `DynamicMessageSeed::strict_any_type_urls` in
+    /// `buffa-descriptor` for that.
+    pub strict_any_type_urls: bool,
 }
 
 impl JsonParseOptions {
-    /// Create new parse options with all flags at their default (strict) values.
+    /// Create new parse options with every flag at its default, `false`.
     pub fn new() -> Self {
         Self::default()
     }
@@ -155,6 +179,15 @@ impl JsonParseOptions {
         self.strict_extension_keys = strict;
         self
     }
+
+    /// Set whether the `@type` of a `google.protobuf.Any` must contain a `/`
+    /// (`true`), or may also be the bare full name of a registered message
+    /// (`false`, the default).
+    #[must_use]
+    pub fn strict_any_type_urls(mut self, strict: bool) -> Self {
+        self.strict_any_type_urls = strict;
+        self
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -171,13 +204,14 @@ mod std_impl {
             Cell::new(JsonParseOptions {
                 ignore_unknown_enum_values: false,
                 strict_extension_keys: false,
+                strict_any_type_urls: false,
             })
         };
     }
 
     /// Run a closure with the given parse options active.
     ///
-    /// The options affect enum deserialization within the closure. This is
+    /// The options affect JSON deserialization within the closure. This is
     /// **thread-local** state — concurrent parses on different threads are
     /// independent. The previous options are restored when the closure returns
     /// (or panics), so scopes nest correctly.
@@ -203,6 +237,10 @@ mod std_impl {
 
     pub(crate) fn strict_extension_keys() -> bool {
         OPTIONS.with(|c| c.get().strict_extension_keys)
+    }
+
+    pub(crate) fn strict_any_type_urls() -> bool {
+        OPTIONS.with(|c| c.get().strict_any_type_urls)
     }
 }
 
@@ -238,6 +276,7 @@ mod global {
     static DEFAULT: JsonParseOptions = JsonParseOptions {
         ignore_unknown_enum_values: false,
         strict_extension_keys: false,
+        strict_any_type_urls: false,
     };
 
     /// Set the global JSON parse options.
@@ -294,6 +333,10 @@ mod global {
     pub(crate) fn strict_extension_keys() -> bool {
         get().strict_extension_keys
     }
+
+    pub(crate) fn strict_any_type_urls() -> bool {
+        get().strict_any_type_urls
+    }
 }
 
 #[cfg(not(feature = "std"))]
@@ -333,6 +376,19 @@ pub(crate) fn strict_extension_keys() -> bool {
     }
 }
 
+/// Returns `true` if a `google.protobuf.Any` `@type` without a `/` should
+/// produce a parse error.
+pub(crate) fn strict_any_type_urls() -> bool {
+    #[cfg(feature = "std")]
+    {
+        std_impl::strict_any_type_urls()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        global::strict_any_type_urls()
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -362,6 +418,17 @@ mod tests {
         });
         // Restored after closure returns.
         assert!(!ignore_unknown_enum_values());
+    }
+
+    #[test]
+    fn thread_local_scope_enables_strict_any_type_urls() {
+        assert!(!strict_any_type_urls());
+        let opts = JsonParseOptions::new().strict_any_type_urls(true);
+        with_json_parse_options(&opts, || {
+            assert!(strict_any_type_urls());
+            assert!(!ignore_unknown_enum_values());
+        });
+        assert!(!strict_any_type_urls());
     }
 
     #[test]

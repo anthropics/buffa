@@ -302,6 +302,26 @@ fn register_types_populates_any_registry() {
 }
 
 #[test]
+fn any_json_resolves_a_generated_message_by_its_bare_name() {
+    use buffa::json::{with_json_parse_options, JsonParseOptions};
+    use buffa_types::google::protobuf::Any;
+
+    install_type_registry();
+    let json = r#"{"@type":"buffa.test.extjson.Ann","doc":"bare"}"#;
+    let any: Any = serde_json::from_str(json).expect("bare name resolves");
+    assert_eq!(any.type_url, "buffa.test.extjson.Ann");
+    let ann: Ann = any.unpack_message().expect("decode").expect("is an Ann");
+    assert_eq!(ann.doc.as_deref(), Some("bare"));
+    assert_eq!(serde_json::to_string(&any).expect("serialize"), json);
+
+    let strict = JsonParseOptions::new().strict_any_type_urls(true);
+    with_json_parse_options(&strict, || {
+        let err = serde_json::from_str::<Any>(json).expect_err("strict rejects a bare name");
+        assert!(err.to_string().contains("must contain a '/'"), "{err}");
+    });
+}
+
+#[test]
 fn json_any_roundtrips_message_through_json() {
     // Exercise the generated fn pointers directly: encode a message to wire
     // bytes, run it through the entry's to_json, verify the JSON shape, then
