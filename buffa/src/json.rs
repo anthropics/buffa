@@ -84,8 +84,9 @@
 //! A value that cannot be an enum value is a parse error in every kind of
 //! field, with the option on or off. Such a value is a bool, an object, an
 //! array, a number written with a fraction or an exponent (such as `1.0`), or
-//! an integer outside the `i32` range. A `null` element of a `repeated` or
-//! `map` field is read as the enum's default value.
+//! an integer outside the `i32` range. A `null` element of a repeated closed
+//! enum field, or a null value in a closed enum map, is a parse error in both
+//! modes. For open enums, it is read as the enum's default value.
 //!
 //! The option applies to generated message types. JSON parsing of a
 //! `DynamicMessage` in `buffa-descriptor` does not read the option, and an

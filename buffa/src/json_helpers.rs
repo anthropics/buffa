@@ -633,9 +633,9 @@ pub mod proto_enum {
 /// When `ignore_unknown_enum_values` is active, returns `Ok(None)` for a
 /// [`ClosedEnumError::Unknown`] value, so the caller can drop the entry from
 /// its container (or leave the optional unset). A
-/// [`ClosedEnumError::Malformed`] value is an error in both modes, as it is
-/// for a singular field. Strict mode propagates every error.
-/// [`try_deserialize_enum`] draws the same line for open enums.
+/// [`ClosedEnumError::Malformed`] value is an error in both modes. Strict
+/// mode propagates every error. [`try_deserialize_enum`] filters unknown
+/// names for open enums.
 ///
 /// Why not [`try_deserialize_enum::<E>`]? It routes through
 /// `serde_json::from_value::<E>()`, which requires `E: DeserializeOwned` —
@@ -644,10 +644,9 @@ pub mod proto_enum {
 /// type lives in an externally-generated crate built *without* json (e.g.
 /// `google.protobuf.FieldDescriptorProto.Type` from `buffa-descriptor`)
 /// would refuse to compile. Decoding directly via the [`Enumeration`] trait
-/// removes the impl requirement, and is exactly the dispatch the
-/// codegen-emitted `Deserialize` impl performs anyway — `from_proto_name`
-/// for strings, `from_i32` after range-check for integers, default for
-/// `null` — so behaviour is unchanged for enums that *do* have one.
+/// removes the impl requirement. It uses `from_proto_name` for strings and
+/// `from_i32` after range-checking integers. Null is handled by the optional
+/// field helper before this call and rejected inside containers.
 ///
 /// Lenient filtering works in both `std` and `no_std` builds. Unlike the
 /// open-enum helper, this path decodes directly through [`Enumeration`], so
@@ -670,7 +669,7 @@ enum ClosedEnumError {
     /// A name, or a number in `i32` range, that the enum does not declare.
     /// Lenient parsing drops the value.
     Unknown(serde_json::Error),
-    /// A float, a number outside `i32`, a bool, an object or an array. An
+    /// Null, a float, a number outside `i32`, a bool, an object or an array. An
     /// error whether or not parsing is lenient.
     Malformed(serde_json::Error),
 }
@@ -678,15 +677,9 @@ enum ClosedEnumError {
 /// Closed-enum decode of a buffered `serde_json::Value`, bound only on
 /// [`Enumeration`]. Every failure is an error here.
 ///
-/// Mirrors the codegen-emitted `impl Deserialize for SomeEnum` (see
-/// `buffa-codegen/src/enumeration.rs`):
-///
-/// | JSON | Codegen Visitor | This fn |
-/// |---|---|---|
-/// | `null` | `visit_unit` → default | default |
-/// | `"NAME"` | `visit_str` → `from_proto_name` | `from_proto_name` |
-/// | integer | `visit_i64`/`visit_u64` → range-check → `from_i32` | range-check → `from_i32` |
-/// | float, bool, object, array | no Visitor method → serde type error | type error |
+/// Accepts enum names and integer values. The optional-field helper handles
+/// null before calling this function; repeated elements and map values must
+/// reject it, even when unknown enum values are ignored.
 ///
 /// [`Enumeration`]: crate::Enumeration
 fn decode_closed_enum<E: crate::Enumeration + Default>(
@@ -700,15 +693,12 @@ fn decode_closed_enum<E: crate::Enumeration + Default>(
     let malformed = |unexpected: Unexpected<'_>| {
         ClosedEnumError::Malformed(serde_json::Error::invalid_type(
             unexpected,
-            &"a protobuf enum name string, integer value, or null",
+            &"a protobuf enum name string or integer value",
         ))
     };
 
     match raw {
-        // Mirror the codegen-emitted `Deserialize` impl's `visit_unit`:
-        // a bare `null` (e.g. an array element) decodes to the default
-        // (zero-numbered) variant, not to "unknown".
-        Value::Null => Ok(E::default()),
+        Value::Null => Err(malformed(Unexpected::Unit)),
         Value::String(s) => E::from_proto_name(s)
             .ok_or_else(|| ClosedEnumError::Unknown(serde_json::Error::unknown_variant(s, &[]))),
         Value::Number(n) if n.is_f64() => {
@@ -2099,6 +2089,7 @@ pub mod opt_closed_enum {
 /// When `ignore_unknown_enum_values` is active, an unknown enum name, or a
 /// number in `i32` range that the enum does not declare, is silently
 /// skipped.
+/// JSON null deserializes to an empty vec, but null elements are rejected.
 pub mod repeated_closed_enum {
     use alloc::vec::Vec;
     use serde::{Deserializer, Serializer};
@@ -2157,6 +2148,7 @@ pub mod repeated_closed_enum {
 /// When `ignore_unknown_enum_values` is active, map entries whose value is
 /// an unknown enum name, or a number in `i32` range that the enum does not
 /// declare, are silently dropped.
+/// JSON null deserializes to an empty map, but null values are rejected.
 pub mod map_closed_enum {
     use crate::map_codec::MapStorage;
     use serde::{Deserializer, Serializer};

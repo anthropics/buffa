@@ -16,6 +16,38 @@ use crate::edenumjson::{ClosedFlavour, EnumJsonContexts, OpenFlavour};
 use buffa::{EnumValue, Message};
 
 #[test]
+fn closed_enum_containers_reject_null_elements() {
+    for ignore_unknown_enum_values in [false, true] {
+        let opts = buffa::json::JsonParseOptions::new()
+            .ignore_unknown_enum_values(ignore_unknown_enum_values);
+        buffa::json::with_json_parse_options(&opts, || {
+            for json in [
+                r#"{"many":[null]}"#,
+                r#"{"many":["FLAVOUR_VANILLA",null,2]}"#,
+                r#"{"byKey":{"a":null}}"#,
+                r#"{"byKey":{"a":"FLAVOUR_VANILLA","b":null}}"#,
+                r#"{"byId":{"-1":null}}"#,
+                r#"{"byId":{"1":2,"-1":null}}"#,
+            ] {
+                let result = serde_json::from_str::<EnumJsonContexts>(json);
+                assert!(
+                    result.is_err(),
+                    "accepted {json}, lenient={ignore_unknown_enum_values}"
+                );
+            }
+
+            let empty: EnumJsonContexts =
+                serde_json::from_str(r#"{"singular":null,"many":null,"byKey":null,"byId":null}"#)
+                    .unwrap();
+            assert_eq!(empty.singular, None);
+            assert!(empty.many.is_empty());
+            assert!(empty.by_key.is_empty());
+            assert!(empty.by_id.is_empty());
+        });
+    }
+}
+
+#[test]
 fn closed_enum_map_value_json_roundtrip() {
     let msg = EnumJsonContexts {
         by_key: [

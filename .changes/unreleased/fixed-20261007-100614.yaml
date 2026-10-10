@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Reject null elements in closed enum JSON containers.** Repeated closed enum fields and closed enum map values now reject JSON null in both strict and lenient parsing. Null for an entire field still leaves it unset or empty.'
+time: 2026-10-07T10:06:14.02399+02:00
