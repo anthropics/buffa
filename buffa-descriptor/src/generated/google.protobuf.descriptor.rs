@@ -113,7 +113,12 @@ const _: () = {
                     v: &str,
                 ) -> ::core::result::Result<Edition, __E> {
                     <Edition as ::buffa::Enumeration>::from_proto_name(v)
-                        .ok_or_else(|| { ::serde::de::Error::unknown_variant(v, &[]) })
+                        .ok_or_else(|| {
+                            ::serde::de::Error::invalid_value(
+                                ::serde::de::Unexpected::Str(v),
+                                &"a known enum variant name",
+                            )
+                        })
                 }
                 fn visit_i64<__E: ::serde::de::Error>(
                     self,
@@ -320,7 +325,12 @@ const _: () = {
                     v: &str,
                 ) -> ::core::result::Result<SymbolVisibility, __E> {
                     <SymbolVisibility as ::buffa::Enumeration>::from_proto_name(v)
-                        .ok_or_else(|| { ::serde::de::Error::unknown_variant(v, &[]) })
+                        .ok_or_else(|| {
+                            ::serde::de::Error::invalid_value(
+                                ::serde::de::Unexpected::Str(v),
+                                &"a known enum variant name",
+                            )
+                        })
                 }
                 fn visit_i64<__E: ::serde::de::Error>(
                     self,
@@ -3497,7 +3507,10 @@ pub mod extension_range_options {
                     ) -> ::core::result::Result<VerificationState, __E> {
                         <VerificationState as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -4805,7 +4818,10 @@ pub mod field_descriptor_proto {
                     ) -> ::core::result::Result<Type, __E> {
                         <Type as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -5020,7 +5036,10 @@ pub mod field_descriptor_proto {
                     ) -> ::core::result::Result<Label, __E> {
                         <Label as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -8732,7 +8751,10 @@ pub mod file_options {
                     ) -> ::core::result::Result<OptimizeMode, __E> {
                         <OptimizeMode as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -10920,7 +10942,10 @@ pub mod field_options {
                     ) -> ::core::result::Result<CType, __E> {
                         <CType as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -11072,7 +11097,10 @@ pub mod field_options {
                     ) -> ::core::result::Result<JSType, __E> {
                         <JSType as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -11223,7 +11251,10 @@ pub mod field_options {
                     ) -> ::core::result::Result<OptionRetention, __E> {
                         <OptionRetention as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -11410,7 +11441,10 @@ pub mod field_options {
                     ) -> ::core::result::Result<OptionTargetType, __E> {
                         <OptionTargetType as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -14859,7 +14893,10 @@ pub mod method_options {
                     ) -> ::core::result::Result<IdempotencyLevel, __E> {
                         <IdempotencyLevel as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -16647,7 +16684,10 @@ pub mod feature_set {
                     ) -> ::core::result::Result<FieldPresence, __E> {
                         <FieldPresence as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -16806,7 +16846,10 @@ pub mod feature_set {
                     ) -> ::core::result::Result<EnumType, __E> {
                         <EnumType as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -16960,7 +17003,10 @@ pub mod feature_set {
                                 v,
                             )
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -17116,7 +17162,10 @@ pub mod feature_set {
                     ) -> ::core::result::Result<Utf8Validation, __E> {
                         <Utf8Validation as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -17268,7 +17317,10 @@ pub mod feature_set {
                     ) -> ::core::result::Result<MessageEncoding, __E> {
                         <MessageEncoding as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -17419,7 +17471,10 @@ pub mod feature_set {
                     ) -> ::core::result::Result<JsonFormat, __E> {
                         <JsonFormat as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -17573,7 +17628,10 @@ pub mod feature_set {
                     ) -> ::core::result::Result<EnforceNamingStyle, __E> {
                         <EnforceNamingStyle as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(
@@ -17880,7 +17938,10 @@ pub mod feature_set {
                                     v,
                                 )
                                 .ok_or_else(|| {
-                                    ::serde::de::Error::unknown_variant(v, &[])
+                                    ::serde::de::Error::invalid_value(
+                                        ::serde::de::Unexpected::Str(v),
+                                        &"a known enum variant name",
+                                    )
                                 })
                         }
                         fn visit_i64<__E: ::serde::de::Error>(
@@ -20264,7 +20325,10 @@ pub mod generated_code_info {
                         ) -> ::core::result::Result<Semantic, __E> {
                             <Semantic as ::buffa::Enumeration>::from_proto_name(v)
                                 .ok_or_else(|| {
-                                    ::serde::de::Error::unknown_variant(v, &[])
+                                    ::serde::de::Error::invalid_value(
+                                        ::serde::de::Unexpected::Str(v),
+                                        &"a known enum variant name",
+                                    )
                                 })
                         }
                         fn visit_i64<__E: ::serde::de::Error>(

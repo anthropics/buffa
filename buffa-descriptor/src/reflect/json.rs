@@ -1195,7 +1195,9 @@ fn deserialize_enum<'de, D: Deserializer<'de>>(
             let ed = self.pool.enumeration(self.eidx);
             ed.value_by_name(v)
                 .map(|ev| Some(Value::EnumNumber(ev.number)))
-                .ok_or_else(|| de::Error::custom(format!("unknown enum value {v:?}")))
+                .ok_or_else(|| {
+                    de::Error::invalid_value(de::Unexpected::Str(v), &"a known enum variant name")
+                })
         }
         fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
             let n = i32::try_from(v).map_err(de::Error::custom)?;
