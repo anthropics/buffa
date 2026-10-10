@@ -2,10 +2,12 @@
 
 use std::sync::Arc;
 
+use buffa::Message;
+use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
 use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
 use buffa_descriptor::generated::descriptor::{
-    DescriptorProto, Edition, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
-    MessageOptions, OneofDescriptorProto,
+    DescriptorProto, Edition, EnumDescriptorProto, EnumValueDescriptorProto, FieldDescriptorProto,
+    FileDescriptorProto, FileDescriptorSet, MessageOptions, OneofDescriptorProto,
 };
 use buffa_descriptor::reflect::{DynamicMessage, Value};
 use buffa_descriptor::{DescriptorPool, FieldKind, PoolError, ScalarType, SingularKind};
@@ -64,7 +66,10 @@ fn descriptor_set(entry: DescriptorProto) -> FileDescriptorSet {
 }
 
 fn assert_malformed(entry: DescriptorProto) {
-    let set = descriptor_set(entry);
+    assert_malformed_set(descriptor_set(entry));
+}
+
+fn assert_malformed_set(set: FileDescriptorSet) {
     let assert_error = |error: PoolError| {
         assert!(
             matches!(error, PoolError::MalformedMapEntry { ref message }
@@ -73,6 +78,7 @@ fn assert_malformed(entry: DescriptorProto) {
         );
     };
     assert_error(DescriptorPool::new(set.clone()).unwrap_err());
+    assert_error(DescriptorPool::decode(&set.encode_to_vec()).unwrap_err());
 
     let mut pool = DescriptorPool::decode(include_bytes!("protos/reflect_test.fds")).unwrap();
     let counts = (
@@ -155,6 +161,103 @@ fn map_entry_fields_must_be_optional() {
             invalid.field[index].label = Some(label);
             assert_malformed(invalid);
         }
+    }
+}
+
+fn entries_with_declarations() -> [DescriptorProto; 4] {
+    let mut nested_message = entry();
+    nested_message.nested_type.push(DescriptorProto {
+        name: Some("Nested".into()),
+        ..Default::default()
+    });
+
+    let mut nested_enum = entry();
+    nested_enum.enum_type.push(EnumDescriptorProto {
+        name: Some("Nested".into()),
+        value: vec![EnumValueDescriptorProto {
+            name: Some("ZERO".into()),
+            number: Some(0),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let mut extension_range = entry();
+    extension_range.extension_range.push(ExtensionRange {
+        start: Some(100),
+        end: Some(101),
+        ..Default::default()
+    });
+
+    let mut extension = entry();
+    extension.extension.push(FieldDescriptorProto {
+        name: Some("extra".into()),
+        number: Some(100),
+        label: Some(Label::LABEL_OPTIONAL),
+        r#type: Some(Type::TYPE_INT32),
+        extendee: Some(".map.entry.test.Holder".into()),
+        ..Default::default()
+    });
+
+    [nested_message, nested_enum, extension_range, extension]
+}
+
+fn set_with_declarations(entry: DescriptorProto) -> FileDescriptorSet {
+    let declares_extension = !entry.extension.is_empty();
+    let mut set = descriptor_set(entry);
+    if declares_extension {
+        set.file[0].message_type[0]
+            .extension_range
+            .push(ExtensionRange {
+                start: Some(100),
+                end: Some(101),
+                ..Default::default()
+            });
+    }
+    set
+}
+
+#[test]
+fn map_entries_must_not_contain_declarations() {
+    for (syntax, edition) in [
+        ("proto2", None),
+        ("proto3", None),
+        ("editions", Some(Edition::EDITION_2023)),
+        ("editions", Some(Edition::EDITION_2024)),
+    ] {
+        for entry in entries_with_declarations() {
+            if syntax == "proto3"
+                && (!entry.extension.is_empty() || !entry.extension_range.is_empty())
+            {
+                continue;
+            }
+            let mut set = set_with_declarations(entry);
+            set.file[0].syntax = Some(syntax.into());
+            set.file[0].edition = edition;
+            assert_malformed_set(set);
+        }
+    }
+}
+
+#[test]
+fn ordinary_messages_can_contain_declarations() {
+    for mut entry in entries_with_declarations() {
+        entry.options = MessageOptions {
+            map_entry: Some(false),
+            ..Default::default()
+        }
+        .into();
+        let set = set_with_declarations(entry);
+        let pool = DescriptorPool::new(set.clone()).unwrap();
+        assert!(matches!(
+            pool.message_by_name("map.entry.test.Holder")
+                .unwrap()
+                .field(1)
+                .unwrap()
+                .kind(),
+            FieldKind::List(SingularKind::Message(_))
+        ));
+        assert!(DescriptorPool::decode(&set.encode_to_vec()).is_ok());
     }
 }
 
