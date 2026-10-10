@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects extension ranges above the maximum field number**. An exclusive range end above `MAX_FIELD_NUMBER + 1` now returns `PoolError::ExtensionRangeEndTooLarge`, matching `protoc`. Messages with `message_set_wire_format` enabled keep their larger ranges.
+time: 2026-10-07T00:00:00+02:00
