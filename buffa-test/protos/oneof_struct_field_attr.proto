@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package oneof_struct_field_attr;
+
+// Compiled with `generate_json` off. build.rs derives `serde::Serialize` on
+// the message and on the oneof enum, and gives the struct field holding the
+// oneof a `skip_serializing_if` with `oneof_struct_field_attribute`.
+message Event {
+  string id = 1;
+  oneof payload {
+    string text = 2;
+    int32 code = 3;
+  }
+}

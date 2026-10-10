@@ -1107,6 +1107,10 @@ Two things are not marked:
   attach to the variant with `field_attribute` goes on the owned oneof enum only.
   The generated impls that match on it are not guarded, so
   `examples/addressbook` keeps a module-level `#[allow(deprecated)]`.
+  The struct field holding the oneof is a separate item. A `#[deprecated]` that
+  you attach to it with `oneof_struct_field_attribute` goes on the owned struct's
+  field only (the view's field stays unmarked), and the generated impls that
+  visit the field are guarded.
 - **Whole-message and whole-enum deprecation is not emitted**, matching prost.
 
 A derive that you attach with `enum_attribute` or `type_attribute` can name a

@@ -1988,19 +1988,70 @@ impl Config {
     /// (`.my.pkg.MyMessage.my_oneof`), with the same path-matching semantics
     /// as [`type_attribute`](Self::type_attribute): `".my.pkg"` reaches the
     /// oneof field of every message in the package, nested ones included.
-    /// [`field_attribute`](Self::field_attribute) never reaches this field: on
-    /// the oneof's path it matches only the variants
-    /// (`.my.pkg.MyMessage.my_oneof.variant_name`), where an attribute such as
-    /// `#[serde(skip_serializing_if = "...")]` is rejected. prost-build put a
-    /// `field_attribute` on both; use this method for the struct field.
+    /// Attributes accumulate in insertion order, after buffa's own attributes
+    /// on the field. A malformed attribute produces a compile-time error.
     ///
-    /// Applies to the owned message struct only; view structs receive no
-    /// custom attributes.
+    /// A rule on a variant's path (`.my.pkg.MyMessage.my_oneof.variant_name`)
+    /// does not match the oneof, so it has no effect, and the build does not
+    /// warn about it. Variants take their attributes from
+    /// [`field_attribute`](Self::field_attribute).
+    ///
+    /// Each of these lines of the generated code for a oneof takes its
+    /// attributes from a different method:
+    ///
+    /// ```rust,ignore
+    /// pub struct Event {
+    ///     // oneof_struct_field_attribute(".pkg.Event.payload", ..)
+    ///     pub payload: Option<event::Payload>,
+    /// }
+    ///
+    /// // oneof_attribute(".pkg.Event.payload", ..), or type_attribute on the same path
+    /// pub enum Payload {
+    ///     // field_attribute(".pkg.Event.payload.text", ..)
+    ///     Text(String),
+    /// }
+    /// ```
+    ///
+    /// `field_attribute` on the oneof's path (`.pkg.Event.payload`) matches
+    /// the variants only, where an attribute
+    /// such as `#[serde(skip_serializing_if = "...")]` is rejected. prost-build
+    /// puts such a `field_attribute` on the struct field as well; use this
+    /// method for the struct field.
+    ///
+    /// Applies to the owned message struct only; the view structs do not get
+    /// the attribute.
+    ///
+    /// A `#[deprecated]` given here marks the owned struct's field only. The
+    /// same field on the view structs stays unmarked, so reading the oneof
+    /// through a view does not warn, unlike a field deprecated through
+    /// `field_attribute`. The generated items that visit the owned field
+    /// carry `#[allow(deprecated)]`.
+    ///
+    /// # Pitfalls
+    ///
+    /// With [`generate_json(true)`](Self::generate_json) the field already
+    /// carries buffa's `#[serde(flatten)]` for the derived `Serialize`, and
+    /// buffa generates the `Deserialize` impl of a message with a oneof
+    /// instead of deriving it. So a serde attribute given here changes the
+    /// owned message's `Serialize` output only: `Deserialize` and the views'
+    /// `Serialize` ignore it. A second `flatten` is a compile error in the
+    /// generated code. Serde attributes here are for a serde derive that you
+    /// attach yourself, with `generate_json` off.
+    ///
+    /// With
+    /// [`gate_impls_on_crate_features(true)`](Self::gate_impls_on_crate_features)
+    /// buffa's serde derive is compiled only under the JSON feature. Write a
+    /// serde attribute for it as `#[cfg_attr(feature = "json", serde(...))]`,
+    /// with your JSON feature's name if you renamed it, so that it is compiled
+    /// under the same feature.
     ///
     /// # Example
     ///
     /// ```rust,ignore
     /// buffa_build::Config::new()
+    ///     // `UnknownFields` does not implement `serde::Serialize`. With this
+    ///     // off, unknown fields are dropped on decode.
+    ///     .preserve_unknown_fields(false)
     ///     .message_attribute(".my.pkg.MyMessage", "#[derive(serde::Serialize)]")
     ///     .oneof_attribute(".my.pkg.MyMessage.my_oneof", "#[derive(serde::Serialize)]")
     ///     .oneof_struct_field_attribute(

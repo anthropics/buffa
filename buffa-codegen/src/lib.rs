@@ -1541,6 +1541,9 @@ pub struct CodeGenConfig {
     /// oneof's fully-qualified path (`.pkg.Message.oneof_name`).
     /// `field_attributes` never reaches this field: on the oneof's path it
     /// matches only the variants (`.pkg.Message.oneof_name.variant`).
+    ///
+    /// Applies to the owned message struct only; the view structs do not get
+    /// the attribute.
     pub oneof_struct_field_attributes: Vec<(String, String)>,
     /// Wrap generated `impl`s in `#[cfg(feature = "...")]` instead of
     /// emitting them unconditionally.
