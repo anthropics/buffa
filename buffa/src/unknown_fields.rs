@@ -121,6 +121,20 @@ impl IntoIterator for UnknownFields {
     }
 }
 
+impl Extend<UnknownField> for UnknownFields {
+    fn extend<T: IntoIterator<Item = UnknownField>>(&mut self, iter: T) {
+        self.fields.extend(iter);
+    }
+}
+
+impl FromIterator<UnknownField> for UnknownFields {
+    fn from_iter<T: IntoIterator<Item = UnknownField>>(iter: T) -> Self {
+        Self {
+            fields: iter.into_iter().collect(),
+        }
+    }
+}
+
 /// A single unknown field (field number + wire data).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct UnknownField {
@@ -331,6 +345,41 @@ mod tests {
             count += 1;
         }
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_from_iterator_preserves_order_and_duplicates() {
+        let expected = vec![
+            varint_field(1, 0),
+            fixed64_field(2, u64::MAX),
+            fixed32_field(3, u32::MAX),
+            ld_field(4, vec![1, 2]),
+            group_field(5, UnknownFields::new()),
+            varint_field(1, 42),
+        ];
+
+        let fields: UnknownFields = expected.clone().into_iter().collect();
+        assert_eq!(fields.into_iter().collect::<Vec<_>>(), expected);
+
+        let empty: UnknownFields = core::iter::empty().collect();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_extend_appends_fields() {
+        let mut fields = UnknownFields::new();
+        fields.push(varint_field(7, 1));
+        fields.extend([fixed32_field(2, 3), ld_field(2, vec![]), varint_field(7, 4)]);
+
+        assert_eq!(
+            fields.into_iter().collect::<Vec<_>>(),
+            vec![
+                varint_field(7, 1),
+                fixed32_field(2, 3),
+                ld_field(2, vec![]),
+                varint_field(7, 4),
+            ]
+        );
     }
 
     // ── encoded_len vs write_to consistency ──────────────────────────────
