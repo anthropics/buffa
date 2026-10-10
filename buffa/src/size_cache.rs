@@ -459,7 +459,11 @@ impl SizeCachePool {
         }
         // After the shrink: skip never-spilled (cap 0) and shrunk-to-0 buffers —
         // a zero-capacity slot in the free-list yields no reuse on `acquire`.
-        if buf.capacity() == 0 {
+        self.retain_within_capacity_limit(buf);
+    }
+
+    fn retain_within_capacity_limit(&mut self, buf: Vec<u32>) {
+        if buf.capacity() == 0 || buf.capacity() > self.max_capacity {
             return;
         }
         self.free.push(buf);
@@ -892,13 +896,20 @@ mod tests {
     }
 
     #[test]
-    fn pool_shrinks_oversized_buffer_on_return() {
+    fn pool_only_retains_buffers_within_capacity_limit() {
         let mut pool = SizeCachePool::new(4, 8);
         spill_and_return(&mut pool, INLINE_CAP + 100);
         assert!(
-            pool.free[0].capacity() <= 8,
-            "oversized buffer shrunk to cap"
+            pool.free.iter().all(|buf| buf.capacity() <= 8),
+            "retained buffers stay within the configured cap"
         );
+    }
+
+    #[test]
+    fn pool_drops_buffer_that_stays_over_capacity_limit() {
+        let mut pool = SizeCachePool::new(4, 8);
+        pool.retain_within_capacity_limit(Vec::with_capacity(64));
+        assert!(pool.free.is_empty());
     }
 
     #[test]
