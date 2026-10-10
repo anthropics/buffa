@@ -21,8 +21,8 @@
 //! | `\uNNNN`    | 4 hex digits → UTF-8 encoding of that code point        |
 //! | `\UNNNNNNNN`| 8 hex digits → UTF-8 encoding of that code point        |
 //!
-//! `\u` is BMP-only — surrogates (U+D800..U+DFFF) are rejected, even as a
-//! well-formed pair. For non-BMP code points use `\U` (e.g. `\U0001F600`).
+//! `\u` accepts BMP code points and well-formed UTF-16 surrogate pairs. For
+//! non-BMP code points, use a pair or the direct `\U` form (e.g. `\U0001F600`).
 
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
@@ -135,14 +135,27 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
                                 return Err(UnescapeError::BadEscape("invalid \\u escape"));
                             }
                             s = &s[4..];
-                            // Textproto's \u is BMP-only — surrogate codepoints are
-                            // rejected outright (no UTF-16 pair recombination). For
-                            // non-BMP, use \U00010437 etc.
-                            if (0xD800..0xE000).contains(&cp) {
+                            let cp = if (0xD800..=0xDBFF).contains(&cp) {
+                                let Some(low_escape) = s.strip_prefix(b"\\u") else {
+                                    return Err(UnescapeError::BadEscape(
+                                        "invalid UTF-16 surrogate pair",
+                                    ));
+                                };
+                                let (low, n) = take_hex(low_escape, 4);
+                                if n != 4 || !(0xDC00..=0xDFFF).contains(&low) {
+                                    return Err(UnescapeError::BadEscape(
+                                        "invalid UTF-16 surrogate pair",
+                                    ));
+                                }
+                                s = &s[6..];
+                                0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00)
+                            } else if (0xDC00..=0xDFFF).contains(&cp) {
                                 return Err(UnescapeError::BadEscape(
-                                    "\\u escape is surrogate; use \\U for non-BMP",
+                                    "invalid UTF-16 surrogate pair",
                                 ));
-                            }
+                            } else {
+                                cp
+                            };
                             push_utf8(&mut out, cp)?;
                         }
                         b'U' => {
@@ -366,6 +379,9 @@ mod tests {
             (r#""\xFF""#,              Some(&[0xFF])),
             (r#""\u0041""#,            Some(b"A")),
             (r#""\u00e9""#,            Some("é".as_bytes())),
+            (r#""\uD800\uDC00""#,      Some("\u{10000}".as_bytes())),
+            (r#""\uD83D\uDE00""#,      Some("😀".as_bytes())),
+            (r#""\uDBFF\uDFFF""#,      Some("\u{10FFFF}".as_bytes())),
             (r#""\U0001F600""#,        Some("😀".as_bytes())),
             (r#""foo" "bar""#,         Some(b"foobar")),        // adjacent concat
             (r#""foo"'bar'"baz""#,     Some(b"foobarbaz")),     // no ws required
@@ -381,15 +397,30 @@ mod tests {
             (r#""\x""#,                None),  // \x with no digits
             (r#""\u00""#,              None),  // \u needs 4
             (r#""\U0000""#,            None),  // \U needs 8
-            (r#""\uD800""#,            None),  // surrogate (BMP-only: use \U)
+            (r#""\uD800""#,            None),
             (r#""\uDC00""#,            None),  // surrogate
-            (r#""\uD83D\uDE00""#,      None),  // even a well-formed pair — no JSON-style recombination
+            (r#""\uD800\u0041""#,      None),
+            (r#""\uD800\uD800""#,      None),
+            (r#""\uDC00\uD800""#,      None),
+            (r#""\uD800" "\uDC00""#, None),
             (r#""\z""#,                None),  // unknown escape
             ("\"line\nbreak\"",        None),  // raw newline
         ];
         for &(input, expected) in cases {
             let got = unescape(input).ok();
             assert_eq!(got.as_deref(), expected, "input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn unescape_str_decodes_surrogate_pairs() {
+        for (input, expected) in [
+            (r#""\uD800\uDC00""#, "\u{10000}"),
+            (r#""\uD83d\uDe00""#, "😀"),
+            (r#""\uDBFF\uDFFFtail""#, "\u{10FFFF}tail"),
+        ] {
+            let got = unescape_str(input).unwrap();
+            assert_eq!(got.as_ref(), expected, "input: {input:?}");
         }
     }
 

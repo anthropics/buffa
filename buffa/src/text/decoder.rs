@@ -1159,6 +1159,7 @@ mod tests {
             (r#"f: "hello""#,         Some("hello")),
             (r#"f: 'world'"#,         Some("world")),
             (r#"f: "say \"hi\"""#,    Some("say \"hi\"")),
+            (r#"f: "\uD83D\uDE00""#, Some("😀")),
             (r#"f: "foo" "bar""#,     Some("foobar")),
             ("f: \"foo\" # c\n \"bar\"", Some("foobar")),
             (r#"f: """#,              Some("")),
@@ -1178,6 +1179,10 @@ mod tests {
         let mut d = TextDecoder::new(r#"f: "\xFF\x00\x01""#);
         d.read_field_name().unwrap();
         assert_eq!(d.read_bytes().unwrap(), vec![0xFF, 0x00, 0x01]);
+
+        let mut d = TextDecoder::new(r#"f: "\uD800\uDC00""#);
+        d.read_field_name().unwrap();
+        assert_eq!(d.read_bytes().unwrap(), vec![0xF0, 0x90, 0x80, 0x80]);
     }
 
     #[test]
