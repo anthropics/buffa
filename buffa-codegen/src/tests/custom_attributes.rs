@@ -320,8 +320,16 @@ fn test_field_attribute_catchall() {
 
 // ── oneof coverage ──────────────────────────────────────────────────
 
+/// A message with a plain `id` field ahead of one oneof, so an attribute on the
+/// struct and an attribute on the struct's first field are different places
+/// from the oneof field.
 fn oneof_message(name: &str, oneof_name: &str, variant_names: &[&str]) -> DescriptorProto {
-    let mut fields = Vec::new();
+    let mut fields = vec![make_field(
+        "id",
+        100,
+        Label::LABEL_OPTIONAL,
+        Type::TYPE_INT32,
+    )];
     for (i, v) in variant_names.iter().enumerate() {
         let mut f = make_field(v, (i + 1) as i32, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
         f.oneof_index = Some(0);
@@ -407,6 +415,268 @@ fn test_oneof_attribute_on_oneof_not_message_or_enum() {
         content.matches("derive(serde::Serialize)").count(),
         1,
         "oneof_attribute should appear only on the oneof enum: {content}"
+    );
+}
+
+// ── oneof_struct_field_attribute tests ──────────────────────────────
+
+const MARKER: &str = "#[allow(clippy::pedantic)]";
+const SECOND_MARKER: &str = "#[allow(clippy::nursery)]";
+
+/// Every item of the generated files, including the items of inline modules.
+fn all_items(files: &[GeneratedFile]) -> Vec<syn::Item> {
+    fn walk(items: Vec<syn::Item>, out: &mut Vec<syn::Item>) {
+        for item in items {
+            if let syn::Item::Mod(module) = &item {
+                if let Some((_, inner)) = &module.content {
+                    walk(inner.clone(), out);
+                }
+            }
+            out.push(item);
+        }
+    }
+    let mut out = Vec::new();
+    for f in files {
+        let parsed = syn::parse_file(&f.content)
+            .unwrap_or_else(|e| panic!("{} must parse: {e}\n{}", f.name, f.content));
+        walk(parsed.items, &mut out);
+    }
+    out
+}
+
+/// The attributes as source text without whitespace, in declaration order.
+fn rendered(attrs: &[syn::Attribute]) -> Vec<String> {
+    use quote::ToTokens;
+    attrs
+        .iter()
+        .map(|a| {
+            let mut text = a.to_token_stream().to_string();
+            text.retain(|c| !c.is_whitespace());
+            text
+        })
+        .collect()
+}
+
+fn find_struct<'a>(items: &'a [syn::Item], name: &str) -> &'a syn::ItemStruct {
+    let mut found = items.iter().filter_map(|item| match item {
+        syn::Item::Struct(s) if s.ident == name => Some(s),
+        _ => None,
+    });
+    let first = found
+        .next()
+        .unwrap_or_else(|| panic!("struct {name} is generated"));
+    assert!(found.next().is_none(), "one struct is named {name}");
+    first
+}
+
+/// The rendered attributes of the named field of `item`.
+fn field_attrs(item: &syn::ItemStruct, field: &str) -> Vec<String> {
+    let field = item
+        .fields
+        .iter()
+        .find(|f| f.ident.as_ref().is_some_and(|ident| ident == field))
+        .unwrap_or_else(|| panic!("{} has a field {field}", item.ident));
+    rendered(&field.attrs)
+}
+
+/// Generated code as parsed items and as source text without whitespace.
+struct Generated {
+    items: Vec<syn::Item>,
+    source: String,
+}
+
+/// Asserts that [`MARKER`] is on the field `oneof_field` of each struct in
+/// `on_structs` and nowhere else in the generated code.
+fn assert_marker_exactly_on_fields(generated: &Generated, oneof_field: &str, on_structs: &[&str]) {
+    let has_marker = |attrs: &[syn::Attribute]| rendered(attrs).iter().any(|a| a == MARKER);
+    for item in &generated.items {
+        let syn::Item::Struct(s) = item else {
+            continue;
+        };
+        for f in &s.fields {
+            let name = f.ident.as_ref().map(ToString::to_string);
+            let expected =
+                name.as_deref() == Some(oneof_field) && on_structs.iter().any(|n| s.ident == n);
+            assert_eq!(has_marker(&f.attrs), expected, "{}.{name:?}", s.ident);
+        }
+    }
+    // The fields above account for every occurrence, so a struct, an enum, a
+    // variant, an impl and a method are all unmarked.
+    assert_eq!(
+        generated.source.matches(MARKER).count(),
+        on_structs.len(),
+        "{}",
+        generated.source
+    );
+}
+
+fn oneof_field_config(rules: &[(&str, &str)]) -> CodeGenConfig {
+    CodeGenConfig {
+        oneof_struct_field_attributes: rules
+            .iter()
+            .map(|(p, a)| (p.to_string(), a.to_string()))
+            .collect(),
+        ..CodeGenConfig::default()
+    }
+}
+
+/// `pkg.Msg` and `pkg.Outer.Inner`, each with an `id` field and a oneof
+/// `payload`.
+fn two_oneof_messages_file() -> FileDescriptorProto {
+    let mut file = proto3_file("oneofs.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type
+        .push(oneof_message("Msg", "payload", &["a", "b"]));
+    file.message_type.push(DescriptorProto {
+        name: Some("Outer".to_string()),
+        nested_type: vec![oneof_message("Inner", "payload", &["a", "b"])],
+        ..Default::default()
+    });
+    file
+}
+
+fn generate_items(file: FileDescriptorProto, config: &CodeGenConfig) -> Generated {
+    let name = file.name.clone().unwrap_or_default();
+    let files = generate(&[file], &[name], config).expect("should generate");
+    let mut source = joined(&files);
+    source.retain(|c| !c.is_whitespace());
+    Generated {
+        items: all_items(&files),
+        source,
+    }
+}
+
+#[test]
+fn test_oneof_struct_field_attribute_on_oneof_field_only() {
+    // Views are on: the view struct has a `payload` field too, and stays bare.
+    let generated = generate_items(
+        two_oneof_messages_file(),
+        &oneof_field_config(&[(".pkg.Msg.payload", MARKER)]),
+    );
+    assert_eq!(
+        field_attrs(find_struct(&generated.items, "Msg"), "payload"),
+        [MARKER],
+        "the oneof field carries exactly the custom attribute"
+    );
+    assert!(field_attrs(find_struct(&generated.items, "MsgView"), "payload").is_empty());
+    assert_marker_exactly_on_fields(&generated, "payload", &["Msg"]);
+}
+
+/// With JSON on, buffa's own `serde(flatten)` comes first on the oneof field
+/// and the custom attribute follows it.
+#[test]
+fn test_oneof_struct_field_attribute_nested_with_json_and_views() {
+    let config = CodeGenConfig {
+        generate_json: true,
+        ..oneof_field_config(&[(".pkg.Outer.Inner.payload", MARKER)])
+    };
+    let generated = generate_items(two_oneof_messages_file(), &config);
+    assert_eq!(
+        field_attrs(find_struct(&generated.items, "Inner"), "payload"),
+        ["#[serde(flatten)]", MARKER]
+    );
+    assert_eq!(
+        field_attrs(find_struct(&generated.items, "Msg"), "payload"),
+        ["#[serde(flatten)]"]
+    );
+    assert_marker_exactly_on_fields(&generated, "payload", &["Inner"]);
+}
+
+#[test]
+fn test_oneof_struct_field_attribute_prefix_and_catch_all() {
+    for rule in [".pkg", "."] {
+        let generated = generate_items(
+            two_oneof_messages_file(),
+            &oneof_field_config(&[(rule, MARKER)]),
+        );
+        assert_marker_exactly_on_fields(&generated, "payload", &["Msg", "Inner"]);
+    }
+    // A prefix ends on a path segment, and a variant's path is longer than the
+    // oneof's, so these rules match nothing.
+    for rule in [".pkg.Msg.pay", ".pkg.Msg.payload.a", ".pk"] {
+        let generated = generate_items(
+            two_oneof_messages_file(),
+            &oneof_field_config(&[(rule, MARKER)]),
+        );
+        assert_marker_exactly_on_fields(&generated, "payload", &[]);
+    }
+}
+
+#[test]
+fn test_oneof_struct_field_attribute_skips_synthetic_oneof() {
+    // `optional string note` is a member of the synthetic oneof `_note`, which
+    // has no struct field of its own.
+    let mut msg = oneof_message("Msg", "payload", &["a", "b"]);
+    let mut note = make_field("note", 50, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+    note.oneof_index = Some(1);
+    note.proto3_optional = Some(true);
+    msg.field.push(note);
+    msg.oneof_decl.push(OneofDescriptorProto {
+        name: Some("_note".to_string()),
+        ..Default::default()
+    });
+    let mut file = proto3_file("synthetic.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type.push(msg);
+    let generated = generate_items(file, &oneof_field_config(&[(".", MARKER)]));
+    assert!(field_attrs(find_struct(&generated.items, "Msg"), "note")
+        .iter()
+        .all(|a| a != MARKER));
+    assert_marker_exactly_on_fields(&generated, "payload", &["Msg"]);
+}
+
+#[test]
+fn test_oneof_struct_field_attribute_follows_rename_note() {
+    // The oneof `self` would be `self_`, which the field has, so the oneof
+    // field is `self__` and carries a doc note about the rename.
+    let mut msg = oneof_message("Msg", "self", &["a"]);
+    msg.field[0].name = Some("self_".to_string());
+    let mut file = proto3_file("renamed.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type.push(msg);
+    let generated = generate_items(file, &oneof_field_config(&[(".pkg.Msg.self", MARKER)]));
+    let attrs = field_attrs(find_struct(&generated.items, "Msg"), "self__");
+    assert_eq!(attrs.len(), 2, "{attrs:?}");
+    assert!(
+        attrs[0].starts_with("#[doc=") && attrs[0].contains("`self__`"),
+        "the rename note comes first: {attrs:?}"
+    );
+    assert_eq!(attrs[1], MARKER);
+}
+
+#[test]
+fn test_oneof_struct_field_attributes_accumulate_in_insertion_order() {
+    for (rules, expected) in [
+        (
+            [(".", MARKER), (".pkg.Msg.payload", SECOND_MARKER)],
+            [MARKER, SECOND_MARKER],
+        ),
+        (
+            [(".pkg.Msg.payload", SECOND_MARKER), (".", MARKER)],
+            [SECOND_MARKER, MARKER],
+        ),
+    ] {
+        let generated = generate_items(two_oneof_messages_file(), &oneof_field_config(&rules));
+        assert_eq!(
+            field_attrs(find_struct(&generated.items, "Msg"), "payload"),
+            expected
+        );
+    }
+}
+
+#[test]
+fn test_oneof_struct_field_attribute_invalid_attribute_errors() {
+    let file = two_oneof_messages_file();
+    let config = oneof_field_config(&[(".pkg.Msg.payload", "not a valid #[attribute")]);
+    let err = generate(&[file], &["oneofs.proto".to_string()], &config)
+        .expect_err("malformed attribute should error");
+    assert!(
+        matches!(
+            &err,
+            CodeGenError::InvalidCustomAttribute { path, attribute, .. }
+                if path == ".pkg.Msg.payload" && attribute == "not a valid #[attribute"
+        ),
+        "{err:?}"
     );
 }
 

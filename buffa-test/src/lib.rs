@@ -31,6 +31,13 @@ pub mod deprecated_proto2 {
     buffa::include_proto!("deprecated_proto2");
 }
 
+/// `oneof_struct_field_attribute` — `build.rs` derives `serde::Serialize` and
+/// puts a serde attribute on the struct field holding the oneof.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod oneof_struct_field_attr {
+    buffa::include_proto!("oneof_struct_field_attr");
+}
+
 /// `skip_debug` — hand-written `Debug` impls for the types `build.rs` names
 /// in its rules.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]

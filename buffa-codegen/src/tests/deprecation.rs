@@ -613,6 +613,69 @@ fn oneof_only_deprecation_is_unmarked_and_unguarded() {
     }
 }
 
+#[test]
+fn caller_deprecated_oneof_struct_field_guards_the_impls_that_visit_it() {
+    // `Widget.choice` is the only deprecated member, and only through the
+    // caller's `oneof_struct_field_attribute`. The `[deprecated = true]` on
+    // the oneof's member plays no part.
+    let rule = |path: &str| CodeGenConfig {
+        oneof_struct_field_attributes: vec![(
+            path.to_string(),
+            "#[deprecated(note = \"hand\")]".to_string(),
+        )],
+        ..Default::default()
+    };
+    let impl_heads = [
+        "impl::buffa::MessageforWidget",
+        "impl::core::fmt::DebugforWidget",
+        "impl<'a>::buffa::MessageView<'a>forWidgetView<'a>",
+    ];
+
+    let content = generate_squashed(oneof_only_file(), &rule(".deprecate.test.Widget.choice"));
+    assert!(
+        content.contains(r#"#[deprecated(note="hand")]pubchoice:"#),
+        "the owned struct's oneof field takes the attribute: {content}"
+    );
+    assert_eq!(content.matches("#[deprecated").count(), 1, "{content}");
+    for impl_head in impl_heads {
+        assert!(
+            content.contains(&format!("#[allow(deprecated)]{impl_head}")),
+            "`{impl_head}` visits the deprecated oneof field: {content}"
+        );
+    }
+
+    // The rule is matched against oneof paths, so one that names the plain
+    // field `label` deprecates nothing and guards nothing.
+    let content = generate_squashed(oneof_only_file(), &rule(".deprecate.test.Widget.label"));
+    assert!(!content.contains("#[deprecated"), "{content}");
+    assert!(!content.contains("#[allow(deprecated)]"), "{content}");
+
+    // Nor does one that reaches only the synthetic oneof of an `optional`
+    // field, which has no struct field of its own.
+    let mut note = make_field("note", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+    note.oneof_index = Some(0);
+    note.proto3_optional = Some(true);
+    let mut file = proto3_file("synthetic.proto");
+    file.package = Some("deprecate.test".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Widget".to_string()),
+        field: vec![note],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("_note".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    for path in [".", ".deprecate.test.Widget._note"] {
+        let content = generate_squashed(file.clone(), &rule(path));
+        assert!(!content.contains("#[deprecated"), "{path}: {content}");
+        assert!(
+            !content.contains("#[allow(deprecated)]"),
+            "{path}: {content}"
+        );
+    }
+}
+
 // ── views ───────────────────────────────────────────────────────────
 
 #[test]

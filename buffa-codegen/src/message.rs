@@ -276,26 +276,29 @@ fn generate_message_with_nesting(
     } else {
         quote! {}
     };
-    let oneof_generated: Vec<(TokenStream, Ident)> = msg
-        .oneof_decl
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, oneof)| {
-            let enum_ident = oneof_idents.get(&idx)?;
-            let oneof_name = oneof.name.as_deref()?;
-            let field_ident = ctx.oneof_ident(oneof_name);
-            let opt = resolver.option_at(ctx, nesting);
-            let rename_note = ctx
-                .oneof_rename_note(oneof_name)
-                .map(|note| quote! { #[doc = #note] });
-            let tokens = quote! {
-                #rename_note
-                #oneof_serde_attr
-                pub #field_ident: #opt<#oneof_prefix #enum_ident>,
-            };
-            Some((tokens, field_ident))
-        })
-        .collect();
+    let mut oneof_generated: Vec<(TokenStream, Ident)> = Vec::new();
+    for (idx, oneof) in msg.oneof_decl.iter().enumerate() {
+        let (Some(enum_ident), Some(oneof_name)) = (oneof_idents.get(&idx), oneof.name.as_deref())
+        else {
+            continue;
+        };
+        let field_ident = ctx.oneof_ident(oneof_name);
+        let opt = resolver.option_at(ctx, nesting);
+        let rename_note = ctx
+            .oneof_rename_note(oneof_name)
+            .map(|note| quote! { #[doc = #note] });
+        let custom_attrs = CodeGenContext::matching_attributes(
+            &ctx.config.oneof_struct_field_attributes,
+            &format!("{proto_fqn}.{oneof_name}"),
+        )?;
+        let tokens = quote! {
+            #rename_note
+            #oneof_serde_attr
+            #custom_attrs
+            pub #field_ident: #opt<#oneof_prefix #enum_ident>,
+        };
+        oneof_generated.push((tokens, field_ident));
+    }
     let oneof_struct_fields: Vec<&TokenStream> = oneof_generated.iter().map(|(t, _)| t).collect();
     // Redaction of oneof payloads is handled by the oneof enum's own Debug impl.
     debug_fields.extend(oneof_generated.iter().map(|(_, id)| (id, false)));
@@ -2158,11 +2161,17 @@ pub(crate) fn is_deprecated(field: &crate::generated::descriptor::FieldDescripto
 /// of it. Unparseable attribute strings are ignored here — they are reported
 /// by [`CodeGenContext::matching_attributes`] on the way to the same field.
 pub(crate) fn caller_deprecated_attr(ctx: &CodeGenContext, fqn: &str) -> bool {
-    if ctx.config.field_attributes.is_empty() {
+    rules_deprecate(&ctx.config.field_attributes, fqn)
+}
+
+/// True when one of the caller's `(path, attribute)` rules matches `fqn` and
+/// carries a `#[deprecated]` marker.
+fn rules_deprecate(rules: &[(String, String)], fqn: &str) -> bool {
+    if rules.is_empty() {
         return false;
     }
     let fqn_dotted = format!(".{fqn}");
-    ctx.config.field_attributes.iter().any(|(prefix, attr)| {
+    rules.iter().any(|(prefix, attr)| {
         crate::context::matches_proto_prefix(prefix, &fqn_dotted) && is_deprecated_attr_str(attr)
     })
 }
@@ -2268,11 +2277,21 @@ pub(crate) fn default_names_deprecated_value(
 
 /// Whether generated code for `msg` touches anything marked deprecated: one of
 /// its own non-oneof fields (from the option or from a caller's
-/// `field_attribute`), or an enum variant named by a field's `[default = …]`.
+/// `field_attribute`), a struct field holding a oneof (from a caller's
+/// `oneof_struct_field_attribute`), or an enum variant named by a field's
+/// `[default = …]`.
 fn references_deprecated(ctx: &CodeGenContext, msg: &DescriptorProto, proto_fqn: &str) -> bool {
+    let oneof_rules = &ctx.config.oneof_struct_field_attributes;
     msg.field.iter().any(|f| {
         if crate::impl_message::is_real_oneof_member(f) {
-            return false;
+            // The member is a variant; the struct field is its oneof's.
+            return !oneof_rules.is_empty()
+                && f.oneof_index
+                    .and_then(|idx| msg.oneof_decl.get(usize::try_from(idx).ok()?))
+                    .and_then(|oneof| oneof.name.as_deref())
+                    .is_some_and(|name| {
+                        rules_deprecate(oneof_rules, &format!("{proto_fqn}.{name}"))
+                    });
         }
         let field_fqn = format!("{proto_fqn}.{}", f.name.as_deref().unwrap_or_default());
         field_is_deprecated(ctx, f, &field_fqn) || default_names_deprecated_value(ctx, f)

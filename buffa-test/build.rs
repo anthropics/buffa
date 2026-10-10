@@ -848,12 +848,18 @@ fn main() {
     // `-D warnings`. `generate_arbitrary` adds the `Arbitrary` impls, which
     // only a build with the `arbitrary` feature compiles. One field takes its
     // `#[deprecated]` from `field_attribute`, which marks and guards the same
-    // items as the option.
+    // items as the option. `HandMarkedGroup.body` takes one from
+    // `oneof_struct_field_attribute`, which guards the impls that visit the
+    // oneof's struct field.
     let mut deprecated = buffa_build::Config::new()
         .files(&["protos/deprecated.proto"])
         .includes(&["protos/"])
         .field_attribute(
             ".deprecated.LegacyProfile.hand_marked",
+            "#[deprecated(note = \"marked in build.rs\")]",
+        )
+        .oneof_struct_field_attribute(
+            ".deprecated.HandMarkedGroup.body",
             "#[deprecated(note = \"marked in build.rs\")]",
         )
         .generate_views(true)
@@ -887,6 +893,28 @@ fn main() {
         .generate_arbitrary(true)
         .compile()
         .expect("buffa_build failed for deprecated_proto2.proto");
+
+    // `oneof_struct_field_attribute` — a `Serialize` that the caller derives,
+    // with `generate_json` off. `UnknownFields` does not implement
+    // `Serialize`, so the derive needs unknown-field preservation off.
+    buffa_build::Config::new()
+        .files(&["protos/oneof_struct_field_attr.proto"])
+        .includes(&["protos/"])
+        .preserve_unknown_fields(false)
+        .message_attribute(
+            ".oneof_struct_field_attr.Event",
+            "#[derive(serde::Serialize)]",
+        )
+        .oneof_attribute(
+            ".oneof_struct_field_attr.Event.payload",
+            "#[derive(serde::Serialize)]",
+        )
+        .oneof_struct_field_attribute(
+            ".oneof_struct_field_attr.Event.payload",
+            "#[serde(skip_serializing_if = \"Option::is_none\")]",
+        )
+        .compile()
+        .expect("buffa_build failed for oneof_struct_field_attr.proto");
 
     // `skip_debug` — the hand-written `Debug` impls in `src/lib.rs` compile
     // only if the generated ones are omitted. Views enabled so the view of a
