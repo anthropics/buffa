@@ -1,0 +1,3 @@
+kind: Added
+body: StringValue and BytesValue implement AsMut for in-place access to their string and byte payloads.
+time: 2026-10-07T14:00:58.943571+02:00
