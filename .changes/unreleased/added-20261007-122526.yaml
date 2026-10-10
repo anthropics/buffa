@@ -1,0 +1,3 @@
+kind: Added
+body: ListValue supports mutable iteration through iter_mut() and IntoIterator for &mut ListValue.
+time: 2026-10-07T12:25:26.951272+02:00

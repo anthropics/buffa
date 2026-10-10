@@ -213,6 +213,12 @@ impl ListValue {
     pub fn iter(&self) -> core::slice::Iter<'_, Value> {
         self.values.iter()
     }
+
+    /// Returns an iterator over mutable references to the values in the list.
+    #[inline]
+    pub fn iter_mut(&mut self) -> core::slice::IterMut<'_, Value> {
+        self.values.iter_mut()
+    }
 }
 
 impl<'a> IntoIterator for &'a ListValue {
@@ -221,6 +227,15 @@ impl<'a> IntoIterator for &'a ListValue {
 
     fn into_iter(self) -> Self::IntoIter {
         self.values.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut ListValue {
+    type Item = &'a mut Value;
+    type IntoIter = core::slice::IterMut<'a, Value>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter_mut()
     }
 }
 
@@ -579,6 +594,44 @@ mod tests {
         let l = ListValue::from_values(["a", "b"]);
         let strs: Vec<&str> = (&l).into_iter().map(|v| v.as_str().unwrap()).collect();
         assert_eq!(strs, ["a", "b"]);
+    }
+
+    #[test]
+    fn list_value_iter_mut() {
+        let mut list = ListValue::from_values([1.0_f64, 2.0, 3.0]);
+        let mut iter = list.iter_mut();
+        assert_eq!(iter.len(), 3);
+        *iter.next().unwrap() = Value::from(10.0_f64);
+        *iter.next_back().unwrap() = Value::null();
+        assert_eq!(iter.len(), 1);
+        *iter.next().unwrap() = Value::from("middle");
+        assert!(iter.next().is_none());
+        assert!(iter.next_back().is_none());
+        assert_eq!(
+            list.values,
+            [Value::from(10.0_f64), Value::from("middle"), Value::null()]
+        );
+    }
+
+    #[test]
+    fn list_value_mut_ref_into_iter() {
+        let mut list = ListValue::from_values([false, true]);
+        for value in &mut list {
+            *value = Value::from(!value.as_bool().unwrap());
+        }
+        assert_eq!(list.values, [Value::from(true), Value::from(false)]);
+    }
+
+    #[test]
+    fn list_value_empty_mutable_iteration() {
+        let mut list = ListValue::default();
+        assert_eq!(list.iter_mut().len(), 0);
+        assert!(list.iter_mut().next().is_none());
+        let mut iter = (&mut list).into_iter();
+        assert_eq!(iter.len(), 0);
+        assert!(iter.next_back().is_none());
+        assert!(iter.next().is_none());
+        assert!(list.is_empty());
     }
 
     #[test]
