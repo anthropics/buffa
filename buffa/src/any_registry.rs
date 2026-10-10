@@ -28,8 +28,8 @@ use hashbrown::HashMap;
 pub struct JsonAnyEntry {
     /// The full type URL (e.g. `"type.googleapis.com/google.protobuf.Duration"`).
     ///
-    /// A URL with no `/` carries no message name, and is found only by an
-    /// exact match.
+    /// The message full name is the text after the last `/`, or the whole
+    /// string when it has no `/`.
     pub type_url: &'static str,
 
     /// Serialize: binary `Any.value` bytes → JSON representation of the
@@ -90,7 +90,8 @@ impl AnyRegistry {
     /// another prefix that does not decode as it fails to serialize as JSON;
     /// one that does decode is written with this message's fields.
     pub fn register(&mut self, entry: JsonAnyEntry) {
-        if let Some(type_name) = crate::type_registry::any_type_name(entry.type_url) {
+        let type_name = message_name(entry.type_url);
+        if !type_name.is_empty() {
             self.by_type_name.insert(type_name, entry.type_url);
         }
         self.entries.insert(entry.type_url.to_owned(), entry);
@@ -102,7 +103,9 @@ impl AnyRegistry {
     /// message full name after its last `/`, because `google.protobuf.Any`
     /// identifies the message by that name and leaves the prefix to the
     /// application. `custom.example/v1/pkg.Message` therefore finds a type
-    /// registered as `type.googleapis.com/pkg.Message`.
+    /// registered as `type.googleapis.com/pkg.Message`. A string without a
+    /// `/` is matched as a bare full name, so `pkg.Message` finds that type
+    /// too.
     ///
     /// The entry's `type_url` is the registered one. Keep the URL you looked
     /// up as the `Any`'s `type_url`.
@@ -111,10 +114,18 @@ impl AnyRegistry {
             return Some(entry);
         }
 
-        let type_name = crate::type_registry::any_type_name(type_url)?;
-        let registered_url = *self.by_type_name.get(type_name)?;
+        let registered_url = *self.by_type_name.get(message_name(type_url))?;
         self.entries.get(registered_url)
     }
+}
+
+/// Returns the message full name in a type URL: the text after its last `/`,
+/// or the whole string when it has no `/`. Empty when the URL names no
+/// message.
+fn message_name(type_url: &str) -> &str {
+    type_url
+        .rsplit_once('/')
+        .map_or(type_url, |(_, type_name)| type_name)
 }
 
 impl core::fmt::Debug for AnyRegistry {
@@ -230,8 +241,19 @@ mod tests {
         let other = registry.lookup("other.example/v1/test.Message").unwrap();
         assert_eq!(other.type_url, "second.example/test.Message");
 
-        // A URL with no `/`, or with nothing after it, carries no name.
-        assert!(registry.lookup("test.Message").is_none());
+        // A string with no `/` is a bare full name.
+        let bare = registry.lookup("test.Message").unwrap();
+        assert_eq!(bare.type_url, "second.example/test.Message");
+
+        // An entry registered under a bare name is found under a prefix too.
+        registry.register(entry!("test.Bare", false));
+        let prefixed = registry.lookup("other.example/test.Bare").unwrap();
+        assert_eq!(prefixed.type_url, "test.Bare");
+
+        // A name no entry was registered for, an empty string, and a URL with
+        // nothing after its last `/` find no entry.
+        assert!(registry.lookup("test.Other").is_none());
+        assert!(registry.lookup("").is_none());
         assert!(registry.lookup("other.example/").is_none());
     }
 

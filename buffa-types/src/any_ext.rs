@@ -47,8 +47,8 @@ impl Any {
     /// [`MessageName::TYPE_URL`](buffa::MessageName::TYPE_URL).
     ///
     /// [`unpack_message`](Self::unpack_message) finds the result only if
-    /// `TYPE_URL` ends in `/` followed by
-    /// [`FULL_NAME`](buffa::MessageName::FULL_NAME), as it does in every
+    /// the [type name](Self::type_name) in `TYPE_URL` is
+    /// [`FULL_NAME`](buffa::MessageName::FULL_NAME), as it is in every
     /// generated impl. Use [`pack`](Self::pack) to store a URL with a
     /// different prefix, or to pack a hand-written
     /// [`Message`](buffa::Message) that does not implement
@@ -164,17 +164,22 @@ impl Any {
         self.type_url == type_url
     }
 
-    /// Returns the type name in the type URL of this [`Any`]: the text after
-    /// the last `/`.
+    /// Returns the type name in the `type_url` of this [`Any`]: the text
+    /// after the last `/`, or the whole `type_url` when it has no `/`.
     ///
     /// For an [`Any`] packed by [`pack_message`](Self::pack_message), the
     /// type name is the message's
     /// [`MessageName::FULL_NAME`](buffa::MessageName::FULL_NAME). The text is
-    /// not checked to be a valid message name. The JSON and text registries
-    /// find a message by this name when its exact URL is not registered.
+    /// not checked to be a valid message name. The JSON registry finds a
+    /// message by this name when its exact URL is not registered. The text
+    /// registry does the same only for a `type_url` that contains a `/`.
     ///
-    /// Returns `None` when the URL has no `/`, or when the text after the
-    /// last `/` is empty.
+    /// `any.proto` requires a `/` in a type URL. A `type_url` without one is
+    /// read as a bare full name, as protobuf-go and Python read it; C++ and
+    /// Java do not match such an [`Any`] to a message.
+    ///
+    /// Returns `None` when the `type_url` is empty, or when the text after
+    /// its last `/` is empty.
     ///
     /// To test for one generated type, use [`is_message`](Self::is_message).
     /// For a name that is known only at run time, compare the result:
@@ -193,7 +198,7 @@ impl Any {
     ///         Some(Timestamp::FULL_NAME) => "a timestamp",
     ///         Some(Duration::FULL_NAME) => "a duration",
     ///         Some(_) => "another message",
-    ///         None => "not a type URL",
+    ///         None => "no type name",
     ///     }
     /// }
     ///
@@ -202,20 +207,27 @@ impl Any {
     /// assert_eq!(describe(&any), "a duration");
     ///
     /// let no_slash = Any::pack(&Duration::default(), "google.protobuf.Duration");
-    /// assert_eq!(no_slash.type_name(), None);
-    /// assert_eq!(describe(&no_slash), "not a type URL");
+    /// assert_eq!(no_slash.type_name(), Some("google.protobuf.Duration"));
+    ///
+    /// let no_name = Any::pack(&Duration::default(), "example.com/v1/");
+    /// assert_eq!(no_name.type_name(), None);
+    /// assert_eq!(describe(&no_name), "no type name");
     /// ```
     pub fn type_name(&self) -> Option<&str> {
-        let (_, type_name) = self.type_url.rsplit_once('/')?;
+        let type_url = self.type_url.as_str();
+        let type_name = type_url
+            .rsplit_once('/')
+            .map_or(type_url, |(_, type_name)| type_name);
         (!type_name.is_empty()).then_some(type_name)
     }
 
     /// Returns `true` if the type URL of this [`Any`] identifies `T` under
-    /// any prefix: the name after the last `/` is the
+    /// any prefix: its [`type_name`](Self::type_name) is the
     /// [`MessageName::FULL_NAME`](buffa::MessageName::FULL_NAME) of `T`.
     ///
-    /// The prefix is not compared. Returns `false` when
-    /// [`type_name`](Self::type_name) is `None`.
+    /// The prefix is not compared, and a URL that is only the full name
+    /// matches too. Returns `false` when [`type_name`](Self::type_name) is
+    /// `None`.
     pub fn is_message<T: buffa::MessageName>(&self) -> bool {
         self.type_name() == Some(<T as buffa::MessageName>::FULL_NAME)
     }
@@ -513,14 +525,23 @@ impl<'de> serde::Deserialize<'de> for Any {
             }
         };
 
-        // The type URL must be non-empty, contain a '/', and have a non-empty
-        // fully-qualified type name after the final slash (e.g.
-        // "type.googleapis.com/google.protobuf.Duration").
-        let type_name = type_url.rsplit('/').next().unwrap_or("");
-        if type_url.is_empty() || !type_url.contains('/') || type_name.is_empty() {
-            return Err(serde::de::Error::custom(
-                "@type must be a valid type URL containing a '/' and a non-empty type name (e.g. type.googleapis.com/pkg.Type)",
-            ));
+        // A type URL has a non-empty fully-qualified type name after its
+        // final slash (e.g. "type.googleapis.com/google.protobuf.Duration").
+        // A string with no slash is a bare type name, which is read only when
+        // the registry resolves it (below) and the parse options allow it.
+        let (bare_name, type_name) = match type_url.rsplit_once('/') {
+            Some((_, type_name)) => (false, type_name),
+            None => (true, type_url.as_str()),
+        };
+        if type_name.is_empty() {
+            return Err(serde::de::Error::custom(alloc::format!(
+                "@type {type_url:?} is not a valid type URL: it names no type (e.g. type.googleapis.com/pkg.Type)"
+            )));
+        }
+        if bare_name && buffa::__private::strict_any_type_urls() {
+            return Err(serde::de::Error::custom(alloc::format!(
+                "@type {type_url:?} must contain a '/' (e.g. type.googleapis.com/pkg.Type)"
+            )));
         }
 
         let (registry_installed, lookup) = buffa::any_registry::with_any_registry(|reg| {
@@ -540,6 +561,19 @@ impl<'de> serde::Deserialize<'de> for Any {
             Some((from_json, false)) => {
                 let json_obj = serde_json::Value::Object(obj);
                 from_json(json_obj).map_err(serde::de::Error::custom)?
+            }
+            // The opaque form below is for a type URL. An unresolved bare
+            // name is as likely to be a mistyped value as a message name.
+            None if bare_name => {
+                return Err(if registry_installed {
+                    serde::de::Error::custom(alloc::format!(
+                        "Any: @type {type_url:?} has no '/', and the message it names has no JSON entry in the type registry; register the message (generated `register_types` or `TypeRegistry::register_json_any`), or send a type URL (e.g. type.googleapis.com/pkg.Type)"
+                    ))
+                } else {
+                    serde::de::Error::custom(alloc::format!(
+                        "Any: no type registry is installed to resolve @type {type_url:?}, which has no '/'; install one that registers the message with `set_type_registry`, or send a type URL (e.g. type.googleapis.com/pkg.Type)"
+                    ))
+                });
             }
             None => {
                 // The type has no JSON entry, so the message's own JSON cannot
@@ -812,10 +846,26 @@ mod tests {
 
     #[test]
     fn type_name_is_none_without_a_non_empty_final_segment() {
-        for type_url in ["", "/", "google.protobuf.Timestamp", "custom.example/v1/"] {
+        for type_url in ["", "/", "custom.example/v1/"] {
             let any = Any::pack(&Timestamp::default(), type_url);
             assert_eq!(any.type_name(), None, "{type_url:?}");
         }
+    }
+
+    #[test]
+    fn a_url_without_a_slash_is_a_bare_type_name() {
+        use crate::google::protobuf::Duration;
+
+        let timestamp = Timestamp {
+            seconds: 7,
+            ..Default::default()
+        };
+        let any = Any::pack(&timestamp, "google.protobuf.Timestamp");
+        assert_eq!(any.type_name(), Some("google.protobuf.Timestamp"));
+        assert!(any.is_message::<Timestamp>());
+        assert!(!any.is_message::<Duration>());
+        assert_eq!(any.unpack_message::<Timestamp>().unwrap(), Some(timestamp));
+        assert_eq!(any.unpack_message::<Duration>().unwrap(), None);
     }
 
     #[test]
@@ -872,7 +922,7 @@ mod tests {
         assert!(!any.is_message::<Duration>());
         assert_eq!(any.unpack_message::<Duration>().unwrap(), None);
 
-        for type_url in ["google.protobuf.Timestamp", "custom.example/v1/"] {
+        for type_url in ["", "custom.example/v1/"] {
             let malformed = Any::pack(&Timestamp::default(), type_url);
             assert!(!malformed.is_message::<Timestamp>(), "{type_url}");
             assert_eq!(
@@ -1493,17 +1543,113 @@ mod tests {
         }
 
         #[test]
-        fn deserialize_rejects_empty_type_url() {
-            let json = r#"{"@type": "", "value": ""}"#;
-            let err = serde_json::from_str::<Any>(json).unwrap_err();
-            assert!(err.to_string().contains("valid type URL"), "{err}");
+        fn deserialize_rejects_a_type_url_that_names_no_type() {
+            for type_url in ["", "/", "type.googleapis.com/"] {
+                let json = serde_json::json!({"@type": type_url, "value": ""}).to_string();
+                for err in [
+                    with_registry(|| serde_json::from_str::<Any>(&json).unwrap_err()),
+                    without_registry(|| serde_json::from_str::<Any>(&json).unwrap_err()),
+                ] {
+                    assert!(err.to_string().contains("names no type"), "{json}: {err}");
+                }
+            }
         }
 
         #[test]
-        fn deserialize_rejects_type_url_without_slash() {
-            let json = r#"{"@type": "not_a_url", "value": ""}"#;
-            let err = serde_json::from_str::<Any>(json).unwrap_err();
-            assert!(err.to_string().contains("valid type URL"), "{err}");
+        fn registered_any_accepts_a_bare_type_name() {
+            with_registry(|| {
+                let json = r#"{"@type":"google.protobuf.Duration","value":"1.500s"}"#;
+                let any: Any = serde_json::from_str(json).unwrap();
+                assert_eq!(any.type_url, "google.protobuf.Duration");
+                assert_eq!(
+                    any.unpack_message::<Duration>().unwrap(),
+                    Some(Duration::from_secs_nanos(1, 500_000_000))
+                );
+                // The serializer resolves the bare name too, so the expanded
+                // form round-trips.
+                assert_eq!(serde_json::to_string(&any).unwrap(), json);
+            });
+        }
+
+        #[test]
+        fn deserialize_rejects_an_unregistered_bare_type_name() {
+            // The opaque base64 form is read for a type URL only. The second
+            // input is the conformance suite's
+            // `AnyWktRepresentationWithBadType`.
+            for json in [
+                r#"{"@type": "unknown.Type", "value": "CAI="}"#,
+                r#"{"@type": "not_a_url", "value": ""}"#,
+            ] {
+                let err = with_registry(|| serde_json::from_str::<Any>(json).unwrap_err());
+                assert!(
+                    err.to_string()
+                        .contains("has no JSON entry in the type registry"),
+                    "{json}: {err}"
+                );
+                let err = without_registry(|| serde_json::from_str::<Any>(json).unwrap_err());
+                assert!(
+                    err.to_string().contains("no type registry is installed"),
+                    "{json}: {err}"
+                );
+            }
+        }
+
+        #[test]
+        fn nested_any_accepts_a_bare_type_name() {
+            with_registry(|| {
+                for outer in [
+                    "type.googleapis.com/google.protobuf.Any",
+                    "google.protobuf.Any",
+                ] {
+                    let json = alloc::format!(
+                        r#"{{"@type":"{outer}","value":{{"@type":"google.protobuf.Duration","value":"1.500s"}}}}"#
+                    );
+                    let any: Any = serde_json::from_str(&json).unwrap();
+                    let inner: Any = any.unpack_message().unwrap().unwrap();
+                    assert_eq!(inner.type_url, "google.protobuf.Duration");
+                    assert_eq!(serde_json::to_string(&any).unwrap(), json);
+                }
+            });
+        }
+
+        #[test]
+        fn serialize_writes_an_unregistered_bare_type_name_as_base64() {
+            // The parser rejects this output: an `Any` whose bare name has no
+            // JSON entry does not round-trip through JSON.
+            let any = Any {
+                type_url: "unknown.Type".into(),
+                value: vec![0x08, 0x02].into(),
+                ..Default::default()
+            };
+            with_registry(|| {
+                let json = serde_json::to_string(&any).unwrap();
+                assert_eq!(json, r#"{"@type":"unknown.Type","value":"CAI="}"#);
+                assert!(serde_json::from_str::<Any>(&json).is_err());
+            });
+        }
+
+        #[cfg(feature = "std")]
+        #[test]
+        fn strict_any_type_urls_rejects_a_bare_type_name() {
+            use buffa::json::{with_json_parse_options, JsonParseOptions};
+
+            let strict = JsonParseOptions::new().strict_any_type_urls(true);
+            with_registry(|| {
+                with_json_parse_options(&strict, || {
+                    let bare = r#"{"@type":"google.protobuf.Duration","value":"1.500s"}"#;
+                    let err = serde_json::from_str::<Any>(bare).unwrap_err();
+                    assert!(err.to_string().contains("must contain a '/'"), "{err}");
+
+                    // The option covers an `Any` nested in an `Any`.
+                    let nested = r#"{"@type":"x/google.protobuf.Any","value":{"@type":"google.protobuf.Duration","value":"1.500s"}}"#;
+                    let err = serde_json::from_str::<Any>(nested).unwrap_err();
+                    assert!(err.to_string().contains("must contain a '/'"), "{err}");
+
+                    let url = r#"{"@type":"x/google.protobuf.Duration","value":"1.500s"}"#;
+                    let any: Any = serde_json::from_str(url).unwrap();
+                    assert_eq!(any.type_url, "x/google.protobuf.Duration");
+                });
+            });
         }
 
         #[test]
@@ -1531,15 +1677,6 @@ mod tests {
                 assert_eq!(decoded.type_url, type_url);
                 let decoded_duration: Duration = decoded.unpack_unchecked().unwrap();
                 assert_eq!(decoded_duration, duration);
-            });
-        }
-
-        #[test]
-        fn deserialize_rejects_type_url_with_empty_type_name() {
-            without_registry(|| {
-                let json = r#"{"@type": "type.googleapis.com/", "value": ""}"#;
-                let err = serde_json::from_str::<Any>(json).unwrap_err();
-                assert!(err.to_string().contains("valid type URL"), "{err}");
             });
         }
 
@@ -1670,6 +1807,57 @@ mod tests {
                 // Verify the from_json encoded it back to wire bytes.
                 assert_eq!(any.value, vec![0x08, 99]);
             });
+        }
+
+        #[test]
+        fn non_wkt_accepts_a_bare_type_name() {
+            with_user_type_registry(|| {
+                let json = r#"{"@type":"user.Thing","id":99}"#;
+                let any: Any = serde_json::from_str(json).unwrap();
+                assert_eq!(any.type_url, "user.Thing");
+                assert_eq!(any.value, vec![0x08, 99]);
+                assert_eq!(serde_json::to_string(&any).unwrap(), json);
+            });
+        }
+
+        #[test]
+        fn an_entry_registered_under_a_bare_name_is_found_under_any_prefix() {
+            use buffa::type_registry::JsonAnyEntry;
+
+            let _guard = REGISTRY_LOCK.lock().unwrap();
+            let mut reg = TypeRegistry::new();
+            reg.register_json_any(JsonAnyEntry {
+                type_url: "user.Bare",
+                to_json: user_type_to_json,
+                from_json: user_type_from_json,
+                is_wkt: false,
+            });
+            set_type_registry(reg);
+
+            for type_url in ["user.Bare", "x/user.Bare"] {
+                let json = alloc::format!(r#"{{"@type":"{type_url}","id":1}}"#);
+                let any: Any = serde_json::from_str(&json).unwrap();
+                assert_eq!(any.type_url, type_url);
+                assert_eq!(any.value, vec![0x08, 1]);
+            }
+
+            // The strict option rejects the bare form of an exact registration too.
+            #[cfg(feature = "std")]
+            {
+                use buffa::json::{with_json_parse_options, JsonParseOptions};
+                let strict = JsonParseOptions::new().strict_any_type_urls(true);
+                with_json_parse_options(&strict, || {
+                    assert!(
+                        serde_json::from_str::<Any>(r#"{"@type":"user.Bare","id":1}"#).is_err()
+                    );
+                    assert!(
+                        serde_json::from_str::<Any>(r#"{"@type":"x/user.Bare","id":1}"#).is_ok()
+                    );
+                });
+            }
+
+            clear_any_registry();
+            clear_text_registry();
         }
 
         #[test]

@@ -556,7 +556,7 @@ impl DynamicMessage {
 pub struct DynamicMessageSeed {
     pool: Arc<DescriptorPool>,
     msg_idx: MessageIndex,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     element_memory_limit: usize,
 }
 
@@ -567,7 +567,7 @@ impl DynamicMessageSeed {
         Self {
             pool,
             msg_idx,
-            ignore_unknown: false,
+            flags: ParseFlags::default(),
             element_memory_limit: buffa::DEFAULT_ELEMENT_MEMORY_LIMIT,
         }
     }
@@ -583,7 +583,25 @@ impl DynamicMessageSeed {
     /// [element-memory limit](Self::with_element_memory_limit).
     #[must_use]
     pub fn ignore_unknown_fields(mut self, ignore: bool) -> Self {
-        self.ignore_unknown = ignore;
+        self.flags.ignore_unknown = ignore;
+        self
+    }
+
+    /// Require a `/` in the `@type` of a `google.protobuf.Any` (default:
+    /// accept a bare full name too).
+    ///
+    /// By default `"@type": "my.pkg.Request"` resolves like
+    /// `"@type": "type.googleapis.com/my.pkg.Request"`, as it does in
+    /// protobuf-go and Python. With this set, an `@type` without a `/` is a
+    /// parse error, as it is in C++ and Java; `any.proto` says that a type
+    /// URL contains at least one `/`. The setting propagates to every nested
+    /// `Any`, including one inside another `Any`'s payload.
+    ///
+    /// The setting covers parsing only: [`DynamicMessage::to_json`] and
+    /// [`DynamicMessage::unpack_any`] resolve a bare full name.
+    #[must_use]
+    pub fn strict_any_type_urls(mut self, strict: bool) -> Self {
+        self.flags.strict_any_type_urls = strict;
         self
     }
 
@@ -706,11 +724,21 @@ impl<'de> DeserializeSeed<'de> for DynamicMessageSeed {
         NestedSeed {
             pool: self.pool,
             msg_idx: self.msg_idx,
-            ignore_unknown: self.ignore_unknown,
+            flags: self.flags,
             budget: &budget,
         }
         .deserialize(d)
     }
+}
+
+/// The parse options that [`DynamicMessageSeed`] sets and every nested seed
+/// carries.
+#[derive(Clone, Copy, Default)]
+struct ParseFlags {
+    /// Discard unknown fields instead of erroring.
+    ignore_unknown: bool,
+    /// Reject an `Any` `@type` that has no `/`.
+    strict_any_type_urls: bool,
 }
 
 /// The internal twin of [`DynamicMessageSeed`] that borrows the parse's
@@ -722,7 +750,7 @@ impl<'de> DeserializeSeed<'de> for DynamicMessageSeed {
 struct NestedSeed<'a> {
     pool: Arc<DescriptorPool>,
     msg_idx: MessageIndex,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -732,18 +760,12 @@ impl<'de> DeserializeSeed<'de> for NestedSeed<'_> {
     fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
         let md = self.pool.message(self.msg_idx);
         if let Some(wkt) = WktKind::from_full_name(&md.full_name) {
-            return wkt.deserialize_message(
-                self.pool,
-                self.msg_idx,
-                d,
-                self.ignore_unknown,
-                self.budget,
-            );
+            return wkt.deserialize_message(self.pool, self.msg_idx, d, self.flags, self.budget);
         }
         d.deserialize_map(MessageVisitor {
             pool: self.pool,
             msg_idx: self.msg_idx,
-            ignore_unknown: self.ignore_unknown,
+            flags: self.flags,
             budget: self.budget,
         })
     }
@@ -752,7 +774,7 @@ impl<'de> DeserializeSeed<'de> for NestedSeed<'_> {
 struct MessageVisitor<'a> {
     pool: Arc<DescriptorPool>,
     msg_idx: MessageIndex,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -814,7 +836,7 @@ impl<'de> Visitor<'de> for MessageVisitor<'_> {
                 // lenient mode. There is no descriptor to deduplicate
                 // against, and the spec's no-duplicates rule is in terms
                 // of fields, not arbitrary keys.
-                if self.ignore_unknown {
+                if self.flags.ignore_unknown {
                     map.next_value::<de::IgnoredAny>()?;
                     continue;
                 }
@@ -842,7 +864,7 @@ impl<'de> Visitor<'de> for MessageVisitor<'_> {
                 pool: &self.pool,
                 kind,
                 enum_type,
-                ignore_unknown: self.ignore_unknown,
+                flags: self.flags,
                 budget: self.budget,
             })?;
             // null → leave the field unset (per spec, except NullValue which
@@ -904,7 +926,7 @@ struct FieldSeed<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: FieldKind,
     enum_type: Option<EnumType>,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -920,7 +942,7 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
                 pool: self.pool,
                 kind: sk,
                 enum_type: self.enum_type,
-                ignore_unknown: self.ignore_unknown,
+                flags: self.flags,
                 budget: self.budget,
             }
             .deserialize(d),
@@ -928,7 +950,7 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
                 pool: self.pool,
                 kind: sk,
                 enum_type: self.enum_type,
-                ignore_unknown: self.ignore_unknown,
+                flags: self.flags,
                 budget: self.budget,
             }),
             FieldKind::Map { key, value } => d.deserialize_any(MapFieldVisitor {
@@ -936,7 +958,7 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
                 key,
                 value,
                 enum_type: self.enum_type,
-                ignore_unknown: self.ignore_unknown,
+                flags: self.flags,
                 budget: self.budget,
             }),
         }
@@ -947,7 +969,7 @@ struct SingularSeed<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: SingularKind,
     enum_type: Option<EnumType>,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -966,7 +988,7 @@ impl<'de> DeserializeSeed<'de> for SingularSeed<'_> {
                     return NestedSeed {
                         pool: Arc::clone(self.pool),
                         msg_idx: midx,
-                        ignore_unknown: self.ignore_unknown,
+                        flags: self.flags,
                         budget: self.budget,
                     }
                     .deserialize(d)
@@ -976,7 +998,7 @@ impl<'de> DeserializeSeed<'de> for SingularSeed<'_> {
                 d.deserialize_option(NestedMessageVisitor {
                     pool: self.pool,
                     midx,
-                    ignore_unknown: self.ignore_unknown,
+                    flags: self.flags,
                     budget: self.budget,
                 })
             }
@@ -1011,7 +1033,7 @@ fn deserialize_optional_scalar<'de, D: Deserializer<'de>>(
 struct NestedMessageVisitor<'a> {
     pool: &'a Arc<DescriptorPool>,
     midx: MessageIndex,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -1034,7 +1056,7 @@ impl<'de> Visitor<'de> for NestedMessageVisitor<'_> {
         NestedSeed {
             pool: Arc::clone(self.pool),
             msg_idx: self.midx,
-            ignore_unknown: self.ignore_unknown,
+            flags: self.flags,
             budget: self.budget,
         }
         .deserialize(d)
@@ -1238,7 +1260,7 @@ struct ListVisitor<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: SingularKind,
     enum_type: Option<EnumType>,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -1256,7 +1278,7 @@ impl<'de> Visitor<'de> for ListVisitor<'_> {
             pool: self.pool,
             kind: self.kind,
             enum_type: self.enum_type,
-            ignore_unknown: self.ignore_unknown,
+            flags: self.flags,
             budget: self.budget,
         })? {
             // Per the spec, repeated fields cannot contain null elements.
@@ -1276,7 +1298,7 @@ struct MapFieldVisitor<'a> {
     key: ScalarType,
     value: SingularKind,
     enum_type: Option<EnumType>,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -1298,7 +1320,7 @@ impl<'de> Visitor<'de> for MapFieldVisitor<'_> {
                 pool: self.pool,
                 kind: self.value,
                 enum_type: self.enum_type,
-                ignore_unknown: self.ignore_unknown,
+                flags: self.flags,
                 budget: self.budget,
             })?;
             let v = v.ok_or_else(|| de::Error::custom("null value in map field"))?;
