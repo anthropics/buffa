@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`buffa-remote-derive`: a constant or const generic named `iter`, `v`, `s`, `payload`, `value`, `key` or `u` no longer breaks the derives** (#652). The generated methods bound parameters with those names, and an identifier pattern that names a constant in scope is a constant pattern, so `#[derive(ProtoList)]` on `struct L<T, const iter: usize>(Vec<T>)`, or any derive beside a `const v: u8`, failed with E0308 inside the derive. A static, unit struct or tuple struct with one of those names failed the same way. Every name the generated impls bind now starts with `__buffa_`, like the derives' other generated names. A one-segment override path such as `new = value` or `insert = key` now calls the function of that name instead of resolving to a generated parameter.
+time: 2026-10-10T17:56:01.000000Z

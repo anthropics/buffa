@@ -26,8 +26,9 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let as_bytes =
         remote_field::qualified_call(field_ty, quote! { ::core::convert::AsRef<[u8]> }, "as_ref");
 
-    let ctor_from_vec = remote.construct(quote! { #from_vec(v) });
-    let ctor_from_wire = remote.construct(quote! { #from_vec(payload.as_slice().to_vec()) });
+    let ctor_from_vec = remote.construct(quote! { #from_vec(__buffa_vec) });
+    let ctor_from_wire =
+        remote.construct(quote! { #from_vec(__buffa_payload.as_slice().to_vec()) });
 
     // Unlike the `ProtoBox`/`MapStorage` overrides there is no conventional
     // method name to default to: absent the key, nothing is generated and
@@ -69,7 +70,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
 
         impl #impl_generics ::core::convert::From<::buffa::alloc::vec::Vec<u8>> for #ident #ty_generics #where_clause {
             #[inline]
-            fn from(v: ::buffa::alloc::vec::Vec<u8>) -> Self {
+            fn from(__buffa_vec: ::buffa::alloc::vec::Vec<u8>) -> Self {
                 #ctor_from_vec
             }
         }
@@ -77,7 +78,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         impl #impl_generics ::buffa::ProtoBytes for #ident #ty_generics #where_clause {
             #[inline]
             fn from_wire(
-                payload: ::buffa::WirePayload<'_>,
+                __buffa_payload: ::buffa::WirePayload<'_>,
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
                 ::core::result::Result::Ok(#ctor_from_wire)
             }

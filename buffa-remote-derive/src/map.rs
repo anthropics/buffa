@@ -54,8 +54,8 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
             }
 
             #[inline]
-            fn storage_insert(&mut self, key: #key_ty, value: #value_ty) {
-                #insert_call(&mut #accessor, key, value);
+            fn storage_insert(&mut self, __buffa_key: #key_ty, __buffa_value: #value_ty) {
+                #insert_call(&mut #accessor, __buffa_key, __buffa_value);
             }
 
             #[inline]
