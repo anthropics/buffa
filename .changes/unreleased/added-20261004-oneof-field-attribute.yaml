@@ -1,4 +1,4 @@
 kind: Added
 body: |-
-    **`Config::oneof_field_attribute` / `CodeGenConfig::oneof_field_attributes`** (#561) put a custom attribute on the message struct's field holding a oneof (the `Option<OneofEnum>` member), matched against the oneof's path (`.pkg.Message.oneof_name`). `field_attribute` never reached that field: on the oneof's path it matches only the variants, where an attribute such as `#[serde(skip_serializing_if = "...")]` is rejected. prost-build put such a `field_attribute` on the struct field as well.
+    **`Config::oneof_struct_field_attribute` / `CodeGenConfig::oneof_struct_field_attributes`** (#561) put a custom attribute on the message struct's field holding a oneof (the `Option<OneofEnum>` member), matched against the oneof's path (`.pkg.Message.oneof_name`). `field_attribute` never reached that field: on the oneof's path it matches only the variants, where an attribute such as `#[serde(skip_serializing_if = "...")]` is rejected. prost-build put such a `field_attribute` on the struct field as well.
 time: 2026-10-04T21:00:00.000000000+00:00

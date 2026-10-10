@@ -1813,8 +1813,9 @@ impl Config {
     ///
     /// Also applies to oneof variants when `path` matches
     /// `".pkg.Msg.my_oneof.variant_name"`, but not to the struct field holding
-    /// the oneof; use [`oneof_field_attribute`](Self::oneof_field_attribute)
-    /// for that.
+    /// the oneof; use
+    /// [`oneof_struct_field_attribute`](Self::oneof_struct_field_attribute) for
+    /// that.
     ///
     /// A `#[deprecated]` supplied here wins over the one codegen derives from
     /// the field's `[deprecated = true]` option — rustc permits only one
@@ -1935,7 +1936,7 @@ impl Config {
     /// segment; to target a single variant's field, append `.variant_name`
     /// and use [`field_attribute`](Self::field_attribute) instead, and for the
     /// message struct's field holding the oneof, use
-    /// [`oneof_field_attribute`](Self::oneof_field_attribute). A
+    /// [`oneof_struct_field_attribute`](Self::oneof_struct_field_attribute). A
     /// malformed attribute produces a compile-time error in the generated
     /// code. Useful when a oneof needs a different attribute set than the
     /// surrounding types — for example to keep `#[derive(serde::Serialize)]`
@@ -2002,7 +2003,7 @@ impl Config {
     /// buffa_build::Config::new()
     ///     .message_attribute(".my.pkg.MyMessage", "#[derive(serde::Serialize)]")
     ///     .oneof_attribute(".my.pkg.MyMessage.my_oneof", "#[derive(serde::Serialize)]")
-    ///     .oneof_field_attribute(
+    ///     .oneof_struct_field_attribute(
     ///         ".my.pkg.MyMessage.my_oneof",
     ///         "#[serde(skip_serializing_if = \"Option::is_none\")]",
     ///     )
@@ -2012,13 +2013,13 @@ impl Config {
     ///     .unwrap();
     /// ```
     #[must_use]
-    pub fn oneof_field_attribute(
+    pub fn oneof_struct_field_attribute(
         mut self,
         path: impl Into<String>,
         attribute: impl Into<String>,
     ) -> Self {
         self.codegen_config
-            .oneof_field_attributes
+            .oneof_struct_field_attributes
             .push((normalize_attr_path(path.into()), attribute.into()));
         self
     }
@@ -3764,10 +3765,11 @@ mod tests {
     }
 
     #[test]
-    fn oneof_field_attribute_forwards_normalized_path() {
-        let cfg = Config::new().oneof_field_attribute("my.pkg.Msg.payload.", "#[serde(skip)]");
+    fn oneof_struct_field_attribute_forwards_normalized_path() {
+        let cfg =
+            Config::new().oneof_struct_field_attribute("my.pkg.Msg.payload.", "#[serde(skip)]");
         assert_eq!(
-            cfg.codegen_config.oneof_field_attributes,
+            cfg.codegen_config.oneof_struct_field_attributes,
             vec![(
                 ".my.pkg.Msg.payload".to_string(),
                 "#[serde(skip)]".to_string()
@@ -3795,7 +3797,7 @@ mod tests {
         assert!(cfg.codegen_config.enum_attributes.is_empty());
         assert!(cfg.codegen_config.message_attributes.is_empty());
         assert!(cfg.codegen_config.field_attributes.is_empty());
-        assert!(cfg.codegen_config.oneof_field_attributes.is_empty());
+        assert!(cfg.codegen_config.oneof_struct_field_attributes.is_empty());
     }
 
     #[test]

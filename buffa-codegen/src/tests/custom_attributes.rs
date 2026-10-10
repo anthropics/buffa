@@ -411,14 +411,14 @@ fn test_oneof_attribute_on_oneof_not_message_or_enum() {
 }
 
 #[test]
-fn test_oneof_field_attribute_on_oneof_field_only() {
+fn test_oneof_struct_field_attribute_on_oneof_field_only() {
     let mut file = proto3_file("field.proto");
     file.package = Some("pkg".to_string());
     file.message_type
         .push(oneof_message("Msg", "payload", &["a", "b"]));
     let config = CodeGenConfig {
         generate_views: false,
-        oneof_field_attributes: vec![(
+        oneof_struct_field_attributes: vec![(
             ".pkg.Msg.payload".to_string(),
             "#[allow(clippy::pedantic)]".to_string(),
         )],
@@ -432,7 +432,7 @@ fn test_oneof_field_attribute_on_oneof_field_only() {
     assert_eq!(
         content.matches("allow(clippy::pedantic)").count(),
         1,
-        "oneof_field_attribute should appear only on the oneof field: {content}"
+        "oneof_struct_field_attribute should appear only on the oneof field: {content}"
     );
     let attr_pos = content.find("allow(clippy::pedantic)").expect("attr");
     let field_pos = content.find("pub payload:").expect("oneof field");
@@ -446,7 +446,7 @@ fn test_oneof_field_attribute_on_oneof_field_only() {
 /// on the owned struct's field next to buffa's own `serde(flatten)`, and the
 /// view struct's field stays bare.
 #[test]
-fn test_oneof_field_attribute_nested_with_json_and_views() {
+fn test_oneof_struct_field_attribute_nested_with_json_and_views() {
     let mut file = proto3_file("nested.proto");
     file.package = Some("pkg".to_string());
     file.message_type.push(DescriptorProto {
@@ -457,7 +457,7 @@ fn test_oneof_field_attribute_nested_with_json_and_views() {
     let config = CodeGenConfig {
         generate_views: true,
         generate_json: true,
-        oneof_field_attributes: vec![(
+        oneof_struct_field_attributes: vec![(
             ".pkg.Outer.Inner.payload".to_string(),
             "#[allow(clippy::pedantic)]".to_string(),
         )],

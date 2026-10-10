@@ -288,7 +288,7 @@ fn generate_message_with_nesting(
             .oneof_rename_note(oneof_name)
             .map(|note| quote! { #[doc = #note] });
         let custom_attrs = CodeGenContext::matching_attributes(
-            &ctx.config.oneof_field_attributes,
+            &ctx.config.oneof_struct_field_attributes,
             &format!("{proto_fqn}.{oneof_name}"),
         )?;
         let tokens = quote! {
