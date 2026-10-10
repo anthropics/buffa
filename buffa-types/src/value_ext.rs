@@ -278,6 +278,25 @@ impl Struct {
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.fields.get(key)
     }
+
+    /// Removes `key`, returning its value if present.
+    ///
+    /// The value is moved out without cloning. A missing key leaves the struct
+    /// unchanged.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::google::protobuf::Struct;
+    ///
+    /// let mut s = Struct::from_fields([("name", "Alice")]);
+    /// let value = s.remove("name").unwrap();
+    /// assert_eq!(value.as_str(), Some("Alice"));
+    /// assert!(s.get("name").is_none());
+    /// ```
+    pub fn remove(&mut self, key: &str) -> Option<Value> {
+        self.fields.remove(key)
+    }
 }
 
 impl FromIterator<(String, Value)> for Struct {
@@ -514,6 +533,50 @@ mod tests {
         s.insert("key", "value");
         assert_eq!(s.get("key").and_then(|v| v.as_str()), Some("value"));
         assert!(s.get("missing").is_none());
+    }
+
+    #[test]
+    fn struct_remove_returns_value_and_keeps_other_fields() {
+        let mut s = Struct::from_fields([("key", "value"), ("other", "unchanged")]);
+        let value = s.remove("key").unwrap();
+        assert_eq!(value.as_str(), Some("value"));
+        assert!(s.get("key").is_none());
+        assert_eq!(s.get("other").and_then(Value::as_str), Some("unchanged"));
+        assert_eq!(s.fields.len(), 1);
+        assert!(s.remove("key").is_none());
+    }
+
+    #[test]
+    fn struct_remove_missing_key_leaves_fields_unchanged() {
+        let mut s = Struct::new();
+        assert!(s.remove("missing").is_none());
+        assert!(s.fields.is_empty());
+        s.insert("present", true);
+        assert!(s.remove("missing").is_none());
+        assert_eq!(s.fields.len(), 1);
+        assert_eq!(s.get("present").and_then(Value::as_bool), Some(true));
+    }
+
+    #[test]
+    fn struct_remove_moves_nested_payload_without_cloning() {
+        let list = ListValue::from_values(["payload"]);
+        let payload = list.values.as_ptr();
+        let mut s = Struct::from_fields([("list", Value::from(list))]);
+        let removed = s.remove("list").unwrap();
+        let list = removed.as_list().unwrap();
+        assert_eq!(list.values.as_ptr(), payload);
+        assert_eq!(list.values[0].as_str(), Some("payload"));
+        assert!(s.fields.is_empty());
+    }
+
+    #[test]
+    fn struct_remove_accepts_empty_and_unicode_keys_and_null_values() {
+        let mut s = Struct::from_fields([("", Value::null()), ("名前", Value::null())]);
+        for key in ["", "名前"] {
+            assert!(s.remove(key).unwrap().is_null());
+            assert!(s.get(key).is_none());
+        }
+        assert!(s.fields.is_empty());
     }
 
     #[test]
