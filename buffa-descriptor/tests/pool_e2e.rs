@@ -5899,3 +5899,127 @@ mod message_field_defaults {
         }
     }
 }
+
+#[test]
+fn messageset_declared_fields_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet, MessageOptions,
+    };
+    for nested in [false, true] {
+        let message = DescriptorProto {
+            name: Some("Container".into()),
+            options: MessageOptions {
+                message_set_wire_format: Some(true),
+                ..Default::default()
+            }
+            .into(),
+            field: vec![scalar_field(
+                "value",
+                1,
+                buffa_descriptor::generated::descriptor::field_descriptor_proto::Type::TYPE_INT32,
+            )],
+            ..Default::default()
+        };
+        let (message, name) = if nested {
+            (
+                DescriptorProto {
+                    name: Some("Outer".into()),
+                    nested_type: vec![message],
+                    ..Default::default()
+                },
+                "invalid.test.Outer.Container",
+            )
+        } else {
+            (message, "invalid.test.Container")
+        };
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("messageset-fields.proto".into()),
+                package: Some("invalid.test".into()),
+                syntax: Some("proto2".into()),
+                message_type: vec![message],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let bytes = buffa::Message::encode_to_vec(&set);
+        for err in [
+            DescriptorPool::new(set.clone()).unwrap_err(),
+            DescriptorPool::decode(&bytes).unwrap_err(),
+        ] {
+            assert!(matches!(err, PoolError::MessageSetWithFields { message } if message == name));
+        }
+        assert_set_rejected_without_mutating_pool("messageset-fields.proto", name, set, |err| {
+            assert!(matches!(err, PoolError::MessageSetWithFields { message } if message == name));
+            assert_eq!(
+                err.to_string(),
+                format!("MessageSet {name} declares fields instead of extensions")
+            );
+        });
+    }
+}
+
+#[test]
+fn messageset_field_validation_preserves_valid_messages() {
+    use buffa_descriptor::generated::descriptor::{
+        descriptor_proto::ExtensionRange, field_descriptor_proto::Type, DescriptorProto,
+        FileDescriptorProto, FileDescriptorSet, MessageOptions,
+    };
+    for option in [None, Some(false), Some(true)] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("messageset-valid.proto".into()),
+                package: Some("valid.test".into()),
+                syntax: Some("proto2".into()),
+                message_type: vec![
+                    DescriptorProto {
+                        name: Some("Container".into()),
+                        options: MessageOptions {
+                            message_set_wire_format: option,
+                            ..Default::default()
+                        }
+                        .into(),
+                        field: if option == Some(true) {
+                            vec![]
+                        } else {
+                            vec![scalar_field("value", 1, Type::TYPE_INT32)]
+                        },
+                        extension_range: vec![ExtensionRange {
+                            start: Some(100),
+                            end: Some(200),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                    DescriptorProto {
+                        name: Some("Payload".into()),
+                        ..Default::default()
+                    },
+                ],
+                extension: vec![
+                    buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+                        extendee: Some(".valid.test.Container".into()),
+                        type_name: Some(".valid.test.Payload".into()),
+                        ..scalar_field("payload", 100, Type::TYPE_MESSAGE)
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let bytes = buffa::Message::encode_to_vec(&set);
+        for pool in [
+            DescriptorPool::new(set).unwrap(),
+            DescriptorPool::decode(&bytes).unwrap(),
+        ] {
+            assert_eq!(
+                pool.message_by_name("valid.test.Container")
+                    .unwrap()
+                    .fields()
+                    .len(),
+                usize::from(option != Some(true))
+            );
+            assert_eq!(pool.extensions().len(), 1);
+        }
+    }
+}
