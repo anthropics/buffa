@@ -1,6 +1,7 @@
 //! The write pass: [`write_to`] and its per-kind arms.
 
 use super::bridge::write_field_value;
+use super::map::write_map;
 use super::scalar::Sc;
 use super::{
     Bool, Double, Entry, Fixed32, Fixed64, Float, Int32, Int64, Kind, MessageTable, Sfixed32,
@@ -64,7 +65,15 @@ pub(super) unsafe fn write_message<K: EncodeSink>(
 ) {
     for e in table.entries {
         // SAFETY: the offset is within the message, per the table's contract.
-        unsafe { write_kind(table, e, base.add(e.offset as usize), cache, buf) };
+        let slot = unsafe { base.add(e.offset as usize) };
+        // SAFETY: `slot` is the field `e` describes.
+        unsafe {
+            if e.kind == Kind::Map {
+                write_map(table, e, slot, cache, buf);
+            } else {
+                write_kind(table, e, slot, cache, buf);
+            }
+        }
     }
     if table.unknown != NO_UNKNOWN {
         // SAFETY: `unknown` is the offset of the message's `UnknownFields`.
@@ -73,7 +82,7 @@ pub(super) unsafe fn write_message<K: EncodeSink>(
 }
 
 #[inline(always)]
-fn put_tag<K: EncodeSink>(e: &Entry, buf: &mut K) {
+pub(super) fn put_tag<K: EncodeSink>(e: &Entry, buf: &mut K) {
     if e.tag_len == 1 {
         buf.put_u8(e.tag as u8);
     } else {
@@ -83,6 +92,8 @@ fn put_tag<K: EncodeSink>(e: &Entry, buf: &mut K) {
 
 /// Defines `$fname`, the write of one field by kind, for the kinds listed, as
 /// `size_dispatch!` does.
+// The arm for a map is unreachable: `write_message` tests for a map before it
+// calls this. The reason is in the module documentation of `map.rs`.
 macro_rules! write_dispatch {
     ($fname:ident; $($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
         /// # Safety
@@ -90,7 +101,7 @@ macro_rules! write_dispatch {
         /// `slot` points to the field `e` describes, in a live message of the
         /// type `table` describes.
         #[inline]
-        unsafe fn $fname<K: EncodeSink>(
+        pub(super) unsafe fn $fname<K: EncodeSink>(
             table: &MessageTable,
             e: &Entry,
             slot: *const u8,
@@ -128,6 +139,9 @@ macro_rules! write_dispatch {
     // The members that follow the leader are written with it.
     (@arm Oneof $ty:ident ONEOF $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
         ()
+    };
+    (@arm Map $ty:ident $card:ident $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
+        unreachable!("a map field is written by `write_message`")
     };
 }
 

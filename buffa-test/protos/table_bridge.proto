@@ -56,6 +56,21 @@ message Wkt {
   Cold cold = 13;
 }
 
+// Maps whose values are table messages, a message that `brt` leaves unrolled,
+// and well-known types, which a table message reaches through its `Message`
+// impl. The maps are `BTreeMap`s, so the two codecs write the same bytes.
+message MapBridge {
+  map<string, Leaf> leaves = 1;
+  map<int32, Hot> hots = 2;
+  map<string, Cold> colds = 3;
+  map<string, google.protobuf.Timestamp> stamps = 4;
+  map<int32, google.protobuf.Any> anys = 5;
+  map<string, google.protobuf.Value> values = 6;
+  map<string, google.protobuf.Duration> durations = 7;
+  map<string, google.protobuf.Int32Value> wrapped = 8;
+  int32 tail = 9;
+}
+
 // A oneof whose members are table messages, a message that `brt` leaves
 // unrolled, and well-known types, which a table message reaches through its
 // `Message` impl.
