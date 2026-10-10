@@ -4,8 +4,9 @@ syntax = "proto3";
 // and `bytes` fields stored as `bytes::Bytes`. A table decodes from a
 // contiguous slice, where `Bytes` fields could not alias the input, so `Blob`,
 // which has such fields, is unrolled, and so are `HoldsBlob`, which holds
-// `Blob`, and `HoldsBlobs`, which holds `HoldsBlob`. `Plain` and `HoldsPlain`
-// have no `bytes` field and are tables.
+// `Blob`, `HoldsBlobs`, which holds `HoldsBlob`, `HoldsBlobInOneof`, which
+// holds `Blob` in a oneof member, and `HoldsPick`, which holds that. `Plain`
+// and `HoldsPlain` have no `bytes` field and are tables.
 package tbz;
 
 message Blob {
@@ -21,6 +22,17 @@ message HoldsBlob {
 
 message HoldsBlobs {
   HoldsBlob inner = 1;
+}
+
+message HoldsBlobInOneof {
+  oneof pick {
+    Blob blob = 1;
+    int32 n = 2;
+  }
+}
+
+message HoldsPick {
+  HoldsBlobInOneof inner = 1;
 }
 
 message Plain {

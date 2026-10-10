@@ -30,6 +30,18 @@ message Req {
   optional bool flag = 13 [default = true];
 }
 
+// A oneof with a closed enum, which keeps the member it holds when it reads a
+// number the enum does not have.
+message ClosedOneof {
+  oneof pick {
+    Color shade = 1;
+    int32 n = 2;
+    string s = 3;
+    Inner i = 4;
+  }
+  optional int32 tail = 5;
+}
+
 // A group field, which the table cannot handle, and the group's own type.
 message Grouped {
   optional int32 a = 1;

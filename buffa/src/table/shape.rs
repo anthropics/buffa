@@ -53,6 +53,10 @@ pub struct MsgVt {
     ///
     /// The argument points to a live `F`.
     pub(super) get: unsafe fn(*const u8) -> *const u8,
+    /// Whether the descriptor is for a message reached through a pointer to
+    /// the message itself ([`direct`](Self::direct)), which is what a oneof
+    /// member needs, and not through a field's storage.
+    pub(super) direct: bool,
 }
 
 /// # Safety
@@ -74,6 +78,23 @@ unsafe fn get_impl<F: MsgSlot>(slot: *const u8) -> *const u8 {
     }
 }
 
+/// The accessors of a message that the table reaches through a pointer to
+/// the message itself: the message is there whenever the pointer is.
+///
+/// # Safety
+///
+/// `slot` points to a live message, which is the one that is returned.
+unsafe fn direct_place(slot: *mut u8) -> *mut u8 {
+    slot
+}
+
+/// # Safety
+///
+/// `slot` points to a live message, which is the one that is returned.
+unsafe fn direct_get(slot: *const u8) -> *const u8 {
+    slot
+}
+
 impl MsgVt {
     /// Describe a field of type `F`, whose message is a table message and
     /// `table` is its table.
@@ -83,6 +104,7 @@ impl MsgVt {
             child: Child::Table(&table.raw),
             place: place_impl::<F>,
             get: get_impl::<F>,
+            direct: false,
         }
     }
 
@@ -101,6 +123,72 @@ impl MsgVt {
             child: Child::of::<F::Msg>(),
             place: place_impl::<F>,
             get: get_impl::<F>,
+            direct: false,
+        }
+    }
+
+    /// Describe a message that is reached through a pointer to the message
+    /// itself, which is how a oneof member's payload of message type is
+    /// reached, whether the oneof stores it boxed or inline. `table`
+    /// describes the message `M`, the type the oneof's accessors give a
+    /// pointer to. Generated code names `M`, so a table of another message is
+    /// a type error:
+    ///
+    /// ```
+    /// use buffa::table::{MsgVt, Table};
+    ///
+    /// struct Point {
+    ///     x: i32,
+    /// }
+    /// static POINT: Table<Point> = buffa::__table!(
+    ///     Point,
+    ///     abi = buffa::table::ABI,
+    ///     entries = [buffa::__table_entry!(Point, x, Int32Implicit, 1)],
+    ///     dense = &[0, 1],
+    ///     aux = [],
+    ///     unknown = none,
+    /// );
+    /// let _ = MsgVt::direct::<Point>(&POINT);
+    /// ```
+    ///
+    /// ```compile_fail,E0308
+    /// use buffa::table::{MsgVt, Table};
+    ///
+    /// struct Point {
+    ///     x: i32,
+    /// }
+    /// struct Other;
+    /// static POINT: Table<Point> = buffa::__table!(
+    ///     Point,
+    ///     abi = buffa::table::ABI,
+    ///     entries = [buffa::__table_entry!(Point, x, Int32Implicit, 1)],
+    ///     dense = &[0, 1],
+    ///     aux = [],
+    ///     unknown = none,
+    /// );
+    /// // The payload is an `Other`, but the table is a `Point`'s.
+    /// let _ = MsgVt::direct::<Other>(&POINT);
+    /// ```
+    #[must_use]
+    pub const fn direct<M>(table: &'static Table<M>) -> Self {
+        Self {
+            child: Child::Table(&table.raw),
+            place: direct_place,
+            get: direct_get,
+            direct: true,
+        }
+    }
+
+    /// As [`direct`](Self::direct), for a message whose table is not visible
+    /// here, which is reached through its [`Message`] impl; see
+    /// [`new_via_message`](Self::new_via_message).
+    #[must_use]
+    pub const fn direct_via_message<M: Message>() -> Self {
+        Self {
+            child: Child::of::<M>(),
+            place: direct_place,
+            get: direct_get,
+            direct: true,
         }
     }
 }
@@ -221,6 +309,9 @@ pub struct EnumVt {
     ///
     /// As for `set`.
     pub(super) len: unsafe fn(*const u8) -> usize,
+    /// Whether `set` would store `raw`: `false` for a closed enum that has no
+    /// variant with that number.
+    pub(super) accepts: fn(i32) -> bool,
 }
 
 /// A way of storing an enum field, implemented by the marker types below.
@@ -262,6 +353,15 @@ pub unsafe trait EnumShape {
     unsafe fn len(_slot: *const u8) -> usize {
         0
     }
+
+    /// Whether [`set`](Self::set) would store `raw`.
+    ///
+    /// It must agree with `set`. A oneof member is placed, replacing the
+    /// member that was set, before `set` runs, so `merge_oneof_enum` asks
+    /// `accepts` first and leaves the oneof as it was for a value that fails.
+    /// A `set` that then refused a value `accepts` allowed would leave a
+    /// default member where another was set.
+    fn accepts(raw: i32) -> bool;
 }
 
 impl EnumVt {
@@ -273,12 +373,13 @@ impl EnumVt {
             set: S::set,
             get: S::get,
             len: S::len,
+            accepts: S::accepts,
         }
     }
 }
 
 macro_rules! enum_shape {
-    ($(#[$m:meta])* $name:ident, $card:ident, $slot:ty, $set:expr, $get:expr, $len:expr) => {
+    ($(#[$m:meta])* $name:ident, $card:ident, $slot:ty, $set:expr, $get:expr, $len:expr, $accepts:expr) => {
         $(#[$m])*
         pub struct $name<E>(PhantomData<E>);
 
@@ -308,6 +409,11 @@ macro_rules! enum_shape {
                 let s = unsafe { &*slot.cast::<$slot>() };
                 ($len)(s)
             }
+
+            #[inline]
+            fn accepts(raw: i32) -> bool {
+                ($accepts)(raw)
+            }
         }
     };
 }
@@ -317,40 +423,46 @@ enum_shape!(
     ImplicitOpen, IMPLICIT, EnumValue<E>,
     |s: &mut EnumValue<E>, raw| { *s = EnumValue::from(raw); true },
     |s: &EnumValue<E>, _| Some(s.to_i32()),
-    |_: &EnumValue<E>| 0
+    |_: &EnumValue<E>| 0,
+    |_: i32| true
 );
 enum_shape!(
     /// A closed enum with implicit presence: `E`.
     ImplicitClosed, IMPLICIT, E,
     |s: &mut E, raw| match E::from_i32(raw) { Some(v) => { *s = v; true } None => false },
     |s: &E, _| Some(s.to_i32()),
-    |_: &E| 0
+    |_: &E| 0,
+    |raw| E::from_i32(raw).is_some()
 );
 enum_shape!(
     /// An open enum with explicit presence: `Option<EnumValue<E>>`.
     OptionalOpen, OPTIONAL, Option<EnumValue<E>>,
     |s: &mut Option<EnumValue<E>>, raw| { *s = Some(EnumValue::from(raw)); true },
     |s: &Option<EnumValue<E>>, _| s.as_ref().map(EnumValue::to_i32),
-    |_: &Option<EnumValue<E>>| 0
+    |_: &Option<EnumValue<E>>| 0,
+    |_: i32| true
 );
 enum_shape!(
     /// A closed enum with explicit presence: `Option<E>`.
     OptionalClosed, OPTIONAL, Option<E>,
     |s: &mut Option<E>, raw| match E::from_i32(raw) { Some(v) => { *s = Some(v); true } None => false },
     |s: &Option<E>, _| s.as_ref().map(Enumeration::to_i32),
-    |_: &Option<E>| 0
+    |_: &Option<E>| 0,
+    |raw| E::from_i32(raw).is_some()
 );
 enum_shape!(
     /// A repeated open enum: `Vec<EnumValue<E>>`.
     RepeatedOpen, REPEATED, Vec<EnumValue<E>>,
     |s: &mut Vec<EnumValue<E>>, raw| { s.push(EnumValue::from(raw)); true },
     |s: &Vec<EnumValue<E>>, i| s.get(i).map(EnumValue::to_i32),
-    |s: &Vec<EnumValue<E>>| s.len()
+    |s: &Vec<EnumValue<E>>| s.len(),
+    |_: i32| true
 );
 enum_shape!(
     /// A repeated closed enum: `Vec<E>`.
     RepeatedClosed, REPEATED, Vec<E>,
     |s: &mut Vec<E>, raw| match E::from_i32(raw) { Some(v) => { s.push(v); true } None => false },
     |s: &Vec<E>, i| s.get(i).map(Enumeration::to_i32),
-    |s: &Vec<E>| s.len()
+    |s: &Vec<E>| s.len(),
+    |raw| E::from_i32(raw).is_some()
 );
