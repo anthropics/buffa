@@ -85,7 +85,7 @@ fn assert_includes_resolve(include_file: &Path, out_dir_env: Option<&Path>, shar
 /// The `$OUT_DIR`-mode rows. The only test in this file that reads or writes
 /// the environment.
 #[test]
-fn out_dir_env_mode_accepts_nested_include_file_without_the_shared_pool() {
+fn out_dir_env_mode_takes_a_nested_include_file_only_without_the_shared_pool() {
     // Shared pool off: accepted, and `compile` creates `nested/`.
     let dir = tempfile::tempdir().unwrap();
     std::env::set_var("OUT_DIR", dir.path());

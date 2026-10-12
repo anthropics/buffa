@@ -2107,6 +2107,11 @@ impl Config {
     ///   `out_dir` itself: `name` must be a bare file name, and
     ///   [`compile`](Self::compile) rejects a name with a directory part.
     ///
+    /// With [`shared_descriptor_pool`](Self::shared_descriptor_pool), `name`
+    /// must be a bare file name in both modes. In `$OUT_DIR` mode without the
+    /// shared pool, `name` may have a directory part (`"nested/_include.rs"`),
+    /// and [`compile`](Self::compile) creates that directory.
+    ///
     /// # Example — `build.rs` / `$OUT_DIR`
     ///
     /// ```rust,ignore
@@ -2869,14 +2874,14 @@ mod tests {
     }
 
     #[test]
-    fn shared_pool_include_file_name_accepts_bare_names() {
+    fn is_bare_file_name_accepts_names_in_the_joined_directory() {
         for name in ["gen_mod.rs", ".gen_mod.rs", "gen_mod", "./gen_mod.rs"] {
             assert!(is_bare_file_name(name), "{name:?} should be bare");
         }
     }
 
     #[test]
-    fn shared_pool_include_file_name_rejects_paths() {
+    fn is_bare_file_name_rejects_paths_and_nul() {
         for name in [
             "",
             ".",
