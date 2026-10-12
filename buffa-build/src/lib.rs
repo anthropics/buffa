@@ -624,10 +624,12 @@ impl Config {
     ///
     /// The sidecar is named `<include-file-stem>.descriptor_set.binpb` (so
     /// `.include_file("gen_mod.rs")` writes `gen_mod.descriptor_set.binpb`)
-    /// and lands in the output directory next to the include file. With a
-    /// checked-in [`out_dir`](Self::out_dir), commit the sidecar alongside
-    /// the generated `.rs` files — the `include_bytes!` resolves relative to
-    /// the include file, so the pair must travel together.
+    /// and is written at the root of the output directory, also when a
+    /// `$OUT_DIR`-mode include file name has a directory part. With a
+    /// checked-in [`out_dir`](Self::out_dir) the include file sits in that
+    /// directory too: commit the sidecar alongside the generated `.rs` files
+    /// — the `include_bytes!` resolves relative to the include file, so the
+    /// pair must travel together.
     ///
     /// Requires [`include_file`](Self::include_file) (the shared module is
     /// emitted into that file at the tree root) and reflection to be enabled;
@@ -2249,10 +2251,14 @@ impl Config {
         // resolve from any directory.
         if let Some(include_name) = self.include_file.as_deref() {
             if relative_includes && !is_bare_file_name(include_name) {
+                let reason = if include_name.contains('\0') {
+                    "a file name cannot contain a NUL byte"
+                } else {
+                    "the generated include! paths are relative to the include file"
+                };
                 return Err(format!(
                     "include_file must be a bare file name when out_dir is set \
-                     (the generated include! paths are relative to the include file); \
-                     got {include_name:?}"
+                     ({reason}); got {include_name:?}"
                 )
                 .into());
             }
@@ -2397,6 +2403,10 @@ impl Config {
                 tree
             };
             let include_path = out_dir.join(include_name);
+            // In `$OUT_DIR` mode the name may have a directory part.
+            if let Some(parent) = include_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
             write_if_changed(&include_path, include_content.as_bytes())?;
         }
 
@@ -2435,7 +2445,8 @@ impl Config {
 
 /// Whether `name` places a file directly in the directory it is joined to. A
 /// leading `./` is accepted; a backslash and a drive prefix are rejected on
-/// every platform, so one build script behaves the same everywhere.
+/// every platform, so one build script behaves the same everywhere. A name
+/// containing a NUL byte, which cannot name a file, is rejected too.
 fn is_bare_file_name(name: &str) -> bool {
     let name = name.strip_prefix("./").unwrap_or(name);
     if name.contains('/') || name.contains('\\') || name.contains('\0') {
@@ -2446,11 +2457,10 @@ fn is_bare_file_name(name: &str) -> bool {
     {
         return false;
     }
-    let path = Path::new(name);
-    let mut components = path.components();
-    matches!(components.next(), Some(Component::Normal(_)))
-        && components.next().is_none()
-        && path.file_name().and_then(|file_name| file_name.to_str()) == Some(name)
+    // With the separators and the drive prefix ruled out, `name` is one
+    // component: empty, `.`, `..`, or the file name itself.
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
 impl Default for Config {
@@ -2839,33 +2849,14 @@ mod tests {
     }
 
     #[test]
-    fn shared_descriptor_pool_rejects_path_include_file() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join("nested")).unwrap();
-
-        let err = Config::new()
-            .generate_reflection(true)
-            .shared_descriptor_pool(true)
-            .include_file("nested/gen_mod.rs")
-            .descriptor_set_bytes(Vec::new())
-            .out_dir(dir.path())
-            .compile()
-            .expect_err("shared descriptor include_file paths must be rejected");
-        assert!(
-            err.to_string().contains("bare file name"),
-            "error should name the bare-file requirement: {err}"
-        );
-    }
-
-    #[test]
-    fn shared_pool_include_file_name_accepts_bare_names() {
+    fn is_bare_file_name_accepts_names_in_the_joined_directory() {
         for name in ["gen_mod.rs", ".gen_mod.rs", "gen_mod", "./gen_mod.rs"] {
             assert!(is_bare_file_name(name), "{name:?} should be bare");
         }
     }
 
     #[test]
-    fn shared_pool_include_file_name_rejects_paths() {
+    fn is_bare_file_name_rejects_paths_and_nul() {
         for name in [
             "",
             ".",
@@ -2884,20 +2875,23 @@ mod tests {
     }
 
     #[test]
-    fn shared_descriptor_pool_rejects_nul_include_file() {
+    fn explicit_out_dir_rejects_nul_include_file() {
         let dir = tempfile::tempdir().unwrap();
 
         let err = Config::new()
-            .generate_reflection(true)
-            .shared_descriptor_pool(true)
             .include_file("gen_mod.rs\0")
             .descriptor_set_bytes(Vec::new())
             .out_dir(dir.path())
             .compile()
-            .expect_err("shared descriptor include_file names must not contain NUL");
+            .expect_err("include_file names must not contain NUL");
+        let message = err.to_string();
         assert!(
-            err.to_string().contains("bare file name"),
-            "error should name the bare-file requirement: {err}"
+            message.contains("bare file name") && message.contains("NUL"),
+            "error should name the bare-file requirement and the NUL byte: {message}"
+        );
+        assert!(
+            !message.contains("relative to the include file"),
+            "a NUL name is not a path problem: {message}"
         );
     }
 

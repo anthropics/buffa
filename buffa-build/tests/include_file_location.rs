@@ -85,8 +85,8 @@ fn assert_includes_resolve(include_file: &Path, out_dir_env: Option<&Path>, shar
 fn out_dir_env_mode_accepts_nested_include_file() {
     // The only test in this file that reads or writes the environment.
     for shared_pool in [false, true] {
+        // `nested/` does not exist yet: `compile` creates it.
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join("nested")).unwrap();
         std::env::set_var("OUT_DIR", dir.path());
 
         config("nested/gen_mod.rs", shared_pool)
@@ -126,6 +126,28 @@ fn explicit_out_dir_rejects_nested_include_file() {
             !dir.path().join("nested/gen_mod.rs").exists(),
             "shared_pool {shared_pool}: the include file must not be written"
         );
+    }
+}
+
+#[test]
+fn explicit_out_dir_rejects_other_spellings_of_a_file_in_out_dir() {
+    // Both name a file directly in `out_dir`, where the relative paths would
+    // resolve, and neither is a bare file name.
+    for shared_pool in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("nested")).unwrap();
+        let absolute = dir.path().join("gen_mod.rs");
+
+        for include_file in [absolute.to_str().unwrap(), "nested/../gen_mod.rs"] {
+            let err = config(include_file, shared_pool)
+                .out_dir(dir.path())
+                .compile()
+                .expect_err("explicit out_dir takes a bare include file name only");
+            assert!(
+                err.to_string().contains("bare file name"),
+                "shared_pool {shared_pool}: {include_file:?}: {err}"
+            );
+        }
     }
 }
 

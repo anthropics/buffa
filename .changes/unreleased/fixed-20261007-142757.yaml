@@ -1,5 +1,5 @@
 kind: Fixed
 body: |-
     **`buffa_build::Config::compile` rejects a path-qualified `include_file` when `out_dir` is set** (#611).
-    With an explicit `out_dir` the include file names the package files, and the shared descriptor pool's sidecar, by paths relative to itself, so `.out_dir("src/gen").include_file("nested/mod.rs")` wrote an include file whose `include!` paths did not resolve. `compile` returns an error for such a name, with `shared_descriptor_pool` on or off. In `$OUT_DIR` mode the emitted paths are absolute, and a nested include file is accepted as before.
+    With an explicit `out_dir` the include file names the package files, and the shared descriptor pool's sidecar, by paths relative to itself, so `.out_dir("src/gen").include_file("nested/mod.rs")` wrote an include file whose `include!` paths did not resolve. `compile` returns an error for such a name, with `shared_descriptor_pool` on or off. The rule is "a bare file name, optionally after `./`", so an absolute path into `out_dir` and `sub/../mod.rs`, which named a file in `out_dir` and worked, are rejected as well: pass the file name. In `$OUT_DIR` mode the emitted paths are absolute, a nested include file is accepted as before, and `compile` creates its directory.
 time: 2026-10-07T14:27:57.12335+02:00
