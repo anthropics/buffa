@@ -369,10 +369,16 @@ pub enum PoolError {
     /// A singular enum field has implicit presence but uses a closed enum.
     /// Closed enum fields require presence to distinguish an unset field
     /// from its default value.
+    ///
     /// A map with a closed enum value type is rejected through the `value`
     /// field of its entry message, which is the field this error names: in
     /// a proto3 file, and in an editions file where the entry inherits
     /// `features.field_presence = IMPLICIT`.
+    ///
+    /// In a proto3 file the rule covers a singular field without `optional`
+    /// and a map value. protoc rejects every enum field and extension of a
+    /// proto3 file whose enum is closed; the pool does not yet reject the
+    /// repeated, `optional`, oneof and extension cases.
     ImplicitPresenceClosedEnum { field: String },
     /// A field marked `proto3_optional` is not declared in a proto3 file.
     Proto3OptionalOutsideProto3 { field: String },
@@ -2866,7 +2872,9 @@ impl DescriptorPool {
 
     /// A singular enum field with implicit presence must name an open enum.
     /// A map entry's `value` field is such a field when its presence is
-    /// implicit, so the rule covers map values too.
+    /// implicit, so the rule covers map values too. Repeated fields, oneof
+    /// members and proto3 `optional` fields do not have implicit presence
+    /// and pass, in proto3 files as well.
     fn check_implicit_presence_enum(
         message: &MessageDescriptor,
         field: &FieldDescriptor,

@@ -151,6 +151,12 @@ fn implicit_open_enum_is_accepted() {
     DescriptorPool::new(set(field(), EnumType::OPEN)).unwrap();
 }
 
+/// `features.enum_type = OPEN` on a field makes that field open whatever its
+/// enum declares. protoc rejects the option on a field (it targets files and
+/// enums only), so protoc output never carries it. The codegen pass that
+/// applies an enum-type feature override to single fields writes it into the
+/// descriptor set that generated code embeds, and the pool that links that
+/// set must accept the field.
 #[test]
 fn field_level_open_enum_override_is_accepted() {
     let mut field = field();
