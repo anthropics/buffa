@@ -11,12 +11,15 @@ The only runtime dependency is `buffa` — no external protobuf library required
 ## Runtime reflection
 
 `DescriptorPool`, `DynamicMessage`, and the reflection traits are available
-with the optional `reflect` feature. It is not enabled by default:
+with the optional `reflect` feature. It is not enabled by default, so add the
+crate with the feature:
 
-```toml
-[dependencies]
-buffa-descriptor = { version = "0.9", features = ["reflect"] }
+```sh
+cargo add buffa-descriptor --features reflect
 ```
+
+`DynamicMessage::from_json` and `DynamicMessage::to_json` also need the `json`
+feature (`--features reflect,json`).
 
 The generated descriptor and protoc plugin message types are available without
 `reflect`; enable the feature only when your application needs runtime
