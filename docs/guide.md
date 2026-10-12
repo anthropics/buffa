@@ -231,7 +231,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.file_per_package(bool)` | `false` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a stitcher |
 | `.idiomatic_imports(bool)` | `false` | **Experimental.** Emit `use`-backed short type names at the package root (struct fields read `MessageField<Timestamp>` instead of fully-qualified paths). Requires `.file_per_package(true)`. Only type declarations are shortened — impl bodies and nested modules stay fully qualified — and the generated file must keep its `#[allow]` wrapper (the short names coexist with qualified impl-body paths, which `unused_qualifications` would otherwise flag) |
 | `.type_attribute(path, attr)` / `.message_attribute` / `.enum_attribute` / `.oneof_attribute` | — | Attach a Rust attribute (e.g. an extra `#[derive(...)]`) to generated types matching a proto path prefix (`oneof_attribute` matches the oneof's own path, `.pkg.Msg.oneof_name`) |
-| `.field_attribute(path, attr)` | — | Attach a Rust attribute to generated fields matching a proto path prefix |
+| `.field_attribute(path, attr)` / `.oneof_struct_field_attribute` | — | Attach a Rust attribute to generated fields matching a proto path prefix (`field_attribute` reaches oneof variants as `.pkg.Msg.oneof_name.variant`; `oneof_struct_field_attribute` reaches the struct field holding the oneof, `.pkg.Msg.oneof_name`) |
 | `.use_buf()` | — | Use `buf build` instead of `protoc` for descriptor generation |
 | `.include_file(name)` | — | Generate a module tree file for `include!` (recommended) |
 | `.descriptor_set(path)` | — | Use a pre-compiled `FileDescriptorSet` file |
@@ -1015,6 +1015,8 @@ Adding or removing sibling types never changes the Rust name of an existing oneo
 
 Two oneofs of one message can still collide with each other: `oneof foo_bar` and `oneof foo__bar` both map to `FooBar`, and `oneof self` and `oneof self_` both map to `Self_`. Code generation rejects such a message with `CodeGenError::OneofEnumNameConflict`, which names both oneofs. Rename one of them; a oneof's name is in neither the wire format nor JSON, so the rename changes generated code only.
 
+The members of one oneof collide the same way: `foo` and `foo_` both map to the variant `Foo`, and `self` and `self_` to `Self_`. Code generation rejects the message with `CodeGenError::OneofVariantNameConflict`, which names the oneof and both members. Rename one of the members; a member's name is its default JSON name and its text-format name, so set a `json_name` if the JSON name must stay.
+
 ### Nested types and module structure
 
 Nested proto messages are scoped in Rust modules named after the parent:
@@ -1107,6 +1109,10 @@ Two things are not marked:
   attach to the variant with `field_attribute` goes on the owned oneof enum only.
   The generated impls that match on it are not guarded, so
   `examples/addressbook` keeps a module-level `#[allow(deprecated)]`.
+  The struct field holding the oneof is a separate item. A `#[deprecated]` that
+  you attach to it with `oneof_struct_field_attribute` goes on the owned struct's
+  field only (the view's field stays unmarked), and the generated impls that
+  visit the field are guarded.
 - **Whole-message and whole-enum deprecation is not emitted**, matching prost.
 
 A derive that you attach with `enum_attribute` or `type_attribute` can name a
@@ -1323,11 +1329,11 @@ repeated field from a much newer schema).
 
 Zero-copy view decoding (`decode_view`) honors the same limit with per-field accounting (one slot per unknown field, including fields nested inside unknown groups), even though views store unknown fields as borrowed byte ranges (coalesced into one span per contiguous run, ~16 bytes each) instead of materializing them. The limit bounds what converting the view to an owned message would materialize, and the conversion replays under exactly the budget decoding charged — so a view that decodes successfully always converts via `to_owned_message` without error.
 
-The element-memory limit bounds what a decode *materializes* rather than what it reads, which an input-size cap cannot do: an empty repeated message element is 2 bytes on the wire and `size_of::<T>()` in the `Vec` it lands in, so a payload well inside any input bound can still expand by two orders of magnitude. Packed scalar fields are not charged by the owned or view decoders, since their worst case there is a 1-byte varint becoming a 4-byte `i32` and charging them would reject columnar payloads that carry millions of elements by design. The reflective `DynamicMessage` codec does charge them, because it stores every element as a `Value` rather than a native scalar — roughly a 64x ratio instead of 4x — so a large columnar payload decoded reflectively may need `.with_element_memory_limit(n)` raised.
+The element-memory limit bounds what a decode *materializes* rather than what it reads, which an input-size cap cannot do: an empty repeated message element is 2 bytes on the wire and `size_of::<T>()` in the `Vec` it lands in, so a payload well inside any input bound can still expand by two orders of magnitude. Repeated numeric and enum elements are not charged by the owned or view decoders, whether encoded packed or unpacked. For packed fields, charging a 1-byte varint as a 4-byte `i32` would reject columnar payloads that carry millions of elements by design. The reflective `DynamicMessage` codec does charge these elements, because it stores each as a `Value` rather than a native scalar — roughly a 64x ratio instead of 4x — so a large columnar payload decoded reflectively may need `.with_element_memory_limit(n)` raised.
 
-Eager view decoding is charged the same way. A view borrows string and bytes contents rather than copying them, but a repeated field still costs one `size_of::<FooView>()` slot per element in the `Vec` that holds them, so `decode_view` applies the element-memory limit exactly as the owned decoder does. Whichever decoder you hand a given payload to, you get the same verdict.
+Eager view decoding charges repeated message, group, string, and bytes elements by the size of each stored view element; map entries are charged by their key and value slot sizes. A view borrows string and bytes contents rather than copying them, so a view element can differ in size from its owned type (for example, `&str` versus `String`). Near the configured limit, the owned and view decoders can return different results.
 
-The default `Message::decode` / `decode_from_slice` methods use the defaults (100 depth, 2 GiB max input, 1M unknown fields, 32 MiB of element memory), and so do the default view entry points `FooView::decode_view` and `OwnedView::decode`. `DecodeOptions` is only needed when you want different limits.
+The default `Message::decode` / `decode_from_slice` methods apply the default limits (100 depth, 1M unknown fields, 32 MiB of element memory), and so do the default view entry points such as `FooView::decode_view` and `OwnedView::decode`. These default entry points, owned and view alike, do not check the size of the input: only the `DecodeOptions` methods compare it with `max_message_size`. Use `DecodeOptions` when you need an input-size cap or different limits: `decode` or `decode_from_slice` for an owned message, `decode_view` or `OwnedView::decode_with_options` for a view.
 
 ### What these limits do and do not bound
 

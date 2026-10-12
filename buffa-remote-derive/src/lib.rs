@@ -335,17 +335,16 @@
 //!
 //! # Reserved identifiers
 //!
-//! The generated impls declare lifetimes and type parameters of their own,
-//! and each of those names starts with `__buffa` or `__Buffa` (for example
-//! `'__buffa_iter` and `__BuffaIter`). Keep those two prefixes out of the
-//! newtype's own lifetime and generic parameter names and out of the types and
-//! override paths it names. A parameter such as `'a` or `T` cannot collide with
-//! a generated one.
-//!
-//! The generated methods also bind the parameters `value`, `key` and `u`.
-//! Write a `new` or `insert` override as a path with two or more segments,
-//! such as `Type::method` or `self::helper`, because a bare `value`, `key` or
-//! `u` resolves to the parameter.
+//! Every name the generated impls introduce starts with `__buffa` or
+//! `__Buffa`: their lifetimes, type parameters, function and closure
+//! parameters, and local bindings and items (for example `'__buffa_iter`,
+//! `__BuffaIter` and `__buffa_value`). These are also the parameter names the
+//! newtype's rustdoc shows for its trait impls. Keep the two prefixes out of
+//! the newtype's own lifetime and generic parameter names, out of the types
+//! and override paths it names, and out of every item in scope at the derive.
+//! A name such as `'a`, `T`, `const N`, a constant or static `value`, or the
+//! path in an override such as `insert = key` cannot collide with a generated
+//! one.
 //!
 //! # Why a `remote` attribute that just repeats the field's type?
 //!

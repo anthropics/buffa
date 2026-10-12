@@ -58,7 +58,8 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
 
 /// Maximum length of a fully-qualified symbol name, in bytes.
 ///
-/// Matches protoc's own cap. Two things depend on it, neither obvious.
+/// Field and oneof names are exempt. Two things depend on this limit,
+/// neither obvious.
 ///
 /// A name is built by concatenating its parent's, and every descendant
 /// stores its own full copy — four of them, across the symbol table, the
@@ -398,6 +399,9 @@ pub enum PoolError {
     DuplicateOneofName { message: String, name: String },
     /// A oneof declaration has no member fields.
     EmptyOneof { oneof: String },
+    /// Members of a oneof are not consecutive in declaration order.
+    /// Field numbers need not be consecutive or sorted.
+    NonconsecutiveOneofFields { oneof: String },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
@@ -429,6 +433,8 @@ pub enum PoolError {
     /// two fields, in this order: `key` with number 1, then `value` with
     /// number 2. Each must be optional, and the key type must be an integer
     /// type, `bool`, or `string` (see [`ScalarType::is_valid_map_key`]).
+    /// The entry must not contain extensions, extension ranges, nested
+    /// messages, or enums.
     ///
     /// `message` is the full name of the map field that uses the entry, and
     /// the entry message is the field's type.
@@ -437,6 +443,9 @@ pub enum PoolError {
     /// protoc rejects this within one compilation unit, but it can arise
     /// when merging independently-compiled `FileDescriptorSet`s.
     DuplicateExtensionNumber { extendee: String, number: u32 },
+    /// A message using MessageSet wire format declares an ordinary field.
+    /// MessageSets may contain extensions only.
+    MessageSetWithFields { message: String },
     /// Two methods in one service have the same proto name.
     DuplicateMethodName { service: String, name: String },
     /// Two enum values in the same symbol scope have the same proto name.
@@ -469,8 +478,20 @@ pub enum PoolError {
         start: Option<i32>,
         end: Option<i32>,
     },
+    /// An extension range's exclusive end exceeds
+    /// [`buffa::encoding::MAX_FIELD_NUMBER`] + 1. Messages with
+    /// `message_set_wire_format` enabled may declare larger ranges because
+    /// their extension numbers are encoded as int32 values rather than tags.
+    ExtensionRangeEndTooLarge {
+        message: String,
+        start: u32,
+        end: u32,
+    },
     /// A message in a proto3 file declares an extension range.
     ExtensionRangeInProto3 { message: String },
+    /// A field or extension in a proto3 file has `TYPE_GROUP`. Proto2 uses
+    /// legacy groups; editions use `message_encoding = DELIMITED`.
+    GroupFieldInProto3 { field: String },
     /// Two extension ranges declared by the same message overlap. `end` is
     /// exclusive, as in `DescriptorProto.ExtensionRange`. Carries both ranges
     /// as declared: `start..end` is the later of the two in declaration
@@ -493,6 +514,11 @@ pub enum PoolError {
         name: String,
         number: u32,
     },
+    /// A message in a proto3 file sets `message_set_wire_format`, which
+    /// proto3 does not support. A message that also declares an extension
+    /// range reports [`ExtensionRangeInProto3`](Self::ExtensionRangeInProto3)
+    /// instead.
+    MessageSetInProto3 { message: String },
     /// An open enum's first declared value has a non-zero number.
     OpenEnumFirstValueNotZero {
         enum_name: String,
@@ -744,6 +770,9 @@ impl core::fmt::Display for PoolError {
                 )
             }
             Self::EmptyOneof { oneof } => write!(f, "oneof {oneof} has no fields"),
+            Self::NonconsecutiveOneofFields { oneof } => {
+                write!(f, "oneof {oneof} has member fields that are not declared consecutively")
+            }
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
             }
@@ -773,13 +802,16 @@ impl core::fmt::Display for PoolError {
                 f,
                 "map field {message} has a malformed entry message: it needs exactly the optional \
                  fields key = 1 and value = 2, in that order, and a key of an integer type, bool, \
-                 or string"
+                 or string; extensions, extension ranges, nested messages, and enums are not allowed"
             ),
             Self::DuplicateExtensionNumber { extendee, number } => {
                 write!(
                     f,
                     "more than one extension claims field number {number} on {extendee}"
                 )
+            }
+            Self::MessageSetWithFields { message } => {
+                write!(f, "MessageSet {message} declares fields instead of extensions")
             }
             Self::DuplicateMethodName { service, name } => {
                 write!(
@@ -825,8 +857,20 @@ impl core::fmt::Display for PoolError {
                 Bound(*start),
                 Bound(*end),
             ),
+            Self::ExtensionRangeEndTooLarge {
+                message,
+                start,
+                end,
+            } => write!(
+                f,
+                "message {message} extension range {start}..{end} exceeds maximum end {}",
+                buffa::encoding::MAX_FIELD_NUMBER + 1,
+            ),
             Self::ExtensionRangeInProto3 { message } => {
                 write!(f, "message {message} declares an extension range in proto3")
+            }
+            Self::GroupFieldInProto3 { field } => {
+                write!(f, "field {field} uses a group type in proto3")
             }
             Self::OverlappingExtensionRange {
                 message,
@@ -847,6 +891,9 @@ impl core::fmt::Display for PoolError {
                 f,
                 "message {message} field {name:?} uses number {number} inside an extension range"
             ),
+            Self::MessageSetInProto3 { message } => {
+                write!(f, "message {message} uses MessageSet wire format in proto3")
+            }
             Self::OpenEnumFirstValueNotZero {
                 enum_name,
                 name,
@@ -974,6 +1021,8 @@ enum Definition {
 enum SymbolKind {
     Message,
     Enum,
+    Field,
+    Oneof,
     Service,
     Method,
     Extension,
@@ -1845,10 +1894,10 @@ impl DescriptorPool {
     /// The `FileDescriptorProto` that declares a fully-qualified symbol, the
     /// way gRPC server reflection's `FindFileContainingSymbol` resolves it.
     ///
-    /// Resolves messages (including nested), enums (including nested),
-    /// services, methods (`pkg.Service.Method`), and extensions — every
-    /// symbol kind a reflection client queries. `O(log n)` over the symbol
-    /// index.
+    /// Resolves messages (including nested), fields, oneofs, enums (including
+    /// nested), enum values, services, methods (`pkg.Service.Method`), and
+    /// extensions — every symbol kind a reflection client queries. `O(log n)`
+    /// over the symbol index.
     #[must_use]
     pub fn file_containing_symbol(&self, full_name: &str) -> Option<&FileDescriptorProto> {
         let name = full_name.strip_prefix('.').unwrap_or(full_name);
@@ -1859,7 +1908,7 @@ impl DescriptorPool {
     // ── Pass 1: register names ──────────────────────────────────────────────
 
     fn register_symbol(&mut self, fqn: &str, kind: SymbolKind) -> Result<(), PoolError> {
-        if fqn.len() > MAX_SYMBOL_LEN {
+        if !matches!(kind, SymbolKind::Field | SymbolKind::Oneof) && fqn.len() > MAX_SYMBOL_LEN {
             return Err(PoolError::NameTooLong {
                 len: fqn.len(),
                 limit: MAX_SYMBOL_LEN,
@@ -1966,8 +2015,28 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        // protoc reports the extension range before the option, so a proto3
+        // message with both gets `ExtensionRangeInProto3` from the check
+        // below.
+        if scope.proto3
+            && msg.extension_range.is_empty()
+            && msg
+                .options
+                .as_option()
+                .is_some_and(|options| options.message_set_wire_format == Some(true))
+        {
+            return Err(PoolError::MessageSetInProto3 { message: fqn });
+        }
         if scope.proto3 && !msg.extension_range.is_empty() {
             return Err(PoolError::ExtensionRangeInProto3 { message: fqn });
+        }
+        if !msg.field.is_empty()
+            && msg
+                .options
+                .as_option()
+                .is_some_and(|options| options.message_set_wire_format == Some(true))
+        {
+            return Err(PoolError::MessageSetWithFields { message: fqn });
         }
         let msg_features =
             features::resolve_child(parent_features, features::message_features(msg));
@@ -1992,6 +2061,7 @@ impl DescriptorPool {
                     name: oneof_name.to_string(),
                 });
             }
+            self.register_symbol(&format!("{fqn}.{oneof_name}"), SymbolKind::Oneof)?;
             oneofs.push(OneofDescriptor {
                 name: oneof_name.to_string(),
                 field_indices: Vec::new(),
@@ -2074,9 +2144,7 @@ impl DescriptorPool {
                     name: fd.name.clone(),
                 });
             }
-            if oneof_names.contains(fd.name.as_str()) {
-                return Err(PoolError::DuplicateName(format!("{fqn}.{}", fd.name)));
-            }
+            self.register_symbol(&format!("{fqn}.{}", fd.name), SymbolKind::Field)?;
             if enforce_json_names
                 && fd.json_name != fd.name
                 && field_names.insert(fd.json_name.clone(), i).is_some()
@@ -2111,6 +2179,15 @@ impl DescriptorPool {
         for oneof in &oneofs {
             if oneof.field_indices.is_empty() {
                 return Err(PoolError::EmptyOneof {
+                    oneof: format!("{fqn}.{}", oneof.name),
+                });
+            }
+            if oneof
+                .field_indices
+                .windows(2)
+                .any(|pair| pair[1] - pair[0] != 1)
+            {
+                return Err(PoolError::NonconsecutiveOneofFields {
                     oneof: format!("{fqn}.{}", oneof.name),
                 });
             }
@@ -2171,6 +2248,15 @@ impl DescriptorPool {
                     end: r.end,
                 });
             };
+            if end > buffa::encoding::MAX_FIELD_NUMBER + 1
+                && !msg.options.message_set_wire_format.unwrap_or(false)
+            {
+                return Err(PoolError::ExtensionRangeEndTooLarge {
+                    message: fqn.clone(),
+                    start,
+                    end,
+                });
+            }
             if reserved_ranges.overlaps(start, end) {
                 return Err(PoolError::ReservedExtensionRange {
                     message: fqn.clone(),
@@ -2565,7 +2651,11 @@ impl DescriptorPool {
         scope: LinkScope<'_>,
     ) -> Result<FieldDescriptor, PoolError> {
         let name = f.name.clone().unwrap_or_default();
-        let field_fqn = format!("{msg_fqn}.{name}");
+        let field_fqn = if msg_fqn.is_empty() {
+            name.clone()
+        } else {
+            format!("{msg_fqn}.{name}")
+        };
         let resolved = features::resolve_child(parent_features, features::field_features(f));
 
         let label = f.label.unwrap_or_default();
@@ -2609,6 +2699,9 @@ impl DescriptorPool {
         // reports the rule that holds in every syntax.
         if scope.proto3 && f.default_value.is_some() {
             return Err(PoolError::Proto3FieldWithDefault { field: field_fqn });
+        }
+        if scope.proto3 && f.r#type == Some(ProtoType::TYPE_GROUP) {
+            return Err(PoolError::GroupFieldInProto3 { field: field_fqn });
         }
 
         // Detect map fields: repeated + message type + the message is a
@@ -2655,8 +2748,19 @@ impl DescriptorPool {
         let presence = if is_repeated {
             // Repeated/map fields have no presence.
             FieldPresence::Implicit
-        } else if label == Label::LABEL_REQUIRED {
+        } else if label == Label::LABEL_REQUIRED
+            || resolved.field_presence == FieldPresence::LegacyRequired
+        {
+            // A proto2 `required` label or an editions `LEGACY_REQUIRED`
+            // feature makes any singular field required, message fields
+            // included, so this arm runs before the message arm below.
             FieldPresence::LegacyRequired
+        } else if is_extension {
+            // A singular extension has presence whatever the file's
+            // features resolve to (protoc `FieldDescriptor::has_presence`),
+            // so a proto3 or implicit-presence editions file does not make
+            // its extensions implicit.
+            FieldPresence::Explicit
         } else if f.proto3_optional == Some(true) || f.oneof_index.is_some() {
             // proto3 `optional` and any oneof member always have explicit
             // presence regardless of edition features. A oneof field set
@@ -2672,13 +2776,7 @@ impl DescriptorPool {
         } else {
             resolved.field_presence
         };
-        // An extension has presence whatever its features resolve to, which
-        // the ladder above does not model.
-        if !is_repeated
-            && !is_extension
-            && presence == FieldPresence::Implicit
-            && f.default_value.is_some()
-        {
+        if !is_repeated && presence == FieldPresence::Implicit && f.default_value.is_some() {
             return Err(PoolError::ImplicitPresenceFieldWithDefault { field: field_fqn });
         }
 
@@ -2719,7 +2817,7 @@ impl DescriptorPool {
         };
 
         // Resolve delimited (group) encoding.
-        // proto2/proto3: TYPE_GROUP is delimited; TYPE_MESSAGE is length-prefixed.
+        // proto2: TYPE_GROUP is delimited; TYPE_MESSAGE is length-prefixed.
         // editions: message_encoding feature controls it.
         let delimited = if f.r#type == Some(ProtoType::TYPE_GROUP) {
             true
@@ -2987,6 +3085,15 @@ impl DescriptorPool {
         field_fqn: &str,
         scope: LinkScope<'_>,
     ) -> Result<(ScalarType, SingularKind), PoolError> {
+        if !entry.extension.is_empty()
+            || !entry.extension_range.is_empty()
+            || !entry.nested_type.is_empty()
+            || !entry.enum_type.is_empty()
+        {
+            return Err(PoolError::MalformedMapEntry {
+                message: field_fqn.to_string(),
+            });
+        }
         // The key is the first field and the value the second, as protoc
         // writes them and as it reads them back.
         let [kf, vf] = entry.field.as_slice() else {

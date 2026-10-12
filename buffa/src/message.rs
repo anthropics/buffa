@@ -1501,16 +1501,18 @@ impl DecodeOptions {
     /// Decode a zero-copy view from a byte slice.
     ///
     /// Enforces `max_message_size` on the input, and passes the recursion
-    /// limit and unknown-field limit to the view decoder (views charge the
-    /// unknown-field limit per field, including fields nested in unknown
-    /// groups — see
+    /// limit, unknown-field limit, and element-memory budget to the view
+    /// decoder (views charge the unknown-field limit per field, including
+    /// fields nested in unknown groups — see
     /// [`with_unknown_field_limit`](Self::with_unknown_field_limit)).
     ///
     /// # Errors
     ///
     /// Returns [`DecodeError::MessageTooLarge`] for oversized input, or any
-    /// error from the view decoder (malformed wire data, recursion limit,
-    /// unknown-field limit).
+    /// error from the view decoder (malformed wire data,
+    /// [`DecodeError::RecursionLimitExceeded`],
+    /// [`DecodeError::UnknownFieldLimitExceeded`], or
+    /// [`DecodeError::ElementMemoryLimitExceeded`]).
     pub fn decode_view<'a, V: crate::view::MessageView<'a>>(
         &self,
         buf: &'a [u8],

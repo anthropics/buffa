@@ -226,6 +226,7 @@
 /// `INVALID_ARGUMENT` error if any path is unmappable.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct FieldMask {
     /// The set of field mask paths.
     ///

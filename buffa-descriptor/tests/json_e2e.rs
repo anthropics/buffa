@@ -669,3 +669,25 @@ fn json_double_text_is_f64_precision() {
     msg.set(md.field(1).unwrap(), Value::F64(0.1));
     assert_eq!(msg.to_json().unwrap(), r#"{"fDouble":0.1}"#);
 }
+
+#[test]
+fn json_unknown_enum_name_error_names_the_value() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let err = DynamicMessage::from_json(p, idx, r#"{"color": "PURPLE"}"#).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains(r#"invalid value: string "PURPLE", expected a known enum variant name"#),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn generated_enum_unknown_name_error_names_the_value() {
+    use buffa_descriptor::generated::descriptor::Edition;
+    let err = serde_json::from_str::<Edition>(r#""PURPLE""#).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        r#"invalid value: string "PURPLE", expected a known enum variant name at line 1 column 8"#
+    );
+}

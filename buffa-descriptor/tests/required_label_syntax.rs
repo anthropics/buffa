@@ -6,8 +6,8 @@ use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
 use buffa_descriptor::generated::descriptor::feature_set::FieldPresence as DescriptorPresence;
 use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
 use buffa_descriptor::generated::descriptor::{
-    DescriptorProto, Edition, FeatureSet, FieldDescriptorProto, FieldOptions, FileDescriptorProto,
-    FileDescriptorSet,
+    DescriptorProto, Edition, EnumDescriptorProto, EnumValueDescriptorProto, FeatureSet,
+    FieldDescriptorProto, FieldOptions, FileDescriptorProto, FileDescriptorSet, FileOptions,
 };
 use buffa_descriptor::{DescriptorPool, FieldKind, PoolError, ScalarType, SingularKind};
 
@@ -377,5 +377,117 @@ fn editions_legacy_required_features_link_without_required_labels() {
                 .presence(),
             FieldPresence::LegacyRequired
         );
+    }
+}
+
+/// `file` with a second message `Inner` and its first field retyped as a
+/// singular `Inner` message field.
+fn with_message_field(mut file: FileDescriptorProto) -> FileDescriptorProto {
+    file.message_type.push(DescriptorProto {
+        name: Some("Inner".into()),
+        ..Default::default()
+    });
+    let field = &mut file.message_type[0].field[0];
+    field.r#type = Some(Type::TYPE_MESSAGE);
+    field.type_name = Some(".required.test.Inner".into());
+    file
+}
+
+#[test]
+fn required_message_fields_link_as_required_in_proto2_and_editions() {
+    let mut proto2 = with_message_field(file(Some("proto2")));
+    proto2.message_type[0].field[0].label = Some(Label::LABEL_REQUIRED);
+    let mut files = vec![proto2];
+    for edition in [Edition::EDITION_2023, Edition::EDITION_2024] {
+        let mut file = with_message_field(file(Some("editions")));
+        file.edition = Some(edition);
+        let field = &mut file.message_type[0].field[0];
+        field.label = Some(Label::LABEL_OPTIONAL);
+        field.options = buffa::MessageField::some(FieldOptions {
+            features: buffa::MessageField::some(FeatureSet {
+                field_presence: Some(DescriptorPresence::LEGACY_REQUIRED),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        files.push(file);
+    }
+    for file in files {
+        let syntax = file.syntax.clone();
+        let edition = file.edition;
+        let pool = DescriptorPool::new(FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        })
+        .expect("a required message field links");
+        let field = pool
+            .message_by_name("required.test.Message")
+            .unwrap()
+            .field(1)
+            .unwrap();
+        assert!(matches!(
+            field.kind(),
+            FieldKind::Singular(SingularKind::Message(_))
+        ));
+        assert_eq!(
+            field.presence(),
+            FieldPresence::LegacyRequired,
+            "syntax {syntax:?}, edition {edition:?}"
+        );
+    }
+}
+
+/// A singular extension has presence whatever presence the file's features
+/// resolve to, as in protoc (`FieldDescriptor::has_presence`).
+#[test]
+fn singular_extensions_have_explicit_presence_in_implicit_presence_files() {
+    let mut implicit_editions = file(Some("editions"));
+    implicit_editions.options = buffa::MessageField::some(FileOptions {
+        features: buffa::MessageField::some(FeatureSet {
+            field_presence: Some(DescriptorPresence::IMPLICIT),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    for (syntax, file) in [
+        ("proto3", file(Some("proto3"))),
+        ("editions", implicit_editions),
+    ] {
+        for (ty, type_name) in [
+            (Type::TYPE_INT32, None),
+            (Type::TYPE_ENUM, Some(".required.test.Kind")),
+        ] {
+            for nested in [false, true] {
+                let mut file = file.clone();
+                file.enum_type.push(EnumDescriptorProto {
+                    name: Some("Kind".into()),
+                    value: vec![EnumValueDescriptorProto {
+                        name: Some("KIND_UNSPECIFIED".into()),
+                        number: Some(0),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                });
+                let extension = FieldDescriptorProto {
+                    label: Some(Label::LABEL_OPTIONAL),
+                    r#type: Some(ty),
+                    type_name: type_name.map(str::to_owned),
+                    ..flag_extension()
+                };
+                let (file, name) = with_extension(file, extension, nested);
+                let pool = DescriptorPool::new(FileDescriptorSet {
+                    file: vec![extension_host(), file],
+                    ..Default::default()
+                })
+                .unwrap();
+                let field = pool.extension_by_name(name).unwrap().field();
+                assert!(matches!(field.kind(), FieldKind::Singular(_)));
+                assert_eq!(
+                    field.presence(),
+                    FieldPresence::Explicit,
+                    "{name} ({ty:?}, {syntax})"
+                );
+            }
+        }
     }
 }

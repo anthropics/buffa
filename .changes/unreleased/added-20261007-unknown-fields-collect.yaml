@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`UnknownFields` implements `FromIterator<UnknownField>` and `Extend<UnknownField>`** (#612). An iterator of unknown fields collects into an `UnknownFields`, and `extend` appends to one, both keeping the order and any repeated field numbers. Building one by hand used to take a `push` per field.
+time: 2026-10-07T14:00:00+02:00

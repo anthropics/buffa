@@ -1175,7 +1175,10 @@ pub mod code_generator_response {
                     ) -> ::core::result::Result<Feature, __E> {
                         <Feature as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(

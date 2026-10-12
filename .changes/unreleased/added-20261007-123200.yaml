@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`Struct::get_mut` and `Struct::remove`** (#606, #607). `get_mut` returns a mutable reference to the value of a field, for editing it in place, and `remove` takes a field out and returns its `Value`. Both take the key as `&str` and return `None` for a missing key, leaving the struct unchanged. They sit beside `Struct::insert` and `Struct::get`; `s.fields.get_mut(key)` and `s.fields.remove(key)` are the equivalents on the public field.
+time: 2026-10-07T12:32:00.626294+02:00

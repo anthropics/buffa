@@ -5,6 +5,7 @@
 /// protobuf element, like the file in which it is defined.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct SourceContext {
     /// The path-qualified name of the .proto file that contained the associated
     /// protobuf element.  For example: `"google/protobuf/source_context.proto"`.

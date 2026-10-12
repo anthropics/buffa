@@ -1270,6 +1270,7 @@ mod tests {
 
     #[test]
     fn deserialize_extension_key_shapes() {
+        let _guard = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
         let mut reg = ExtensionRegistry::new();
         reg.register(entry!(120, "pkg.ext", "pkg.Msg"));
         set_extension_registry(Box::new(reg));
@@ -1299,9 +1300,8 @@ mod tests {
     fn deserialize_extension_key_strict_mode() {
         use crate::json::{with_json_parse_options, JsonParseOptions};
 
-        // Install a fresh registry with `pkg.ext` but not `pkg.missing`. This
-        // test previously leaned on leaked state from a sibling test, which
-        // raced against other global-registry installers under `cargo test`.
+        let _guard = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
+        // A registry with `pkg.ext` and without `pkg.missing`.
         let mut reg = ExtensionRegistry::new();
         reg.register(entry!(120, "pkg.ext", "pkg.Msg"));
         set_extension_registry(Box::new(reg));
@@ -1337,6 +1337,10 @@ mod tests {
 
     #[test]
     fn deserialize_extensions_reads_serde_jsons_private_key_as_data() {
+        let _guard = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
+        // An empty registry, so the key does not match an extension.
+        set_extension_registry(Box::default());
+
         // Parsed as JSON, the string fails the recursion limit. As data it
         // sits under a key that names no extension, and is dropped. See
         // `json_helpers::buffered`, whose tests check that `raw_value` is on.
@@ -1350,7 +1354,7 @@ mod tests {
 
     #[test]
     fn serialize_extensions_via_registry() {
-        // A global is already set by the previous test — add a fresh entry.
+        let _guard = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
         let mut reg = ExtensionRegistry::new();
         reg.register(entry!(50, "pkg.weight", "pkg.Carrier"));
         set_extension_registry(Box::new(reg));
@@ -1376,6 +1380,7 @@ mod tests {
 
     #[test]
     fn serialize_extensions_deduplicates_field_numbers() {
+        let _guard = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
         let mut reg = ExtensionRegistry::new();
         reg.register(entry!(50, "pkg.weight", "pkg.Carrier"));
         set_extension_registry(Box::new(reg));
