@@ -770,6 +770,37 @@ fn test_rejects_mod_proto_colliding_with_the_unnamed_packages_stitcher() {
     );
 }
 
+#[test]
+fn test_file_listed_twice_is_generated_once() {
+    // Without the dedup the second listing would claim `a.rs` again and
+    // report a conflict between `a.proto` and itself.
+    let mut file = proto3_file("a.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Message".to_string()),
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["a.proto".to_string(), "a.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("a file listed twice generates once");
+
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(
+        names.iter().filter(|n| **n == "a.rs").count(),
+        1,
+        "{names:?}"
+    );
+    assert_eq!(
+        names.iter().filter(|n| **n == "pkg.mod.rs").count(),
+        1,
+        "{names:?}"
+    );
+}
+
 /// Asserts that `err` is an `OutputFileNameConflict` with exactly these fields.
 #[track_caller]
 fn assert_output_conflict(err: &CodeGenError, file: &str, first: &str, second: &str) {

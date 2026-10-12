@@ -3542,7 +3542,12 @@ pub fn generate_with_diagnostics(
     // Group requested files by package. BTreeMap → deterministic output order.
     let mut by_package: std::collections::BTreeMap<String, Vec<&FileDescriptorProto>> =
         std::collections::BTreeMap::new();
+    let mut grouped = std::collections::HashSet::new();
     for file_name in files_to_generate {
+        // A file listed twice is generated once.
+        if !grouped.insert(file_name.as_str()) {
+            continue;
+        }
         let file_desc = file_descriptors
             .iter()
             .find(|f| f.name.as_deref() == Some(file_name.as_str()))
