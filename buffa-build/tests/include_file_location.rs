@@ -2,9 +2,10 @@
 //!
 //! The paths the include file names are absolute in `$OUT_DIR` mode and
 //! relative to the include file in explicit-`out_dir` mode, so a
-//! path-qualified include file resolves in the first mode only. Each mode is
-//! exercised with `shared_descriptor_pool` off and on: the shared pool adds an
-//! `include_bytes!` of a sidecar that stays at the output root.
+//! path-qualified include file resolves in the first mode only. With
+//! `shared_descriptor_pool` the name must be bare in both modes: the sidecar
+//! is named after the include file's stem alone and stays at the output root,
+//! so include files in two directories would share it.
 
 use buffa_build::Config;
 use buffa_codegen::generated::descriptor::field_descriptor_proto::{Label, Type};
@@ -81,26 +82,48 @@ fn assert_includes_resolve(include_file: &Path, out_dir_env: Option<&Path>, shar
     }
 }
 
+/// The `$OUT_DIR`-mode rows. The only test in this file that reads or writes
+/// the environment.
 #[test]
-fn out_dir_env_mode_accepts_nested_include_file() {
-    // The only test in this file that reads or writes the environment.
-    for shared_pool in [false, true] {
-        // `nested/` does not exist yet: `compile` creates it.
-        let dir = tempfile::tempdir().unwrap();
-        std::env::set_var("OUT_DIR", dir.path());
+fn out_dir_env_mode_accepts_nested_include_file_without_the_shared_pool() {
+    // Shared pool off: accepted, and `compile` creates `nested/`.
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("OUT_DIR", dir.path());
+    config("nested/gen_mod.rs", false)
+        .compile()
+        .unwrap_or_else(|e| panic!("$OUT_DIR mode, shared pool off: nested include file: {e}"));
+    assert_includes_resolve(
+        &dir.path().join("nested/gen_mod.rs"),
+        Some(dir.path()),
+        false,
+    );
 
-        config("nested/gen_mod.rs", shared_pool)
-            .compile()
-            .unwrap_or_else(|e| {
-                panic!("$OUT_DIR mode, shared_pool {shared_pool}: nested include file: {e}")
-            });
+    // Shared pool on: rejected, because `other/gen_mod.rs` from a second
+    // `compile` call would write the same `gen_mod.descriptor_set.binpb`.
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("OUT_DIR", dir.path());
+    let err = config("nested/gen_mod.rs", true)
+        .compile()
+        .expect_err("the shared pool takes a bare include file name only");
+    let message = err.to_string();
+    assert!(
+        message.contains("shared_descriptor_pool")
+            && message.contains("bare file name")
+            && message.contains("sidecar")
+            && message.contains("nested/gen_mod.rs"),
+        "error should name the requirement, its reason and the path: {message}"
+    );
+    assert!(
+        !dir.path().join("gen_mod.descriptor_set.binpb").exists(),
+        "the sidecar must not be written"
+    );
 
-        assert_includes_resolve(
-            &dir.path().join("nested/gen_mod.rs"),
-            Some(dir.path()),
-            shared_pool,
-        );
-    }
+    // Shared pool on with a bare name: accepted.
+    config("gen_mod.rs", true)
+        .compile()
+        .unwrap_or_else(|e| panic!("$OUT_DIR mode, shared pool on: bare include file: {e}"));
+    assert_includes_resolve(&dir.path().join("gen_mod.rs"), Some(dir.path()), true);
+
     std::env::remove_var("OUT_DIR");
 }
 
@@ -117,10 +140,19 @@ fn explicit_out_dir_rejects_nested_include_file() {
             .compile()
             .expect_err("explicit out_dir with a nested include file must be rejected");
 
+        // Each rule gives its own reason; the shared pool's is checked first.
+        let reason = if shared_pool {
+            "sidecar"
+        } else {
+            "relative to the include file"
+        };
         let message = err.to_string();
         assert!(
-            message.contains("bare file name") && message.contains("nested/gen_mod.rs"),
-            "shared_pool {shared_pool}: error should name the requirement and the path: {message}"
+            message.contains("bare file name")
+                && message.contains(reason)
+                && message.contains("nested/gen_mod.rs"),
+            "shared_pool {shared_pool}: error should name the requirement, its reason \
+             and the path: {message}"
         );
         assert!(
             !dir.path().join("nested/gen_mod.rs").exists(),
