@@ -29,8 +29,6 @@ pub struct TextDecoder<'a> {
     /// Byte position of the last name returned by `read_field_name`, for
     /// [`unknown_field`](Self::unknown_field) error reporting.
     last_name_pos: usize,
-    /// Whether the last name returned by `read_field_name` had a `:`.
-    last_name_has_separator: bool,
     /// Remaining element-memory budget, shared across the whole parse.
     ///
     /// The binary decoder's equivalent rides on `DecodeContext`, which never
@@ -46,7 +44,6 @@ impl<'a> TextDecoder<'a> {
         Self {
             tok: Tokenizer::new(input),
             last_name_pos: 0,
-            last_name_has_separator: false,
             elem_remaining: crate::DEFAULT_ELEMENT_MEMORY_LIMIT,
         }
     }
@@ -115,9 +112,13 @@ impl<'a> TextDecoder<'a> {
     /// matches against `"[pkg.ext]"` literally.
     ///
     /// The `:` after the name is optional before a message value or a list
-    /// of message values. This method returns the name either way; scalar
-    /// values and scalar lists require it. An empty scalar list also requires
-    /// the colon, while an empty message list may omit it.
+    /// of message values. This method returns the name either way; for a
+    /// scalar value, or a scalar list element, that follows a name without
+    /// one, the call that reads the value returns the error. An empty list
+    /// `[]` has no element to read, so it parses with or without the colon,
+    /// unless the caller reads it with
+    /// [`read_repeated_scalar_into`](Self::read_repeated_scalar_into), which
+    /// requires the colon.
     ///
     /// # Errors
     ///
@@ -129,7 +130,6 @@ impl<'a> TextDecoder<'a> {
             TokenKind::Name => {
                 self.tok.read()?;
                 self.last_name_pos = tok.pos;
-                self.last_name_has_separator = tok.has_separator;
                 Ok(Some(tok.raw))
             }
             _ => Err(self.err_at(
@@ -610,14 +610,19 @@ impl<'a> TextDecoder<'a> {
         Ok(())
     }
 
-    /// Read one-or-more values into `out`.
+    /// Read one or more values of a repeated field into `out`.
     ///
-    /// Handles both repeated-scalar forms: `f: [1, 2, 3]` (consumes `[` and
-    /// `]`) and `f: 1` (reads exactly one element). Generated code calls this
-    /// once per `f` occurrence; the `f: 1 f: 2` form is handled by the outer
-    /// `read_field_name` loop seeing `f` twice. Scalar fields use
-    /// [`read_repeated_scalar_into`](Self::read_repeated_scalar_into) so an
-    /// empty list can be checked against the field's type.
+    /// Handles both forms of a repeated value: the list `f: [1, 2, 3]`
+    /// (consumes `[` and `]`) and the single value `f: 1` (reads exactly one
+    /// element). Generated code calls this once per `f` occurrence; the
+    /// `f: 1 f: 2` form is handled by the outer `read_field_name` loop seeing
+    /// `f` twice.
+    ///
+    /// An empty list `[]` is accepted with or without a `:` after the field
+    /// name, which is the rule for a list of messages. For a field whose
+    /// elements are scalars, use
+    /// [`read_repeated_scalar_into`](Self::read_repeated_scalar_into), which
+    /// requires the colon.
     ///
     /// # Errors
     ///
@@ -630,13 +635,23 @@ impl<'a> TextDecoder<'a> {
         self.read_repeated_inner(out, read_one, false)
     }
 
-    /// Read repeated scalar values, requiring `:` even for an empty list.
+    /// Read one or more values of a repeated scalar field into `out`,
+    /// requiring the `:` after the field name even before an empty list.
     ///
-    /// Generated code uses this instead of
-    /// [`read_repeated_into`](Self::read_repeated_into) when the field's
-    /// element type is scalar. The tokenizer cannot infer the field type
-    /// from `[]`, so this method applies the type-aware check.
-    #[doc(hidden)]
+    /// Reads the same two forms as
+    /// [`read_repeated_into`](Self::read_repeated_into). Use it when the
+    /// field's elements are numbers, bools, enums, strings or bytes, as
+    /// generated code does. The tokenizer cannot infer the field type from
+    /// `[]`, so this method applies the check for the empty list; for a
+    /// list with elements, or a single value, the call that reads the
+    /// element returns the error.
+    ///
+    /// # Errors
+    ///
+    /// - [`ParseErrorKind::UnexpectedToken`] with `expected` set to
+    ///   `"':' before scalar value"`, positioned at the `[`, for an empty
+    ///   list that follows a name without a `:`.
+    /// - Any error from `read_one` or the tokenizer.
     pub fn read_repeated_scalar_into<T>(
         &mut self,
         out: &mut Vec<T>,
@@ -654,7 +669,7 @@ impl<'a> TextDecoder<'a> {
         if self.tok.peek()?.kind == TokenKind::ListOpen {
             let open = self.tok.read()?;
             if self.tok.peek()?.kind == TokenKind::ListClose {
-                if empty_list_requires_separator && !self.last_name_has_separator {
+                if empty_list_requires_separator && self.tok.in_list_without_separator() {
                     return Err(self.err_at(
                         &open,
                         ParseErrorKind::UnexpectedToken {
@@ -1290,6 +1305,28 @@ mod tests {
     fn repeated_empty_list() {
         let mut m = TestMsg::default();
         let mut d = TextDecoder::new("items: []");
+        m.merge_text(&mut d).unwrap();
+        assert_eq!(m.items, Vec::<i64>::new());
+    }
+
+    #[test]
+    fn repeated_empty_scalar_list_requires_colon() {
+        for input in ["items []", "i: 1 items []", "child { items [] }"] {
+            let mut m = TestMsg::default();
+            let err = m.merge_text(&mut TextDecoder::new(input)).unwrap_err();
+            assert_eq!(
+                err.kind,
+                ParseErrorKind::UnexpectedToken {
+                    expected: "':' before scalar value",
+                },
+                "input: {input:?}"
+            );
+            assert_eq!(err.col as usize, input.find('[').unwrap() + 1);
+        }
+
+        // The colon of an enclosing field does not count for the list.
+        let mut m = TestMsg::default();
+        let mut d = TextDecoder::new("child: { items: [] } items: []");
         m.merge_text(&mut d).unwrap();
         assert_eq!(m.items, Vec::<i64>::new());
     }

@@ -512,8 +512,9 @@ fn enum_type_path(
 /// and `.map(EnumValue::from)` into `Result<EnumValue<E>, _>`.
 ///
 /// `dec` is the decoder ident — `dec` for outer-loop scalars, `__d` inside
-/// `read_repeated_into` / `merge_map_entry` closures. Callers add `?` when
-/// they need the value; `read_repeated_into` closures pass it through as-is.
+/// `read_repeated_scalar_into` / `merge_map_entry` closures. Callers add `?`
+/// when they need the value; `read_repeated_scalar_into` closures pass it
+/// through as-is.
 fn enum_read(closed: bool, enum_ty: &TokenStream, dec: &proc_macro2::Ident) -> TokenStream {
     if closed {
         quote! { #dec.read_closed_enum_by_name::<#enum_ty>() }
