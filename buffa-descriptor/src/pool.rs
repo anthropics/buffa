@@ -331,6 +331,12 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// A map's enum value type starts with a nonzero value.
+    MapEnumFirstValueNotZero {
+        field: String,
+        enum_name: String,
+        number: i32,
+    },
     /// A oneof member has required or repeated cardinality instead of optional.
     InvalidOneofCardinality { field: String },
     /// A repeated field declares an explicit default value.
@@ -359,6 +365,10 @@ pub enum PoolError {
     /// A singular enum field has implicit presence but uses a closed enum.
     /// Closed enum fields require presence to distinguish an unset field
     /// from its default value.
+    /// A map with a closed enum value type is rejected through the `value`
+    /// field of its entry message, which is the field this error names: in
+    /// a proto3 file, and in an editions file where the entry inherits
+    /// `features.field_presence = IMPLICIT`.
     ImplicitPresenceClosedEnum { field: String },
     /// A field marked `proto3_optional` is not declared in a proto3 file.
     Proto3OptionalOutsideProto3 { field: String },
@@ -674,6 +684,10 @@ impl core::fmt::Display for PoolError {
             } => write!(
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
+            ),
+            Self::MapEnumFirstValueNotZero { field, enum_name, number } => write!(
+                f,
+                "map field {field} uses enum {enum_name} whose first value is {number}, which must be zero"
             ),
             Self::InvalidOneofCardinality { field } => {
                 write!(f, "field {field} is a oneof member but is not optional")
@@ -1414,18 +1428,7 @@ impl DescriptorPool {
             }
         }
         self.finalize_field_enum_types(first_new_message, first_new_extension);
-        for message in &self.messages[first_new_message..] {
-            for field in &message.fields {
-                if matches!(field.kind, FieldKind::Singular(SingularKind::Enum(_)))
-                    && field.presence == FieldPresence::Implicit
-                    && field.enum_type == Some(EnumType::Closed)
-                {
-                    return Err(PoolError::ImplicitPresenceClosedEnum {
-                        field: format!("{}.{}", message.full_name, field.name),
-                    });
-                }
-            }
-        }
+        self.check_linked_enum_fields(first_new_message)?;
 
         // Record the symbol → file index (for `FindFileContainingSymbol`).
         for (i, f) in new_files.iter().enumerate() {
@@ -2814,6 +2817,65 @@ impl DescriptorPool {
         for extension in &mut self.extensions[first_new_extension..] {
             resolve(&mut extension.field);
         }
+    }
+
+    /// Checks the rules that relate a message field to the enum it names.
+    ///
+    /// The walk runs once every enum in the set is linked, because a field's
+    /// enum may be declared later in its file or in a later file of the set.
+    /// It visits the new messages in link order and each message's fields in
+    /// declaration order, and returns the first violation.
+    fn check_linked_enum_fields(&self, first_new_message: usize) -> Result<(), PoolError> {
+        for message in &self.messages[first_new_message..] {
+            for field in &message.fields {
+                self.check_map_enum_first_value(message, field)?;
+                Self::check_implicit_presence_enum(message, field)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// A map's enum value type must declare zero as its first value, in
+    /// every syntax.
+    fn check_map_enum_first_value(
+        &self,
+        message: &MessageDescriptor,
+        field: &FieldDescriptor,
+    ) -> Result<(), PoolError> {
+        let FieldKind::Map {
+            value: SingularKind::Enum(eidx),
+            ..
+        } = field.kind
+        else {
+            return Ok(());
+        };
+        let enumeration = &self.enums[eidx.0 as usize];
+        match enumeration.values.first() {
+            Some(first) if first.number != 0 => Err(PoolError::MapEnumFirstValueNotZero {
+                field: format!("{}.{}", message.full_name, field.name),
+                enum_name: enumeration.full_name.clone(),
+                number: first.number,
+            }),
+            _ => Ok(()),
+        }
+    }
+
+    /// A singular enum field with implicit presence must name an open enum.
+    /// A map entry's `value` field is such a field when its presence is
+    /// implicit, so the rule covers map values too.
+    fn check_implicit_presence_enum(
+        message: &MessageDescriptor,
+        field: &FieldDescriptor,
+    ) -> Result<(), PoolError> {
+        if matches!(field.kind, FieldKind::Singular(SingularKind::Enum(_)))
+            && field.presence == FieldPresence::Implicit
+            && field.enum_type == Some(EnumType::Closed)
+        {
+            return Err(PoolError::ImplicitPresenceClosedEnum {
+                field: format!("{}.{}", message.full_name, field.name),
+            });
+        }
+        Ok(())
     }
 
     fn resolve_singular(

@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a map whose enum value type does not declare zero as its first value** (#601). A `map<K, E>` field linked when the first value of `E` was nonzero, which a closed enum allows for an ordinary field. protoc reports "Enum value in map must define 0 as the first value." in every syntax. It is `PoolError::MapEnumFirstValueNotZero`, wherever the enum is declared: after the map, in another file of the set, or in a file already in the pool.
+time: 2026-10-07T12:01:09.196099+02:00
