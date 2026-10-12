@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+// See table_codec.proto: compiled as `tc5u` (unrolled) and `tc5t` (table),
+// both with a custom pointer type for message fields and members
+// (`crate::box_type::CustomBox`) and with `idiomatic_field_names`. Oneofs.
+package tc5;
+
+message Leaf {
+  int32 id = 1;
+  string label = 2;
+}
+
+// A message member reached through the custom pointer, and one that recurses
+// through it.
+message Held {
+  oneof pick {
+    int32 n = 1;
+    Leaf leaf = 2;
+    Held again = 3;
+    string s = 4;
+  }
+  Leaf single = 5;
+}
+
+// Oneofs named like Rust keywords, members declared out of number order, and
+// camelCase names that `idiomatic_field_names` renames.
+message Names {
+  oneof type {
+    int32 third = 3;
+    string first = 1;
+    Leaf second = 2;
+  }
+  oneof match {
+    int32 matchNum = 5;
+    string matchText = 4;
+  }
+  oneof myChoice {
+    int32 fooBar = 8;
+    string bazQux = 7;
+    Leaf theLeaf = 6;
+  }
+}

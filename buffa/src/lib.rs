@@ -292,6 +292,15 @@ pub use view::{
 /// release. Do not use them directly.
 #[doc(hidden)]
 pub mod __private {
+    /// Whether the active JSON parse options reject a `google.protobuf.Any`
+    /// `@type` without a `/`. The `Any` deserializer in `buffa-types` reads
+    /// it.
+    #[cfg(feature = "json")]
+    #[must_use]
+    pub fn strict_any_type_urls() -> bool {
+        crate::json::strict_any_type_urls()
+    }
+
     /// The memory one element of a repeated field occupies in the collection
     /// holding it, for charging against
     /// [`DecodeContext::register_element_memory`](crate::DecodeContext::register_element_memory).
