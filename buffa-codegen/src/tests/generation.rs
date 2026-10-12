@@ -772,8 +772,8 @@ fn test_rejects_mod_proto_colliding_with_the_unnamed_packages_stitcher() {
 
 #[test]
 fn test_file_listed_twice_is_generated_once() {
-    // Without the dedup the second listing would claim `a.rs` again and
-    // report a conflict between `a.proto` and itself.
+    // Without the dedup this fails with `TypeNameConflict` ('Message' and
+    // 'Message'): type names are checked before output names are claimed.
     let mut file = proto3_file("a.proto");
     file.package = Some("pkg".to_string());
     file.message_type.push(DescriptorProto {
@@ -799,6 +799,44 @@ fn test_file_listed_twice_is_generated_once() {
         1,
         "{names:?}"
     );
+}
+
+#[test]
+fn test_extension_only_file_listed_twice_is_generated_once() {
+    // The file declares no message or enum, so the type-name check has
+    // nothing to compare; without the dedup the second listing would claim
+    // `ext.__ext.rs` again and report a conflict of `ext.proto` with itself.
+    let mut target = proto3_file("target.proto");
+    target.package = Some("p".to_string());
+    target.message_type = vec![DescriptorProto {
+        name: Some("Target".to_string()),
+        extension_range: vec![
+            crate::generated::descriptor::descriptor_proto::ExtensionRange {
+                start: Some(100),
+                end: Some(200),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }];
+    let mut ext = proto3_file("ext.proto");
+    ext.package = Some("q".to_string());
+    ext.dependency = vec!["target.proto".to_string()];
+    ext.extension = vec![{
+        let mut f = make_field("my_opt", 100, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+        f.extendee = Some(".p.Target".to_string());
+        f
+    }];
+
+    let files = generate(
+        &[target, ext],
+        &["ext.proto".to_string(), "ext.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("a file listed twice generates once");
+
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["ext.__ext.rs", "q.mod.rs"]);
 }
 
 /// Asserts that `err` is an `OutputFileNameConflict` with exactly these fields.

@@ -2802,7 +2802,8 @@ fn rule_paths<R>(rules: &[(String, R)]) -> Vec<&String> {
 /// `files_to_generate` is the set of file names that were explicitly requested
 /// (matching `CodeGeneratorRequest.file_to_generate`). Descriptors for
 /// dependencies may be present in `file_descriptors` but won't produce output
-/// files unless they appear in `files_to_generate`.
+/// files unless they appear in `files_to_generate`. A name listed twice is
+/// generated once.
 ///
 /// Each `.proto` emits up to five content files (kinds with no content
 /// are omitted); each distinct package emits one `<pkg>.mod.rs`
@@ -3250,6 +3251,8 @@ fn warn_excluded_refs_msg(
 /// as a `cargo:warning=...` from a `build.rs`, or on stderr from a standalone
 /// generator — or match on it for programmatic handling. [`generate`] discards
 /// them.
+///
+/// A name listed twice in `files_to_generate` is generated once.
 ///
 /// Warnings are returned only on success. On error, any warnings already
 /// collected are dropped along with the partial output — the [`CodeGenError`]
