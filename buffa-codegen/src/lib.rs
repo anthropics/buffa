@@ -1334,6 +1334,14 @@ pub struct CodeGenConfig {
     /// exact type-FQN entry wins over a covering package prefix; otherwise
     /// the longest matching prefix wins.
     ///
+    /// The proto side must be `"."` (every type) or a fully-qualified name:
+    /// a leading dot, then protobuf identifiers separated by single dots,
+    /// with no trailing dot. [`generate`] does not validate entries, and an
+    /// entry in another form matches no type; a caller that fills this field
+    /// directly should pass each name through
+    /// [`normalize_extern_path_proto_name`], as `protoc-gen-buffa` and
+    /// `buffa-build` do.
+    ///
     /// Well-known types (`google.protobuf.*`) are automatically mapped to
     /// `::buffa_types::google::protobuf::*` without needing an explicit
     /// entry here. To override with a custom implementation, add an
@@ -5083,12 +5091,13 @@ pub fn normalize_exclude_package(value: &str) -> Result<String, String> {
     Ok(pkg.to_string())
 }
 
-/// Normalize and validate the proto side of one `extern_path` mapping: trim
-/// whitespace, add the leading dot if absent, drop one trailing dot, and
-/// reject a name with an empty segment (`my..common`) or with a segment that
-/// is not a protobuf identifier (`my.common-name`). Such a name matches no
-/// type, so a typo would otherwise leave the mapping silently unused. `"."`,
-/// the catch-all, is returned as is.
+/// Normalize and validate the proto side of one `extern_path` mapping.
+///
+/// Trims whitespace, adds the leading dot if absent, drops one trailing dot,
+/// and rejects a name with an empty segment (`my..common`) or with a segment
+/// that is not a protobuf identifier (`my.common-name`). Such a name matches
+/// no type, so a typo would otherwise leave the mapping silently unused.
+/// `"."`, the catch-all, is returned as is.
 ///
 /// The `protoc-gen-buffa` option parser and `buffa-build` both run entries
 /// through this function, so the two front ends accept the same names.
