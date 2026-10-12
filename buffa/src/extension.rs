@@ -34,7 +34,7 @@
 //! # Panics
 //!
 //! [`Extension::new`] and [`Extension::with_default`] panic if the extension
-//! field number is invalid. [`extension`], [`extension_or_default`],
+//! field number is 0 or greater than `i32::MAX`. [`extension`], [`extension_or_default`],
 //! [`set_extension`], [`try_set_extension`], and [`clear_extension`] panic if
 //! the descriptor's [`extendee`](Extension::extendee) does not match the
 //! extendee message's [`PROTO_FQN`](ExtensionSet::PROTO_FQN). This catches bugs like
@@ -117,11 +117,15 @@ impl<C: ExtensionCodec> Extension<C> {
     ///
     /// # Panics
     ///
-    /// Panics if `number` is less than 1, greater than
-    /// [`MAX_FIELD_NUMBER`](crate::encoding::MAX_FIELD_NUMBER), or in the
-    /// implementation-reserved range `19000..=19999` (from
-    /// [`FIRST_RESERVED_FIELD_NUMBER`](crate::encoding::FIRST_RESERVED_FIELD_NUMBER)
-    /// through [`LAST_RESERVED_FIELD_NUMBER`](crate::encoding::LAST_RESERVED_FIELD_NUMBER)).
+    /// Panics if `number` is 0 or greater than `i32::MAX`. In a `const` item
+    /// the panic is a compile error.
+    ///
+    /// The upper bound is `i32::MAX` because an extension of a message with
+    /// `option message_set_wire_format = true` can have a number up to that.
+    /// For any other extendee the largest valid number is
+    /// [`MAX_FIELD_NUMBER`](crate::encoding::MAX_FIELD_NUMBER): with a larger
+    /// one, `set_extension()` stores a field that encodes with a tag decoders
+    /// reject.
     pub const fn new(number: u32, extendee: &'static str) -> Self {
         assert_valid_extension_field_number(number);
         Self {
@@ -145,11 +149,8 @@ impl<C: ExtensionCodec> Extension<C> {
     ///
     /// # Panics
     ///
-    /// Panics if `number` is less than 1, greater than
-    /// [`MAX_FIELD_NUMBER`](crate::encoding::MAX_FIELD_NUMBER), or in the
-    /// implementation-reserved range `19000..=19999` (from
-    /// [`FIRST_RESERVED_FIELD_NUMBER`](crate::encoding::FIRST_RESERVED_FIELD_NUMBER)
-    /// through [`LAST_RESERVED_FIELD_NUMBER`](crate::encoding::LAST_RESERVED_FIELD_NUMBER)).
+    /// Panics if `number` is 0 or greater than `i32::MAX`, as
+    /// [`new`](Self::new) does.
     pub const fn with_default(
         number: u32,
         extendee: &'static str,
@@ -175,15 +176,17 @@ impl<C: ExtensionCodec> Extension<C> {
     }
 }
 
+/// Asserts that `number` is nonzero and at most `i32::MAX`.
+///
+/// `Extension` does not know whether its extendee uses the MessageSet wire
+/// format, where a number can pass `MAX_FIELD_NUMBER`, so the bound is the
+/// MessageSet one. The implementation-reserved band (19000 to 19999) is a
+/// schema rule, which `DescriptorPool` applies when it loads a descriptor
+/// set; a number in the band encodes and decodes like any other.
 const fn assert_valid_extension_field_number(number: u32) {
     assert!(
-        number >= 1 && number <= crate::encoding::MAX_FIELD_NUMBER,
-        "extension field number must be in [1, MAX_FIELD_NUMBER]"
-    );
-    assert!(
-        number < crate::encoding::FIRST_RESERVED_FIELD_NUMBER
-            || number > crate::encoding::LAST_RESERVED_FIELD_NUMBER,
-        "extension field number is in the implementation-reserved range"
+        number >= 1 && number <= i32::MAX as u32,
+        "extension field number must be in [1, i32::MAX]"
     );
 }
 
@@ -1231,9 +1234,11 @@ mod tests {
     fn extension_constructors_validate_field_numbers() {
         let valid_numbers = [
             1,
-            crate::encoding::FIRST_RESERVED_FIELD_NUMBER - 1,
-            crate::encoding::LAST_RESERVED_FIELD_NUMBER + 1,
+            crate::encoding::FIRST_RESERVED_FIELD_NUMBER,
+            crate::encoding::LAST_RESERVED_FIELD_NUMBER,
             crate::encoding::MAX_FIELD_NUMBER,
+            crate::encoding::MAX_FIELD_NUMBER + 1,
+            i32::MAX as u32,
         ];
         for number in valid_numbers {
             assert_eq!(Extension::<Int32>::new(number, CARRIER).number(), number);
@@ -1243,12 +1248,7 @@ mod tests {
             );
         }
 
-        let invalid_numbers = [
-            0,
-            crate::encoding::FIRST_RESERVED_FIELD_NUMBER,
-            crate::encoding::LAST_RESERVED_FIELD_NUMBER,
-            crate::encoding::MAX_FIELD_NUMBER + 1,
-        ];
+        let invalid_numbers = [0, i32::MAX as u32 + 1, u32::MAX];
         for number in invalid_numbers {
             assert!(
                 std::panic::catch_unwind(|| Extension::<Int32>::new(number, CARRIER)).is_err(),
@@ -1262,6 +1262,24 @@ mod tests {
                 "with_default accepted field number {number}"
             );
         }
+    }
+
+    /// A MessageSet item is stored as a length-delimited unknown field whose
+    /// number is the item's type ID, and a type ID can pass
+    /// `MAX_FIELD_NUMBER`. A `const` extension with such a number compiles
+    /// and reads the item.
+    #[test]
+    fn extension_number_above_max_field_number_reads_message_set_item() {
+        const TYPE_ID: u32 = i32::MAX as u32;
+        const E: Extension<BytesCodec> = Extension::new(TYPE_ID, CARRIER);
+        const fn empty() -> Vec<u8> {
+            Vec::new()
+        }
+        const D: Extension<BytesCodec> = Extension::with_default(TYPE_ID, CARRIER, empty);
+        let mut c = Carrier::default();
+        c.unknown.push(ld(TYPE_ID, vec![1, 2]));
+        assert_eq!(c.extension(&E), Some(vec![1, 2]));
+        assert_eq!(c.extension_or_default(&D), vec![1, 2]);
     }
 
     // ── Extendee identity check ─────────────────────────────────────────────
