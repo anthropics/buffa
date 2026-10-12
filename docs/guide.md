@@ -216,7 +216,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.extern_path(proto, rust)` | — | Map a proto package or a single type to an external Rust path (see below) |
 | `.exclude_package(pkg)` | — | Drop a proto package (and its sub-packages) from code generation. Useful when directory globbing pulls in option-only packages (e.g. `buf.validate`) that you don't want Rust types for. A leading dot is accepted and stripped. Pair with `.extern_path` if kept files reference types from the excluded package; the generator emits a `cargo:warning` for each such cross-package reference. |
 | `.type_name_prefix(prefix)` | `""` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`); modules, oneof enums, extern-mapped types, and the wire format are unaffected. A crate referencing these types via `extern_path` must spell out the prefixed name (`::crate_a::RpcUser`) |
-| `.codec_strategy(strategy)` | `Unrolled` | Generate each message's binary `Message` code specialised to its fields (`CodecStrategy::Unrolled`), or from a static table and interpreters shared by every message (`CodecStrategy::Table`), which on a schema it fully covers is about half the compiled size and slower on messages of many small fields; see [Smaller generated code](#smaller-generated-code-codec_strategy) |
+| `.codec_strategy(strategy)` | `Unrolled` | Generate each message's binary `Message` code specialised to its fields (`CodecStrategy::Unrolled`), or from a static table and interpreters shared by every message (`CodecStrategy::Table`), which makes a large schema about 40% smaller and is slower on messages of many small fields; see [Smaller generated code](#smaller-generated-code-codec_strategy) |
 | `.codec_strategy_in(strategy, &[...])` | — | Choose the strategy for matching messages and the messages nested in them (proto-path prefixes; the last matching rule wins), on top of the global setting |
 | `.use_bytes_type()` | — | Use `bytes::Bytes` for all bytes fields, including `map<K, bytes>` values |
 | `.use_bytes_type_in(&[...])` | — | Use `bytes::Bytes` for matching bytes fields (same `map<K, bytes>` rule) |
@@ -460,6 +460,12 @@ The two members are a field and a oneof in either order, in any syntax, or two f
 
 Each affected message produces a build warning (`CodeGenWarning::KeywordEscapedNamesAdjusted`). A field is matched by its name and number, and a oneof by its name, across the files that the run generates. Another generated message that declares the same member gets the same Rust name and the warning. So two edits to a schema change existing Rust names. Adding a member named `self_` to a message that has `self` gives the name `self_` to the new member. Adding such a pair to one message renames the matching member of the others.
 
+**Message and enum names** keep the spelling of the `.proto` file, unless the name is a Rust keyword or one of ten primitive type names. A strict or reserved keyword of any edition through 2024 (`type`, `match`, `Self`, `gen`, `final`), and the primitive type names that generated code uses (`bool`, `str`, `u8`, `usize`, `i32`, `i64`, `u32`, `u64`, `f32` and `f64`), get a trailing underscore: `message type` generates `pub struct type_`, and `message bool` generates `pub struct bool_`. Unlike a field name, a type name never becomes a raw identifier (`r#type`): a derive macro that builds an identifier from the type name, as `#[derive(Arbitrary)]` does, panics on one. With `type_name_prefix` set, the prefix is added first and the rule applies to the prefixed name, so prefix `Rpc` and `message bool` generate `pub struct Rpcbool`. View types append to the escaped name: `bool_View`, `type_View`. The module that holds a message's nested types keeps the snake_case proto name, so a message nested in `bool` is `bool::Inner`, and one nested in `type` is `r#type::Inner`. The proto name is unchanged in JSON, the text format, type URLs and reflection.
+
+Two sibling types that end up with one Rust name, such as `bool` and `bool_`, are rejected with `CodeGenError::TypeNameConflict`.
+
+A message whose name has no upper-case letter, such as `item`, cannot contain a nested message, a nested enum, an `extend` block or a oneof, unless the name is one of those ten primitive names or a keyword other than `self`, `super` and `crate`. The struct and the module for its nested items get the same Rust name, and the generated code does not compile. Rename the message.
+
 **Generated files are named by proto file path, not package.** The file `proto/api/v1/service.proto` produces `api.v1.service.rs` regardless of the `package` declaration. The module tree generator uses the package from the file descriptor (not the file name) to build the `pub mod` nesting. This means the file name and module path may not correspond — the file `api.v1.service.rs` might be included inside `pub mod myapp { pub mod api { pub mod v1 { ... } } }` if the package is `myapp.api.v1`.
 
 **Recursive message types** work automatically: singular message fields use `MessageField<T>` (which is `Option<Box<T>>` internally), and message-typed oneof variants are boxed by default. Both direct recursion (`message T { oneof k { T self = 1; } }`) and mutual recursion (`A ↔ B`) compile without workarounds.
@@ -640,7 +646,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `idiomatic_enum_aliases=false` | Omit the `UpperCamelCase` associated-const aliases for enum values (`Status::Active`); the `SHOUTY_SNAKE_CASE` variants are unaffected (default: emitted). See [Enums](#enumvaluet--type-safe-open-enums) |
 | `override_feature_in=<path>=<feature>:<value>` | Apply a path-scoped editions feature override (currently `enum_type:OPEN`) to the compiled descriptors. Repeatable |
 | `open_enums_in=<path>` | Shorthand for `override_feature_in=<path>=enum_type:OPEN`. Repeatable |
-| `codec_strategy=table` | Generate every message's binary `Message` code from a static table and shared interpreters instead of code specialised to its fields (default `unrolled`). The plugin cannot check the compiler version: on Rust before 1.77 the generated code fails to compile. See [Smaller generated code](#smaller-generated-code-codec_strategy) |
+| `codec_strategy=table` | Generate each message's binary `Message` code from a static table and shared interpreters instead of code specialised to its fields, for the messages the table can handle (default `unrolled`). The plugin cannot check the compiler version: on Rust before 1.77 the generated code fails to compile. See [Smaller generated code](#smaller-generated-code-codec_strategy) |
 | `codec_strategy_in=<path>=<strategy>` | Choose `table` or `unrolled` for matching messages and the messages nested in them. Repeatable; leading dot optional; the last matching rule wins |
 | `unbox_oneof=true` | Store every non-recursive message/group oneof variant inline instead of `Box<T>`. Recursive variants stay boxed. |
 | `unbox_oneof_in=<path>` | Store matching non-recursive message/group oneof variants inline instead of `Box<T>`. Repeatable; leading dot optional. Use `.` to match all variants. Recursive variants stay boxed for broad matches; exact recursive matches are rejected. |
@@ -1060,10 +1066,12 @@ JSON formats still have to accept it.
 
 The generated items that must visit every field carry `#[allow(deprecated)]`
 themselves, so one deprecated field does not flood the build with warnings from
-generated code: the `Message` codec impls, `Debug`, `Default` (owned and view),
-the `with_*` setters, the hand-written JSON `Deserialize` impl, the reflection
-vtable, the view and lazy-view `to_owned`, a table message's static, and — on the
-enum side — `Enumeration`, the `allow_alias` consts and the idiomatic consts. A
+generated code. These include the `Message` codec and `TextFormat` impls,
+`Debug`, `Default` (owned and view), the `with_*` setters, the hand-written JSON
+`Deserialize` impl, the reflection vtable and a table message's static. On the
+views they include the decode, encode, `to_owned`, `Debug`, JSON and reflection
+impls. On the enum side they include `Enumeration`, `Default`, the `allow_alias`
+consts and the idiomatic consts. A
 message whose field declares `[default = DEPRECATED_VALUE]` needs the same guard
 even though no field of its own is deprecated, and so does an extension's default
 getter.
@@ -1075,25 +1083,30 @@ value deprecated does not change what a fuzz input builds.
 
 Writes are covered too: the `with_legacy_name(…)` setter for a deprecated field
 is itself `#[deprecated]`, so the builder API is not a quieter way to set it.
-This holds whether the field's deprecation comes from the option or from your own
-`field_attribute`.
+
+Views are also covered. The field on `FooView` and on `FooLazyView` carries
+`#[deprecated]`, and so do its accessor on `FooOwnedView` and a `required`
+field's `has_*` method. So reading a deprecated field after `decode_view` warns,
+as reading the owned field does.
+
+The setter and the view markers are there whether the field's deprecation comes
+from the option or from your own `field_attribute`.
 
 Aliases inherit the marker. An `allow_alias` value names the same variant as its
-primary, so `demo::Size::TINY` is deprecated whenever `demo::Size::SMALL` is; so
-does its idiomatic `CamelCase` const (`Size::Tiny`) when
+primary, so `demo::Size::TINY` is deprecated whenever `demo::Size::SMALL` is. Its
+idiomatic `CamelCase` const (`Size::Tiny`) is deprecated with it when
 `idiomatic_enum_aliases` is on. An alias is not a quiet way to reach a deprecated
 value. The direction is per value: an alias marked `[deprecated = true]` whose
 primary is live marks only the alias and the alias's own idiomatic const.
 
-Three things are not marked:
+Two things are not marked:
 
-- **Oneof variants are not marked yet.** A deprecated `oneof` member neither
-  carries `#[deprecated]` nor widens the owned message's guard, so
-  `examples/addressbook` still needs its module-level `#[allow(deprecated)]`.
-- **The view read path is not marked.** `FooView` fields and the
-  `FooOwnedView` accessors borrow from the decode buffer, and their `to_owned`
-  conversion writes the owned field, so they stay silent for now — a consumer
-  reading a deprecated field through `decode_view` gets no warning.
+- **Oneof variants are not marked.** `[deprecated = true]` on a `oneof` member
+  does not add `#[deprecated]`. `prost-build` marks these, so a deprecated oneof
+  member that warned under prost is silent here. A `#[deprecated]` that you
+  attach to the variant with `field_attribute` goes on the owned oneof enum only.
+  The generated impls that match on it are not guarded, so
+  `examples/addressbook` keeps a module-level `#[allow(deprecated)]`.
 - **Whole-message and whole-enum deprecation is not emitted**, matching prost.
 
 A derive that you attach with `enum_attribute` or `type_attribute` can name a
@@ -1106,14 +1119,16 @@ ones, warns wherever your crate uses a deprecated field or enum value. Buffa's
 published types carry the marker too:
 `google.protobuf.Method::{syntax,edition}` and the deprecated option fields of
 `descriptor.proto` (`FieldOptions::weak`, `FileOptions::java_generate_equals_and_hash`,
-`{Message,Enum}Options::deprecated_legacy_json_field_conflicts`). If your crate
+`{Message,Enum}Options::deprecated_legacy_json_field_conflicts`), on the owned
+types, on their views (`MethodView::syntax`) and on the `OwnedView` accessors
+(`MethodOwnedView::syntax()`). If your crate
 builds under `-D warnings` or `#![deny(warnings)]`, an upgrade fails until you
 put `#[allow(deprecated)]` on the uses that it keeps. Codegen has no option that
 turns the markers off; pin the version if you cannot absorb the diagnostics.
 
-To attach your own note (prost's marker is bare too), use `field_attribute` —
-and note it wins over the option-derived marker, since rustc permits only one
-`deprecated` attribute per item:
+To attach your own note (prost's marker is bare too), use `field_attribute`. On
+the owned struct's field it wins over the option-derived marker, since rustc
+permits only one `deprecated` attribute per item:
 
 ```rust,ignore
 buffa_build::Config::new()
@@ -1124,8 +1139,10 @@ buffa_build::Config::new()
     .unwrap();
 ```
 
-A field deprecated only through this hook still gets the generated-code guard and
-the deprecated setter, so the option and the hook behave alike from here.
+A message field deprecated only through this hook still gets the generated-code
+guard. It also gets the same markers as a field deprecated by the option: on the
+setter, the view fields, the `FooOwnedView` accessor and `has_*`. Those markers
+are bare. Your attribute, with its note, is on the owned struct's field only.
 
 ### `skip_debug` and hand-written `Debug`
 
@@ -1191,7 +1208,7 @@ Buffa uses a two-pass model to avoid the exponential-time size computation that 
 
 ### Smaller generated code: `codec_strategy`
 
-By default every generated message contains its own size, write, and merge code, specialised to its fields. `CodecStrategy::Table` replaces it with one static table per message and interpreters in `buffa` that every message shares. On a schema of 334 messages and 3,477 fields, the compiled size at `opt-level = "z"` went from 1,644 KB to 817 KB (measured with oneofs and maps flattened, which the table cannot handle; see [#463](https://github.com/anthropics/buffa/issues/463) for the method). The cost is speed on messages made of many small fields, where encoding takes up to about 3.5 times as long as with the default `CodecStrategy::Unrolled` and decoding up to 1.6 times. Messages dominated by bulk data, such as large strings, bytes, and packed arrays, show no difference.
+By default every generated message contains its own size, write, and merge code, specialised to its fields. `CodecStrategy::Table` replaces it with one static table per message and interpreters in `buffa` that every message shares. On the WhatsApp schema (`whatsapp.proto` from `waproto`: 334 top-level messages, 752 with the nested ones, 3,477 fields), built with `Box` message fields, no unknown-field preservation, fat LTO, and `panic = "abort"`, the text section of the binary at `opt-level = "z"` went from 1,669 KB to 968 KB (−42%). All 752 of its messages use the table. [#463](https://github.com/anthropics/buffa/issues/463) describes the method. The cost is speed on messages made of many small fields, where encoding takes up to about 3.5 times as long as with the default `CodecStrategy::Unrolled` and decoding up to 1.6 times. Messages dominated by bulk data, such as large strings, bytes, and packed arrays, show no difference.
 
 ```rust,ignore
 // build.rs
@@ -1204,28 +1221,30 @@ buffa_build::Config::new()
     .compile()?;
 ```
 
-A table holds only table messages, so a message that holds an unrolled one is unrolled too, and a `codec_strategy_in` rule for a message does not select the messages it holds: with the global setting left at `Unrolled`, select a message and everything it holds. In the example, every message that contains `.wa.Message` stays unrolled, and that usually includes the root message an application encodes; codegen does not warn about a fallback that follows from your own `Unrolled` rule.
+Apart from the holders listed below, a table message may hold any message, including as a member of a `oneof` and as a `map` value. It reaches a child that has a table through it, and any other child (a message you set to `Unrolled`, one generated by another crate, or a well-known type such as `Timestamp`) through its `Message` impl, which costs a function call per child. A `codec_strategy_in` rule selects the message it names and the messages nested in it, and does not extend to the messages it holds. In the example, `.wa.Message` and `.wa.Receipt` stay specialised and the messages that hold them use the table. Setting a message to `Unrolled` therefore does not keep the messages that hold it unrolled: to keep a whole path specialised, set its holders to `Unrolled` too.
 
-The option changes only the binary `Message` implementation. The wire format and the JSON, text, view, and reflection code are the same under both strategies, and a table message encodes to the same bytes and decodes the same accepted input as its unrolled twin. It differs in three ways:
+The option changes only the binary `Message` implementation. The wire format and the JSON, text, view, and reflection code are the same under both strategies, and a table message encodes to the same bytes and decodes the same accepted input as its unrolled twin. It differs in these ways:
 
-- A field that declares a length past the end of its enclosing message fails at once with `DecodeError::UnexpectedEof`, where unrolled code reads on into the enclosing message and can report a different error for the same rejected input.
+- A field that declares a length past the end of its enclosing message fails at once with `DecodeError::UnexpectedEof`, where unrolled code reads on into the enclosing message and can report a different error for the same rejected input. A child reached through its `Message` impl is read from the slice of the nearest enclosing table message, so it is bounded there.
 - The table decodes from one contiguous slice, so a `Buf` that is not contiguous is gathered into one buffer first. `Message::merge_field` on a table message cannot gather, and returns `UnexpectedEof` for such a buffer; only code that calls it directly is affected, such as the default `merge_group`. A message that another crate or another codegen run uses as the type of a group or `DELIMITED` field must therefore stay `Unrolled`. Within one run, codegen keeps the type of a group field unrolled itself.
-- `clear()` resets a table message to `Default`, so it releases the capacity of its strings and vectors instead of keeping it.
+- `clear()` resets a table message to `Default`, so it releases the capacity of its strings, vectors, and maps, where unrolled code keeps it.
+- Encoding into any sink other than the cursor that `Message::encode` and its siblings write a `BufMut` through stages each child reached through its `Message` impl in a scratch buffer first. Those sinks are a `Rope`, a sink defined outside `buffa`, and a `BufMut` passed straight to `Message::write_to`. A `Rope` copies the child again and cannot share the `bytes` fields inside it by reference count.
+- Codegen cannot see the fields of a message from another crate, so a table message that holds one with a `bytes` field of a non-default type copies it on decode. The well-known type `google.protobuf.Any` is one, because its `value` is `bytes::Bytes`. To keep the payload shared with a `Bytes` input, set the holder to `Unrolled` with `codec_strategy_in`.
 
 These stay unrolled, whatever the setting:
 
-- a message with a `oneof`, a `map`, or a group field;
+- a message with a group field;
 - the message type of a group field;
 - a message that uses the `MessageSet` wire format;
 - a message with extension ranges, when JSON code is generated and unknown fields are preserved;
-- a message with a field of a non-default string, bytes, or collection type, which `use_bytes_type`, `string_type`, `bytes_type`, and `repeated_type` select;
-- a message that holds any message that stays unrolled, is not selected for the table, or is generated by another crate, such as a well-known type.
+- a message with a field of a non-default string, bytes, or collection type, which `use_bytes_type`, `string_type`, `bytes_type`, `repeated_type`, and a custom map type (`map_type_custom`) select. `HashMap` and `BTreeMap` maps are supported; a `map` whose keys or values are of a non-default string or bytes type is not;
+- a message that holds, in a singular, repeated, `oneof`, or map value field, a message of the same run that has a `bytes` field of a non-default type, or that holds one. The table decodes from one contiguous slice, so it would copy the `bytes::Bytes` fields that unrolled code decoding from a `Bytes` shares with the input.
 
 Codegen prints one warning per run that counts the messages that fell back, groups them by reason, and names a few of each. Setting the messages that cause a fallback to `Unrolled` with `codec_strategy_in` silences it. A `codec_strategy_in` rule that selects the table for a message by its exact path, when the message cannot use it, is an error, because the rule asked for something impossible.
 
 The table code needs Rust 1.77 or later; `buffa-build` returns an error on an older compiler, and the plugin's output does not compile on one. It contains `unsafe` code, in macros inside `buffa`, so the generated code compiles in a crate with `#![forbid(unsafe_code)]`. The `buffa::table` module the code calls may change in any release, so regenerate the code whenever you update `buffa`; a mismatch is a compile error.
 
-`compute_size`, decoding from a contiguous buffer, and encoding into a `BufMut` are compiled in `buffa`, at the `opt-level` `buffa` is built with. A build that sets `opt-level = "z"` for everything can spend a little size to recover speed with `[profile.release.package.buffa] opt-level = 3`. Encoding into a sink that is not a `BufMut`, such as `Rope`, and the generic wrappers around decoding are compiled in your crate.
+`compute_size`, decoding from a contiguous buffer, and encoding into a `BufMut` are compiled in `buffa`, at the `opt-level` `buffa` is built with. A build that sets `opt-level = "z"` for everything can spend a little size to recover speed with `[profile.release.package.buffa] opt-level = 3`. Encoding into any other sink, such as a `Rope`, and the generic wrappers around decoding are compiled in your crate. A map field has no size, write, or decode logic per key or value type; only iterating the map and inserting into it are instantiated per collection type, in the crate that owns the message, at its `opt-level`. Raising `buffa`'s `opt-level` therefore speeds the interpreters but not the hash map's insertion and iteration.
 
 ### Error handling
 
@@ -1314,7 +1333,7 @@ The default `Message::decode` / `decode_from_slice` methods use the defaults (10
 
 Every option above applies to the protobuf binary decoders — owned, view, and the reflective `DynamicMessage` codec. The carve-outs are `ReflectMessage::to_dynamic` and the generated-message bridge (`DynamicMessage::from_message` / `try_from_message*`), whose internal round-trip re-decodes bytes buffa just encoded with memory bounds scaled to the encoded length: 128 bytes of element memory per encoded byte and one unknown-field slot per encoded byte, each floored at its default. They read messages you already hold, not wire input, so this avoids false rejection by the fixed defaults without making the second representation unbounded. **None of them applies to JSON.** Decoding from JSON runs `serde_json` (or another `Deserializer`) directly into the generated `Deserialize` impls, which never receive a `DecodeOptions`, so a message parsed from JSON is bounded by none of the limits that bound the same message parsed from protobuf. The element amplification is very nearly as large there — `{}` is three JSON bytes for the same element footprint that costs two on the wire.
 
-The reflective JSON parser applies an element-memory limit of its own. `DynamicMessage::from_json` owns its `Deserializer`, so it carries the budget the way textproto does: 32 MiB by default, charged per repeated element, map entry, `Struct` member, `ListValue` element and `FieldMask` path, with the charges the reflective binary decoder applies, and shared across the whole parse rather than reset per nested message. To parse with another limit, call `DynamicMessageSeed::new(pool, index).with_element_memory_limit(n).parse_json(json)`. A parse that exceeds the limit fails with a `serde_json::Error`, and `DynamicMessageSeed::is_element_memory_limit_error(&err)` tells that error from a malformed-input one, for a server that answers the two differently. The recursion and message-size limits still do not reach this parser, and generated-message JSON is unbounded as described above.
+The reflective JSON parser applies an element-memory limit of its own. `DynamicMessage::from_json` owns its `Deserializer`, so it carries the budget the way textproto does: 32 MiB by default, charged per repeated element, map entry, `Struct` member, `ListValue` element and `FieldMask` path, with the charges the reflective binary decoder applies, and shared across the whole parse rather than reset per nested message. To parse with another limit, call `DynamicMessage::from_json_with_element_memory_limit(pool, index, json, n)`. To combine a limit with lenient unknown-field handling, build a seed: `DynamicMessageSeed::new(pool, index).ignore_unknown_fields(true).with_element_memory_limit(n).parse_json(json)`. `parse_json` consumes the seed, so a server that sets the options once builds the seed once and calls `seed.clone().parse_json(json)` for each request. A parse that exceeds the limit fails with a `serde_json::Error`, and `DynamicMessageSeed::is_element_memory_limit_error(&err)` tells that error from a malformed-input one, for a server that answers the two differently. The recursion and message-size limits still do not reach this parser, and generated-message JSON is unbounded as described above.
 
 A `google.protobuf.Any` payload costs more than the same message as a field of its own type. `@type` can follow the fields it types, so the parser buffers the payload object and decodes the message from the buffer. Until the payload is decoded, the buffer draws on the same budget: at every depth, each object member in it costs what a map entry costs and each array element what a repeated element costs (88 and 64 bytes on a 64-bit target with a current compiler). So a payload needs room for its buffer and its message together, on top of what the parse has kept when it reaches the `Any`, and an `Any` that follows a large repeated field has less room than one that precedes it. The documentation of `DynamicMessageSeed::with_element_memory_limit` gives the full rule and the capacities at the default.
 
@@ -2011,6 +2030,13 @@ prefix. `type_name()` returns that name; for a name known only at run time,
 write `any.type_name() == Some(name)`. `is_type` and `unpack_if` take a URL and
 compare the whole of it, prefix included.
 
+`any.proto` says that a type URL contains at least one `/`, and `pack_message`
+and `try_pack_message` write one; `pack` and `try_pack` store the string you
+pass. A `type_url` that is only a full name, such as
+`my.package.MyMessage`, is read as that name: `type_name()` returns it, and
+`is_message` and `unpack_message` match it. protobuf-go and Python read such
+an `Any` the same way; C++ and Java do not match it to a message.
+
 JSON and text format write an `Any` with the fields of the packed message
 expanded: `{"@type": "type.googleapis.com/my.package.MyMessage", "name": "x"}`
 in JSON, and `[type.googleapis.com/my.package.MyMessage] { name: "x" }` in
@@ -2025,6 +2051,26 @@ The lookup checks the exact URL first. If that URL is not registered, the
 lookup uses the message name after the last `/`. So a type registered under
 one prefix is found under any other. The lookup does not rewrite `type_url`:
 the `Any` keeps the URL it was given.
+
+JSON also resolves a bare full name: `{"@type": "my.package.MyMessage", "name":
+"x"}` parses when `my.package.MyMessage` has a JSON entry in the registry, and
+an `Any` with that `type_url` is written in the same form. A bare name with no
+JSON entry is a parse error, even in the base64 form described below, which is
+read only for an `@type` that contains a `/`. To reject every `@type` without a
+`/` when parsing, as C++ and Java do, set `strict_any_type_urls`:
+
+```rust,ignore
+use buffa::json::{JsonParseOptions, with_json_parse_options};
+
+let opts = JsonParseOptions::new().strict_any_type_urls(true);
+let msg = with_json_parse_options(&opts, || serde_json::from_str::<MyMsg>(json))?;
+```
+
+`DynamicMessageSeed::strict_any_type_urls` is the same setting for a
+`DynamicMessage`; `JsonParseOptions` does not cover one. Text format does not
+resolve a bare name to a registered message, because
+`[my.package.MyMessage] { ... }` is the syntax of an extension field: such an
+`Any` is written with its `type_url` and `value` fields.
 
 For a type with no JSON entry in the registry, buffa writes
 `{"@type": "...", "value": "<base64>"}`: the encoded message as base64 under
@@ -2378,8 +2424,8 @@ reflection surface:
   (recursively, including inside `Any`); the strict form rejects them, and
   both reject duplicate keys per the proto3 JSON spec.
 - **Bounded JSON parsing** — `from_json` limits the repeated elements and map
-  entries it builds (32 MiB by default), and `DynamicMessageSeed` parses with
-  another limit; see
+  entries it builds (32 MiB by default), and
+  `from_json_with_element_memory_limit` parses with another limit; see
   [what the limits bound](#what-these-limits-do-and-do-not-bound).
 - **`Any`** — `pack_any()` / `unpack_any()` resolve `type_url`s against the
   pool.
