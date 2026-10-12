@@ -966,12 +966,6 @@ where
 mod tests {
     use super::*;
 
-    /// Serializes the tests below that install or clear the global registry.
-    /// `set_type_registry` replaces the JSON and the text halves together, so
-    /// the `json` and `text` tests must share one lock.
-    #[cfg(any(feature = "json", feature = "text"))]
-    static GLOBAL_LOCK: &std::sync::Mutex<()> = &crate::test_doubles::REGISTRY_TEST_LOCK;
-
     #[test]
     fn default_is_empty() {
         let reg = TypeRegistry::default();
@@ -1041,7 +1035,7 @@ mod tests {
 
         #[test]
         fn set_type_registry_installs_json_halves() {
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
 
             let mut reg = TypeRegistry::new();
             reg.register_json_any(any_entry("type.googleapis.com/test.Unified", false));
@@ -1066,7 +1060,7 @@ mod tests {
             let _: ExtensionRegistryEntry = ext_entry(1, "a", "B");
             let _: JsonRegistry = TypeRegistry::new();
             // Deprecated fn redirects.
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
             set_json_registry(TypeRegistry::new());
             crate::any_registry::clear_any_registry();
         }
@@ -1281,7 +1275,7 @@ mod tests {
 
         #[test]
         fn repeated_entries_parse_with_a_merge_that_reads_one_message() {
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
             let records = install_repeated_entries();
 
             let mut s = alloc::string::String::new();
@@ -1302,7 +1296,7 @@ mod tests {
 
         #[test]
         fn repeated_helper_does_not_repeat_a_name_from_an_earlier_entry() {
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
             let fields = fields_from(install_repeated_entries());
 
             let mut s = alloc::string::String::new();
@@ -1352,7 +1346,7 @@ mod tests {
                 Ok(())
             }
 
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
             let fields = install_custom_entry(write_no_value);
 
             let mut s = alloc::string::String::new();
@@ -1376,7 +1370,7 @@ mod tests {
                 repeated_message_encode_text::<Inner>(n, f, enc)
             }
 
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
             let fields = install_custom_entry(value_then_a_direct_call);
 
             let mut s = alloc::string::String::new();
@@ -1525,7 +1519,7 @@ mod tests {
 
         #[test]
         fn set_type_registry_installs_text_halves() {
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
 
             let mut reg = TypeRegistry::new();
             reg.register_text_any(TextAnyEntry {
@@ -1556,7 +1550,7 @@ mod tests {
 
         #[test]
         fn bracketed_names_with_trivia_resolve_through_the_registry() {
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
 
             let mut reg = TypeRegistry::new();
             reg.register_text_any(TextAnyEntry {

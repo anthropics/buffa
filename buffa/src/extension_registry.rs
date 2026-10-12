@@ -1301,9 +1301,7 @@ mod tests {
         use crate::json::{with_json_parse_options, JsonParseOptions};
 
         let _guard = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
-        // Install a fresh registry with `pkg.ext` but not `pkg.missing`. This
-        // test previously leaned on leaked state from a sibling test, which
-        // raced against other global-registry installers under `cargo test`.
+        // A registry with `pkg.ext` and without `pkg.missing`.
         let mut reg = ExtensionRegistry::new();
         reg.register(entry!(120, "pkg.ext", "pkg.Msg"));
         set_extension_registry(Box::new(reg));
@@ -1340,7 +1338,7 @@ mod tests {
     #[test]
     fn deserialize_extensions_reads_serde_jsons_private_key_as_data() {
         let _guard = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
-        // An empty registry: the key below must name no extension.
+        // An empty registry, so the key does not match an extension.
         set_extension_registry(Box::default());
 
         // Parsed as JSON, the string fails the recursion limit. As data it
