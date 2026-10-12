@@ -673,7 +673,8 @@ fn test_rejects_proto_paths_with_the_same_generated_stem() {
     assert_eq!(
         err.to_string(),
         "output file name conflict: foo/bar.proto and foo.bar.proto both generate \
-         'foo.bar.rs'; rename one of the proto files"
+         'foo.bar.rs'; rename a proto file so that the output names differ, or enable \
+         file_per_package"
     );
 }
 
@@ -718,7 +719,8 @@ fn test_rejects_mod_proto_in_a_directory_named_after_its_package() {
     assert_eq!(
         err.to_string(),
         "output file name conflict: foo/mod.proto and package foo both generate \
-         'foo.mod.rs'; rename one of the proto files"
+         'foo.mod.rs'; rename a proto file so that the output names differ, or enable \
+         file_per_package"
     );
 }
 

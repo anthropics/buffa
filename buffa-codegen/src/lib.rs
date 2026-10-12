@@ -5327,12 +5327,14 @@ pub enum CodeGenError {
     /// a package's module file is `<package>.mod.rs`, which is also the
     /// content file of `foo/mod.proto` in package `foo`.
     ///
-    /// Resolve by renaming one of the proto files, or by setting
+    /// Resolve by renaming a proto file (the only one involved, when the
+    /// other source is a package), or by setting
     /// [`CodeGenConfig::file_per_package`], which emits one file per package
     /// and no per-proto content files.
     #[error(
         "output file name conflict: {first_source} and {second_source} both \
-         generate '{file_name}'; rename one of the proto files"
+         generate '{file_name}'; rename a proto file so that the output names \
+         differ, or enable file_per_package"
     )]
     OutputFileNameConflict {
         /// The output path that both inputs map to.
