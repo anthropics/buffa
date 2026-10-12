@@ -1812,7 +1812,10 @@ impl Config {
     /// Prefix matching respects proto-segment boundaries.
     ///
     /// Also applies to oneof variants when `path` matches
-    /// `".pkg.Msg.my_oneof.variant_name"`.
+    /// `".pkg.Msg.my_oneof.variant_name"`, but not to the struct field holding
+    /// the oneof; use
+    /// [`oneof_struct_field_attribute`](Self::oneof_struct_field_attribute) for
+    /// that.
     ///
     /// A `#[deprecated]` supplied here wins over the one codegen derives from
     /// the field's `[deprecated = true]` option — rustc permits only one
@@ -1931,7 +1934,9 @@ impl Config {
     /// order. The match key is the oneof's fully-qualified path
     /// (`.my.pkg.MyMessage.my_oneof`) — the whole-enum path has no variant
     /// segment; to target a single variant's field, append `.variant_name`
-    /// and use [`field_attribute`](Self::field_attribute) instead. A
+    /// and use [`field_attribute`](Self::field_attribute) instead, and for the
+    /// message struct's field holding the oneof, use
+    /// [`oneof_struct_field_attribute`](Self::oneof_struct_field_attribute). A
     /// malformed attribute produces a compile-time error in the generated
     /// code. Useful when a oneof needs a different attribute set than the
     /// surrounding types — for example to keep `#[derive(serde::Serialize)]`
@@ -1972,6 +1977,100 @@ impl Config {
     ) -> Self {
         self.codegen_config
             .oneof_attributes
+            .push((normalize_attr_path(path.into()), attribute.into()));
+        self
+    }
+
+    /// Add a custom attribute to the message struct's field holding a oneof
+    /// (the `Option<OneofEnum>` member), not to the oneof's variants.
+    ///
+    /// The match key is the oneof's fully-qualified path
+    /// (`.my.pkg.MyMessage.my_oneof`), with the same path-matching semantics
+    /// as [`type_attribute`](Self::type_attribute): `".my.pkg"` reaches the
+    /// oneof field of every message in the package, nested ones included.
+    /// Attributes accumulate in insertion order, after buffa's own attributes
+    /// on the field. A malformed attribute produces a compile-time error.
+    ///
+    /// A rule on a variant's path (`.my.pkg.MyMessage.my_oneof.variant_name`)
+    /// does not match the oneof, so it has no effect, and the build does not
+    /// warn about it. Variants take their attributes from
+    /// [`field_attribute`](Self::field_attribute).
+    ///
+    /// Each of these lines of the generated code for a oneof takes its
+    /// attributes from a different method:
+    ///
+    /// ```rust,ignore
+    /// pub struct Event {
+    ///     // oneof_struct_field_attribute(".pkg.Event.payload", ..)
+    ///     pub payload: Option<event::Payload>,
+    /// }
+    ///
+    /// // oneof_attribute(".pkg.Event.payload", ..), or type_attribute on the same path
+    /// pub enum Payload {
+    ///     // field_attribute(".pkg.Event.payload.text", ..)
+    ///     Text(String),
+    /// }
+    /// ```
+    ///
+    /// `field_attribute` on the oneof's path (`.pkg.Event.payload`) matches
+    /// the variants only, where an attribute
+    /// such as `#[serde(skip_serializing_if = "...")]` is rejected. prost-build
+    /// puts such a `field_attribute` on the struct field as well; use this
+    /// method for the struct field.
+    ///
+    /// Applies to the owned message struct only; the view structs do not get
+    /// the attribute.
+    ///
+    /// A `#[deprecated]` given here marks the owned struct's field only. The
+    /// same field on the view structs stays unmarked, so reading the oneof
+    /// through a view does not warn, unlike a field deprecated through
+    /// `field_attribute`. The generated items that visit the owned field
+    /// carry `#[allow(deprecated)]`.
+    ///
+    /// # Pitfalls
+    ///
+    /// With [`generate_json(true)`](Self::generate_json) the field already
+    /// carries buffa's `#[serde(flatten)]` for the derived `Serialize`, and
+    /// buffa generates the `Deserialize` impl of a message with a oneof
+    /// instead of deriving it. So a serde attribute given here changes the
+    /// owned message's `Serialize` output only: `Deserialize` and the views'
+    /// `Serialize` ignore it. A second `flatten` is a compile error in the
+    /// generated code. Serde attributes here are for a serde derive that you
+    /// attach yourself, with `generate_json` off.
+    ///
+    /// With
+    /// [`gate_impls_on_crate_features(true)`](Self::gate_impls_on_crate_features)
+    /// buffa's serde derive is compiled only under the JSON feature. Write a
+    /// serde attribute for it as `#[cfg_attr(feature = "json", serde(...))]`,
+    /// with your JSON feature's name if you renamed it, so that it is compiled
+    /// under the same feature.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     // `UnknownFields` does not implement `serde::Serialize`. With this
+    ///     // off, unknown fields are dropped on decode.
+    ///     .preserve_unknown_fields(false)
+    ///     .message_attribute(".my.pkg.MyMessage", "#[derive(serde::Serialize)]")
+    ///     .oneof_attribute(".my.pkg.MyMessage.my_oneof", "#[derive(serde::Serialize)]")
+    ///     .oneof_struct_field_attribute(
+    ///         ".my.pkg.MyMessage.my_oneof",
+    ///         "#[serde(skip_serializing_if = \"Option::is_none\")]",
+    ///     )
+    ///     .files(&["proto/my_service.proto"])
+    ///     .includes(&["proto/"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn oneof_struct_field_attribute(
+        mut self,
+        path: impl Into<String>,
+        attribute: impl Into<String>,
+    ) -> Self {
+        self.codegen_config
+            .oneof_struct_field_attributes
             .push((normalize_attr_path(path.into()), attribute.into()));
         self
     }
@@ -3717,6 +3816,24 @@ mod tests {
     }
 
     #[test]
+    fn oneof_struct_field_attribute_forwards_normalized_path() {
+        let cfg =
+            Config::new().oneof_struct_field_attribute("my.pkg.Msg.payload.", "#[serde(skip)]");
+        assert_eq!(
+            cfg.codegen_config.oneof_struct_field_attributes,
+            vec![(
+                ".my.pkg.Msg.payload".to_string(),
+                "#[serde(skip)]".to_string()
+            )]
+        );
+        assert!(cfg.codegen_config.oneof_attributes.is_empty());
+        assert!(cfg.codegen_config.field_attributes.is_empty());
+        assert!(cfg.codegen_config.type_attributes.is_empty());
+        assert!(cfg.codegen_config.message_attributes.is_empty());
+        assert!(cfg.codegen_config.enum_attributes.is_empty());
+    }
+
+    #[test]
     fn oneof_attribute_forwards_normalized_path() {
         let cfg = Config::new().oneof_attribute("my.pkg.Msg.payload.", "#[derive(Hash)]");
         assert_eq!(
@@ -3731,6 +3848,7 @@ mod tests {
         assert!(cfg.codegen_config.enum_attributes.is_empty());
         assert!(cfg.codegen_config.message_attributes.is_empty());
         assert!(cfg.codegen_config.field_attributes.is_empty());
+        assert!(cfg.codegen_config.oneof_struct_field_attributes.is_empty());
     }
 
     #[test]

@@ -818,8 +818,12 @@ impl<'de> serde::Deserialize<'de> for Color {
                 f.write_str("a string, integer, or null for Color")
             }
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Color, E> {
-                <Color as crate::Enumeration>::from_proto_name(v)
-                    .ok_or_else(|| serde::de::Error::unknown_variant(v, &[]))
+                <Color as crate::Enumeration>::from_proto_name(v).ok_or_else(|| {
+                    serde::de::Error::invalid_value(
+                        serde::de::Unexpected::Str(v),
+                        &"a known enum variant name",
+                    )
+                })
             }
             fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Color, E> {
                 <Color as crate::Enumeration>::from_i32(v as i32)
@@ -1589,6 +1593,17 @@ fn closed_enum_deserialize_table() {
     }
 }
 
+#[test]
+fn closed_enum_unknown_string_error_names_the_value() {
+    let err = serde_json::from_str::<SerdeClosedEnum>(r#""PURPLE""#)
+        .map(|v| v.0)
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        r#"invalid value: string "PURPLE", expected a known enum variant name at line 1 column 8"#
+    );
+}
+
 // ── opt_closed_enum tests ─────────────────────────────────────────────
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -1703,6 +1718,16 @@ fn opt_closed_enum_works_without_deserialize_impl() {
         let got = opt_closed_enum::deserialize::<BareEnum, _>(&mut d).map_err(|_| ());
         assert_eq!(&got, expected, "input: {json}");
     }
+}
+
+#[test]
+fn opt_closed_enum_unknown_string_error_names_the_value() {
+    let mut d = serde_json::Deserializer::from_str(r#""PURPLE""#);
+    let err = opt_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        r#"invalid value: string "PURPLE", expected a known enum variant name"#
+    );
 }
 
 #[test]

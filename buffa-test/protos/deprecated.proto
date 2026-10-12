@@ -48,6 +48,17 @@ message Audit {
   string legacy_action = 2 [deprecated = true];
 }
 
+// Live in the schema; build.rs deprecates the struct field holding `body` with
+// `oneof_struct_field_attribute`. The message has no other deprecated member,
+// so that attribute alone has to put the guard on the impls that visit the
+// field.
+message HandMarkedGroup {
+  oneof body {
+    string text = 1;
+    int32 code = 2;
+  }
+}
+
 enum Routing {
   option allow_alias = true;
 
