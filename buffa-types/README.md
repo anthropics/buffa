@@ -9,10 +9,9 @@ The generated message code is checked in, so using this crate does not require
 
 Add both the runtime and well-known-types crates:
 
-```toml
-[dependencies]
-buffa = "0.9"
-buffa-types = "0.9"
+```sh
+cargo add buffa
+cargo add buffa-types
 ```
 
 Encode and decode a timestamp with Buffa's `Message` trait:
@@ -39,7 +38,7 @@ messages are available under `buffa_types::google::protobuf`.
 
 | Feature | Default | Enables |
 |---|:---:|---|
-| `std` | Yes | Standard-library integrations, including `SystemTime` and `Duration` conversions |
+| `std` | Yes | `Timestamp` conversions to and from `std::time::SystemTime`, and `Timestamp::now` |
 | `json` | No | ProtoJSON serde implementations for well-known types |
 | `chrono` | No | Conversions to and from `chrono` time types |
 | `jiff` | No | Conversions to and from `jiff` time types |
@@ -48,13 +47,14 @@ messages are available under `buffa_types::google::protobuf`.
 
 For JSON, enable the feature and add `serde_json` to your crate:
 
-```toml
-buffa-types = { version = "0.9", features = ["json"] }
-serde_json = "1"
+```sh
+cargo add buffa-types --features json
+cargo add serde_json
 ```
 
 The crate also supports `no_std` with `alloc`. Disable the default `std`
-feature with `default-features = false` when needed.
+feature with `default-features = false` when needed. The conversions between
+`Duration` and `core::time::Duration` do not need `std`.
 
 See the [crate documentation](https://docs.rs/buffa-types) for conversion
 details and the complete API.
