@@ -27,7 +27,8 @@ where
 /// # Errors
 ///
 /// Returns an [`Error`] if serialization fails or the writer returns an I/O
-/// error.
+/// error. For a writer failure, [`Error::io_error_kind`] returns its
+/// [`std::io::ErrorKind`].
 pub fn to_writer<W, M>(w: W, msg: &M) -> Result<(), Error>
 where
     W: io::Write,
@@ -68,7 +69,8 @@ where
 /// # Errors
 ///
 /// Returns an [`Error`] if serialization fails or the writer returns an I/O
-/// error.
+/// error. For a writer failure, [`Error::io_error_kind`] returns its
+/// [`std::io::ErrorKind`].
 pub fn to_writer_view<'a, W, V>(w: W, view: &V) -> Result<(), Error>
 where
     W: io::Write,

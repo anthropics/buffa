@@ -41,6 +41,8 @@ where
 ///
 /// Returns an [`Error`] if the stream cannot be read, the YAML is malformed,
 /// or a field value cannot be converted to its target type.
+/// When the stream cannot be read, [`Error::io_error_kind`] returns the
+/// failure's [`std::io::ErrorKind`].
 pub fn from_reader<R, M>(r: R) -> Result<M, Error>
 where
     R: io::Read,

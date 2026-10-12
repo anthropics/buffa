@@ -17,8 +17,8 @@
 ///
 /// Reader and writer failures also retain the reported
 /// [`std::io::ErrorKind`], available through [`io_error_kind`](Self::io_error_kind).
-/// A writer that returns zero bytes for a non-empty buffer reports
-/// [`WriteZero`](std::io::ErrorKind::WriteZero).
+/// When a writer returns `Ok(0)` for a non-empty buffer, `io_error_kind`
+/// returns [`WriteZero`](std::io::ErrorKind::WriteZero).
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct Error {
@@ -54,20 +54,21 @@ impl Error {
         })
     }
 
-    /// Returns the I/O error kind reported while reading or writing, or `None`
-    /// for parsing and conversion errors.
+    /// Returns the [`std::io::ErrorKind`] of the reader or writer failure
+    /// behind this error.
+    ///
+    /// Only [`from_reader`](crate::from_reader), [`to_writer`](crate::to_writer)
+    /// and [`to_writer_view`](crate::to_writer_view) return an error for which
+    /// this is `Some`, and only when the reader or writer failed. For every
+    /// other error, such as malformed YAML or a value that does not fit its
+    /// field, it is `None`.
     #[must_use]
     pub fn io_error_kind(&self) -> Option<std::io::ErrorKind> {
         self.inner.io_error_kind
     }
 
     pub(crate) fn from_carrier(inner: serde_norway::Error) -> Self {
-        Self {
-            inner: InnerError {
-                carrier: inner,
-                io_error_kind: None,
-            },
-        }
+        Self::from_carrier_with_io_error_kind(inner, None)
     }
 
     pub(crate) fn from_carrier_with_io_error_kind(
