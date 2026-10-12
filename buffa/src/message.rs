@@ -220,9 +220,11 @@ impl<'a> DecodeContext<'a> {
     ///
     /// A caller that drops a value after
     /// [`ElementMemoryLimitExceeded`](DecodeError::ElementMemoryLimitExceeded)
-    /// and keeps decoding with the same context uses this to keep the
-    /// budget a bound on the total: a failed charge leaves the budget
-    /// unchanged, so a smaller value could otherwise still be charged.
+    /// and keeps decoding with the same context uses this to make the first
+    /// value that does not fit the last one it reads: a failed charge leaves
+    /// the budget unchanged, so a smaller value after it could otherwise
+    /// still be charged. The bound on the total does not depend on this
+    /// call; it comes from never refunding a charge.
     pub(crate) fn exhaust_element_memory(&self) {
         if let Some(cell) = self.element_memory_remaining {
             cell.set(0);
