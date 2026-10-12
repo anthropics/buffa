@@ -18,9 +18,10 @@ crate with the feature:
 cargo add buffa-descriptor --features reflect
 ```
 
-`DynamicMessage::from_json` and `DynamicMessage::to_json` also need the `json`
-feature (`--features reflect,json`).
+The JSON API of `DynamicMessage`, for example `to_json`, the `from_json`
+constructors and `DynamicMessageSeed`, needs the `reflect` and `json` features
+together: `cargo add buffa-descriptor --features reflect,json`.
 
-The generated descriptor and protoc plugin message types are available without
-`reflect`; enable the feature only when your application needs runtime
-reflection or a linked descriptor pool.
+The descriptor and protoc plugin message types need no feature. Enable
+`reflect` only to use `DescriptorPool`, `DynamicMessage` or the reflection
+traits.
