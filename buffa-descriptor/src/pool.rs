@@ -469,7 +469,10 @@ pub enum PoolError {
         name: String,
         number: u32,
     },
-    /// A proto3 message enables the proto2-only MessageSet wire format.
+    /// A message in a proto3 file sets `message_set_wire_format`, which
+    /// proto3 does not support. A message that also declares an extension
+    /// range reports [`ExtensionRangeInProto3`](Self::ExtensionRangeInProto3)
+    /// instead.
     MessageSetInProto3 { message: String },
     /// An open enum's first declared value has a non-zero number.
     OpenEnumFirstValueNotZero {
@@ -1938,12 +1941,15 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        // protoc reports the extension range before the option, so a proto3
+        // message with both gets `ExtensionRangeInProto3` from the check
+        // below.
         if scope.proto3
+            && msg.extension_range.is_empty()
             && msg
                 .options
                 .as_option()
-                .and_then(|o| o.message_set_wire_format)
-                == Some(true)
+                .is_some_and(|options| options.message_set_wire_format == Some(true))
         {
             return Err(PoolError::MessageSetInProto3 { message: fqn });
         }

@@ -2904,13 +2904,57 @@ fn proto3_messagesets_are_rejected_transactionally() {
     }
 }
 
+/// protoc reports the extension range before the option. A proto3 message
+/// with both keeps the error it had before `MessageSetInProto3` existed.
 #[test]
-fn messageset_options_remain_valid_outside_proto3() {
+fn proto3_messagesets_with_extension_ranges_report_the_range() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
     use buffa_descriptor::generated::descriptor::{
         DescriptorProto, FileDescriptorProto, FileDescriptorSet, MessageOptions,
     };
 
-    for syntax in [None, Some("proto2"), Some("proto3")] {
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("proto3-messageset-range.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("MessageSet".into()),
+                extension_range: vec![ExtensionRange {
+                    start: Some(100),
+                    end: Some(200),
+                    ..Default::default()
+                }],
+                options: MessageOptions {
+                    message_set_wire_format: Some(true),
+                    ..Default::default()
+                }
+                .into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let err = DescriptorPool::new(set).unwrap_err();
+    assert!(
+        matches!(&err, PoolError::ExtensionRangeInProto3 { message } if message == "invalid.test.MessageSet"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn messageset_options_remain_valid_outside_proto3() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet, MessageOptions,
+    };
+
+    for (syntax, edition) in [
+        (None, None),
+        (Some("proto2"), None),
+        (Some("proto3"), None),
+        (Some("editions"), Some(Edition::EDITION_2023)),
+    ] {
         for enabled in [None, Some(false), Some(true)] {
             if syntax == Some("proto3") && enabled == Some(true) {
                 continue;
@@ -2919,6 +2963,7 @@ fn messageset_options_remain_valid_outside_proto3() {
                 file: vec![FileDescriptorProto {
                     name: Some("messageset-option.proto".into()),
                     syntax: syntax.map(str::to_owned),
+                    edition,
                     message_type: vec![DescriptorProto {
                         name: Some("MessageSet".into()),
                         options: MessageOptions {
