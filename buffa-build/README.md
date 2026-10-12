@@ -9,13 +9,10 @@ separate `buffa` runtime crate.
 Add the runtime and build dependencies. Add `buffa-types` too when your
 schemas use protobuf well-known types such as `Timestamp` or `Any`.
 
-```toml
-[dependencies]
-buffa = "0.9"
-buffa-types = "0.9"
-
-[build-dependencies]
-buffa-build = "0.9"
+```sh
+cargo add buffa
+cargo add buffa-types
+cargo add --build buffa-build
 ```
 
 Compile your schemas and generate a module tree:
