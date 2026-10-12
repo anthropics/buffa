@@ -43,6 +43,7 @@ let msg: Person = DecodeOptions::new()
 | Flag | Default | Enables |
 |------|:-------:|---------|
 | `std` | ✓ | `std::io::Read` decoders, `HashMap` for map fields, thread-local JSON parse options |
+| `fast-utf8` | ✓ | UTF-8 validation of decoded strings with `smoothutf8` in place of `core::str::from_utf8` |
 | `json` |  | Proto3 JSON via `serde` |
 | `text` |  | Text format (`textproto`) encode/decode |
 | `arbitrary` |  | `arbitrary::Arbitrary` impls for fuzzing |
