@@ -59,12 +59,16 @@ if [ "$1" = --build ]; then
 elif [ "$1" = --install ]; then
     build_dir="$2"
     prefix="$(cat "${build_dir}/.install-prefix")"
-    mkdir -p "${prefix}/lib/cmake/jsoncpp"
-    : > "${prefix}/lib/cmake/jsoncpp/jsoncppConfig.cmake"
-    : > "${prefix}/lib/libjsoncpp.so"
+    libdir="$(cat "${build_dir}/.install-libdir")"
+    mkdir -p "${prefix}/${libdir}/cmake/jsoncpp"
+    : > "${prefix}/${libdir}/cmake/jsoncpp/jsoncppConfig.cmake"
+    : > "${prefix}/${libdir}/libjsoncpp.so"
 else
     build_dir=""
     prefix=""
+    # The mock stands for a host where CMake installs libraries under lib64
+    # unless the configure step names the directory.
+    libdir="lib64"
     while [ "$#" -gt 0 ]; do
         case "$1" in
             -B)
@@ -75,6 +79,10 @@ else
                 prefix="${1#*=}"
                 shift
                 ;;
+            -DCMAKE_INSTALL_LIBDIR=*)
+                libdir="${1#*=}"
+                shift
+                ;;
             *)
                 shift
                 ;;
@@ -83,6 +91,7 @@ else
     mkdir -p "${build_dir}"
     if [ -n "${prefix}" ]; then
         printf '%s\n' "${prefix}" > "${build_dir}/.install-prefix"
+        printf '%s\n' "${libdir}" > "${build_dir}/.install-libdir"
     fi
 fi
 EOF

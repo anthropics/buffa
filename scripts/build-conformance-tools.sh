@@ -26,6 +26,8 @@ JOBS="$(nproc 2>/dev/null || echo 4)"
 
 mkdir -p "${WORK}" "${BIN_DIR}"
 
+# The jsoncpp configure step sets CMAKE_INSTALL_LIBDIR=lib, so these paths hold
+# on hosts where CMake would otherwise install libraries under lib64.
 JSONCPP_CONFIG="${WORK}/jsoncpp-prefix/lib/cmake/jsoncpp/jsoncppConfig.cmake"
 JSONCPP_STAMP="${WORK}/jsoncpp.tag"
 jsoncpp_library_present() {
@@ -51,6 +53,7 @@ if [ ! -f "${JSONCPP_CONFIG}" ] \
         -DBUILD_SHARED_LIBS=ON \
         -DJSONCPP_WITH_TESTS=OFF \
         -DJSONCPP_WITH_POST_BUILD_UNITTEST=OFF \
+        -DCMAKE_INSTALL_LIBDIR=lib \
         -DCMAKE_INSTALL_PREFIX="${WORK}/jsoncpp-prefix"
     cmake --build "${WORK}/jsoncpp/_build" -j"${JOBS}"
     cmake --install "${WORK}/jsoncpp/_build"
