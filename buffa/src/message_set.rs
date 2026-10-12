@@ -30,6 +30,13 @@ pub const TYPE_ID_TAG: u64 = 2 << 3;
 /// Field 3, wire type `LengthDelimited` (2): `(3 << 3) | 2`.
 pub const MESSAGE_TAG: u64 = (3 << 3) | 2;
 
+/// The largest MessageSet type ID, `i32::MAX`.
+///
+/// `type_id` is a `required int32`, so an item's type ID, and the number of
+/// an extension of a MessageSet, can pass
+/// [`MAX_FIELD_NUMBER`](crate::encoding::MAX_FIELD_NUMBER).
+pub(crate) const MAX_TYPE_ID: u32 = i32::MAX as u32;
+
 /// Parse one MessageSet `Item` group body (between `SGROUP` and `EGROUP`).
 ///
 /// The caller must have already consumed the `ITEM_START_TAG`; this function
@@ -77,7 +84,7 @@ pub fn merge_item(
                 // type_id is `required int32`; valid protobuf field numbers
                 // are [1, 2^29-1], but MessageSet historically allows the
                 // full positive int32 range.
-                if v < 1 || v > i32::MAX as u64 {
+                if v < 1 || v > u64::from(MAX_TYPE_ID) {
                     return Err(DecodeError::InvalidMessageSet("type_id out of range"));
                 }
                 type_id = Some(v as u32);

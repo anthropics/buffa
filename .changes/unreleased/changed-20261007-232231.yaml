@@ -1,4 +1,0 @@
-kind: Changed
-body: |-
-    **`Extension::new` and `Extension::with_default` panic on a field number that is 0 or greater than `i32::MAX`** (#674). Both are `const fn`, so in a `const` item the panic is a compile error. Before, they accepted any `u32`, and `set_extension` with an extension numbered 0 stored a field that encodes with a tag decoders reject. The bound is `i32::MAX`, not `MAX_FIELD_NUMBER`, because an extension of a message with `option message_set_wire_format = true` can have a number above 2^29 - 1. A number in the implementation-reserved band, 19000 to 19999, is accepted: that is a schema rule, which `DescriptorPool` applies when it loads a descriptor set. Generated code is unaffected, because codegen rejects an extension number outside 1 to 2^29 - 1 before it emits the constant.
-time: 2026-10-07T23:22:31.588977+02:00

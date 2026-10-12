@@ -2216,9 +2216,11 @@ unchanged. (Scalar-typed extensions cannot fail.)
 
 ### Extendee identity check
 
-`extension()`, `set_extension()`, and `clear_extension()` **panic** if you
-pass an extension declared for a different message — for example, passing a
-message-level option to a field-level options struct:
+The accessors that read, write or clear an extension (`extension()`,
+`extension_or_default()`, `set_extension()`, `try_set_extension()` and
+`clear_extension()`; the `buffa::extension` module docs keep the list under
+"Panics") **panic** if you pass an extension declared for a different message
+— for example, passing a message-level option to a field-level options struct:
 
 ```rust,ignore
 // (buf.validate.message) extends MessageOptions, not FieldOptions — this
@@ -2230,6 +2232,11 @@ This matches protobuf-go (which panics) and protobuf-es (which throws).
 `has_extension()` returns `false` gracefully instead of panicking, since
 "is this extension set here" has a legitimate answer (`false`) even when
 the extension can't extend here.
+
+If you declare an extension by hand, `Extension::new` and
+`Extension::with_default` panic when the field number is 0 or greater than
+`i32::MAX`. Both are `const fn`, so in a `const` item the panic is a compile
+error. Generated extension constants always have a valid number.
 
 ### Proto2 `[default = ...]`
 
