@@ -46,6 +46,9 @@ protoc-gen-buffa-packaging.
 
 Options are passed as a comma-separated parameter string, e.g.
   --buffa_opt=views=true,json=true,extern_path=.my.pkg=::my_crate
+The proto side of extern_path is a dotted protobuf package or type name
+(leading dot optional); a name with an empty or non-identifier segment
+is an error.
 
 To skip a package pulled in by include_imports (e.g. an option-only
 import that is never referenced as a field), use exclude_package:
@@ -177,7 +180,9 @@ struct PluginConfig {
 ///   --buffa_opt=views=true,unknown_fields=false,json=true
 ///
 /// Extern paths use the format `extern_path=<proto>=<rust>`, where `<proto>`
-/// is either a package or a single type FQN:
+/// is either a package or a single type FQN (a dotted protobuf name; the
+/// leading dot is optional and one trailing dot is ignored), or `.` for
+/// every type:
 ///   --buffa_opt=extern_path=.my.common=::common_protos
 ///   --buffa_opt=extern_path=.my.common.Shared=::shared_types::Shared
 fn parse_config(params: &str) -> Result<PluginConfig, String> {
@@ -419,7 +424,7 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                                  (or a type FQN, 'extern_path=.proto.pkg.Type=::rust::path::Type')"
                         ));
                     }
-                    let proto = normalize_extern_proto_path(proto)?;
+                    let proto = buffa_codegen::normalize_extern_path_proto_name(proto)?;
                     codegen.extern_paths.push((proto, rust.to_string()));
                 } else {
                     return Err(format!(
@@ -590,38 +595,6 @@ fn normalize_proto_path(path: &str, label: &str) -> Result<String, String> {
             "{label} rules require a non-empty proto path; use '.' explicitly to match everything"
         ));
     }
-    Ok(path)
-}
-
-fn normalize_extern_proto_path(path: &str) -> Result<String, String> {
-    if path.chars().rev().take_while(|&ch| ch == '.').count() > 1 {
-        return Err(format!(
-            "invalid extern_path proto path '{path}': only one trailing dot is allowed"
-        ));
-    }
-
-    let path = normalize_proto_path(path, "extern_path")?;
-    if path == "." {
-        return Ok(path);
-    }
-
-    // protoc's identifier rule: a letter or `_`, then letters, digits or `_`.
-    let valid_identifier = |segment: &str| {
-        let mut chars = segment.chars();
-        chars
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-    };
-    if path[1..]
-        .split('.')
-        .any(|segment| !valid_identifier(segment))
-    {
-        return Err(format!(
-            "invalid extern_path proto path '{path}': expected '.' or a dotted protobuf package or type name"
-        ));
-    }
-
     Ok(path)
 }
 
@@ -931,6 +904,8 @@ mod tests {
     #[test]
     fn extern_path_rejects_empty_proto_segments() {
         for proto in [
+            "..",
+            "..my",
             ".my..common",
             "my..common",
             ".my.common..Shared",

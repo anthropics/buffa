@@ -1076,10 +1076,15 @@ impl Config {
     /// values in bytes-keyed maps; ordinary message containers use serde
     /// directly.
     ///
-    /// A misconfigured mapping (a typo'd FQN target, a non-absolute
-    /// `rust_path`, or a view-referenced type mapped to a non-buffa crate) is
-    /// not diagnosed at generation time; it surfaces as an unresolved-path
-    /// error when the generated code is compiled.
+    /// `proto_path` is `.` or a dotted protobuf package or type name. The
+    /// leading dot is optional and one trailing dot is ignored;
+    /// [`compile`](Self::compile) returns an error for a name with an empty
+    /// segment (`my..common`) or a segment that is not a protobuf identifier.
+    ///
+    /// Other misconfigurations (a typo'd FQN target, a non-absolute
+    /// `rust_path`, or a view-referenced type mapped to a non-buffa crate)
+    /// are not diagnosed at generation time; they surface as an
+    /// unresolved-path error when the generated code is compiled.
     ///
     /// # Example
     ///
@@ -1101,15 +1106,12 @@ impl Config {
         proto_path: impl Into<String>,
         rust_path: impl Into<String>,
     ) -> Self {
-        let mut proto_path = proto_path.into();
-        // Normalize: ensure the proto path is fully-qualified (leading dot).
-        // Accept both ".my.package" and "my.package" for convenience.
-        if !proto_path.starts_with('.') {
-            proto_path.insert(0, '.');
-        }
+        // Stored as given: `compile` validates the name and normalizes it to
+        // the fully-qualified form (".my.package" for "my.package"), so its
+        // error can quote what the caller wrote.
         self.codegen_config
             .extern_paths
-            .push((proto_path, rust_path.into()));
+            .push((proto_path.into(), rust_path.into()));
         self
     }
 
@@ -2155,13 +2157,15 @@ impl Config {
     ///   missing imports, etc.)
     /// - a precompiled descriptor set file cannot be read
     /// - the descriptor set bytes cannot be decoded as a `FileDescriptorSet`
+    /// - an [`extern_path`](Self::extern_path) proto name has an empty
+    ///   segment or a segment that is not a protobuf identifier
     /// - code generation fails (e.g. unsupported proto feature), including a
     ///   [`codec_strategy_in`](Self::codec_strategy_in) rule that names by its
     ///   exact path a message that cannot use the table codec
     /// - [`CodecStrategy::Table`] is requested and the compiler is older than
     ///   Rust 1.77
     /// - the output directory cannot be created or written to
-    pub fn compile(self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn compile(mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Table code needs `offset_of!`, stable in Rust 1.77. Say so once here,
         // and not once per field in the compiler's output.
         let table_codec_requested = self.codegen_config.codec_strategy == CodecStrategy::Table
@@ -2191,6 +2195,12 @@ impl Config {
             if let Err(e) = buffa_codegen::normalize_exclude_package(entry) {
                 return Err(format!("exclude_package {entry:?}: {e}").into());
             }
+        }
+
+        // Same for `extern_path`: a name that can match no type would leave
+        // the mapping silently unused. The plugin applies the same function.
+        for (proto, _) in &mut self.codegen_config.extern_paths {
+            *proto = buffa_codegen::normalize_extern_path_proto_name(proto)?;
         }
 
         // Validate the shared-pool prerequisites before doing any work, and

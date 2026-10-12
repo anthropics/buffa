@@ -5083,6 +5083,103 @@ pub fn normalize_exclude_package(value: &str) -> Result<String, String> {
     Ok(pkg.to_string())
 }
 
+/// Normalize and validate the proto side of one `extern_path` mapping: trim
+/// whitespace, add the leading dot if absent, drop one trailing dot, and
+/// reject a name with an empty segment (`my..common`) or with a segment that
+/// is not a protobuf identifier (`my.common-name`). Such a name matches no
+/// type, so a typo would otherwise leave the mapping silently unused. `"."`,
+/// the catch-all, is returned as is.
+///
+/// The `protoc-gen-buffa` option parser and `buffa-build` both run entries
+/// through this function, so the two front ends accept the same names.
+///
+/// # Errors
+///
+/// Returns the user-facing message for a malformed name, quoting the name as
+/// given. The error is a plain `String` for the reason
+/// [`normalize_exclude_package`] gives.
+pub fn normalize_extern_path_proto_name(value: &str) -> Result<String, String> {
+    const EXPECTED: &str = "expected '.' or a dotted protobuf package or type name, \
+                            e.g. .my.pkg or .my.pkg.Type";
+    let given = value.trim();
+    if given == "." {
+        return Ok(given.to_string());
+    }
+    let name = given.strip_prefix('.').unwrap_or(given);
+    let name = name.strip_suffix('.').unwrap_or(name);
+    for segment in name.split('.') {
+        if segment.is_empty() {
+            return Err(format!(
+                "'extern_path' proto name '{given}' has an empty segment; {EXPECTED}"
+            ));
+        }
+        // protoc's identifier rule: a letter or `_`, then letters, digits or `_`.
+        let mut chars = segment.chars();
+        let starts_ok = chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
+        if !(starts_ok && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')) {
+            return Err(format!(
+                "'extern_path' proto name '{given}': segment '{segment}' is not a \
+                 protobuf identifier; {EXPECTED}"
+            ));
+        }
+    }
+    Ok(format!(".{name}"))
+}
+
+#[cfg(test)]
+mod extern_path_proto_name_tests {
+    use super::normalize_extern_path_proto_name as normalize;
+
+    #[test]
+    fn accepts_and_normalizes_valid_names() {
+        for (given, normalized) in [
+            (".", "."),
+            (".my.common", ".my.common"),
+            ("my.common", ".my.common"),
+            (".my.common.", ".my.common"),
+            (" my.v2.Type_1 ", ".my.v2.Type_1"),
+            ("._internal._Foo", "._internal._Foo"),
+        ] {
+            assert_eq!(normalize(given), Ok(normalized.to_string()), "{given:?}");
+        }
+    }
+
+    #[test]
+    fn empty_segment_error_quotes_the_name_as_given() {
+        for given in [
+            "",
+            "..",
+            "..my",
+            "my..common",
+            ".my.common..",
+            ".my.common..Shared",
+        ] {
+            let err = normalize(given).unwrap_err();
+            assert!(
+                err.contains(&format!("'{given}' has an empty segment")),
+                "{given:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_identifier_error_names_the_segment() {
+        for (given, segment) in [
+            ("my.123", "123"),
+            (".my.common-name.", "common-name"),
+            ("my.com mon", "com mon"),
+        ] {
+            let err = normalize(given).unwrap_err();
+            assert!(
+                err.contains(&format!("proto name '{given}': segment '{segment}'")),
+                "{given:?}: {err}"
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod package_exclusion_tests {
     use super::package_is_excluded;
