@@ -1561,14 +1561,13 @@ impl Config {
     /// Choose how the binary `Message` implementation of every message is
     /// generated (default: [`CodecStrategy::Unrolled`]).
     ///
-    /// On a schema it fully covers, [`CodecStrategy::Table`] makes the
-    /// compiled size about half as big at `opt-level = "z"`, and it slows
-    /// messages made of many small fields; a message that cannot use it keeps
-    /// its size. [`CodecStrategy::Table`] has the measurements, says which
-    /// messages stay unrolled, and lists how a table message behaves
-    /// differently. This build reports
-    /// those in one `cargo:warning`. The option never changes the wire
-    /// format. The generated code needs Rust 1.77 or later, and `compile`
+    /// On a large schema, [`CodecStrategy::Table`] makes the compiled code
+    /// about 40% smaller at `opt-level = "z"`, and it slows messages made of
+    /// many small fields; a message that cannot use it keeps its size.
+    /// [`CodecStrategy::Table`] says which messages stay unrolled and how a
+    /// table message behaves differently, and this build reports the messages
+    /// that stay unrolled in one `cargo:warning`. The option never changes the
+    /// wire format. The generated code needs Rust 1.77 or later, and `compile`
     /// returns an error on an older compiler when a build script runs it (the
     /// compiler is read from `RUSTC`).
     ///
@@ -1608,13 +1607,8 @@ impl Config {
     /// names the message by its exact path. A rule that matches no message
     /// produces a warning.
     ///
-    /// A table message holds only table messages, and a rule does not extend
-    /// to the messages a message holds. Selecting a message with a rule
-    /// therefore also needs rules for everything it holds, unless the global
-    /// setting is [`CodecStrategy::Table`]. Choosing [`CodecStrategy::Unrolled`]
-    /// for a message keeps every message that holds it unrolled, with no
-    /// warning, and that usually includes the root message an application
-    /// encodes.
+    /// A rule does not extend to the messages a message holds; see
+    /// [`CodecStrategy::Table`].
     #[must_use]
     pub fn codec_strategy_in(mut self, strategy: CodecStrategy, paths: &[impl AsRef<str>]) -> Self {
         for raw in paths.iter().map(AsRef::as_ref) {
@@ -1823,9 +1817,22 @@ impl Config {
     /// A `#[deprecated]` supplied here wins over the one codegen derives from
     /// the field's `[deprecated = true]` option — rustc permits only one
     /// `deprecated` attribute per item — so this is also how to attach a note
-    /// naming the replacement. Either source marks the field and its `with_*`
-    /// setter, and either one makes the generated items that visit the field
-    /// carry `#[allow(deprecated)]`.
+    /// naming the replacement. Either source marks every generated way to
+    /// reach a message field: the `with_*` setter, the same field on the
+    /// views, its `OwnedView` accessor and, for a `required` field, the views'
+    /// `has_*` method. Those carry a bare `#[deprecated]`; the attribute given
+    /// here, with its note, stays on the owned struct's field. Either source
+    /// also makes the generated items that visit the field carry
+    /// `#[allow(deprecated)]`.
+    ///
+    /// A `deprecated` inside `cfg_attr` counts too: it replaces the
+    /// option-derived marker on the owned field, and the setter and view
+    /// markers stay unconditional.
+    ///
+    /// A oneof variant gets only the attribute given here. Its view variant is
+    /// unmarked and the generated impls that match on it are not guarded, so
+    /// put `#[allow(deprecated)]` on the `mod` that includes the generated
+    /// file.
     ///
     /// # Example
     ///
