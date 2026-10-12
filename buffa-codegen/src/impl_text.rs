@@ -743,9 +743,26 @@ fn repeated_merge_arm(
     let ty = effective_type(ctx, field, features);
     let (_, name_pat) = text_field_name(proto_name, field, ty);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, proto_name);
+    // Enumerated so that a new `Type` variant is a compile error here, not a
+    // field that takes the scalar rule by default.
     let read_repeated = match ty {
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => format_ident!("read_repeated_into"),
-        _ => format_ident!("read_repeated_scalar_into"),
+        Type::TYPE_ENUM
+        | Type::TYPE_BOOL
+        | Type::TYPE_INT32
+        | Type::TYPE_INT64
+        | Type::TYPE_UINT32
+        | Type::TYPE_UINT64
+        | Type::TYPE_SINT32
+        | Type::TYPE_SINT64
+        | Type::TYPE_FIXED32
+        | Type::TYPE_FIXED64
+        | Type::TYPE_SFIXED32
+        | Type::TYPE_SFIXED64
+        | Type::TYPE_FLOAT
+        | Type::TYPE_DOUBLE
+        | Type::TYPE_STRING
+        | Type::TYPE_BYTES => format_ident!("read_repeated_scalar_into"),
     };
 
     // The type-specific repeated reader handles both `f: [a, b]` and `f: a`

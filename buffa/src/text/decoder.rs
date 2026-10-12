@@ -642,16 +642,17 @@ impl<'a> TextDecoder<'a> {
     /// [`read_repeated_into`](Self::read_repeated_into). Use it when the
     /// field's elements are numbers, bools, enums, strings or bytes, as
     /// generated code does. The tokenizer cannot infer the field type from
-    /// `[]`, so this method applies the check for the empty list; for a
-    /// list with elements, or a single value, the call that reads the
-    /// element returns the error.
+    /// `[]`, so this method applies the check for the empty list. For a
+    /// list with elements, or a single value, the tokenizer finds the
+    /// missing colon when this method reads the element.
     ///
     /// # Errors
     ///
     /// - [`ParseErrorKind::UnexpectedToken`] with `expected` set to
-    ///   `"':' before scalar value"`, positioned at the `[`, for an empty
-    ///   list that follows a name without a `:`.
-    /// - Any error from `read_one` or the tokenizer.
+    ///   `"':' before scalar value"` when the field name has no `:` after
+    ///   it. The error is positioned at the `[` of an empty list, and at the
+    ///   element for a list with elements or a single value.
+    /// - Any other error from `read_one` or the tokenizer.
     pub fn read_repeated_scalar_into<T>(
         &mut self,
         out: &mut Vec<T>,
@@ -1324,11 +1325,59 @@ mod tests {
             assert_eq!(err.col as usize, input.find('[').unwrap() + 1);
         }
 
-        // The colon of an enclosing field does not count for the list.
+        // With an element present the same error is positioned at the
+        // element.
+        for input in ["items [1]", "items 1"] {
+            let mut m = TestMsg::default();
+            let err = m.merge_text(&mut TextDecoder::new(input)).unwrap_err();
+            assert_eq!(
+                err.kind,
+                ParseErrorKind::UnexpectedToken {
+                    expected: "':' before scalar value",
+                },
+                "input: {input:?}"
+            );
+            assert_eq!(err.col as usize, input.find('1').unwrap() + 1);
+        }
+
+        // The colon that counts is the list field's own. One on the
+        // enclosing field does not stand in for it, and its absence on the
+        // enclosing field does not matter.
         let mut m = TestMsg::default();
-        let mut d = TextDecoder::new("child: { items: [] } items: []");
-        m.merge_text(&mut d).unwrap();
-        assert_eq!(m.items, Vec::<i64>::new());
+        let err = m
+            .merge_text(&mut TextDecoder::new("child: { items [] }"))
+            .unwrap_err();
+        assert_eq!(
+            err.kind,
+            ParseErrorKind::UnexpectedToken {
+                expected: "':' before scalar value",
+            }
+        );
+        for input in ["child { items: [] }", "child: { items: [] } items: []"] {
+            let mut m = TestMsg::default();
+            m.merge_text(&mut TextDecoder::new(input)).unwrap();
+            assert_eq!(m.items, Vec::<i64>::new(), "input: {input:?}");
+        }
+
+        // An empty scalar list with its colon, inside a message list that
+        // was opened without one.
+        let mut d = TextDecoder::new("f [{ items: [] }, { items [] }]");
+        d.read_field_name().unwrap();
+        let mut out: Vec<TestMsg> = Vec::new();
+        let err = d
+            .read_repeated_into(&mut out, |d| {
+                let mut m = TestMsg::default();
+                d.merge_message(&mut m)?;
+                Ok(m)
+            })
+            .unwrap_err();
+        assert_eq!(out.len(), 1, "the first element parses");
+        assert_eq!(
+            err.kind,
+            ParseErrorKind::UnexpectedToken {
+                expected: "':' before scalar value",
+            }
+        );
     }
 
     #[test]
