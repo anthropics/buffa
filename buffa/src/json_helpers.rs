@@ -699,8 +699,12 @@ fn decode_closed_enum<E: crate::Enumeration + Default>(
 
     match raw {
         Value::Null => Err(malformed(Unexpected::Unit)),
-        Value::String(s) => E::from_proto_name(s)
-            .ok_or_else(|| ClosedEnumError::Unknown(serde_json::Error::unknown_variant(s, &[]))),
+        Value::String(s) => E::from_proto_name(s).ok_or_else(|| {
+            ClosedEnumError::Unknown(serde_json::Error::invalid_value(
+                Unexpected::Str(s),
+                &"a known enum variant name",
+            ))
+        }),
         Value::Number(n) if n.is_f64() => {
             Err(malformed(Unexpected::Float(n.as_f64().unwrap_or(f64::NAN))))
         }
@@ -2040,7 +2044,10 @@ pub mod closed_enum {
                         if crate::json::ignore_unknown_enum_values() {
                             return Ok(E::default());
                         }
-                        Err(serde::de::Error::unknown_variant(v, &[]))
+                        Err(serde::de::Error::invalid_value(
+                            serde::de::Unexpected::Str(v),
+                            &"a known enum variant name",
+                        ))
                     }
                 }
             }
