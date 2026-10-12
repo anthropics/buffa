@@ -1342,6 +1342,10 @@ mod tests {
                         r#"{{"@type":"{}","value":"1.5s","seconds":1}}"#,
                         Duration::TYPE_URL
                     ),
+                    // A bare type name resolves to the same registry entry.
+                    alloc::string::String::from(
+                        r#"{"@type":"google.protobuf.Duration","value":"1.5s","extra":true}"#,
+                    ),
                 ] {
                     let result = serde_json::from_str::<Any>(&json);
                     let err = result.unwrap_err();
