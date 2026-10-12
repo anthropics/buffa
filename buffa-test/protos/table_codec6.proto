@@ -1,0 +1,26 @@
+syntax = "proto2";
+
+// See table_codec.proto: compiled as `tc6u` (unrolled) and `tc6t` (table),
+// both with `preserve_unknown_fields(false)`, so a number that a closed enum
+// does not have is dropped, not kept. A oneof with a closed enum member.
+package tc6;
+
+enum Color {
+  RED = 1;
+  GREEN = 2;
+  BLUE = 3;
+}
+
+message Inner {
+  optional int32 id = 1;
+}
+
+message Closed {
+  oneof pick {
+    Color shade = 1;
+    int32 n = 2;
+    string s = 3;
+    Inner i = 4;
+  }
+  optional int32 tail = 5;
+}

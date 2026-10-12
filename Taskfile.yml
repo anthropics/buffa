@@ -77,9 +77,9 @@ tasks:
 
   conformance-local:
     desc: >-
-      Run the full six-run conformance suite without Docker, using the
+      Run the full eight-run conformance suite without Docker, using the
       runner from conformance-tools-local and host cargo builds of the
-      std/no_std conformance binaries. Requires protoc v30+ on PATH or
+      std/table/no_std conformance binaries. Requires protoc v30+ on PATH or
       $PROTOC.
     cmds:
       - scripts/run-conformance-local.sh

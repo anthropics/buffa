@@ -1083,10 +1083,13 @@ pub mod string_copy;
 pub mod string_copy_counted;
 
 // The table codec is tested by compiling a schema twice under renamed packages
-// and comparing the results (see `tests::table_codec`). `tcu`, `tc2u`, `tc3u`
-// and `wideu` use the default unrolled codec; `tct`, `tc2t`, `tc3t` and `widet`
-// are the same schemas with `codec_strategy = Table`, and `tcx` is `tct` again
-// with options that change the names and fields a table refers to. They exist
+// and comparing the results (see `tests::table_codec`). `tcu`, `tc2u`, `tc3u`,
+// `tc4u`, `tc5u`, `tc6u` and `wideu` use the default unrolled codec; `tct`,
+// `tc2t`, `tc3t`, `tc4t`, `tc5t`, `tc6t` and `widet` are the same schemas with
+// `codec_strategy = Table` (`tc5` and `tc6` are built with options, the same
+// for both codecs), and
+// `tcx` and `tc4x` are `tct` and `tc4t` again with options that change the
+// names and fields a table refers to. They exist
 // only on Rust 1.77 or later (see build.rs). The table modules forbid unsafe
 // code, which checks that the `unsafe` a table needs stays inside `buffa`'s
 // macros.
@@ -1125,6 +1128,45 @@ pub mod tc3t {
 }
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 #[cfg(has_table_codec)]
+pub mod tc4u {
+    buffa::include_proto!("tc4u");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc4t {
+    buffa::include_proto!("tc4t");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc4x {
+    buffa::include_proto!("tc4x");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc5u {
+    buffa::include_proto!("tc5u");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc5t {
+    buffa::include_proto!("tc5t");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc6u {
+    buffa::include_proto!("tc6u");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc6t {
+    buffa::include_proto!("tc6t");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
 pub mod wideu {
     buffa::include_proto!("wideu");
 }
@@ -1139,6 +1181,65 @@ pub mod widet {
 #[cfg(has_table_codec)]
 pub mod tcx {
     buffa::include_proto!("tcx");
+}
+// The proto2 schema with unknown fields dropped: `tclu`, `tclt`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tclu {
+    buffa::include_proto!("tclu");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tclt {
+    buffa::include_proto!("tclt");
+}
+// Maps; see protos/table_codec_maps.proto.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcmu {
+    buffa::include_proto!("tcmu");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcmt {
+    buffa::include_proto!("tcmt");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcbu {
+    buffa::include_proto!("tcbu");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcbt {
+    buffa::include_proto!("tcbt");
+}
+// Maps of two collection types, and of strings and bytes without UTF-8
+// validation; see the two protos.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcru {
+    buffa::include_proto!("tcru");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcrt {
+    buffa::include_proto!("tcrt");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcu8u {
+    buffa::include_proto!("tcu8u");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcu8t {
+    buffa::include_proto!("tcu8t");
 }
 
 // `bru` is `table_bridge.proto` unrolled, and `brt` has the table codec except
@@ -1181,6 +1282,8 @@ pub mod tbz {
 // Two packages, the second holding messages of the first: `xau`/`xbu` unrolled,
 // `xat`/`xbt` with the table codec, and `xti` with the table codec and
 // `file_per_package` with `idiomatic_imports`, which holds `xati` and `xbti`.
+// `xa*` holds an enum, whose generated `Default` impl clippy wants derived.
+#[allow(clippy::derivable_impls)]
 #[cfg(has_table_codec)]
 pub mod xau {
     buffa::include_proto!("xau");
@@ -1190,6 +1293,7 @@ pub mod xbu {
     buffa::include_proto!("xbu");
 }
 #[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls)]
 #[cfg(has_table_codec)]
 pub mod xat {
     buffa::include_proto!("xat");
@@ -1200,6 +1304,7 @@ pub mod xbt {
     buffa::include_proto!("xbt");
 }
 #[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls)]
 #[cfg(has_table_codec)]
 pub mod xti {
     include!(concat!(
