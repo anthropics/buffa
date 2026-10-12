@@ -1,4 +1,4 @@
 kind: Fixed
 body: |-
-    **`DescriptorPool` rejects singular enum fields with implicit presence when their enum is closed.** protoc rejects this combination too. The check runs after enum types are resolved, so enums declared later or in imported files are checked. Repeated fields, oneof members and extensions remain valid.
+    **`DescriptorPool` rejects a singular enum field with implicit presence whose enum is closed** (#609). A field in a proto3 file, or an editions field whose `features.field_presence` resolves to `IMPLICIT`, linked when it named a closed enum, a combination protoc rejects. It is `PoolError::ImplicitPresenceClosedEnum`, wherever the enum is declared. A map whose value type is a closed enum is rejected the same way when its entry has implicit presence, and the error names the `value` field of the entry message. Repeated fields, oneof members and extensions link as before.
 time: 2026-10-07T10:30:00+02:00

@@ -5,7 +5,7 @@ use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Typ
 use buffa_descriptor::generated::descriptor::{
     DescriptorProto, Edition, EnumDescriptorProto, EnumOptions, EnumValueDescriptorProto,
     FeatureSet, FieldDescriptorProto, FieldOptions, FileDescriptorProto, FileDescriptorSet,
-    FileOptions, OneofDescriptorProto,
+    FileOptions, MessageOptions, OneofDescriptorProto,
 };
 use buffa_descriptor::{DescriptorPool, PoolError};
 
@@ -198,4 +198,101 @@ fn nested_implicit_closed_enum_is_rejected() {
         matches!(err, PoolError::ImplicitPresenceClosedEnum { field }
         if field == "presence.test.Parent.Child.value")
     );
+}
+
+/// `set` with `Sample.value` declared as `map<string, Kind>`: a repeated
+/// field of the nested `ValueEntry`, whose `value` field names the enum.
+fn map_set(enum_type: EnumType) -> FileDescriptorSet {
+    let mut descriptors = set(field(), enum_type);
+    let message = &mut descriptors.file[0].message_type[0];
+    let mut value = message.field.remove(0);
+    value.number = Some(2);
+    message.nested_type.push(DescriptorProto {
+        name: Some("ValueEntry".into()),
+        field: vec![
+            FieldDescriptorProto {
+                name: Some("key".into()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_STRING),
+                ..Default::default()
+            },
+            value,
+        ],
+        options: MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    });
+    message.field.push(FieldDescriptorProto {
+        name: Some("value".into()),
+        number: Some(1),
+        label: Some(Label::LABEL_REPEATED),
+        r#type: Some(Type::TYPE_MESSAGE),
+        type_name: Some(".presence.test.Sample.ValueEntry".into()),
+        ..Default::default()
+    });
+    descriptors
+}
+
+/// Turns the editions fixture into a proto3 file that imports its enum from
+/// a proto2 file, where the enum is closed.
+fn into_proto3_with_proto2_enum(mut descriptors: FileDescriptorSet) -> FileDescriptorSet {
+    let mut enum_type = descriptors.file[0].enum_type.remove(0);
+    enum_type.options = Default::default();
+    let file = &mut descriptors.file[0];
+    file.syntax = Some("proto3".into());
+    file.edition = None;
+    file.options = Default::default();
+    file.dependency.push("enum.proto".into());
+    descriptors.file.push(FileDescriptorProto {
+        name: Some("enum.proto".into()),
+        package: Some("presence.test".into()),
+        syntax: Some("proto2".into()),
+        enum_type: vec![enum_type],
+        ..Default::default()
+    });
+    descriptors
+}
+
+#[test]
+fn closed_enum_map_value_is_rejected_under_implicit_file_presence() {
+    let err = DescriptorPool::new(map_set(EnumType::CLOSED)).unwrap_err();
+    assert!(
+        matches!(&err, PoolError::ImplicitPresenceClosedEnum { field }
+        if field == "presence.test.Sample.ValueEntry.value"),
+        "{err}"
+    );
+}
+
+#[test]
+fn closed_enum_map_value_is_accepted_when_the_entry_has_explicit_presence() {
+    // Edition 2023 defaults to explicit presence, which the entry inherits.
+    let mut descriptors = map_set(EnumType::CLOSED);
+    descriptors.file[0].options = Default::default();
+    DescriptorPool::new(descriptors).unwrap();
+}
+
+#[test]
+fn open_enum_map_value_is_accepted_under_implicit_file_presence() {
+    DescriptorPool::new(map_set(EnumType::OPEN)).unwrap();
+}
+
+#[test]
+fn closed_enum_is_rejected_in_proto3_singular_fields_and_map_values() {
+    for (descriptors, expected) in [
+        (set(field(), EnumType::CLOSED), "presence.test.Sample.value"),
+        (
+            map_set(EnumType::CLOSED),
+            "presence.test.Sample.ValueEntry.value",
+        ),
+    ] {
+        let err = DescriptorPool::new(into_proto3_with_proto2_enum(descriptors)).unwrap_err();
+        assert!(
+            matches!(&err, PoolError::ImplicitPresenceClosedEnum { field } if field == expected),
+            "{expected}: {err}"
+        );
+    }
 }
