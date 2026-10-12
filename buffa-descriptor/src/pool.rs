@@ -1416,27 +1416,7 @@ impl DescriptorPool {
             }
         }
         self.finalize_field_enum_types(first_new_message, first_new_extension);
-        // All enums must be linked before checking map defaults: the value
-        // type may be declared later in this file or another file in the set.
-        for message in &self.messages[first_new_message..] {
-            for field in &message.fields {
-                if let FieldKind::Map {
-                    value: SingularKind::Enum(eidx),
-                    ..
-                } = field.kind
-                {
-                    let enumeration = &self.enums[eidx.0 as usize];
-                    let number = enumeration.values[0].number;
-                    if number != 0 {
-                        return Err(PoolError::MapEnumFirstValueNotZero {
-                            field: format!("{}.{}", message.full_name, field.name),
-                            enum_name: enumeration.full_name.clone(),
-                            number,
-                        });
-                    }
-                }
-            }
-        }
+        self.check_linked_enum_fields(first_new_message)?;
 
         // Record the symbol → file index (for `FindFileContainingSymbol`).
         for (i, f) in new_files.iter().enumerate() {
@@ -2824,6 +2804,46 @@ impl DescriptorPool {
         }
         for extension in &mut self.extensions[first_new_extension..] {
             resolve(&mut extension.field);
+        }
+    }
+
+    /// Checks the rules that relate a message field to the enum it names.
+    ///
+    /// The walk runs once every enum in the set is linked, because a field's
+    /// enum may be declared later in its file or in a later file of the set.
+    /// It visits the new messages in link order and each message's fields in
+    /// declaration order, and returns the first violation.
+    fn check_linked_enum_fields(&self, first_new_message: usize) -> Result<(), PoolError> {
+        for message in &self.messages[first_new_message..] {
+            for field in &message.fields {
+                self.check_map_enum_first_value(message, field)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// A map's enum value type must declare zero as its first value, in
+    /// every syntax.
+    fn check_map_enum_first_value(
+        &self,
+        message: &MessageDescriptor,
+        field: &FieldDescriptor,
+    ) -> Result<(), PoolError> {
+        let FieldKind::Map {
+            value: SingularKind::Enum(eidx),
+            ..
+        } = field.kind
+        else {
+            return Ok(());
+        };
+        let enumeration = &self.enums[eidx.0 as usize];
+        match enumeration.values.first() {
+            Some(first) if first.number != 0 => Err(PoolError::MapEnumFirstValueNotZero {
+                field: format!("{}.{}", message.full_name, field.name),
+                enum_name: enumeration.full_name.clone(),
+                number: first.number,
+            }),
+            _ => Ok(()),
         }
     }
 
