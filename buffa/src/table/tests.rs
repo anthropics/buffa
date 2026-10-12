@@ -937,6 +937,42 @@ mod invalid_tables {
         let _ = lossy(ABI, &[ENTRY_1], &[0, 0], &[], None);
     }
 
+    /// Entries numbered 1 to 256, and a dense array for the numbers below
+    /// `N`.
+    const fn numbered<const N: usize>() -> ([Entry; 256], [u8; N]) {
+        let mut entries = [ENTRY_1; 256];
+        let mut dense = [0u8; N];
+        let mut i = 1;
+        while i < 256 {
+            entries[i] = Entry::new(Kind::Int32Implicit, i as u32 + 1, 0, 0);
+            i += 1;
+        }
+        i = 1;
+        while i < N && i < 256 {
+            dense[i] = i as u8;
+            i += 1;
+        }
+        (entries, dense)
+    }
+
+    #[test]
+    fn a_table_of_more_than_255_entries_may_have_a_dense_array() {
+        static TABLE: ([Entry; 256], [u8; 64]) = numbered();
+        let table = lossy(ABI, &TABLE.0, &TABLE.1, &[], None);
+        assert_eq!(table.raw.find(63).map(Entry::number), Some(63));
+        assert_eq!(table.raw.find(64).map(Entry::number), Some(64));
+        assert_eq!(table.raw.find(256).map(Entry::number), Some(256));
+        assert!(table.raw.find(257).is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "omits an entry")]
+    fn a_dense_array_cannot_cover_the_256th_entry() {
+        // A `u8` slot counts to 255, so the slot of field 256 is `0`.
+        static TABLE: ([Entry; 256], [u8; 257]) = numbered();
+        let _ = lossy(ABI, &TABLE.0, &TABLE.1, &[], None);
+    }
+
     #[test]
     #[should_panic(expected = "unknown-fields offset")]
     fn the_unknown_fields_must_fit_in_the_message() {

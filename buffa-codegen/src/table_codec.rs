@@ -95,7 +95,7 @@ pub(crate) fn generate_table_impl(
     }
     let oneof_impls = oneofs.into_impls();
 
-    let dense = dense_lookup(&fields);
+    let dense = dense_lookup(&fields, &dotted_fqn)?;
     let abi = proc_macro2::Literal::u32_unsuffixed(TABLE_ABI);
 
     let unknown = if ctx.preserve_unknown_fields(proto_fqn) {
@@ -165,10 +165,15 @@ pub(crate) fn generate_table_impl(
 /// the numbers up to the highest field number below 64.
 ///
 /// Entries are sorted by field number, and protobuf field numbers start at
-/// one, so a field numbered below 64 is necessarily among the first 63
-/// entries. Its one-based index therefore fits in `u8` regardless of the
-/// total number of fields.
-fn dense_lookup(fields: &[TableField<'_>]) -> Vec<u8> {
+/// one, so when the numbers are distinct a field numbered below 64 is among
+/// the first 63 entries. Its one-based index therefore fits in `u8` whatever
+/// the total number of fields.
+///
+/// # Errors
+///
+/// Returns an error if the one-based index of a field numbered below 64 does
+/// not fit in `u8`, which takes a message whose field numbers repeat.
+fn dense_lookup(fields: &[TableField<'_>], dotted_fqn: &str) -> Result<Vec<u8>, CodeGenError> {
     let top = fields
         .iter()
         .map(|f| f.number)
@@ -178,11 +183,18 @@ fn dense_lookup(fields: &[TableField<'_>]) -> Vec<u8> {
     let mut dense = vec![0u8; top + 1];
     for (i, f) in fields.iter().enumerate() {
         if let Some(slot) = dense.get_mut(f.number as usize) {
-            // A field numbered below 64 is among the first 63 sorted entries.
-            *slot = (i + 1) as u8;
+            // Distinct field numbers put a field numbered below 64 among the
+            // first 63 sorted entries.
+            *slot = u8::try_from(i + 1).map_err(|_| {
+                CodeGenError::Other(format!(
+                    "table codec: {dotted_fqn} has more than 255 fields numbered {} or \
+                     lower, so its field numbers are not distinct",
+                    f.number
+                ))
+            })?;
         }
     }
-    dense
+    Ok(dense)
 }
 
 /// The `__table_entry!` for one field, and the aux descriptor it needs, which

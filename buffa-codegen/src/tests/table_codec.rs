@@ -637,6 +637,27 @@ fn wide_messages_keep_dense_lookup_for_low_field_numbers() {
 }
 
 #[test]
+fn a_dense_index_that_does_not_fit_in_a_byte_is_an_error() {
+    // Only repeated field numbers put a field numbered below 64 past the
+    // 255th entry.
+    let mut file = schema();
+    file.message_type[0].field = (1..=256)
+        .map(|n| scalar(&format!("f{n}"), 7, Type::TYPE_INT32))
+        .collect();
+    let err = generate_with_diagnostics(
+        &[file],
+        &["t.proto".to_string()],
+        &table_config(CodecStrategy::Table),
+    )
+    .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "codegen error: table codec: .t.Plain has more than 255 fields numbered 7 or \
+         lower, so its field numbers are not distinct"
+    );
+}
+
+#[test]
 fn the_warning_texts_say_what_to_do() {
     let rule = CodeGenWarning::CodecStrategyRuleMatchedNothing {
         rule: ".x".to_string(),
