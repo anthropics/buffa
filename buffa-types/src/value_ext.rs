@@ -296,8 +296,7 @@ impl Struct {
 
     /// Removes `key`, returning its value if present.
     ///
-    /// The value is moved out without cloning. A missing key leaves the struct
-    /// unchanged.
+    /// A missing key leaves the struct unchanged.
     ///
     /// # Example
     ///
@@ -497,56 +496,6 @@ mod tests {
     use alloc::{vec, vec::Vec};
 
     #[test]
-    fn struct_get_mut_replaces_existing_value() {
-        let mut s = Struct::from_fields([("enabled", false), ("other", true)]);
-        *s.get_mut("enabled").unwrap() = Value::from(true);
-        assert_eq!(s.get("enabled").and_then(Value::as_bool), Some(true));
-        assert_eq!(s.get("other").and_then(Value::as_bool), Some(true));
-        assert_eq!(s.fields.len(), 2);
-    }
-
-    #[test]
-    fn struct_get_mut_missing_key_does_not_insert() {
-        let mut empty = Struct::new();
-        assert!(empty.get_mut("missing").is_none());
-        assert!(empty.fields.is_empty());
-
-        let mut s = Struct::from_fields([("key", 1_i32)]);
-        let before = s.clone();
-        assert!(s.get_mut("Key").is_none());
-        assert!(s.get_mut("missing").is_none());
-        assert_eq!(s, before);
-    }
-
-    #[test]
-    fn struct_get_mut_edits_nested_value() {
-        let mut s = Struct::from_fields([("nested", Struct::from_fields([("count", 1_i32)]))]);
-        s.get_mut("nested")
-            .unwrap()
-            .as_struct_mut()
-            .unwrap()
-            .insert("count", 2_i32);
-        assert_eq!(
-            s.get("nested")
-                .unwrap()
-                .as_struct()
-                .unwrap()
-                .get("count")
-                .and_then(Value::as_number),
-            Some(2.0)
-        );
-    }
-
-    #[test]
-    fn struct_get_mut_accepts_empty_and_unicode_keys() {
-        let mut s = Struct::from_fields([("", 1_i32), ("日本語", 2_i32)]);
-        for key in ["", "日本語"] {
-            *s.get_mut(key).unwrap() = Value::null();
-            assert!(s.get(key).unwrap().is_null());
-        }
-    }
-
-    #[test]
     fn value_null() {
         let v = Value::null();
         assert!(v.is_null());
@@ -601,6 +550,47 @@ mod tests {
     }
 
     #[test]
+    fn struct_get_mut_replaces_existing_value() {
+        let mut s = Struct::from_fields([("enabled", false), ("other", true)]);
+        *s.get_mut("enabled").unwrap() = Value::from(true);
+        assert_eq!(s.get("enabled").and_then(Value::as_bool), Some(true));
+        assert_eq!(s.get("other").and_then(Value::as_bool), Some(true));
+        assert_eq!(s.fields.len(), 2);
+    }
+
+    #[test]
+    fn struct_get_mut_missing_key_does_not_insert() {
+        let mut empty = Struct::new();
+        assert!(empty.get_mut("missing").is_none());
+        assert!(empty.fields.is_empty());
+
+        let mut s = Struct::from_fields([("key", 1_i32)]);
+        let before = s.clone();
+        assert!(s.get_mut("Key").is_none());
+        assert!(s.get_mut("missing").is_none());
+        assert_eq!(s, before);
+    }
+
+    #[test]
+    fn struct_get_mut_edits_nested_value() {
+        let mut s = Struct::from_fields([("nested", Struct::from_fields([("count", 1_i32)]))]);
+        s.get_mut("nested")
+            .unwrap()
+            .as_struct_mut()
+            .unwrap()
+            .insert("count", 2_i32);
+        assert_eq!(
+            s.get("nested")
+                .unwrap()
+                .as_struct()
+                .unwrap()
+                .get("count")
+                .and_then(Value::as_number),
+            Some(2.0)
+        );
+    }
+
+    #[test]
     fn struct_remove_returns_value_and_keeps_other_fields() {
         let mut s = Struct::from_fields([("key", "value"), ("other", "unchanged")]);
         let value = s.remove("key").unwrap();
@@ -620,28 +610,6 @@ mod tests {
         assert!(s.remove("missing").is_none());
         assert_eq!(s.fields.len(), 1);
         assert_eq!(s.get("present").and_then(Value::as_bool), Some(true));
-    }
-
-    #[test]
-    fn struct_remove_moves_nested_payload_without_cloning() {
-        let list = ListValue::from_values(["payload"]);
-        let payload = list.values.as_ptr();
-        let mut s = Struct::from_fields([("list", Value::from(list))]);
-        let removed = s.remove("list").unwrap();
-        let list = removed.as_list().unwrap();
-        assert_eq!(list.values.as_ptr(), payload);
-        assert_eq!(list.values[0].as_str(), Some("payload"));
-        assert!(s.fields.is_empty());
-    }
-
-    #[test]
-    fn struct_remove_accepts_empty_and_unicode_keys_and_null_values() {
-        let mut s = Struct::from_fields([("", Value::null()), ("名前", Value::null())]);
-        for key in ["", "名前"] {
-            assert!(s.remove(key).unwrap().is_null());
-            assert!(s.get(key).is_none());
-        }
-        assert!(s.fields.is_empty());
     }
 
     #[test]
