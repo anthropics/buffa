@@ -388,7 +388,10 @@ pub enum PoolError {
     /// [`RequiredLabelOutsideProto2`](Self::RequiredLabelOutsideProto2)
     /// instead.
     RequiredExtension { field: String },
-    /// An extension of a MessageSet is not an optional message field.
+    /// An extension of a MessageSet is not an optional message field. A
+    /// message field with delimited encoding is rejected too, whether it is
+    /// declared as a group or resolves `features.message_encoding` to
+    /// `DELIMITED` in an editions file.
     InvalidMessageSetExtension { field: String },
     /// A field number, or a finite extension range, overlaps the field-number
     /// interval reserved for the protobuf implementation. The bounds are
@@ -2436,7 +2439,7 @@ impl DescriptorPool {
         if extendee_message
             .options()
             .is_some_and(|options| options.message_set_wire_format == Some(true))
-            && (ext.r#type == Some(ProtoType::TYPE_GROUP)
+            && (field.delimited
                 || !matches!(field.kind, FieldKind::Singular(SingularKind::Message(_))))
         {
             return Err(PoolError::InvalidMessageSetExtension { field: fqn });
