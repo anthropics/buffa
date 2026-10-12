@@ -41,7 +41,7 @@ impl From<jiff::SignedDuration> for Duration {
     /// Infallible: both types represent a signed duration as a sign-consistent
     /// `seconds` + sub-second `nanos` pair, so this is a direct field copy.
     ///
-    /// # Warning: proto JSON spec range
+    /// # Warning: Duration valid range
     ///
     /// `jiff::SignedDuration` ranges to ±`i64::MAX` seconds (~2.9e11 years),
     /// while the proto spec restricts `Duration` to ±315,576,000,000 seconds

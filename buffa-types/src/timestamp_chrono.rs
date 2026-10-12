@@ -28,12 +28,13 @@ impl<Tz: chrono::TimeZone> From<chrono::DateTime<Tz>> for Timestamp {
     /// assert_eq!(ts.nanos, 123_456_789);
     /// ```
     ///
-    /// # Warning: proto JSON spec range
+    /// # Warning: Timestamp valid range
     ///
-    /// `chrono::DateTime` supports years up to ~262143, while the proto
-    /// JSON spec restricts `Timestamp` to years 0001–9999. A `DateTime`
-    /// outside that range converts without error here, but the resulting
-    /// `Timestamp` will fail JSON serialization (`json` feature).
+    /// The protobuf `Timestamp` spec restricts valid values to years
+    /// 0001–9999, and `chrono::DateTime` spans years -262143 through 262142.
+    /// A `DateTime` outside years 0001–9999 still converts and round-trips
+    /// through binary encoding, but the result is outside the valid
+    /// `Timestamp` range and JSON serialization (`json` feature) rejects it.
     ///
     /// # Leap seconds
     ///
@@ -174,6 +175,29 @@ mod tests {
 
         let utc_equivalent = Utc.with_ymd_and_hms(2023, 11, 14, 22, 13, 20).unwrap();
         assert_eq!(ts, Timestamp::from(utc_equivalent));
+    }
+
+    #[test]
+    fn datetime_outside_years_1_to_9999_converts_and_roundtrips() {
+        for dt in [DateTime::<Utc>::MIN_UTC, DateTime::<Utc>::MAX_UTC] {
+            let ts: Timestamp = dt.into();
+            assert_eq!(ts.seconds, dt.timestamp());
+            let back: DateTime<Utc> = ts.try_into().unwrap();
+            assert_eq!(back, dt);
+        }
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn datetime_after_year_9999_is_rejected_by_json() {
+        let last_valid = DateTime::<Utc>::from_timestamp(253_402_300_799, 0).unwrap();
+        let after_last_valid = DateTime::<Utc>::from_timestamp(253_402_300_800, 0).unwrap();
+
+        let valid: Timestamp = last_valid.into();
+        let invalid: Timestamp = after_last_valid.into();
+
+        assert!(serde_json::to_string(&valid).is_ok());
+        assert!(serde_json::to_string(&invalid).is_err());
     }
 
     #[test]
