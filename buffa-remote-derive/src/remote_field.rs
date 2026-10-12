@@ -213,8 +213,8 @@ fn same_tokens(a: &syn::Path, b: &syn::Path) -> bool {
     a.to_token_stream().to_string() == b.to_token_stream().to_string()
 }
 
-/// `path` as the user wrote it: `TokenStream`'s `Display` output without the
-/// spaces it puts between tokens, except a space that separates two words
+/// A compact rendering of `path`: `TokenStream`'s `Display` output without
+/// the spaces it puts between tokens, except a space that separates two words
 /// (`dyn Any`).
 fn path_text(path: &syn::Path) -> String {
     let is_word = |c: char| c.is_alphanumeric() || c == '_';
