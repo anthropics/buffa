@@ -2,6 +2,7 @@
 # Conformance proto files are fetched from the tools image.
 conformance/protos/
 conformance/target-nostd/
+conformance/target-table/
 
 # Cargo build artefacts
 target/

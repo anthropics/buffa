@@ -1510,7 +1510,8 @@ impl DynamicMessage {
     /// Decode the message wrapped in this `google.protobuf.Any`.
     ///
     /// Reads `type_url` (field 1), resolves the type name (the segment after
-    /// the last `/`) against this message's pool, and decodes `value`
+    /// the last `/`, or the whole string when it has no `/`) against this
+    /// message's pool, and decodes `value`
     /// (field 2) into a [`DynamicMessage`] of that type. This is the binary
     /// counterpart of the `Any` JSON `@type` expansion; CEL `dyn` evaluation
     /// unpacks `Any` values this way.
