@@ -312,7 +312,8 @@ tasks:
   check-publish-coverage:
     desc: >-
       Verify .github/publish-order.txt lists exactly the publishable crates in
-      the workspace. Run after adding a crate; CI runs this on every PR.
+      the workspace, each after the workspace crates it depends on. Run after
+      adding a crate or a dependency between crates; CI runs this on every PR.
     cmds:
       - ./scripts/check-publish-coverage.sh
 

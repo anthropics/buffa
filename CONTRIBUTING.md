@@ -30,7 +30,7 @@ At release time, `task changelog-batch -- <version>` rolls the fragments into `.
 
 A new workspace crate is published to crates.io unless its `Cargo.toml` sets `publish = false`. If it should be released, add it to `.github/publish-order.txt` **after the crates it depends on** — that file is the single source of truth for what the release publishes and in what order.
 
-`task check-publish-coverage` verifies that the list matches the workspace and that each crate is listed after the workspace crates it depends on. CI runs the same check on every pull request, so a missing or misplaced entry fails the PR that introduces the crate rather than silently skipping it at release time. (buffa 0.9.0 shipped with `buffa-remote-derive` announced in the changelog but absent from crates.io, because nothing compared the list to the workspace.)
+`task check-publish-coverage` verifies that the list matches the workspace and that each crate is listed after the workspace crates it depends on. CI runs the same check on every pull request, so the PR that introduces the problem fails: a missing entry would otherwise be skipped silently at release time, and a misplaced one would fail the publish part-way through. (buffa 0.9.0 shipped with `buffa-remote-derive` announced in the changelog but absent from crates.io, because nothing compared the list to the workspace.)
 
 Note that the first publish of any new crate cannot use Trusted Publishing — crates.io cannot configure it for a crate that does not exist yet — so it needs a one-time API token, after which trusted publishing is configured and later releases run over OIDC.
 

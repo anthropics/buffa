@@ -12,7 +12,8 @@
 #
 # The order matters because cargo publish resolves a crate's dependencies from
 # the index, so a dependency has to be published first. Optional dependencies
-# count; dev-dependencies are not checked.
+# count, and so does a dev-dependency that names a version: cargo removes a
+# path dev-dependency from the published manifest only when it has no version.
 #
 # With --list, print the crate names in publish order instead of checking, so
 # the publish workflow can drive its loop without a second copy of the parsing
@@ -57,6 +58,13 @@ jq -r '.packages[] | select(.publish == null) | .name' "${tmp}/metadata.json" \
 clean_list >"${tmp}/listed"
 sort "${tmp}/listed" >"${tmp}/listed.sorted"
 
+uniq -d "${tmp}/listed.sorted" >"${tmp}/duplicates"
+if [[ -s ${tmp}/duplicates ]]; then
+  echo "error: .github/publish-order.txt lists a crate more than once" >&2
+  sed 's/^/    /' "${tmp}/duplicates" >&2
+  exit 1
+fi
+
 if ! diff -q "${tmp}/publishable" "${tmp}/listed.sorted" >/dev/null; then
   # comm splits the mismatch into the two directions, which need different fixes.
   missing="$(comm -23 "${tmp}/publishable" "${tmp}/listed.sorted")"
@@ -87,12 +95,16 @@ if ! diff -q "${tmp}/publishable" "${tmp}/listed.sorted" >/dev/null; then
   exit 1
 fi
 
+# One line per ordering constraint: a publishable crate and a publishable
+# workspace crate it depends on. cargo metadata reports a path dependency that
+# has no version with the requirement "*"; a dev-dependency of that form is not
+# a constraint, because cargo publish removes it.
 jq -r '
   .packages as $packages
   | $packages[]
   | select(.publish == null) as $dependent
   | $dependent.dependencies[]
-  | select(.path != null and .kind != "dev") as $dependency
+  | select(.path != null and ((.kind == "dev" and .req == "*") | not)) as $dependency
   | select(any($packages[];
       .publish == null
       and .name == $dependency.name
