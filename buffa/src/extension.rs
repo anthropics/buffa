@@ -2061,6 +2061,64 @@ mod tests {
         assert_eq!(element_limit.get(), 0);
     }
 
+    /// A message with a large inline footprint, so that a few hundred
+    /// elements reach the default element-memory budget.
+    #[derive(Clone, PartialEq)]
+    struct WideMsg {
+        pad: [u8; 64 * 1024],
+    }
+
+    impl Default for WideMsg {
+        fn default() -> Self {
+            Self {
+                pad: [0; 64 * 1024],
+            }
+        }
+    }
+
+    impl crate::DefaultInstance for WideMsg {
+        fn default_instance() -> &'static Self {
+            static INST: crate::__private::OnceBox<WideMsg> = crate::__private::OnceBox::new();
+            INST.get_or_init(|| alloc::boxed::Box::new(WideMsg::default()))
+        }
+    }
+
+    impl crate::Message for WideMsg {
+        fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
+            0
+        }
+        fn write_to(&self, _cache: &mut crate::SizeCache, _buf: &mut impl crate::EncodeSink) {}
+        fn merge_field(
+            &mut self,
+            tag: crate::encoding::Tag,
+            buf: &mut impl bytes::Buf,
+            _ctx: crate::DecodeContext<'_>,
+        ) -> Result<(), crate::DecodeError> {
+            crate::encoding::skip_field(tag, buf)
+        }
+        fn clear(&mut self) {
+            self.pad.fill(0);
+        }
+    }
+
+    /// `extension()` has no error channel, so a repeated message or group
+    /// extension that outgrows the default budget comes back holding the
+    /// elements that fit.
+    #[test]
+    fn extension_getter_stops_repeated_messages_at_default_budget() {
+        const MESSAGES: Extension<Repeated<MessageCodec<WideMsg>>> = Extension::new(1, CARRIER);
+        const GROUPS: Extension<Repeated<GroupCodec<WideMsg>>> = Extension::new(2, CARRIER);
+        let fit = crate::DEFAULT_ELEMENT_MEMORY_LIMIT / core::mem::size_of::<WideMsg>();
+        let mut c = Carrier::default();
+        for _ in 0..fit + 3 {
+            c.unknown.push(ld(1, Vec::new()));
+            c.unknown.push(group(2, UnknownFields::new()));
+        }
+
+        assert_eq!(c.extension(&MESSAGES).len(), fit);
+        assert_eq!(c.extension(&GROUPS).len(), fit);
+    }
+
     /// Group-valued extensions share a budget for the same reason, in both
     /// the singular and repeated forms.
     ///

@@ -1,3 +1,4 @@
 kind: Fixed
-body: Repeated message and group extension values now charge each output element to the shared decode memory budget.
+body: |-
+    **`extension()` on a repeated message or group extension stops at the default element-memory budget and returns the elements that fit** (#613). Each element is charged its `size_of` against `DEFAULT_ELEMENT_MEMORY_LIMIT` before it is built, as the generated decoder charges a repeated message field, and one budget covers every record of the extension together with what the elements allocate inside. Before, only the allocations inside each element were charged, so a list of empty messages could grow the returned `Vec` past the limit. The getter has no error channel, so a list that passes the budget comes back shorter instead of failing, and the budget is the crate default whatever `DecodeOptions` decoded the carrier. An element that fails to decode is skipped, as before, and its charge goes back to the budget.
 time: 2026-10-07T14:40:42.543076+02:00
