@@ -9,6 +9,12 @@
 /// is never a link in the chain itself, so a reporter that walks the chain
 /// prints each message once.
 ///
+/// `source` is `None` for malformed YAML, for a value that does not fit its
+/// field, and for an I/O error from the operating system. The carrier reports
+/// a source when a reader or writer fails with an [`std::io::Error`] whose
+/// payload has a source of its own, and that source is what is returned. The
+/// `io::Error` is not in the chain.
+///
 /// Reader and writer failures also retain the reported
 /// [`std::io::ErrorKind`], available through [`io_error_kind`](Self::io_error_kind).
 /// A writer that returns zero bytes for a non-empty buffer reports
