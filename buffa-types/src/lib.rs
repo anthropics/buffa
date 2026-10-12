@@ -80,6 +80,11 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 extern crate alloc;
 
+// Compiles the Rust example in the crate README as a doctest.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
 // Extension modules (ergonomic helpers — hand-written, not generated).
 mod any_ext;
 mod duration_ext;

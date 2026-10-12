@@ -14,7 +14,7 @@ cargo add buffa
 cargo add buffa-types
 ```
 
-Encode and decode a timestamp with Buffa's `Message` trait:
+Encode and decode a timestamp with buffa's `Message` trait:
 
 ```rust
 use buffa::Message;
@@ -36,14 +36,17 @@ messages are available under `buffa_types::google::protobuf`.
 
 ## Features
 
-| Feature | Default | Enables |
-|---|:---:|---|
-| `std` | Yes | `Timestamp` conversions to and from `std::time::SystemTime`, and `Timestamp::now` |
-| `json` | No | ProtoJSON serde implementations for well-known types |
-| `chrono` | No | Conversions to and from `chrono` time types |
-| `jiff` | No | Conversions to and from `jiff` time types |
-| `reflect` | No | Runtime reflection for well-known types; also enables `std` |
-| `arbitrary` | No | `arbitrary::Arbitrary` implementations |
+| Flag | Default | Enables |
+|------|:-------:|---------|
+| `std` | ✓ | `Timestamp` conversions to and from `std::time::SystemTime`, and `Timestamp::now` |
+| `json` |  | Proto3 JSON via `serde` for `Timestamp`, `Duration`, `Any`, `Struct`, `Value`, `ListValue`, `FieldMask`, `Empty` and the wrappers |
+| `chrono` |  | Conversions to and from `chrono` time types |
+| `jiff` |  | Conversions to and from `jiff` time types |
+| `reflect` |  | Runtime reflection for well-known types; also enables `std` |
+| `arbitrary` |  | `arbitrary::Arbitrary` implementations |
+
+`Api`, `Type`, `Enum`, `SourceContext` and the messages they contain have no
+`serde` impls, with or without `json`.
 
 For JSON, enable the feature and add `serde_json` to your crate:
 
@@ -52,9 +55,17 @@ cargo add buffa-types --features json
 cargo add serde_json
 ```
 
-The crate also supports `no_std` with `alloc`. Disable the default `std`
-feature with `default-features = false` when needed. The conversions between
-`Duration` and `core::time::Duration` do not need `std`.
+The crate also supports `no_std` with `alloc`. A `no_std` build needs the
+default features of both crates off, because the default `std` feature of
+`buffa` applies to the whole build:
+
+```sh
+cargo add buffa --no-default-features
+cargo add buffa-types --no-default-features
+```
+
+The conversions between `Duration` and `core::time::Duration` do not need
+`std`.
 
 See the [crate documentation](https://docs.rs/buffa-types) for conversion
 details and the complete API.
