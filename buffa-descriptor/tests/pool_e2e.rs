@@ -1201,6 +1201,11 @@ mod map_enum_defaults {
     };
     use buffa_descriptor::{DescriptorPool, PoolError};
 
+    /// The `(nested, enum_first)` arguments of [`set`] that give distinct
+    /// descriptor sets: `enum_first` moves a file-level enum into an imported
+    /// file and does nothing for a nested enum.
+    const SHAPES: [(bool, bool); 3] = [(false, false), (false, true), (true, false)];
+
     fn set(first: i32, nested: bool, enum_first: bool) -> FileDescriptorSet {
         let enum_name = if nested {
             ".map.test.M.E"
@@ -1211,7 +1216,7 @@ mod map_enum_defaults {
             name: Some("E".into()),
             value: vec![
                 enum_value("FIRST", first),
-                enum_value("OTHER", if first == 0 { 1 } else { 0 }),
+                enum_value("OTHER", i32::from(first == 0)),
             ],
             ..Default::default()
         };
@@ -1277,24 +1282,17 @@ mod map_enum_defaults {
     #[test]
     fn rejects_nonzero_first_map_enum_values_transactionally() {
         for first in [-1, 1, i32::MIN, i32::MAX] {
-            for nested in [false, true] {
-                for enum_first in [false, true] {
-                    let set = set(first, nested, enum_first);
-                    let expected_enum = if nested { "map.test.M.E" } else { "map.test.E" };
-                    assert!(DescriptorPool::new(set.clone()).is_err());
-                    assert!(DescriptorPool::decode(&set.encode_to_vec()).is_err());
-                    assert_set_rejected_without_mutating_pool(
-                        "map.proto",
-                        "map.test.M",
-                        set,
-                        |err| {
-                            assert!(
-                                matches!(err, PoolError::MapEnumFirstValueNotZero { field, enum_name, number } if field == "map.test.M.values" && enum_name == expected_enum && *number == first)
-                            );
-                            assert!(err.to_string().contains("must be zero"));
-                        },
+            for (nested, enum_first) in SHAPES {
+                let set = set(first, nested, enum_first);
+                let expected_enum = if nested { "map.test.M.E" } else { "map.test.E" };
+                assert!(DescriptorPool::new(set.clone()).is_err());
+                assert!(DescriptorPool::decode(&set.encode_to_vec()).is_err());
+                assert_set_rejected_without_mutating_pool("map.proto", "map.test.M", set, |err| {
+                    assert!(
+                        matches!(err, PoolError::MapEnumFirstValueNotZero { field, enum_name, number } if field == "map.test.M.values" && enum_name == expected_enum && *number == first)
                     );
-                }
+                    assert!(err.to_string().contains("must be zero"));
+                });
             }
         }
     }
@@ -1330,10 +1328,46 @@ mod map_enum_defaults {
 
     #[test]
     fn accepts_zero_first_map_enum_values() {
-        for nested in [false, true] {
-            for enum_first in [false, true] {
-                DescriptorPool::new(set(0, nested, enum_first)).unwrap();
-            }
+        for (nested, enum_first) in SHAPES {
+            DescriptorPool::new(set(0, nested, enum_first)).unwrap();
+        }
+    }
+
+    /// The rule does not read the syntax. In an editions file it is
+    /// reachable for a closed enum only, because an open enum with a nonzero
+    /// first value fails its own rule first.
+    #[test]
+    fn editions_map_enum_values_must_start_at_zero() {
+        use buffa_descriptor::generated::descriptor::feature_set::EnumType;
+        use buffa_descriptor::generated::descriptor::{Edition, EnumOptions, FeatureSet};
+
+        let mut closed = set(7, false, false);
+        closed.file[0].syntax = Some("editions".into());
+        closed.file[0].edition = Some(Edition::EDITION_2023);
+        let mut open = closed.clone();
+        closed.file[0].enum_type[0].options = EnumOptions {
+            features: buffa::MessageField::some(FeatureSet {
+                enum_type: Some(EnumType::CLOSED),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+        .into();
+
+        let err = DescriptorPool::new(closed.clone()).unwrap_err();
+        assert!(
+            matches!(&err, PoolError::MapEnumFirstValueNotZero { field, enum_name, number } if field == "map.test.M.values" && enum_name == "map.test.E" && *number == 7),
+            "{err:?}"
+        );
+        let err = DescriptorPool::new(open.clone()).unwrap_err();
+        assert!(
+            matches!(&err, PoolError::OpenEnumFirstValueNotZero { enum_name, .. } if enum_name == "map.test.E"),
+            "{err:?}"
+        );
+
+        for set in [&mut closed, &mut open] {
+            set.file[0].enum_type[0].value.swap(0, 1);
+            DescriptorPool::new(set.clone()).unwrap();
         }
     }
 
