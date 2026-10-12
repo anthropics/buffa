@@ -132,6 +132,51 @@ fn any_json_spreads_payload_extensions() {
     assert_eq!(parsed.unpack_any().unwrap(), opts);
 }
 
+#[cfg(feature = "json")]
+#[test]
+fn any_json_accepts_a_bare_type_name_unless_strict() {
+    use buffa_descriptor::DynamicMessageSeed;
+
+    let p = pool();
+    let any_idx = p.message_index("google.protobuf.Any").unwrap();
+    let strict = DynamicMessageSeed::new(Arc::clone(&p), any_idx).strict_any_type_urls(true);
+
+    let bare = r#"{"@type":"reflect.opt.Annotated"}"#;
+    let nested_bare = r#"{"@type":"type.googleapis.com/google.protobuf.Any","value":{"@type":"reflect.opt.Annotated"}}"#;
+    for input in [bare, nested_bare] {
+        let parsed = DynamicMessage::from_json(Arc::clone(&p), any_idx, input)
+            .unwrap_or_else(|err| panic!("{input}: {err}"));
+        assert_eq!(parsed.to_json().unwrap(), input);
+
+        let err = strict.clone().parse_json(input).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("\"reflect.opt.Annotated\" must contain a '/'"),
+            "{input}: {err}"
+        );
+    }
+
+    let parsed = DynamicMessage::from_json(Arc::clone(&p), any_idx, bare).unwrap();
+    assert_eq!(
+        parsed
+            .unpack_any()
+            .unwrap()
+            .message_descriptor()
+            .full_name(),
+        "reflect.opt.Annotated"
+    );
+
+    // A bare name the pool does not know is an error in both modes, and a
+    // type URL parses in both.
+    let unknown = r#"{"@type":"no.Such"}"#;
+    assert!(DynamicMessage::from_json(Arc::clone(&p), any_idx, unknown).is_err());
+    assert!(strict.clone().parse_json(unknown).is_err());
+    let url = r#"{"@type":"type.googleapis.com/google.protobuf.Any","value":{"@type":"x/reflect.opt.Annotated"}}"#;
+    let parsed = DynamicMessage::from_json(Arc::clone(&p), any_idx, url).unwrap();
+    assert_eq!(parsed.to_json().unwrap(), url);
+    assert_eq!(strict.parse_json(url).unwrap(), parsed);
+}
+
 /// Read a custom option off a re-encoded options message: decode it as a
 /// `DynamicMessage` of `options_type` and pull the extension's value. This
 /// is the documented generic flow for reading a custom option by name when

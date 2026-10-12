@@ -35,9 +35,18 @@ COPY buffa-types/       buffa-types/
 COPY protoc-gen-buffa/  protoc-gen-buffa/
 COPY conformance/       conformance/
 
-RUN cargo build --release --manifest-path conformance/Cargo.toml
-RUN cargo build --release --manifest-path conformance/Cargo.toml \
-    --no-default-features --target-dir conformance/target-nostd
+# All three builds share one target dir, so the dependencies and build scripts
+# that do not depend on the features (buffa-codegen, buffa-build, syn, ...) are
+# compiled once. Each binary is copied out before the next build overwrites it.
+RUN mkdir /out \
+    && cargo build --release --manifest-path conformance/Cargo.toml \
+    && cp conformance/target/release/conformance /out/buffa-conformance \
+    && cargo build --release --manifest-path conformance/Cargo.toml \
+        --features table \
+    && cp conformance/target/release/conformance /out/buffa-conformance-table \
+    && cargo build --release --manifest-path conformance/Cargo.toml \
+        --no-default-features \
+    && cp conformance/target/release/conformance /out/buffa-conformance-nostd
 
 # ── Stage 3: runtime image ────────────────────────────────────────────────
 FROM ubuntu:24.04
@@ -46,12 +55,12 @@ RUN apt-get update && apt-get install -y libstdc++6 libgcc-s1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=tools /conformance_test_runner      /usr/local/bin/conformance_test_runner
-COPY --from=rust-builder \
-    /workspace/conformance/target/release/conformance  /usr/local/bin/buffa-conformance
-COPY --from=rust-builder \
-    /workspace/conformance/target-nostd/release/conformance  /usr/local/bin/buffa-conformance-nostd
+COPY --from=rust-builder /out/buffa-conformance        /usr/local/bin/buffa-conformance
+COPY --from=rust-builder /out/buffa-conformance-nostd  /usr/local/bin/buffa-conformance-nostd
+COPY --from=rust-builder /out/buffa-conformance-table  /usr/local/bin/buffa-conformance-table
 COPY conformance/known_failures.txt             /known_failures.txt
 COPY conformance/known_failures_nostd.txt       /known_failures_nostd.txt
+COPY conformance/known_failures_table.txt       /known_failures_table.txt
 COPY conformance/known_failures_view.txt        /known_failures_view.txt
 COPY conformance/known_failures_lazy.txt        /known_failures_lazy.txt
 COPY conformance/known_failures_view_json.txt   /known_failures_view_json.txt
