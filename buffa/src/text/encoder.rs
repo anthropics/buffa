@@ -19,7 +19,7 @@ use crate::unknown_fields::{UnknownFieldData, UnknownFields};
 
 /// Depth cap for heuristically parsing length-delimited unknown fields as
 /// nested messages. Matches C++ `kUnknownFieldRecursionLimit`
-/// (text_format.cc:2306). Independent of the parse-time [`RECURSION_LIMIT`]
+/// (text_format.cc:2494). Independent of the parse-time [`RECURSION_LIMIT`]
 /// — this bounds an encode-time *printing* heuristic, not wire decode.
 ///
 /// [`RECURSION_LIMIT`]: crate::RECURSION_LIMIT
@@ -388,12 +388,14 @@ impl<'a> TextEncoder<'a> {
     /// | group | nested `{ ... }` (recursive) | `1004 { 1: 0 }` |
     ///
     /// Length-delimited bytes are speculatively parsed as wire-format records
-    /// (same heuristic as C++ text_format.cc:2926 / Java TextFormat.java:87):
+    /// (same heuristic as C++ text_format.cc:3121 / Java TextFormat.java:87):
     /// if the parse succeeds, print nested; otherwise print as escaped bytes.
     /// Capped at 10 levels deep. Group nesting is capped at
-    /// [`RECURSION_LIMIT`](crate::RECURSION_LIMIT); a deeper group's body is
-    /// omitted. False positives are possible — a string that happens to look
-    /// like valid wire format will be printed as `{ }`.
+    /// [`RECURSION_LIMIT`](crate::RECURSION_LIMIT). A group nested past that
+    /// depth is written with an empty body, so the text can omit a subtree,
+    /// and such a group reads the same as an empty one. False positives are
+    /// possible — a string that happens to look like valid wire format will be
+    /// printed as `{ }`.
     ///
     /// This is debug output: the parser can't round-trip it because wire type
     /// doesn't determine proto type (a varint could be int32, sint64, bool, an
@@ -439,7 +441,7 @@ impl<'a> TextEncoder<'a> {
                     // Heuristic: try to parse the bytes as wire-format records.
                     // If it parses, it's probably a sub-message — print nested.
                     // If not (or we're out of budget), print as escaped bytes.
-                    // Matches C++ text_format.cc:2926-2966 and Java
+                    // Matches C++ text_format.cc:3121-3160 and Java
                     // TextFormat.java:87-102.
                     if ld_budget > 0 && !bytes.is_empty() {
                         if let Ok(inner) = UnknownFields::decode_from_slice(bytes) {
