@@ -13,7 +13,7 @@
 //! Run standalone with (the file compiles to nothing without the features):
 //! `cargo test -p buffa-descriptor --features reflect,json --test json_element_memory_limit`
 
-#![cfg(all(feature = "reflect", feature = "json", feature = "std"))]
+#![cfg(all(feature = "reflect", feature = "json"))]
 
 use std::mem::size_of;
 use std::sync::Arc;

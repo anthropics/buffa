@@ -104,7 +104,6 @@ fn wrappers_reject_invalid_scalar_values() {
     }
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn any_wrappers_accept_null_as_an_empty_payload() {
     let p = pool();
@@ -123,7 +122,6 @@ fn any_wrappers_accept_null_as_an_empty_payload() {
     }
 }
 
-#[cfg(feature = "std")]
 #[test]
 fn any_wrappers_still_require_a_value_key() {
     let p = pool();

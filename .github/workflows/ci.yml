@@ -385,6 +385,9 @@ jobs:
       - name: Check buffa-descriptor no_std + json/reflect/text/views
         run: cargo check -p buffa-descriptor --no-default-features --features json,reflect,text,views
 
+      - name: Test buffa-descriptor no_std reflective JSON
+        run: cargo test -p buffa-descriptor --no-default-features --features json,reflect --test json_e2e --test json_wrappers --test json_depth_limit --test json_element_memory_limit --test json_private_key
+
       - name: Check workspace 32-bit
         run: cargo check --workspace --target i686-unknown-linux-gnu
 

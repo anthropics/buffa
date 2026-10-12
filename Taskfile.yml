@@ -820,6 +820,7 @@ tasks:
       - cargo check -p buffa-types --no-default-features --features jiff
       - cargo check -p buffa-descriptor --no-default-features
       - cargo check -p buffa-descriptor --no-default-features --features json,reflect,text,views
+      - cargo test -p buffa-descriptor --no-default-features --features json,reflect --test json_e2e --test json_wrappers --test json_depth_limit --test json_element_memory_limit --test json_private_key
   # ── Coverage ─────────────────────────────────────────────────────────
 
   coverage:
