@@ -2059,6 +2059,24 @@ fn float_deserialize_table() {
 }
 
 #[test]
+fn float_unquoted_rounds_through_f64_quoted_rounds_once() {
+    // Just above 1 + 2^-24, the midpoint of 1.0 and the next f32, so the
+    // nearest f32 is 1.0000001. As an f64 it is the midpoint exactly, which
+    // narrowing then rounds to even. Pins the documented difference (#647).
+    let json = "1.0000000596046448";
+    let unquoted: SerdeFloat = serde_json::from_str(json).unwrap();
+    assert_eq!(unquoted.0.to_bits(), 0x3f80_0000);
+    let quoted: SerdeFloat = serde_json::from_str(&format!("\"{json}\"")).unwrap();
+    assert_eq!(quoted.0.to_bits(), 0x3f80_0001);
+    // An unquoted integer is converted once, so 2^24 + 1 rounds to even the
+    // same way quoted or not.
+    for json in ["16777217", r#""16777217""#] {
+        let v: SerdeFloat = serde_json::from_str(json).unwrap();
+        assert_eq!(v.0.to_bits(), 0x4b80_0000, "input: {json}");
+    }
+}
+
+#[test]
 fn double_serialize_table() {
     #[rustfmt::skip]
     let cases: &[(f64, &str)] = &[

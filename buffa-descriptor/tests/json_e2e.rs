@@ -313,6 +313,24 @@ fn json_quoted_integer_bounds_match_generated_messages() {
     }
 }
 
+/// An unquoted `float` reaches the reflective parser as an `f64` and is
+/// narrowed, as in generated code, so a decimal next to an `f32` midpoint
+/// decodes differently from the same decimal quoted (#647).
+#[test]
+fn json_unquoted_float_rounds_through_f64_as_generated_messages_do() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+    let parse = |json: &str| {
+        let msg = DynamicMessage::from_json(Arc::clone(&p), idx, json).expect("float parses");
+        match msg.field_by_number(2) {
+            Some(Value::F32(f)) => f.to_bits(),
+            other => panic!("expected F32, got {other:?}"),
+        }
+    };
+    assert_eq!(parse(r#"{"fFloat": 1.0000000596046448}"#), 0x3f80_0000);
+    assert_eq!(parse(r#"{"fFloat": "1.0000000596046448"}"#), 0x3f80_0001);
+}
+
 /// Quoted floats go through the same `json_helpers` modules as generated
 /// messages, so out-of-range strings are rejected rather than saturating to
 /// infinity, and only the three exact tokens spell a non-finite value.

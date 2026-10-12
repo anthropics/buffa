@@ -1764,6 +1764,16 @@ build, run `cargo tree -e features -i serde_json` in your workspace, and look
 for `arbitrary_precision` in the output. Tracked in
 [#482](https://github.com/anthropics/buffa/issues/482).
 
+An unquoted `float` value with a fraction or exponent is parsed as an `f64`
+and then narrowed to `f32`, so it is rounded twice. A quoted one is parsed
+straight to `f32`. The two can differ by one `f32` ulp for a decimal very
+close to the midpoint between two `f32` values: `1.0000000596046448` decodes
+to `1.0` unquoted and `1.0000001` quoted. protobuf C++ narrows the same way;
+protobuf-go rounds once. A producer that needs single rounding can quote the
+value. Generated messages, `FloatValue` and `DynamicMessage::from_json` all
+behave this way. Tracked in
+[#647](https://github.com/anthropics/buffa/issues/647).
+
 If one of your own types keeps untrusted JSON as a `serde_json::Value` before
 decoding it, do not deserialize that value with `Value`'s own `Deserialize`
 impl. When any crate in the build enables `serde_json`'s `raw_value` feature,

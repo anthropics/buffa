@@ -206,6 +206,10 @@ impl serde::Serialize for FloatValue {
     }
 }
 
+/// Accepts what [`buffa::json_helpers::float`] accepts. An unquoted number
+/// with a fraction or exponent is rounded to `f64` and then to `f32`, so it
+/// can decode one `f32` ulp away from the same value quoted; that module's
+/// documentation says when.
 #[cfg(feature = "json")]
 impl<'de> serde::Deserialize<'de> for FloatValue {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {

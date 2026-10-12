@@ -1216,6 +1216,23 @@ int_serde_module!(
 /// deserialization. A number or quoted decimal outside the `f32` range is an
 /// error, not infinity, and `"inf"` / `"nan"` in other spellings are rejected.
 ///
+/// A quoted decimal is parsed straight to `f32`, so it is rounded once, and
+/// so is an unquoted integer in the `i64` or `u64` range. Any other unquoted
+/// number reaches the visitor as the `f64` the deserializer parsed and is then
+/// narrowed to `f32`, so it is rounded twice. The results differ, by one `f32`
+/// ulp, when a decimal close to the midpoint between two adjacent `f32` values
+/// becomes that midpoint as an `f64`, which then rounds to even:
+/// `1.0000000596046448` decodes to `1.0` unquoted and to its nearest `f32`,
+/// `1.0000001`, quoted. How close is close enough depends on the `f64` parse
+/// (half an `f64` ulp with `serde_json`'s `float_roundtrip` feature, somewhat
+/// more without it). Just below the `f32` overflow threshold, the same effect
+/// makes an unquoted value an error that parses when quoted.
+///
+/// protobuf C++ also narrows a parsed `double`; protobuf-go rounds once. The
+/// `f64` does not identify the decimal it came from, so the decoding side
+/// cannot avoid this. A producer that wants single rounding can quote the
+/// value. Tracked in [#647](https://github.com/anthropics/buffa/issues/647).
+///
 /// Use with `#[serde(with = "::buffa::json_helpers::float")]`.
 pub mod float {
     use serde::{Deserializer, Serializer};

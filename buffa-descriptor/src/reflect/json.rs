@@ -377,6 +377,11 @@ impl DynamicMessage {
     /// [`with_element_memory_limit`](DynamicMessageSeed::with_element_memory_limit)
     /// gives each charge.
     ///
+    /// Scalars decode as in generated messages. In particular, an unquoted
+    /// `float` with a fraction or exponent is rounded to `f64` and then to
+    /// `f32`, so it can decode one `f32` ulp away from the same value quoted;
+    /// see [`buffa::json_helpers::float`].
+    ///
     /// # Errors
     ///
     /// Returns a `serde_json::Error` if the input is not valid JSON, does
@@ -1143,6 +1148,10 @@ fn scalar_from_u64(sc: ScalarType, v: u64) -> Option<Value> {
 /// across the full range, and unquoted floats are rejected above the
 /// magnitude where serde_json's float parsing can no longer identify the
 /// token uniquely.
+///
+/// An unquoted `float` with a fraction or exponent arrives here already
+/// rounded to `f64`, so it is rounded twice, as in generated code: see
+/// `json_helpers::float`.
 fn scalar_from_f64<E: de::Error>(sc: ScalarType, v: f64) -> Result<Value, E> {
     let d = v.into_deserializer();
     Ok(match sc {
