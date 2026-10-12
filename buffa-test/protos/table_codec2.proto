@@ -3,6 +3,13 @@ syntax = "proto2";
 // See table_codec.proto: compiled as `tc2u` (unrolled) and `tc2t` (table).
 package tc2;
 
+// A map value's enum must have a zero, so `ClosedMaps` uses this one.
+enum Shade {
+  NONE = 0;
+  DARK = 1;
+  LIGHT = 2;
+}
+
 // Closed, and its first value is not zero.
 enum Color {
   RED = 1;
@@ -28,6 +35,18 @@ message Req {
   optional bytes by = 11 [default = "ab"];
   optional string st = 12 [default = "xyz"];
   optional bool flag = 13 [default = true];
+}
+
+// A oneof with a closed enum, which keeps the member it holds when it reads a
+// number the enum does not have.
+message ClosedOneof {
+  oneof pick {
+    Color shade = 1;
+    int32 n = 2;
+    string s = 3;
+    Inner i = 4;
+  }
+  optional int32 tail = 5;
 }
 
 // A group field, which the table cannot handle, and the group's own type.
@@ -76,4 +95,12 @@ message AllRepeated {
   repeated string s = 14;
   repeated bytes by = 15;
   repeated Color color = 16;
+}
+
+// Map values that are closed enums, which make an entry with an unknown number
+// unknown as a whole, and messages.
+message ClosedMaps {
+  map<string, Shade> colors = 1;
+  map<int32, Inner> inners = 2;
+  optional int32 tail = 3;
 }
