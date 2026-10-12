@@ -49,6 +49,8 @@ let msg: Person = DecodeOptions::new()
 | `arbitrary` |  | `arbitrary::Arbitrary` impls for fuzzing |
 
 With `default-features = false` the crate is `#![no_std]` (requires `alloc`).
+Disabling the defaults also turns off `fast-utf8`, which does not need `std`; add
+`features = ["fast-utf8"]` to keep it.
 
 ## Documentation
 
