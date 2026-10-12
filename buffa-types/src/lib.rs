@@ -47,8 +47,8 @@
 //! - `Duration` ↔ [`jiff::SignedDuration`](https://docs.rs/jiff/latest/jiff/struct.SignedDuration.html) (requires `jiff` feature)
 //! - [`Any`] packing and unpacking: [`Any::pack_message`],
 //!   [`Any::unpack_message`], [`Any::is_message`]
-//! - [`FieldMask`] path helpers: [`FieldMask::covers`], [`FieldMask::normalize`],
-//!   [`FieldMask::union`], [`FieldMask::intersection`]
+//! - [`FieldMask`] path helpers: [`FieldMask::covers`], [`FieldMask::overlaps`],
+//!   [`FieldMask::normalize`], [`FieldMask::union`], [`FieldMask::intersection`]
 //! - `Value` constructors: [`Value::null`](google::protobuf::Value::null), `From<f64>`, `From<String>`, `From<bool>`, etc.
 //! - Wrapper type `From`/`Into` impls
 //!

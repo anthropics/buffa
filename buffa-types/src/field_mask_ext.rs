@@ -27,7 +27,8 @@ impl FieldMask {
     ///
     /// Comparison is exact (case-sensitive, no wildcard expansion), so a mask
     /// of `user` does not contain `user.name`. [`covers`](Self::covers) also
-    /// returns `true` for a path whose ancestor is in the mask.
+    /// returns `true` for a path whose ancestor is in the mask, and
+    /// [`overlaps`](Self::overlaps) for an ancestor or a descendant.
     /// Runs in O(n) time where n is the number of paths.
     pub fn contains(&self, path: &str) -> bool {
         self.paths.iter().any(|p| p == path)
@@ -42,9 +43,9 @@ impl FieldMask {
     /// The mask is read as a plain list of paths:
     ///
     /// - Coverage runs from ancestor to descendant only. A mask that contains
-    ///   `settings.theme` does not cover `settings`, so a handler that updates
-    ///   `settings` as a unit must call `covers` for each field of `settings`
-    ///   that it writes.
+    ///   `settings.theme` does not cover `settings`. A handler that updates
+    ///   `settings` as a unit can ask whether the mask selects `settings` or
+    ///   anything under it with [`overlaps`](Self::overlaps).
     /// - An empty mask does not cover any path, and an unset mask field reads
     ///   as an empty mask. `google.protobuf.FieldMask` defines an absent
     ///   update mask as every field. A handler that follows that rule must
@@ -77,6 +78,47 @@ impl FieldMask {
         self.paths
             .iter()
             .any(|ancestor| path_is_covered(path, ancestor))
+    }
+
+    /// Returns `true` if this mask contains `path`, an ancestor of `path`, or
+    /// a descendant of `path`.
+    ///
+    /// Where [`covers`](Self::covers) asks whether the mask selects `path`
+    /// whole, `overlaps` asks whether it selects `path` or anything under it.
+    /// A mask that contains `settings.theme` overlaps `settings` but does not
+    /// cover it. Paths follow the rules `covers` documents: dots are component
+    /// boundaries, so `user` does not overlap `username`, `*` is literal, and
+    /// the empty path `""` is an ordinary path, not a root that every path is
+    /// under. Runs in O(n) path comparisons where n is the number of mask
+    /// paths.
+    ///
+    /// An empty mask overlaps nothing, and an unset mask field reads as an
+    /// empty mask. `google.protobuf.FieldMask` defines an absent update mask
+    /// as every field, so a handler that follows that rule must check
+    /// [`is_empty`](Self::is_empty) before it calls `overlaps`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::google::protobuf::FieldMask;
+    ///
+    /// let mask = FieldMask::from_paths(["settings.theme"]);
+    /// assert!(!mask.covers("settings"));
+    /// assert!(mask.overlaps("settings"));
+    /// assert!(mask.overlaps("settings.theme.color"));
+    /// assert!(!mask.overlaps("settings.locale"));
+    ///
+    /// // An update handler that writes `settings` as a unit, treating an
+    /// // absent mask as every field:
+    /// let writes_settings = |mask: &FieldMask| mask.is_empty() || mask.overlaps("settings");
+    /// assert!(writes_settings(&mask));
+    /// assert!(writes_settings(&FieldMask::default()));
+    /// assert!(!writes_settings(&FieldMask::from_paths(["user"])));
+    /// ```
+    pub fn overlaps(&self, path: &str) -> bool {
+        self.paths
+            .iter()
+            .any(|p| path_is_covered(path, p) || path_is_covered(p, path))
     }
 
     /// Sorts the paths component by component, comparing each component as a
@@ -445,6 +487,72 @@ mod tests {
         }
         assert!(!FieldMask::default().covers("user"));
         assert!(!FieldMask::from_paths(["*"]).covers("user"));
+    }
+
+    #[test]
+    fn overlaps_ancestors_descendants_and_equal_paths_only() {
+        let mask = FieldMask::from_paths(["user", "settings.theme", "User.Name"]);
+        for path in [
+            "user",
+            "user.name",
+            "settings",
+            "settings.theme",
+            "settings.theme.color",
+            "User",
+            "User.Name.First",
+        ] {
+            assert!(mask.overlaps(path), "{path}");
+        }
+        for path in [
+            "username",
+            "use",
+            "settings.locale",
+            "settings.themes",
+            "setting",
+            "User.name",
+            "",
+        ] {
+            assert!(!mask.overlaps(path), "{path}");
+        }
+        assert!(!FieldMask::default().overlaps("user"));
+        assert!(!FieldMask::from_paths(["*"]).overlaps("user"));
+        assert!(!FieldMask::from_paths(["user"]).overlaps("*"));
+        assert!(FieldMask::from_paths(["*"]).overlaps("*"));
+    }
+
+    #[test]
+    fn overlaps_matches_intersecting_with_a_one_path_mask() {
+        // `intersection` sorts, deduplicates and merges independently, so it
+        // checks `overlaps` against a second algorithm. The mask is unsorted,
+        // has a duplicate and an ancestor/descendant pair, and empty
+        // components, so the normalization inside `intersection` runs too.
+        let mask = FieldMask::from_paths(["g.", "d.e.f", "c", "a.b", "a", "c", "", ".x"]);
+        for path in [
+            "a", "a.b", "a.b.c", "a.bc", "ab", "c", "c.d", "d", "d.e", "d.f", "g", "g.", "x", "",
+            ".x", ".y", ".x.z",
+        ] {
+            let single = FieldMask::from_paths([path]);
+            assert_eq!(
+                mask.overlaps(path),
+                !mask.intersection(&single).is_empty(),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn overlaps_treats_every_dot_as_a_component_boundary() {
+        // Same path rules as `covers`, applied in both directions.
+        let labels = FieldMask::from_paths(["labels.`a.b`"]);
+        assert!(labels.overlaps("labels.`a"));
+        assert!(labels.overlaps("labels"));
+        assert!(!labels.overlaps("labels.`a.c"));
+        assert!(FieldMask::from_paths([""]).overlaps(".user"));
+        assert!(!FieldMask::from_paths([""]).overlaps("user"));
+        let trailing = FieldMask::from_paths(["user."]);
+        assert!(trailing.overlaps("user"));
+        assert!(!trailing.covers("user"));
+        assert!(!trailing.overlaps("user.name"));
     }
 
     #[test]
