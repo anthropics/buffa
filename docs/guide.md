@@ -2208,6 +2208,15 @@ field_opts.set_extension(&FIELD, my_rules);
 field_opts.clear_extension(&FIELD);
 ```
 
+`extension()` decodes under the default decode limits, whatever
+`DecodeOptions` decoded the extendee, and it has no error channel. For a
+repeated message or group extension it charges each element's `size_of` to
+`DEFAULT_ELEMENT_MEMORY_LIMIT` and stops at the first element that exceeds
+the budget, so the `Vec<T>` can be shorter than the list on the wire. Each
+record of such an extension is one element: compare the returned length with
+the number of `unknown_fields()` records whose `number` is the extension's to
+learn whether elements are missing.
+
 Message-typed extension values are encoded to wire bytes on `set`, so
 `set_extension()` panics if the value's encoded size exceeds the 2 GiB
 protobuf limit; `try_set_extension()` returns

@@ -215,11 +215,17 @@ impl<'a> DecodeContext<'a> {
         self.element_memory_remaining.map(core::cell::Cell::get)
     }
 
-    /// Restore an element-memory checkpoint after dropping a value that did
-    /// not decode successfully.
-    pub(crate) fn restore_element_memory(&self, remaining: usize) {
+    /// Spend what is left of the element-memory budget, so that every later
+    /// nonzero charge on this context fails.
+    ///
+    /// A caller that drops a value after
+    /// [`ElementMemoryLimitExceeded`](DecodeError::ElementMemoryLimitExceeded)
+    /// and keeps decoding with the same context uses this to keep the
+    /// budget a bound on the total: a failed charge leaves the budget
+    /// unchanged, so a smaller value could otherwise still be charged.
+    pub(crate) fn exhaust_element_memory(&self) {
         if let Some(cell) = self.element_memory_remaining {
-            cell.set(remaining);
+            cell.set(0);
         }
     }
 

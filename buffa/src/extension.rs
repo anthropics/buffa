@@ -270,12 +270,26 @@ pub trait ExtensionSet {
     ///
     /// For singular extensions: `Option<T>` — `None` if absent, if the
     /// stored wire data is malformed for this codec, or if the extension's
-    /// records together exhaust the decode budget (the budget is shared
-    /// across every record of one extension, and is always the crate default
-    /// regardless of the `DecodeOptions` used to decode the carrier). For
-    /// repeated message and group extensions, each returned message's storage
-    /// footprint and nested allocations share this same budget, so the
-    /// returned `Vec<T>` may contain only the entries that fit.
+    /// records together exhaust the decode budget.
+    ///
+    /// For repeated: `Vec<T>`, in wire order. A record that is malformed for
+    /// this codec is skipped.
+    ///
+    /// One decode budget covers every record of one extension. It is always
+    /// the crate default, whatever `DecodeOptions` decoded the carrier. For a
+    /// repeated message or group extension, each element's `size_of` is
+    /// charged to
+    /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](crate::DEFAULT_ELEMENT_MEMORY_LIMIT)
+    /// before the element is built, and what the element allocates inside is
+    /// charged as it decodes. The charges of a skipped element stay spent.
+    /// The getter stops at the first element that exceeds this budget and
+    /// returns the elements decoded before it, so the budget bounds what one
+    /// call allocates.
+    ///
+    /// For a message or group extension each record is one element. To learn
+    /// whether elements are missing, compare the returned length with the
+    /// number of records in [`unknown_fields`](Self::unknown_fields) whose
+    /// `number` is [`ext.number()`](Extension::number).
     ///
     /// # Panics
     ///
@@ -437,6 +451,11 @@ pub mod codecs {
         /// and bytes codec. **A codec whose value can materialize an
         /// unbounded subtree must override this**, or each record silently
         /// gets its own full allowance of the crate-default limits.
+        ///
+        /// Such an override should also charge the value's `size_of` with
+        /// [`ctx.register_element_memory`](crate::DecodeContext::register_element_memory)
+        /// before it builds the value, as [`MessageCodec`] and [`GroupCodec`]
+        /// do. That charge bounds the `Vec` a repeated extension returns.
         fn decode_one_ctx(
             data: &UnknownFieldData,
             _ctx: crate::DecodeContext<'_>,
@@ -891,17 +910,7 @@ pub mod codecs {
         fn decode_one_ctx(data: &UnknownFieldData, ctx: crate::DecodeContext<'_>) -> Option<M> {
             match data {
                 UnknownFieldData::LengthDelimited(bytes) => {
-                    let memory_checkpoint = ctx.remaining_element_memory();
-                    ctx.register_element_memory(core::mem::size_of::<M>())
-                        .ok()?;
-                    let mut m = M::default();
-                    if m.merge(&mut &bytes[..], ctx).is_err() {
-                        if let Some(remaining) = memory_checkpoint {
-                            ctx.restore_element_memory(remaining);
-                        }
-                        return None;
-                    }
-                    Some(m)
+                    decode_charged(ctx, |m: &mut M| m.merge(&mut &bytes[..], ctx))
                 }
                 _ => None,
             }
@@ -986,21 +995,11 @@ pub mod codecs {
         }
         fn decode_one_ctx(data: &UnknownFieldData, ctx: crate::DecodeContext<'_>) -> Option<M> {
             match data {
-                UnknownFieldData::Group(inner) => {
-                    let memory_checkpoint = ctx.remaining_element_memory();
-                    ctx.register_element_memory(core::mem::size_of::<M>())
-                        .ok()?;
+                UnknownFieldData::Group(inner) => decode_charged(ctx, |m: &mut M| {
                     let mut buf = Vec::with_capacity(inner.encoded_len());
                     inner.write_to(&mut buf);
-                    let mut m = M::default();
-                    if m.merge(&mut &buf[..], ctx).is_err() {
-                        if let Some(remaining) = memory_checkpoint {
-                            ctx.restore_element_memory(remaining);
-                        }
-                        return None;
-                    }
-                    Some(m)
-                }
+                    m.merge(&mut &buf[..], ctx)
+                }),
                 _ => None,
             }
         }
@@ -1109,16 +1108,52 @@ pub mod codecs {
         )
     }
 
-    /// Shared repeated-decode logic: accepts both unpacked (one record per
-    /// value) and packed (`LengthDelimited` of concatenated values).
+    /// Decodes one element of a repeated message or group extension: charges
+    /// `size_of::<M>()` to the element-memory budget, then runs `merge` on a
+    /// default `M`.
+    ///
+    /// The charges of an element that fails stay spent, as its unknown-field
+    /// allowance does, so the budget bounds what one `extension()` call
+    /// allocates in total and not only what is live at once. When the
+    /// failure is the element-memory budget itself, the rest of the budget
+    /// is spent too, which is how `decode_repeated_with_context` learns that
+    /// it must stop.
+    fn decode_charged<M: Default>(
+        ctx: crate::DecodeContext<'_>,
+        merge: impl FnOnce(&mut M) -> Result<(), crate::DecodeError>,
+    ) -> Option<M> {
+        let decoded = ctx
+            .register_element_memory(core::mem::size_of::<M>())
+            .and_then(|()| {
+                let mut m = M::default();
+                merge(&mut m)?;
+                Ok(m)
+            });
+        if matches!(decoded, Err(crate::DecodeError::ElementMemoryLimitExceeded)) {
+            ctx.exhaust_element_memory();
+        }
+        decoded.ok()
+    }
+
+    /// Decodes a repeated extension under the crate-default budgets.
     fn decode_repeated<C: SingularCodec>(number: u32, fields: &UnknownFields) -> Vec<C::Value> {
-        // Every element stays live in `out`, so one budget covers the lot.
+        // Every element stays live in the returned `Vec`, so one budget
+        // covers all of them.
         let (limit, elem) = extension_decode_cells();
         let ctx =
             crate::DecodeContext::new(crate::RECURSION_LIMIT, &limit).with_element_memory(&elem);
         decode_repeated_with_context::<C>(number, fields, ctx)
     }
 
+    /// Shared repeated-decode logic: accepts both unpacked (one record per
+    /// value) and packed (`LengthDelimited` of concatenated values).
+    ///
+    /// A record that `decode_one_ctx` rejects is skipped, and the loop goes on
+    /// to the next record. The exception is an element-memory budget that is
+    /// spent: the loop stops there and returns the elements decoded so far.
+    /// [`MessageCodec`] and [`GroupCodec`] spend the whole budget when an
+    /// element exceeds it, so a smaller element after it cannot be returned
+    /// in its place.
     pub(super) fn decode_repeated_with_context<C: SingularCodec>(
         number: u32,
         fields: &UnknownFields,
@@ -1128,6 +1163,8 @@ pub mod codecs {
         for f in fields.iter().filter(|f| f.number == number) {
             if let Some(v) = C::decode_one_ctx(&f.data, ctx) {
                 out.push(v);
+            } else if ctx.remaining_element_memory() == Some(0) {
+                break;
             } else if let UnknownFieldData::LengthDelimited(bytes) = &f.data {
                 C::decode_packed(bytes, &mut out);
             }
@@ -1142,7 +1179,6 @@ pub mod codecs {
 
 #[cfg(test)]
 mod tests {
-    use super::codecs::decode_repeated_with_context;
     use super::codecs::*;
     use super::*;
     use crate::unknown_fields::{UnknownField, UnknownFieldData};
@@ -2003,10 +2039,7 @@ mod tests {
     fn repeated_group_extension_charges_each_output_message() {
         let mut fields = UnknownFields::new();
         for _ in 0..3 {
-            fields.push(UnknownField {
-                number: 1,
-                data: UnknownFieldData::Group(UnknownFields::new()),
-            });
+            fields.push(group(1, UnknownFields::new()));
         }
         let unknown_limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
         let element_limit = core::cell::Cell::new(2 * core::mem::size_of::<TestMsg>());
@@ -2019,13 +2052,14 @@ mod tests {
         assert_eq!(element_limit.get(), 0);
     }
 
+    /// A malformed element is skipped and its `size_of` charge stays spent.
     #[test]
-    fn repeated_message_extension_restores_budget_for_malformed_element() {
+    fn repeated_message_extension_keeps_the_charge_of_a_malformed_element() {
         let mut fields = UnknownFields::new();
         fields.push(ld(1, vec![0x08, 0x80])); // truncated varint
         fields.push(ld(1, vec![0x08, 0x03])); // valid message
         let unknown_limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        let element_limit = core::cell::Cell::new(core::mem::size_of::<TestMsg>());
+        let element_limit = core::cell::Cell::new(2 * core::mem::size_of::<TestMsg>());
         let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &unknown_limit)
             .with_element_memory(&element_limit);
 
@@ -2037,20 +2071,14 @@ mod tests {
     }
 
     #[test]
-    fn repeated_group_extension_restores_budget_for_malformed_element() {
+    fn repeated_group_extension_keeps_the_charge_of_a_malformed_element() {
         let mut malformed = UnknownFields::new();
         malformed.push(varint(0, 1)); // field number zero is invalid
         let mut fields = UnknownFields::new();
-        fields.push(UnknownField {
-            number: 1,
-            data: UnknownFieldData::Group(malformed),
-        });
-        fields.push(UnknownField {
-            number: 1,
-            data: UnknownFieldData::Group(inner_a(3)),
-        });
+        fields.push(group(1, malformed));
+        fields.push(group(1, inner_a(3)));
         let unknown_limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
-        let element_limit = core::cell::Cell::new(core::mem::size_of::<TestMsg>());
+        let element_limit = core::cell::Cell::new(2 * core::mem::size_of::<TestMsg>());
         let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &unknown_limit)
             .with_element_memory(&element_limit);
 
@@ -2059,6 +2087,93 @@ mod tests {
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].a, 3);
         assert_eq!(element_limit.get(), 0);
+    }
+
+    /// A message that charges the element-memory budget from inside its own
+    /// decode, as a generated message with a repeated field does: each
+    /// varint at field 1 costs `ITEM_CHARGE`.
+    #[derive(Debug, Default, Clone, PartialEq)]
+    struct ListMsg {
+        items: Vec<u64>,
+    }
+
+    impl ListMsg {
+        const ITEM_CHARGE: usize = 64;
+    }
+
+    impl crate::DefaultInstance for ListMsg {
+        fn default_instance() -> &'static Self {
+            static INST: crate::__private::OnceBox<ListMsg> = crate::__private::OnceBox::new();
+            INST.get_or_init(|| alloc::boxed::Box::new(ListMsg::default()))
+        }
+    }
+
+    impl crate::Message for ListMsg {
+        fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
+            0
+        }
+        fn write_to(&self, _cache: &mut crate::SizeCache, _buf: &mut impl crate::EncodeSink) {}
+        fn merge_field(
+            &mut self,
+            tag: crate::encoding::Tag,
+            buf: &mut impl bytes::Buf,
+            ctx: crate::DecodeContext<'_>,
+        ) -> Result<(), crate::DecodeError> {
+            if tag.field_number() == 1 {
+                ctx.register_element_memory(Self::ITEM_CHARGE)?;
+                self.items.push(crate::encoding::decode_varint(buf)?);
+                Ok(())
+            } else {
+                crate::encoding::skip_field(tag, buf)
+            }
+        }
+        fn clear(&mut self) {
+            self.items.clear();
+        }
+    }
+
+    /// The loop stops at an element that exhausts the element-memory budget
+    /// from inside its own decode. The budget that element could not use
+    /// would hold the smaller element after it, which is not returned: the
+    /// result is the elements before the stop.
+    #[test]
+    fn repeated_message_extension_stops_at_an_element_that_exhausts_the_budget() {
+        let element = core::mem::size_of::<ListMsg>();
+        // What is left for the second element's item is less than the item
+        // costs, and enough for the third element.
+        assert!(element + ListMsg::ITEM_CHARGE / 2 < ListMsg::ITEM_CHARGE);
+        let mut fields = UnknownFields::new();
+        fields.push(ld(1, Vec::new()));
+        fields.push(ld(1, vec![0x08, 0x01])); // one item, which does not fit
+        fields.push(ld(1, Vec::new()));
+        let unknown_limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let element_limit = core::cell::Cell::new(3 * element + ListMsg::ITEM_CHARGE / 2);
+        let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &unknown_limit)
+            .with_element_memory(&element_limit);
+
+        let decoded = decode_repeated_with_context::<MessageCodec<ListMsg>>(1, &fields, ctx);
+
+        assert_eq!(decoded, [ListMsg::default()]);
+        assert_eq!(element_limit.get(), 0);
+    }
+
+    /// A malformed element does not stop the loop while the budget has room:
+    /// it is skipped and the next record is read.
+    #[test]
+    fn repeated_message_extension_skips_malformed_elements_before_the_budget_is_spent() {
+        let mut fields = UnknownFields::new();
+        fields.push(ld(1, vec![0x08, 0x80])); // truncated varint
+        fields.push(varint(1, 7)); // wrong wire type
+        fields.push(ld(1, vec![0x08, 0x03]));
+        let unknown_limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let element_limit = core::cell::Cell::new(4 * core::mem::size_of::<TestMsg>());
+        let ctx = crate::DecodeContext::new(crate::RECURSION_LIMIT, &unknown_limit)
+            .with_element_memory(&element_limit);
+
+        let decoded = decode_repeated_with_context::<MessageCodec<TestMsg>>(1, &fields, ctx);
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].a, 3);
     }
 
     /// A message with a large inline footprint, so that a few hundred
