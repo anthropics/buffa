@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
+#
+# Tests the cache decisions of scripts/build-conformance-tools.sh: which runs
+# clone or build again, and which reuse what is there.
+#
+# The build script runs from a copy in a temporary directory under .local/,
+# with mock `git` and `cmake` first on PATH. The mocks create the files the
+# real tools would and log each clone and build; the test does not access the
+# network and compiles nothing.
 
 set -euo pipefail
 
 SOURCE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "${SOURCE_ROOT}/.local"
 TEST_ROOT="$(mktemp -d "${SOURCE_ROOT}/.local/conformance-tools-test.XXXXXX")"
+trap 'rm -rf "${TEST_ROOT}"' EXIT
 MOCK_BIN="${TEST_ROOT}/mock-bin"
 MOCK_LOG="${TEST_ROOT}/mock-log"
 mkdir -p "${TEST_ROOT}/scripts" "${TEST_ROOT}/conformance" "${MOCK_BIN}" "${MOCK_LOG}"
 cp "${SOURCE_ROOT}/scripts/build-conformance-tools.sh" "${TEST_ROOT}/scripts/"
-trap 'rm -rf "${TEST_ROOT}"' EXIT
 
 cat > "${MOCK_BIN}/git" <<'EOF'
 #!/usr/bin/env bash
@@ -19,6 +27,10 @@ test "$1" = clone
 tag="$4"
 url="$5"
 dest="$6"
+# MOCK_FAIL names one step that fails, as an interrupted run would.
+if [ "${MOCK_FAIL:-}" = jsoncpp-clone ] && [[ "${url}" == *jsoncpp.git ]]; then
+    exit 1
+fi
 mkdir -p "${dest}"
 printf '%s %s\n' "${url##*/}" "${tag}" >> "${MOCK_LOG}/git-clones"
 if [[ "${url}" == *protobuf.git ]]; then
@@ -49,6 +61,9 @@ set -euo pipefail
 if [ "$1" = --build ]; then
     build_dir="$2"
     if [[ "${build_dir}" == */protobuf/_build ]]; then
+        if [ "${MOCK_FAIL:-}" = runner-build ]; then
+            exit 1
+        fi
         printf 'runner\n' >> "${MOCK_LOG}/cmake-builds"
         mkdir -p "${build_dir}"
         printf '#!/usr/bin/env bash\nexit 0\n' > "${build_dir}/conformance_test_runner"
@@ -106,6 +121,15 @@ run_build() {
     fi
 }
 
+# Run the build with one mocked step failing; the run itself must fail.
+run_failing_build() {
+    if MOCK_FAIL="$3" PATH="${MOCK_BIN}:${PATH}" MOCK_LOG="${MOCK_LOG}" JSONCPP_TAG="$2" \
+        "${TEST_ROOT}/scripts/build-conformance-tools.sh" "$1" > "${TEST_ROOT}/output" 2>&1; then
+        printf 'expected the build to fail with the %s step failing\n' "$3" >&2
+        exit 1
+    fi
+}
+
 assert_count() {
     local file="$1"
     local pattern="$2"
@@ -118,56 +142,116 @@ assert_count() {
     fi
 }
 
+assert_file() {
+    if [ ! -f "$1" ]; then
+        printf 'expected the file %s to exist\n' "$1" >&2
+        exit 1
+    fi
+}
+
+assert_no_file() {
+    if [ -e "$1" ]; then
+        printf 'expected %s to be absent\n' "$1" >&2
+        exit 1
+    fi
+}
+
+assert_content() {
+    local file="$1"
+    local expected="$2"
+    local actual
+    actual="$(cat "${file}" 2>/dev/null || true)"
+    if [ "${actual}" != "${expected}" ]; then
+        printf 'expected %s to contain:\n%s\ngot:\n%s\n' "${file}" "${expected}" "${actual}" >&2
+        exit 1
+    fi
+}
+
+TOOLS="${TEST_ROOT}/.local/conformance-tools"
+
+# An empty tree: clones both repositories, builds jsoncpp and the runner.
 run_build v33.5 1.9.6
 assert_count "${MOCK_LOG}/git-clones" 'protobuf.git ' 1
 assert_count "${MOCK_LOG}/git-clones" 'jsoncpp.git ' 1
 assert_count "${MOCK_LOG}/cmake-builds" 'runner' 1
 assert_count "${MOCK_LOG}/cmake-builds" 'jsoncpp' 1
 
+# The same tags again: reuses everything. The mock cmake installs under lib64
+# unless the build script names the library directory, so this run also fails
+# if the script looks for jsoncpp where the install did not put it.
 run_build v33.5 1.9.6
 assert_count "${MOCK_LOG}/git-clones" 'protobuf.git ' 1
 assert_count "${MOCK_LOG}/git-clones" 'jsoncpp.git ' 1
 assert_count "${MOCK_LOG}/cmake-builds" 'runner' 1
 assert_count "${MOCK_LOG}/cmake-builds" 'jsoncpp' 1
 
+# A new protobuf tag: clones protobuf again and rebuilds the runner; jsoncpp
+# is reused.
 run_build v34.0 1.9.6
 assert_count "${MOCK_LOG}/git-clones" 'protobuf.git ' 2
 assert_count "${MOCK_LOG}/git-clones" 'jsoncpp.git ' 1
 assert_count "${MOCK_LOG}/cmake-builds" 'runner' 2
 assert_count "${MOCK_LOG}/cmake-builds" 'jsoncpp' 1
-test "$(cat "${TEST_ROOT}/.local/conformance-tools/protobuf.tag")" = v34.0
+assert_content "${TOOLS}/protobuf.tag" v34.0
 
+# A new jsoncpp tag: rebuilds jsoncpp and the runner; protobuf is reused.
 run_build v34.0 1.9.7
 assert_count "${MOCK_LOG}/git-clones" 'protobuf.git ' 2
 assert_count "${MOCK_LOG}/git-clones" 'jsoncpp.git ' 2
 assert_count "${MOCK_LOG}/cmake-builds" 'runner' 3
 assert_count "${MOCK_LOG}/cmake-builds" 'jsoncpp' 2
-test "$(cat "${TEST_ROOT}/.local/conformance-tools/runner-tags")" = "$(printf 'v34.0\n1.9.7')"
+assert_content "${TOOLS}/runner.tag" "$(printf 'v34.0\n1.9.7')"
 
-rm "${TEST_ROOT}/.local/conformance-tools/runner-tags"
+# The runner stamp is missing: rebuilds the runner only.
+rm "${TOOLS}/runner.tag"
 run_build v34.0 1.9.7
 assert_count "${MOCK_LOG}/cmake-builds" 'runner' 4
 
-rm -rf "${TEST_ROOT}/.local/conformance-tools/protobuf"
+# The protobuf checkout is missing: clones it again and copies the protos; the
+# runner, built from the same tag, is reused.
+rm -rf "${TOOLS}/protobuf"
 run_build v34.0 1.9.7
 assert_count "${MOCK_LOG}/git-clones" 'protobuf.git ' 3
 assert_count "${MOCK_LOG}/cmake-builds" 'runner' 4
-test -f "${TEST_ROOT}/conformance/protos/conformance.proto"
+assert_file "${TEST_ROOT}/conformance/protos/conformance.proto"
 
-rm "${TEST_ROOT}/.local/conformance-tools/protobuf/conformance/test_protos/test_messages_edition_unstable.proto"
+# One test proto is missing from the checkout: clones protobuf again; the
+# runner is reused.
+rm "${TOOLS}/protobuf/conformance/test_protos/test_messages_edition_unstable.proto"
 run_build v34.0 1.9.7
 assert_count "${MOCK_LOG}/git-clones" 'protobuf.git ' 4
 assert_count "${MOCK_LOG}/cmake-builds" 'runner' 4
-test -f "${TEST_ROOT}/conformance/protos/conformance/test_protos/test_messages_edition_unstable.proto"
+assert_file "${TEST_ROOT}/conformance/protos/conformance/test_protos/test_messages_edition_unstable.proto"
 
-rm "${TEST_ROOT}/.local/conformance-tools/jsoncpp-prefix/lib/libjsoncpp.so"
+# The jsoncpp library is missing from its prefix: rebuilds jsoncpp; the
+# runner, built with the same tag, is reused.
+rm "${TOOLS}/jsoncpp-prefix/lib/libjsoncpp.so"
 run_build v34.0 1.9.7
 assert_count "${MOCK_LOG}/git-clones" 'jsoncpp.git ' 3
 assert_count "${MOCK_LOG}/cmake-builds" 'jsoncpp' 3
 assert_count "${MOCK_LOG}/cmake-builds" 'runner' 4
 
+# The runner binary is missing: rebuilds the runner only.
 rm "${TEST_ROOT}/.local/bin/conformance_test_runner"
 run_build v34.0 1.9.7
 assert_count "${MOCK_LOG}/cmake-builds" 'runner' 5
+
+# A jsoncpp rebuild that fails leaves no jsoncpp stamp, so the old tag is not
+# reported for a prefix that is gone; the next run builds jsoncpp and the
+# runner.
+run_failing_build v34.0 1.9.8 jsoncpp-clone
+assert_no_file "${TOOLS}/jsoncpp.tag"
+run_build v34.0 1.9.8
+assert_count "${MOCK_LOG}/cmake-builds" 'jsoncpp' 4
+assert_count "${MOCK_LOG}/cmake-builds" 'runner' 6
+assert_content "${TOOLS}/jsoncpp.tag" 1.9.8
+
+# A runner rebuild that fails leaves no runner stamp, so the runner from the
+# old tag is not taken for the new one; the next run builds it.
+run_failing_build v35.0 1.9.8 runner-build
+assert_no_file "${TOOLS}/runner.tag"
+run_build v35.0 1.9.8
+assert_count "${MOCK_LOG}/cmake-builds" 'runner' 7
+assert_content "${TOOLS}/runner.tag" "$(printf 'v35.0\n1.9.8')"
 
 printf 'conformance tool cache checks passed\n'
