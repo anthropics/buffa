@@ -1,5 +1,7 @@
 //! The write pass: [`write_to`] and its per-kind arms.
 
+use super::bridge::write_field_value;
+use super::map::write_map;
 use super::scalar::Sc;
 use super::{
     Bool, Double, Entry, Fixed32, Fixed64, Float, Int32, Int64, Kind, MessageTable, Sfixed32,
@@ -55,7 +57,7 @@ unsafe fn write_pre_sized(
 /// # Safety
 ///
 /// As for [`write_to`].
-unsafe fn write_message<K: EncodeSink>(
+pub(super) unsafe fn write_message<K: EncodeSink>(
     table: &MessageTable,
     base: *const u8,
     cache: &mut SizeCache,
@@ -63,7 +65,15 @@ unsafe fn write_message<K: EncodeSink>(
 ) {
     for e in table.entries {
         // SAFETY: the offset is within the message, per the table's contract.
-        unsafe { write_kind(table, e, base.add(e.offset as usize), cache, buf) };
+        let slot = unsafe { base.add(e.offset as usize) };
+        // SAFETY: `slot` is the field `e` describes.
+        unsafe {
+            if e.kind == Kind::Map {
+                write_map(table, e, slot, cache, buf);
+            } else {
+                write_kind(table, e, slot, cache, buf);
+            }
+        }
     }
     if table.unknown != NO_UNKNOWN {
         // SAFETY: `unknown` is the offset of the message's `UnknownFields`.
@@ -72,7 +82,7 @@ unsafe fn write_message<K: EncodeSink>(
 }
 
 #[inline(always)]
-fn put_tag<K: EncodeSink>(e: &Entry, buf: &mut K) {
+pub(super) fn put_tag<K: EncodeSink>(e: &Entry, buf: &mut K) {
     if e.tag_len == 1 {
         buf.put_u8(e.tag as u8);
     } else {
@@ -80,14 +90,18 @@ fn put_tag<K: EncodeSink>(e: &Entry, buf: &mut K) {
     }
 }
 
+/// Defines `$fname`, the write of one field by kind, for the kinds listed, as
+/// `size_dispatch!` does.
+// The arm for a map is unreachable: `write_message` tests for a map before it
+// calls this. The reason is in the module documentation of `map.rs`.
 macro_rules! write_dispatch {
-    ($($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
+    ($fname:ident; $($name:ident: $fam:ident $ty:ident $card:ident;)*) => {
         /// # Safety
         ///
         /// `slot` points to the field `e` describes, in a live message of the
         /// type `table` describes.
         #[inline]
-        unsafe fn write_kind<K: EncodeSink>(
+        pub(super) unsafe fn $fname<K: EncodeSink>(
             table: &MessageTable,
             e: &Entry,
             slot: *const u8,
@@ -98,6 +112,8 @@ macro_rules! write_dispatch {
             unsafe {
                 match e.kind {
                     $(Kind::$name => write_dispatch!(@arm $fam $ty $card table e slot cache buf),)*
+                    #[allow(unreachable_patterns)]
+                    _ => unreachable!("`Table::new` checked the kinds of the entries"),
                 }
             }
         }
@@ -117,9 +133,47 @@ macro_rules! write_dispatch {
     (@arm Msg $ty:ident $card:ident $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
         write_msg::<$card, K>($table, $e, $slot, $cache, $buf)
     };
+    (@arm Oneof $ty:ident LEADER $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
+        write_oneof::<K>($table, $e, $slot, $cache, $buf)
+    };
+    // The members that follow the leader are written with it.
+    (@arm Oneof $ty:ident ONEOF $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
+        ()
+    };
+    (@arm Map $ty:ident $card:ident $table:ident $e:ident $slot:ident $cache:ident $buf:ident) => {
+        unreachable!("a map field is written by `write_message`")
+    };
 }
 
-kind_table!(write_dispatch);
+kind_table!(write_dispatch, write_kind);
+payload_kind_table!(write_dispatch, write_payload);
+
+/// Write the oneof that its leader `e` describes.
+///
+/// # Safety
+///
+/// `e` is a [`Kind::OneofLeader`] entry, and `slot` points to the `Option` of
+/// the oneof enum that its group describes, in a live message of the type
+/// `table` describes.
+#[inline(never)]
+unsafe fn write_oneof<K: EncodeSink>(
+    table: &MessageTable,
+    e: &Entry,
+    slot: *const u8,
+    cache: &mut SizeCache,
+    buf: &mut K,
+) {
+    let m = table.member(e);
+    // SAFETY: `slot` is a live `Option<E>` for the `E` the group was built for.
+    let (number, payload) = unsafe { (table.group(m).get)(slot) };
+    if number == 0 {
+        return;
+    }
+    let payload_entry = table.payload_entry(m.group, number);
+    // SAFETY: `payload` points to a value of the payload kind of member
+    // `number`, per the oneof enum's `OneofEnum` implementation.
+    unsafe { write_payload(table, &payload_entry, payload, cache, buf) };
+}
 
 /// # Safety
 ///
@@ -314,16 +368,14 @@ unsafe fn write_msg<const C: u8, K: EncodeSink>(
             let (ptr, len) = (vt.parts)(slot);
             for i in 0..len {
                 put_tag(e, buf);
-                encode_varint(u64::from(cache.consume_next()), buf);
-                write_message(vt.table, ptr.add(i * vt.size), cache, buf);
+                write_field_value(vt.child, ptr.add(i * vt.size), cache, buf);
             }
         } else {
             let vt = table.msg_vt(e);
             let child = (vt.get)(slot);
             if !child.is_null() {
                 put_tag(e, buf);
-                encode_varint(u64::from(cache.consume_next()), buf);
-                write_message(vt.table, child, cache, buf);
+                write_field_value(vt.child, child, cache, buf);
             }
         }
     }

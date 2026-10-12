@@ -36,3 +36,10 @@ message E {
   repeated Child children = 14;
   string implicit_s = 15 [features.field_presence = IMPLICIT];
 }
+
+// Map values whose enums are closed and open by editions features.
+message EMaps {
+  map<string, Closed> closed = 1;
+  map<int32, OpenE> open = 2;
+  map<string, Child> children = 3;
+}
