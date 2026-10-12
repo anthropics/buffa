@@ -19,13 +19,13 @@ use crate::CodeGenError;
 fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
     quote! {
         impl ::serde::Serialize for #name_ident {
-            fn serialize<S: ::serde::Serializer>(&self, s: S) -> ::core::result::Result<S::Ok, S::Error> {
+            fn serialize<__S: ::serde::Serializer>(&self, s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
 
         impl<'de> ::serde::Deserialize<'de> for #name_ident {
-            fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(d: __D) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = #name_ident;
@@ -34,13 +34,13 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
                         f.write_str(concat!("a string, integer, or null for ", stringify!(#name_ident)))
                     }
 
-                    fn visit_str<E: ::serde::de::Error>(self, v: &str) -> ::core::result::Result<#name_ident, E> {
+                    fn visit_str<__E: ::serde::de::Error>(self, v: &str) -> ::core::result::Result<#name_ident, __E> {
                         <#name_ident as ::buffa::Enumeration>::from_proto_name(v).ok_or_else(|| {
                             ::serde::de::Error::unknown_variant(v, &[])
                         })
                     }
 
-                    fn visit_i64<E: ::serde::de::Error>(self, v: i64) -> ::core::result::Result<#name_ident, E> {
+                    fn visit_i64<__E: ::serde::de::Error>(self, v: i64) -> ::core::result::Result<#name_ident, __E> {
                         let v32 = i32::try_from(v).map_err(|_| {
                             ::serde::de::Error::custom(
                                 ::buffa::alloc::format!("enum value {v} out of i32 range")
@@ -53,7 +53,7 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
                         })
                     }
 
-                    fn visit_u64<E: ::serde::de::Error>(self, v: u64) -> ::core::result::Result<#name_ident, E> {
+                    fn visit_u64<__E: ::serde::de::Error>(self, v: u64) -> ::core::result::Result<#name_ident, __E> {
                         let v32 = i32::try_from(v).map_err(|_| {
                             ::serde::de::Error::custom(
                                 ::buffa::alloc::format!("enum value {v} out of i32 range")
@@ -66,7 +66,7 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
                         })
                     }
 
-                    fn visit_unit<E: ::serde::de::Error>(self) -> ::core::result::Result<#name_ident, E> {
+                    fn visit_unit<__E: ::serde::de::Error>(self) -> ::core::result::Result<#name_ident, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -75,15 +75,15 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
         }
 
         impl ::buffa::json_helpers::ProtoElemJson for #name_ident {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }

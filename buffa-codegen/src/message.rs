@@ -337,8 +337,8 @@ fn generate_message_with_nesting(
         let serde_impls = crate::feature_gates::cfg_block(
             quote! {
                 impl ::serde::Serialize for #ext_json_wrapper_ident {
-                    fn serialize<S: ::serde::Serializer>(&self, s: S)
-                        -> ::core::result::Result<S::Ok, S::Error>
+                    fn serialize<__S: ::serde::Serializer>(&self, s: __S)
+                        -> ::core::result::Result<__S::Ok, __S::Error>
                     {
                         ::buffa::extension_registry::serialize_extensions(#proto_fqn_lit, &self.0, s)
                     }
@@ -349,8 +349,8 @@ fn generate_message_with_nesting(
         let serde_de_impl = crate::feature_gates::cfg_block(
             quote! {
                 impl<'de> ::serde::Deserialize<'de> for #ext_json_wrapper_ident {
-                    fn deserialize<D: ::serde::Deserializer<'de>>(d: D)
-                        -> ::core::result::Result<Self, D::Error>
+                    fn deserialize<__D: ::serde::Deserializer<'de>>(d: __D)
+                        -> ::core::result::Result<Self, __D::Error>
                     {
                         ::buffa::extension_registry::deserialize_extensions(#proto_fqn_lit, d).map(Self)
                     }
@@ -484,7 +484,12 @@ fn generate_message_with_nesting(
     )?;
 
     let type_url = format!("type.googleapis.com/{proto_fqn}");
-    let upper = crate::oneof::to_snake_case(rust_name).to_uppercase();
+    // From the name before `escape_type_name`: the suffix would give `bool`
+    // (`bool_`) and `Bool_` one constant name, and two siblings that
+    // snake_case alike are already rejected as a module conflict.
+    let upper =
+        crate::oneof::to_snake_case(&format!("{}{proto_name}", ctx.config.type_name_prefix))
+            .to_uppercase();
 
     // JSON Any entry — one per message with `generate_json`. Always
     // `is_wkt: false`: WKTs live in buffa-types and register themselves via
@@ -599,15 +604,15 @@ fn generate_message_with_nesting(
         crate::feature_gates::cfg_block(
             quote! {
                 impl ::buffa::json_helpers::ProtoElemJson for #name_ident {
-                    fn serialize_proto_json<S: ::serde::Serializer>(
+                    fn serialize_proto_json<__S: ::serde::Serializer>(
                         v: &Self,
-                        s: S,
-                    ) -> ::core::result::Result<S::Ok, S::Error> {
+                        s: __S,
+                    ) -> ::core::result::Result<__S::Ok, __S::Error> {
                         ::serde::Serialize::serialize(v, s)
                     }
-                    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                        d: D,
-                    ) -> ::core::result::Result<Self, D::Error> {
+                    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                        d: __D,
+                    ) -> ::core::result::Result<Self, __D::Error> {
                         <Self as ::serde::Deserialize>::deserialize(d)
                     }
                 }
@@ -1215,7 +1220,7 @@ fn generate_custom_deserialize(
                         }
                         ::core::option::Option::Some(::core::result::Result::Err(__e)) => {
                             return ::core::result::Result::Err(
-                                <A::Error as ::serde::de::Error>::custom(__e),
+                                <__A::Error as ::serde::de::Error>::custom(__e),
                             );
                         }
                         ::core::option::Option::None => {}
@@ -1247,7 +1252,7 @@ fn generate_custom_deserialize(
         quote! {
             __unknown => {
                 return ::core::result::Result::Err(
-                    <A::Error as ::serde::de::Error>::unknown_field(
+                    <__A::Error as ::serde::de::Error>::unknown_field(
                         __unknown,
                         &[#(#accepted),*],
                     ),
@@ -1268,7 +1273,7 @@ fn generate_custom_deserialize(
         #non_snake_attr
         #deprecated_field_allow
         impl<'de> ::serde::Deserialize<'de> for #name_ident {
-            fn deserialize<D: ::serde::Deserializer<'de>>(d: D) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(d: __D) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl<'de> ::serde::de::Visitor<'de> for _V {
                     type Value = #name_ident;
@@ -1278,10 +1283,10 @@ fn generate_custom_deserialize(
                     }
 
                     #[allow(clippy::field_reassign_with_default)]
-                    fn visit_map<A: ::serde::de::MapAccess<'de>>(
+                    fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                         self,
-                        mut map: A,
-                    ) -> ::core::result::Result<#name_ident, A::Error> {
+                        mut map: __A,
+                    ) -> ::core::result::Result<#name_ident, __A::Error> {
                         #(#field_vars)*
                         #ext_var
 
@@ -1315,14 +1320,14 @@ fn generate_custom_deserialize(
 /// { struct _S; impl DeserializeSeed for _S { ... } map.next_value_seed(_S)? }
 /// ```
 /// where the body of `deserialize` is `inner`, which should return
-/// `Result<rust_type, D::Error>` using `d` as the deserializer binding.
+/// `Result<rust_type, __D::Error>` using `d` as the deserializer binding.
 fn deser_seed_expr(rust_type: &TokenStream, inner: TokenStream) -> TokenStream {
     quote! {{
         struct _S;
         impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
             type Value = #rust_type;
-            fn deserialize<D: ::serde::Deserializer<'de>>(self, d: D)
-                -> ::core::result::Result<#rust_type, D::Error>
+            fn deserialize<__D: ::serde::Deserializer<'de>>(self, d: __D)
+                -> ::core::result::Result<#rust_type, __D::Error>
             {
                 #inner
             }
@@ -2071,7 +2076,7 @@ fn generate_field(
         //   bytes::Bytes: Vec<u8>. EnumValue<E>: E (From<E> impl on EnumValue).
         let (param_type, use_into) = match field_type {
             Type::TYPE_STRING | Type::TYPE_BYTES | Type::TYPE_ENUM => {
-                (quote! { impl Into<#inner> }, true)
+                (quote! { impl ::core::convert::Into<#inner> }, true)
             }
             _ => (quote! { #inner }, false),
         };
@@ -2117,6 +2122,25 @@ pub(crate) fn is_debug_redacted(
         .unwrap_or(false)
 }
 
+/// True when the owned struct's field for `field` ends up `#[deprecated]`: from
+/// `[deprecated = true]`, or from a `#[deprecated]` that the caller attaches
+/// with `field_attribute`. `field_fqn` is `<message FQN>.<field name>`.
+///
+/// `field` is a struct field of the message. A member of a real oneof is a
+/// variant of the oneof enum, which the option does not mark and which takes
+/// its `field_attribute` under `<message FQN>.<oneof name>.<field name>`.
+///
+/// Every other generated way to reach the field carries a bare `#[deprecated]`
+/// when this holds: the `with_*` setter, the field on the view structs, the
+/// `OwnedView` accessor and the view's `has_*` method.
+pub(crate) fn field_is_deprecated(
+    ctx: &CodeGenContext,
+    field: &crate::generated::descriptor::FieldDescriptorProto,
+    field_fqn: &str,
+) -> bool {
+    is_deprecated(field) || caller_deprecated_attr(ctx, field_fqn)
+}
+
 /// True when the field carries `[deprecated = true]`.
 pub(crate) fn is_deprecated(field: &crate::generated::descriptor::FieldDescriptorProto) -> bool {
     field
@@ -2134,6 +2158,9 @@ pub(crate) fn is_deprecated(field: &crate::generated::descriptor::FieldDescripto
 /// of it. Unparseable attribute strings are ignored here — they are reported
 /// by [`CodeGenContext::matching_attributes`] on the way to the same field.
 pub(crate) fn caller_deprecated_attr(ctx: &CodeGenContext, fqn: &str) -> bool {
+    if ctx.config.field_attributes.is_empty() {
+        return false;
+    }
     let fqn_dotted = format!(".{fqn}");
     ctx.config.field_attributes.iter().any(|(prefix, attr)| {
         crate::context::matches_proto_prefix(prefix, &fqn_dotted) && is_deprecated_attr_str(attr)
@@ -2177,44 +2204,37 @@ pub(crate) fn is_deprecated_attr_str(attr: &str) -> bool {
     false
 }
 
-/// Whether any comma-separated segment of an attribute body starts with the
-/// built-in `deprecated` ident, recursing into parenthesised arguments so
-/// `cfg_attr(feature = "x", deprecated)` is recognized.
+/// Whether an attribute body is the built-in `deprecated` attribute, or a
+/// `cfg_attr` that expands to it in one of its arms.
 ///
-/// Starting-with is what keeps the neighbours honest: `#[deprecated_alias]` is
-/// a different ident, `#[some_tool::deprecated]` starts with `some_tool`, and
-/// `#[cfg_attr(x, allow(deprecated))]` reaches an `allow` segment, not a
-/// `deprecated` one.
+/// Only `cfg_attr` is looked into, and its first argument, the predicate, is
+/// skipped. A tool attribute's own `deprecated` argument is that tool's
+/// business: `#[schema(deprecated)]` does not deprecate the Rust field.
+/// `#[deprecated_alias]` is a different ident, and `#[some_tool::deprecated]`
+/// starts with `some_tool`.
 fn names_deprecated(iter: impl Iterator<Item = proc_macro2::TokenTree>) -> bool {
-    let stream: Vec<proc_macro2::TokenTree> = iter.collect();
-    stream
-        .split(|t| matches!(t, proc_macro2::TokenTree::Punct(p) if p.as_char() == ','))
-        .any(|segment| {
-            let mut it = segment.iter();
-            let Some(proc_macro2::TokenTree::Ident(id)) = it.next() else {
-                return false;
-            };
-            if id == "deprecated" && !matches!(it.next(), Some(proc_macro2::TokenTree::Punct(p)) if p.as_char() == ':')
-            {
-                return true;
-            }
-            match it.next() {
-                Some(proc_macro2::TokenTree::Group(group))
-                    if group.delimiter() == proc_macro2::Delimiter::Parenthesis
-                        // `allow(deprecated)` names a *lint*, not an attribute,
-                        // so its arguments must not be scanned — otherwise a
-                        // suppression would look like a marker and codegen would
-                        // drop the option-derived one.
-                        && !matches!(
-                            id.to_string().as_str(),
-                            "allow" | "expect" | "warn" | "deny" | "forbid"
-                        ) =>
-                {
-                    names_deprecated(group.stream().into_iter())
-                }
-                _ => false,
-            }
-        })
+    use proc_macro2::{Delimiter, TokenTree};
+    let body: Vec<TokenTree> = iter.collect();
+    let mut it = body.iter();
+    let Some(TokenTree::Ident(id)) = it.next() else {
+        return false;
+    };
+    if id == "deprecated" {
+        return !matches!(it.next(), Some(TokenTree::Punct(p)) if p.as_char() == ':');
+    }
+    if id != "cfg_attr" {
+        return false;
+    }
+    let Some(TokenTree::Group(args)) = it.next() else {
+        return false;
+    };
+    if args.delimiter() != Delimiter::Parenthesis {
+        return false;
+    }
+    let args: Vec<TokenTree> = args.stream().into_iter().collect();
+    args.split(|t| matches!(t, TokenTree::Punct(p) if p.as_char() == ','))
+        .skip(1)
+        .any(|attr| names_deprecated(attr.iter().cloned()))
 }
 
 /// True when generating code for `field` emits a reference to a *deprecated*
@@ -2254,20 +2274,16 @@ fn references_deprecated(ctx: &CodeGenContext, msg: &DescriptorProto, proto_fqn:
         if crate::impl_message::is_real_oneof_member(f) {
             return false;
         }
-        if is_deprecated(f) || default_names_deprecated_value(ctx, f) {
-            return true;
-        }
-        match f.name.as_deref() {
-            Some(field_name) => caller_deprecated_attr(ctx, &format!("{proto_fqn}.{field_name}")),
-            None => false,
-        }
+        let field_fqn = format!("{proto_fqn}.{}", f.name.as_deref().unwrap_or_default());
+        field_is_deprecated(ctx, f, &field_fqn) || default_names_deprecated_value(ctx, f)
     })
 }
 
 /// `#[allow(deprecated)]` for the generated items of `msg` that must visit its
-/// own deprecated members: the codec impls, the manual `Debug` and `Default`
-/// impls, the `with_*` setters, the reflection vtable, the view and lazy-view
-/// conversions, a table message's static, and a view's `Default` impl.
+/// own deprecated members, on the owned message and on its views: the codec
+/// impls, the manual `Debug` and `Default` impls, the `with_*` setters, the
+/// JSON and reflection impls, the view and lazy-view conversions, and a table
+/// message's static.
 ///
 /// Those visits are structural (an encoder has to touch every field), so
 /// without the guard a single `[deprecated = true]` field makes the generated
