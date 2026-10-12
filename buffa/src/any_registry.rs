@@ -270,7 +270,6 @@ mod tests {
         assert!(!regular.is_wkt);
     }
 
-    /// Serializes tests that manipulate the global `ANY_REGISTRY`.
     #[test]
     fn global_registry() {
         let _guard = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();

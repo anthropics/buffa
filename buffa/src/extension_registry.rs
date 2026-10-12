@@ -1340,7 +1340,8 @@ mod tests {
     #[test]
     fn deserialize_extensions_reads_serde_jsons_private_key_as_data() {
         let _guard = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
-        set_extension_registry(Box::new(ExtensionRegistry::new()));
+        // An empty registry: the key below must name no extension.
+        set_extension_registry(Box::default());
 
         // Parsed as JSON, the string fails the recursion limit. As data it
         // sits under a key that names no extension, and is dropped. See
