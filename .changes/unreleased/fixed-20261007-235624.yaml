@@ -1,3 +1,5 @@
 kind: Fixed
-body: The protoc plugin now normalizes extern_path protobuf names and rejects invalid identifiers so malformed mappings fail during configuration parsing instead of silently leaving types unmapped.
+body: |-
+    **`protoc-gen-buffa` rejects a malformed `extern_path` proto name** (#677).
+    A name with an empty segment (`.my..common`) or with a segment that is not a protobuf identifier (`.my.common-name`) was accepted and matched no type, so the mapping was silently unused; the plugin reports it as an option error. One trailing dot is stripped, so `.my.common.` maps the package `my.common`. A segment may start with `_`, as in `package _internal;`.
 time: 2026-10-07T23:56:24+02:00

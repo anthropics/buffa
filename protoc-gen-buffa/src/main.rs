@@ -605,9 +605,12 @@ fn normalize_extern_proto_path(path: &str) -> Result<String, String> {
         return Ok(path);
     }
 
+    // protoc's identifier rule: a letter or `_`, then letters, digits or `_`.
     let valid_identifier = |segment: &str| {
         let mut chars = segment.chars();
-        chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
             && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
     };
     if path[1..]
@@ -943,11 +946,26 @@ mod tests {
 
     #[test]
     fn extern_path_rejects_invalid_proto_identifiers() {
-        for proto in [".my.123", "._my", ".my._common", ".my.common-name"] {
+        for proto in [".my.123", ".my.1st", ".my.common-name", ".my.com mon"] {
             assert!(
                 parse_config(&format!("extern_path={proto}=::common_protos")).is_err(),
                 "{proto}"
             );
+        }
+    }
+
+    #[test]
+    fn extern_path_accepts_leading_underscore_segments() {
+        // `package _internal;` and `message _Foo` are valid protobuf names.
+        for (proto, normalized) in [
+            ("._internal", "._internal"),
+            ("my._common", ".my._common"),
+            (".my._Foo", ".my._Foo"),
+            ("._", "._"),
+        ] {
+            let config = parse_config(&format!("extern_path={proto}=::common_protos"))
+                .unwrap_or_else(|e| panic!("{proto}: {e}"));
+            assert_eq!(config.codegen.extern_paths[0].0, normalized);
         }
     }
 
