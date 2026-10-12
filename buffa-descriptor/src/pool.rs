@@ -374,8 +374,6 @@ pub enum PoolError {
     DuplicateOneofName { message: String, name: String },
     /// A oneof declaration has no member fields.
     EmptyOneof { oneof: String },
-    /// A proto3 message enables the proto2-only MessageSet wire format.
-    MessageSetInProto3 { message: String },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
@@ -471,6 +469,8 @@ pub enum PoolError {
         name: String,
         number: u32,
     },
+    /// A proto3 message enables the proto2-only MessageSet wire format.
+    MessageSetInProto3 { message: String },
     /// An open enum's first declared value has a non-zero number.
     OpenEnumFirstValueNotZero {
         enum_name: String,
@@ -713,9 +713,6 @@ impl core::fmt::Display for PoolError {
                     "message {message} declares oneof name {name:?} more than once"
                 )
             }
-            Self::MessageSetInProto3 { message } => write!(
-                f, "message {message} uses MessageSet wire format in proto3"
-            ),
             Self::EmptyOneof { oneof } => write!(f, "oneof {oneof} has no fields"),
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
@@ -820,6 +817,9 @@ impl core::fmt::Display for PoolError {
                 f,
                 "message {message} field {name:?} uses number {number} inside an extension range"
             ),
+            Self::MessageSetInProto3 { message } => {
+                write!(f, "message {message} uses MessageSet wire format in proto3")
+            }
             Self::OpenEnumFirstValueNotZero {
                 enum_name,
                 name,

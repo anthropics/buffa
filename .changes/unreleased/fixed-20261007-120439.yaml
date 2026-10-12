@@ -1,3 +1,4 @@
 kind: Fixed
-body: Reject proto3 messages that enable the proto2-only MessageSet wire format in DescriptorPool.
+body: |-
+    **`DescriptorPool` rejects a proto3 message that sets `message_set_wire_format`** (#602). A message in a proto3 file with the option set and no extension range linked, although proto3 has no MessageSet and protoc reports "MessageSet is not supported in proto3." It is `PoolError::MessageSetInProto3`. The rule applies to proto3 files only, as in protoc.
 time: 2026-10-07T12:04:39.241378+02:00
