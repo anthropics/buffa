@@ -6,7 +6,7 @@
 #![allow(deprecated)]
 
 use crate::deprecated::__buffa::oneof;
-use crate::deprecated::__buffa::view::LegacyProfileView;
+use crate::deprecated::__buffa::view::{LegacyProfileOwnedView, LegacyProfileView};
 use crate::deprecated::*;
 use buffa::text::encode_to_string;
 use buffa::{Enumeration, Message, MessageView};
@@ -53,6 +53,40 @@ fn deprecated_values_survive_view_round_trip() {
     let view = LegacyProfileView::decode_view(&bytes).expect("view decode");
     let owned = view.to_owned_message().expect("view to_owned");
     assert_eq!(owned, profile());
+}
+
+#[test]
+fn deprecated_fields_read_through_the_view_and_its_owned_handle() {
+    let bytes = profile().encode_to_vec();
+    let view = LegacyProfileView::decode_view(&bytes).expect("view decode");
+    assert_eq!(view.display_name, "Ada");
+    assert_eq!(view.counter, 7);
+    assert!(format!("{view:?}").contains("display_name: \"Ada\""));
+
+    let handle = LegacyProfileOwnedView::decode(bytes.into()).expect("owned view decode");
+    assert_eq!(handle.display_name(), "Ada");
+    assert_eq!(handle.counter(), 7);
+    assert_eq!(handle.old_tags().iter().count(), 2);
+}
+
+#[test]
+fn has_accessors_of_deprecated_required_fields_report_presence() {
+    use crate::deprecated_proto2::__buffa::view::QuotaView;
+    use crate::deprecated_proto2::{Limits, Quota};
+
+    let absent = QuotaView::default();
+    assert!(!absent.has_limits());
+    assert!(!absent.has_code());
+
+    let bytes = Quota {
+        limits: Some(Limits::default()).into(),
+        code: 0,
+        ..Default::default()
+    }
+    .encode_to_vec();
+    let view = QuotaView::decode_view(&bytes).expect("view decode");
+    assert!(view.has_limits());
+    assert!(view.has_code());
 }
 
 #[test]

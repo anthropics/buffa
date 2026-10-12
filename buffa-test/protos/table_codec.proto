@@ -102,8 +102,7 @@ message Sparse {
 
 message Empty {}
 
-// A oneof, a map, and a message that holds one: none can use the table, so
-// they stay unrolled when the table is requested.
+// A oneof, which the table handles.
 message WithOneof {
   oneof choice {
     int32 a = 1;
@@ -113,22 +112,24 @@ message WithOneof {
   int32 c = 3;
 }
 
+// Two maps, one of messages: a table message. table_codec_maps.proto has maps
+// of every type.
 message WithMap {
   map<string, int32> m = 1;
   map<string, Inner> inners = 2;
 }
 
-message HoldsOneof {
+// Holds a message with a oneof and a message with maps.
+message HoldsMap {
   WithOneof o = 1;
   int32 x = 2;
   WithMap m = 3;
 }
 
-// An unrolled message that holds table messages, next to unrolled ones that
-// hold a oneof and a map of them.
+// A table message that holds table messages (`Inner`, `Nested`) and `HoldsMap`.
 message Mixed {
   Inner inner = 1;
-  HoldsOneof holds = 2;
+  HoldsMap holds = 2;
   Nested nested = 3;
   repeated Nested many = 4;
 }

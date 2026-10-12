@@ -2,11 +2,12 @@ syntax = "proto3";
 
 package deprecated;
 
-// Exercises `[deprecated = true]`. Generated declarations carry `#[deprecated]`
-// (fields and enum values, as prost-build emits it) while the items that must
-// visit every field carry `#[allow(deprecated)]`, so this module compiles
-// warning-free — which is what `cargo clippy --workspace --all-targets -- -D
-// warnings` checks when it builds `buffa-test`.
+// Exercises `[deprecated = true]`. Generated declarations carry
+// `#[deprecated]`: enum values, and fields on the owned struct (as prost-build
+// emits it), on the view structs and on the `OwnedView` accessors. The items
+// that must visit every field carry `#[allow(deprecated)]`, so this module
+// compiles warning-free — which is what `cargo clippy --workspace --all-targets
+// -- -D warnings` checks when it builds `buffa-test`.
 message LegacyProfile {
   string display_name = 1 [deprecated = true];
   string nick = 2;
@@ -16,8 +17,13 @@ message LegacyProfile {
   Levels levels = 6 [deprecated = true];
   // `optional` gives the field a `with_*` setter, which must be deprecated too.
   optional string legacy_note = 9 [deprecated = true];
+  // A redacted field swaps the views' `Debug` derive for an impl, which names
+  // every field of the view.
+  string secret = 10 [debug_redact = true];
+  // Live in the schema; build.rs deprecates it with `field_attribute`.
+  string hand_marked = 11;
 
-  // Deprecated oneof variants are a separate change. The oneof here is live, so
+  // Deprecated oneof variants are not marked. The oneof here is live, so
   // this file covers the oneof codec paths only incidentally (they read the
   // group field, not a deprecated member).
   oneof channel {
