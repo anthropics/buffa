@@ -5426,7 +5426,7 @@ mod messageset_extensions {
                             );
                             assert_eq!(
                                 err.to_string(),
-                                format!("MessageSet extension {name} must be an optional message")
+                                format!("MessageSet extension {name} must be an optional, length-prefixed message")
                             );
                         },
                     );
@@ -5477,6 +5477,7 @@ mod messageset_extensions {
             }
         }
     }
+
     /// The MessageSet fixture as an edition 2023 file whose optional message
     /// extension gets `features.message_encoding` from the extension itself
     /// or from the file. The declared type stays `TYPE_MESSAGE`.

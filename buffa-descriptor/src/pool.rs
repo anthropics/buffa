@@ -728,7 +728,7 @@ impl core::fmt::Display for PoolError {
                 write!(f, "extension {field} must not be required")
             }
             Self::InvalidMessageSetExtension { field } => {
-                write!(f, "MessageSet extension {field} must be an optional message")
+                write!(f, "MessageSet extension {field} must be an optional, length-prefixed message")
             }
             Self::ReservedFieldNumber { field, number } => {
                 write!(
