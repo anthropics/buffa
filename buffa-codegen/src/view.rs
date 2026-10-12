@@ -215,7 +215,9 @@ pub(crate) fn generate_view_with_nesting(
         None,
         &quote! {},
     )?;
+    let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, proto_fqn);
     let view_encode_impl = quote! {
+        #deprecated_field_allow
         impl<'a> ::buffa::ViewEncode<'a> for #view_ident<'a> {
             #view_encode_methods
         }
@@ -380,6 +382,7 @@ pub(crate) fn generate_view_with_nesting(
                 quote! { #[derive(Clone, Default)] }
             },
             quote! {
+                #deprecated_field_allow
                 impl<'a> ::core::fmt::Debug for #view_ident<'a> {
                     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         f.debug_struct(#view_name_str)
@@ -398,7 +401,6 @@ pub(crate) fn generate_view_with_nesting(
     // Scoped #[allow(non_snake_case)] for non-snake member names (verbatim
     // camelCase protos or collision fallbacks); empty otherwise.
     let non_snake_attr = ctx.message_non_snake_attr(msg);
-    let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, proto_fqn);
     let top_level = quote! {
         #view_doc
         #view_debug_derive
@@ -417,6 +419,7 @@ pub(crate) fn generate_view_with_nesting(
 
         #required_has_impl
 
+        #deprecated_field_allow
         impl<'a> ::buffa::MessageView<'a> for #view_ident<'a> {
             type Owned = #owned_path;
 
@@ -478,7 +481,6 @@ pub(crate) fn generate_view_with_nesting(
             // unify the `UnknownFields` (no-wrapper) and `__<Name>ExtJson`
             // (generate_json wrapper) cases; no-op in the former.
             #[allow(clippy::useless_conversion, clippy::needless_update)]
-            #deprecated_field_allow
             fn to_owned_from_source(
                 &self,
                 __buffa_src: ::core::option::Option<&::buffa::bytes::Bytes>,
@@ -669,6 +671,20 @@ fn view_open_enum_default_expr(
 // View struct field declarations
 // ---------------------------------------------------------------------------
 
+/// `#[deprecated]` for a generated way to reach `field` on a view: the field
+/// on the eager or lazy view struct, its `FooOwnedView` accessor, and its
+/// `has_*` method. See [`field_is_deprecated`](crate::message::field_is_deprecated).
+///
+/// The marker is bare. A note in the caller's `field_attribute` stays on the
+/// owned struct's field.
+pub(crate) fn view_field_deprecated_attr(
+    ctx: &CodeGenContext,
+    field: &FieldDescriptorProto,
+    field_fqn: &str,
+) -> Option<TokenStream> {
+    crate::message::field_is_deprecated(ctx, field, field_fqn).then(|| quote! { #[deprecated] })
+}
+
 fn view_struct_field(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
@@ -700,8 +716,10 @@ fn view_struct_field(
             &ctx.type_map,
         );
         let map_ty = view_map_type(scope, msg, field, &quote! { 'a })?;
+        let deprecated_attr = view_field_deprecated_attr(ctx, field, &field_fqn);
         let tokens = quote! {
             #doc
+            #deprecated_attr
             pub #ident: #map_ty,
         };
         return Ok(Some((
@@ -743,8 +761,10 @@ fn view_struct_field(
         rust_type
     };
 
+    let deprecated_attr = view_field_deprecated_attr(ctx, field, &field_fqn);
     let tokens = quote! {
         #doc
+        #deprecated_attr
         pub #ident: #struct_ty,
     };
     Ok(Some((
@@ -1232,6 +1252,8 @@ struct RequiredViewField<'a> {
     /// Proto field name (for the `has_*` accessor docs).
     proto_name: &'a str,
     field_number: u32,
+    /// The field is `#[deprecated]`, so its `has_*` accessor is too.
+    deprecated: bool,
     /// Position in the hidden seen-bit words for scalar-like fields;
     /// `None` for message/group fields, whose presence is already
     /// observable via `MessageFieldView::is_set`.
@@ -1265,7 +1287,9 @@ fn required_view_fields<'a>(
             next_bit += 1;
             Some(b)
         };
+        let field_fqn = format!("{}.{}", scope.proto_fqn, proto_name);
         out.push(RequiredViewField {
+            deprecated: crate::message::field_is_deprecated(scope.ctx, f, &field_fqn),
             ident: scope.ctx.field_ident(proto_name, number),
             rust_name: scope.ctx.field_rust_name(proto_name, number).into_owned(),
             proto_name,
@@ -1287,6 +1311,12 @@ fn required_has_methods(required: &[RequiredViewField<'_>]) -> Vec<TokenStream> 
         .iter()
         .map(|r| {
             let method = format_ident!("has_{}", r.rust_name);
+            // `has_x` is another read of field `x`, so it carries the field's
+            // marker, and a guard for the message-typed form, whose body
+            // names the field.
+            let deprecated_attr = r
+                .deprecated
+                .then(|| quote! { #[deprecated] #[allow(deprecated)] });
             match r.bit {
                 Some(bit) => {
                     // Bit-tracked scalar: the value is stored bare, so only
@@ -1306,6 +1336,7 @@ fn required_has_methods(required: &[RequiredViewField<'_>]) -> Vec<TokenStream> 
                     let mask = 1u64 << (bit % 64);
                     quote! {
                         #[doc = #doc]
+                        #deprecated_attr
                         #[must_use]
                         #[inline]
                         pub const fn #method(&self) -> bool {
@@ -1326,6 +1357,7 @@ fn required_has_methods(required: &[RequiredViewField<'_>]) -> Vec<TokenStream> 
                     let ident = &r.ident;
                     quote! {
                         #[doc = #doc]
+                        #deprecated_attr
                         #[must_use]
                         #[inline]
                         pub const fn #method(&self) -> bool {
@@ -2398,6 +2430,8 @@ fn generate_view_serialize(
         });
     }
 
+    let deprecated_field_allow =
+        crate::message::deprecated_field_allow(scope.ctx, msg, scope.proto_fqn);
     Ok(quote! {
         /// Serializes this view as protobuf JSON.
         ///
@@ -2410,6 +2444,7 @@ fn generate_view_serialize(
         /// fields depends on default-omission rules; serializers that require
         /// known map lengths (e.g. `bincode`) will return a runtime error.
         /// Use the owned message type for those formats.
+        #deprecated_field_allow
         impl<'__a> ::serde::Serialize for #view_ident<'__a> {
             fn serialize<__S: ::serde::Serializer>(
                 &self,
