@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Verify .github/publish-order.txt lists exactly the publishable crates in the
-# workspace.
+# workspace, each one after the workspace crates it depends on.
 #
 # buffa v0.9.0 shipped with buffa-remote-derive announced in the changelog but
 # absent from crates.io: the publish workflow carried a hand-written list of
@@ -9,7 +9,10 @@
 # comparing that list to the workspace. This script is that comparison, and it
 # runs on every pull request so a new crate is caught when it is introduced
 # rather than at release time.
-
+#
+# The order matters because cargo publish resolves a crate's dependencies from
+# the index, so a dependency has to be published first. Optional dependencies
+# count; dev-dependencies are not checked.
 #
 # With --list, print the crate names in publish order instead of checking, so
 # the publish workflow can drive its loop without a second copy of the parsing
