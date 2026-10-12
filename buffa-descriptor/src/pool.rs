@@ -331,7 +331,11 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
-    /// A map's enum value type starts with a nonzero value.
+    /// A map's enum value type starts with a nonzero value. Only a closed
+    /// enum reaches this rule: an open enum with a nonzero first value fails
+    /// earlier with
+    /// [`OpenEnumFirstValueNotZero`](Self::OpenEnumFirstValueNotZero),
+    /// whether or not a map names it.
     MapEnumFirstValueNotZero {
         field: String,
         enum_name: String,
@@ -2850,14 +2854,14 @@ impl DescriptorPool {
             return Ok(());
         };
         let enumeration = &self.enums[eidx.0 as usize];
-        match enumeration.values.first() {
-            Some(first) if first.number != 0 => Err(PoolError::MapEnumFirstValueNotZero {
+        if let Some(first) = enumeration.values.first().filter(|value| value.number != 0) {
+            return Err(PoolError::MapEnumFirstValueNotZero {
                 field: format!("{}.{}", message.full_name, field.name),
                 enum_name: enumeration.full_name.clone(),
                 number: first.number,
-            }),
-            _ => Ok(()),
+            });
         }
+        Ok(())
     }
 
     /// A singular enum field with implicit presence must name an open enum.
