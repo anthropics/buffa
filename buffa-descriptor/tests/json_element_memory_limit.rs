@@ -628,6 +628,70 @@ fn parse_json_applies_the_seed_options_and_rejects_trailing_input() {
     assert!(!DynamicMessageSeed::is_element_memory_limit_error(&err));
 }
 
+/// `DynamicMessage::from_json_with_element_memory_limit` is the seed path
+/// with one option set: the limit decides, unknown fields stay an error, and
+/// input after the document is rejected.
+#[test]
+fn from_json_with_element_memory_limit_applies_the_limit() {
+    let p = pool(FDS_BYTES);
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let parse = |json: &str, limit: usize| {
+        DynamicMessage::from_json_with_element_memory_limit(Arc::clone(&p), idx, json, limit)
+    };
+    let json = repeat_json(r#"{"inners":["#, r#"{"id":"a"}"#, 3, "]}");
+
+    // At the limit, the result is what `from_json` builds.
+    let limited = parse(&json, 3 * ELEMENT).expect("3 elements fit");
+    let default = DynamicMessage::from_json(Arc::clone(&p), idx, &json).unwrap();
+    assert_eq!(limited.to_json().unwrap(), default.to_json().unwrap());
+    assert_eq!(limited.encode_to_vec(), default.encode_to_vec());
+
+    // One byte short of three slots, the parse fails with the identifiable
+    // budget error.
+    let err = parse(&json, 3 * ELEMENT - 1).expect_err("3 elements do not fit in less");
+    assert_over_budget(&err);
+
+    // A zero limit refuses the first element and admits a message with none,
+    // as the seed path does.
+    assert_over_budget(&parse(r#"{"inners":[{}]}"#, 0).expect_err("no budget, no elements"));
+    assert_over_budget(
+        &parse_with_limit(&p, "reflect.test.Containers", r#"{"inners":[{}]}"#, 0)
+            .expect_err("the seed path agrees"),
+    );
+    parse(r#"{"inners":[]}"#, 0).expect("an empty list costs nothing");
+    parse("{}", 0).expect("a message with no elements costs nothing");
+
+    // Only the limit changes: unknown fields and trailing input stay errors,
+    // and are not mistaken for the budget error.
+    for rejected in [r#"{"nope":1}"#, r#"{"inners":[]} {}"#] {
+        let err = parse(rejected, usize::MAX).expect_err("still strict");
+        assert!(
+            !DynamicMessageSeed::is_element_memory_limit_error(&err),
+            "{rejected}: {err}"
+        );
+    }
+}
+
+/// The limit can be raised past the default as well as lowered.
+#[test]
+fn from_json_with_element_memory_limit_raises_the_default() {
+    let p = pool(FDS_BYTES);
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let n = buffa::DEFAULT_ELEMENT_MEMORY_LIMIT / ELEMENT + 1;
+    let json = repeat_json(r#"{"inners":["#, "{}", n, "]}");
+
+    assert_over_budget(
+        &DynamicMessage::from_json(Arc::clone(&p), idx, &json)
+            .expect_err("the default refuses one element too many"),
+    );
+    let msg = DynamicMessage::from_json_with_element_memory_limit(p, idx, &json, n * ELEMENT)
+        .expect("a limit of exactly n elements admits them");
+    match msg.field_by_number(8) {
+        Some(Value::List(l)) => assert_eq!(l.len(), n),
+        other => panic!("expected a list of {n} elements, got {other:?}"),
+    }
+}
+
 /// `usize::MAX` means no limit, for callers who parse trusted input.
 #[test]
 fn usize_max_disables_the_budget() {

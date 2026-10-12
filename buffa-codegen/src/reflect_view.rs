@@ -316,7 +316,10 @@ pub(crate) fn reflect_view_impls(
     let sentinel = make_field_ident(SENTINEL_MOD);
     let pool = quote! { #supers #sentinel::reflect::descriptor_pool() };
 
+    let deprecated_field_allow =
+        crate::message::deprecated_field_allow(ctx, msg, view_scope.proto_fqn);
     Ok(quote! {
+        #deprecated_field_allow
         impl<'a> ::buffa_descriptor::reflect::ReflectMessage for #view_ident<'a> {
             fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
                 #pool.message(Self::__buffa_reflect_message_index())

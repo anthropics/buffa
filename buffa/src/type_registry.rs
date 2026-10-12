@@ -35,11 +35,15 @@
 
 use alloc::boxed::Box;
 
-/// Return the protobuf full name carried by an `Any` type URL.
+/// Return the protobuf full name carried by an `Any` type URL, for the text
+/// registry.
 ///
 /// The `Any` contract identifies the embedded message by the path segment
-/// after the final slash; the URL prefix is application-defined.
-pub(crate) fn any_type_name(type_url: &str) -> Option<&str> {
+/// after the final slash; the URL prefix is application-defined. A string
+/// without a slash carries no name here: text format writes `[name] { ... }`
+/// for an extension field, so only a URL is expanded.
+#[cfg(feature = "text")]
+fn any_type_name(type_url: &str) -> Option<&str> {
     let (_, type_name) = type_url.rsplit_once('/')?;
     (!type_name.is_empty()).then_some(type_name)
 }
@@ -430,9 +434,9 @@ impl TypeRegistry {
     /// Look up a JSON `Any` entry by type URL.
     ///
     /// A registered URL finds its own entry. Any other URL is matched by the
-    /// message full name after its last `/`. The entry's `type_url` is the
-    /// registered one, so keep the URL you looked up as the `Any`'s
-    /// `type_url`.
+    /// message full name after its last `/`, and a string without a `/` as a
+    /// bare full name. The entry's `type_url` is the registered one, so keep
+    /// the URL you looked up as the `Any`'s `type_url`.
     #[cfg(feature = "json")]
     pub fn json_any_by_url(&self, type_url: &str) -> Option<&JsonAnyEntry> {
         self.json_any.lookup(type_url)
@@ -453,8 +457,10 @@ impl TypeRegistry {
     /// Look up a text `Any` entry by type URL.
     ///
     /// A registered URL finds its own entry. Any other URL is matched by the
-    /// message full name after its last `/`. The entry's `type_url` is the
-    /// registered one, so keep the URL you looked up as the `Any`'s
+    /// message full name after its last `/`. A string without a `/` is found
+    /// only by an exact match, unlike in
+    /// [`json_any_by_url`](Self::json_any_by_url). The entry's `type_url` is
+    /// the registered one, so keep the URL you looked up as the `Any`'s
     /// `type_url`.
     #[cfg(feature = "text")]
     pub fn text_any_by_url(&self, type_url: &str) -> Option<&TextAnyEntry> {
