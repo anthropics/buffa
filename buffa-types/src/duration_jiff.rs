@@ -98,6 +98,9 @@ impl TryFrom<Duration> for jiff::SignedDuration {
     /// `Duration` can carry any combination — the proto spec declares
     /// sign-mismatched ones invalid, and this conversion rejects them rather
     /// than letting `SignedDuration::new` silently re-normalize them.
+    ///
+    /// This conversion does not check the protobuf `Duration` range of
+    /// ±315,576,000,000 seconds.
     fn try_from(d: Duration) -> Result<Self, Self::Error> {
         Self::try_from(&d)
     }
@@ -125,6 +128,9 @@ impl TryFrom<&Duration> for jiff::SignedDuration {
     ///
     /// Returns [`DurationJiffError::InvalidNanos`] if `nanos` is out of range
     /// or its sign is inconsistent with `seconds`.
+    ///
+    /// This conversion does not check the protobuf `Duration` range of
+    /// ±315,576,000,000 seconds.
     fn try_from(d: &Duration) -> Result<Self, Self::Error> {
         if !(-999_999_999..=999_999_999).contains(&d.nanos) {
             return Err(DurationJiffError::InvalidNanos);

@@ -111,6 +111,9 @@ impl TryFrom<Duration> for chrono::TimeDelta {
     /// Returns [`DurationChronoError::Overflow`] if the total duration
     /// exceeds `chrono::TimeDelta`'s representable range (`±i64::MAX`
     /// milliseconds).
+    ///
+    /// This conversion does not check the protobuf `Duration` range of
+    /// ±315,576,000,000 seconds.
     fn try_from(d: Duration) -> Result<Self, Self::Error> {
         Self::try_from(&d)
     }
@@ -140,6 +143,9 @@ impl TryFrom<&Duration> for chrono::TimeDelta {
     /// or its sign is inconsistent with `seconds`. Returns
     /// [`DurationChronoError::Overflow`] if the duration exceeds
     /// `chrono::TimeDelta`'s representable range.
+    ///
+    /// This conversion does not check the protobuf `Duration` range of
+    /// ±315,576,000,000 seconds.
     fn try_from(d: &Duration) -> Result<Self, Self::Error> {
         if d.nanos < -999_999_999 || d.nanos > 999_999_999 {
             return Err(DurationChronoError::InvalidNanos);

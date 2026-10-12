@@ -83,6 +83,9 @@ impl TryFrom<Timestamp> for chrono::DateTime<chrono::Utc> {
     /// Returns [`TimestampError::InvalidNanos`] if `nanos` is outside
     /// `[0, 999_999_999]`, or [`TimestampError::Overflow`] if the value is
     /// outside the range `chrono::DateTime<Utc>` can represent.
+    ///
+    /// This conversion does not check the protobuf `Timestamp` range of years
+    /// 0001–9999.
     fn try_from(ts: Timestamp) -> Result<Self, Self::Error> {
         Self::try_from(&ts)
     }
@@ -113,6 +116,9 @@ impl TryFrom<&Timestamp> for chrono::DateTime<chrono::Utc> {
     /// `[0, 999_999_999]`, or [`TimestampError::Overflow`] if the instant is
     /// outside the range [`chrono::DateTime<Utc>`](chrono::DateTime) can
     /// represent.
+    ///
+    /// This conversion does not check the protobuf `Timestamp` range of years
+    /// 0001–9999.
     fn try_from(ts: &Timestamp) -> Result<Self, Self::Error> {
         if ts.nanos < 0 || ts.nanos > NANOS_MAX {
             return Err(TimestampError::InvalidNanos);

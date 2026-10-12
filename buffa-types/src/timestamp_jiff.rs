@@ -11,15 +11,14 @@ impl From<jiff::Timestamp> for Timestamp {
     /// Convert a [`jiff::Timestamp`] to a protobuf [`Timestamp`].
     ///
     /// Infallible: every [`jiff::Timestamp`] fits the `Timestamp` fields.
-    /// The protobuf `Timestamp` type is valid only for years 0001–9999,
-    /// though, and jiff reaches back to about year -9999.
     ///
     /// # Warning: Timestamp valid range
     ///
     /// The protobuf `Timestamp` spec restricts valid values to years
-    /// 0001–9999. A pre-year-1 instant still converts and round-trips through
-    /// binary encoding, but the result is outside the valid `Timestamp` range
-    /// and JSON serialization (`json` feature) rejects it.
+    /// 0001–9999, and jiff reaches back to about year -9999. A pre-year-1
+    /// instant still converts and round-trips through binary encoding, but
+    /// the result is outside the valid `Timestamp` range and JSON
+    /// serialization (`json` feature) rejects it.
     ///
     /// # Sign normalization
     ///
@@ -83,16 +82,9 @@ impl TryFrom<Timestamp> for jiff::Timestamp {
     ///
     /// # Errors
     ///
-    /// Returns [`TimestampError::InvalidNanos`] if `nanos` is outside
-    /// `[0, 999_999_999]`, or [`TimestampError::Overflow`] if the instant is
-    /// outside the range of [`jiff::Timestamp`], which is
-    /// `-9999-01-02T01:59:59Z` through `9999-12-30T22:00:00.999999999Z`.
-    ///
-    /// That range ends about 26 hours before the last valid protobuf
-    /// `Timestamp`, `9999-12-31T23:59:59.999999999Z`, so a valid `Timestamp`
-    /// in the last hours of year 9999 returns `Overflow`. This conversion
-    /// does not check the protobuf `Timestamp` range of years 0001–9999: a
-    /// `Timestamp` before year 0001 that is inside the jiff range converts.
+    /// Returns [`TimestampError::InvalidNanos`] or
+    /// [`TimestampError::Overflow`], on the conditions that the
+    /// `TryFrom<&Timestamp>` conversion documents. This conversion calls it.
     fn try_from(ts: Timestamp) -> Result<Self, Self::Error> {
         Self::try_from(&ts)
     }
@@ -125,7 +117,7 @@ impl TryFrom<&Timestamp> for jiff::Timestamp {
     ///
     /// That range ends about 26 hours before the last valid protobuf
     /// `Timestamp`, `9999-12-31T23:59:59.999999999Z`, so a valid `Timestamp`
-    /// in the last hours of year 9999 returns `Overflow`. This conversion
+    /// in the last 26 hours of year 9999 returns `Overflow`. This conversion
     /// does not check the protobuf `Timestamp` range of years 0001–9999: a
     /// `Timestamp` before year 0001 that is inside the jiff range converts.
     fn try_from(ts: &Timestamp) -> Result<Self, Self::Error> {
@@ -245,6 +237,8 @@ mod tests {
         const JIFF_MAX_SECS: i64 = 253_402_207_200;
         // The last valid protobuf second, 9999-12-31T23:59:59Z.
         const PROTO_MAX_SECS: i64 = 253_402_300_799;
+        // jiff's minimum second, -9999-01-02T01:59:59Z.
+        const JIFF_MIN_SECS: i64 = -377_705_023_201;
         assert_eq!(jiff::Timestamp::MAX.as_second(), JIFF_MAX_SECS);
         assert_eq!(PROTO_MAX_SECS - JIFF_MAX_SECS, 26 * 3600 - 1);
 
@@ -264,9 +258,9 @@ mod tests {
             );
         }
         // The lower end of the jiff range is before year 0001 and converts.
-        assert_eq!(jiff::Timestamp::MIN.as_second(), -377_705_023_201);
+        assert_eq!(jiff::Timestamp::MIN.as_second(), JIFF_MIN_SECS);
         assert_eq!(
-            jiff::Timestamp::try_from(at(-377_705_023_201, 0)),
+            jiff::Timestamp::try_from(at(JIFF_MIN_SECS, 0)),
             Ok(jiff::Timestamp::MIN)
         );
     }
