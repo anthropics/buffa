@@ -43,12 +43,12 @@ impl From<jiff::SignedDuration> for Duration {
     ///
     /// # Warning: Duration valid range
     ///
-    /// `jiff::SignedDuration` ranges to ±`i64::MAX` seconds (~2.9e11 years),
-    /// while the proto spec restricts `Duration` to ±315,576,000,000 seconds
-    /// (~10,000 years). A `SignedDuration` beyond that converts without error
-    /// here — binary encoding round-trips it — but the resulting `Duration`
-    /// will fail JSON serialization (`json` feature), which enforces the spec
-    /// range.
+    /// The protobuf `Duration` spec restricts valid values to
+    /// ±315,576,000,000 seconds (~10,000 years), and `jiff::SignedDuration`
+    /// ranges to ±`i64::MAX` seconds (~2.9e11 years). A `SignedDuration`
+    /// beyond the spec range still converts and round-trips through binary
+    /// encoding, but the result is outside the valid `Duration` range and
+    /// JSON serialization (`json` feature) rejects it.
     ///
     /// # Examples
     ///

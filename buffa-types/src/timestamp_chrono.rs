@@ -133,7 +133,7 @@ impl TryFrom<&Timestamp> for chrono::DateTime<chrono::Utc> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{DateTime, TimeZone, Utc};
+    use chrono::{DateTime, Datelike, TimeZone, Utc};
 
     #[test]
     fn datetime_post_epoch_roundtrip() {
@@ -185,6 +185,9 @@ mod tests {
 
     #[test]
     fn datetime_outside_years_1_to_9999_converts_and_roundtrips() {
+        // The year bounds that the `From` docs give.
+        assert_eq!(DateTime::<Utc>::MIN_UTC.year(), -262_143);
+        assert_eq!(DateTime::<Utc>::MAX_UTC.year(), 262_142);
         for dt in [DateTime::<Utc>::MIN_UTC, DateTime::<Utc>::MAX_UTC] {
             let ts: Timestamp = dt.into();
             assert_eq!(ts.seconds, dt.timestamp());

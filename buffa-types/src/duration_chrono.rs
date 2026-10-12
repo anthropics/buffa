@@ -39,12 +39,12 @@ impl From<chrono::TimeDelta> for Duration {
     ///
     /// # Warning: Duration valid range
     ///
-    /// `chrono::TimeDelta` ranges to ±`i64::MAX` milliseconds (~9.2e15
-    /// seconds), while the proto spec restricts `Duration` to
-    /// ±315,576,000,000 seconds (~10,000 years). A `TimeDelta` beyond that
-    /// converts without error here — binary encoding round-trips it — but
-    /// the resulting `Duration` will fail JSON serialization (`json`
-    /// feature), which enforces the spec range.
+    /// The protobuf `Duration` spec restricts valid values to
+    /// ±315,576,000,000 seconds (~10,000 years), and `chrono::TimeDelta`
+    /// ranges to ±`i64::MAX` milliseconds (~9.2e15 seconds). A `TimeDelta`
+    /// beyond the spec range still converts and round-trips through binary
+    /// encoding, but the result is outside the valid `Duration` range and
+    /// JSON serialization (`json` feature) rejects it.
     ///
     /// # Examples
     ///

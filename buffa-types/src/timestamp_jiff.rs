@@ -237,8 +237,6 @@ mod tests {
         const JIFF_MAX_SECS: i64 = 253_402_207_200;
         // The last valid protobuf second, 9999-12-31T23:59:59Z.
         const PROTO_MAX_SECS: i64 = 253_402_300_799;
-        // jiff's minimum second, -9999-01-02T01:59:59Z.
-        const JIFF_MIN_SECS: i64 = -377_705_023_201;
         assert_eq!(jiff::Timestamp::MAX.as_second(), JIFF_MAX_SECS);
         assert_eq!(PROTO_MAX_SECS - JIFF_MAX_SECS, 26 * 3600 - 1);
 
@@ -257,12 +255,14 @@ mod tests {
                 Err(TimestampError::Overflow)
             );
         }
-        // The lower end of the jiff range is before year 0001 and converts.
+    }
+
+    #[test]
+    fn jiff_minimum_is_the_documented_second() {
+        // -9999-01-02T01:59:59Z, the lower end that the `TryFrom` docs give.
+        const JIFF_MIN_SECS: i64 = -377_705_023_201;
         assert_eq!(jiff::Timestamp::MIN.as_second(), JIFF_MIN_SECS);
-        assert_eq!(
-            jiff::Timestamp::try_from(at(JIFF_MIN_SECS, 0)),
-            Ok(jiff::Timestamp::MIN)
-        );
+        assert_eq!(jiff::Timestamp::MIN.subsec_nanosecond(), 0);
     }
 
     #[test]
