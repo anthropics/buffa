@@ -749,6 +749,10 @@ pub mod codecs {
     // ─────────────────────────────────────────────────────────────────────
 
     /// Codec for the `string` proto type.
+    ///
+    /// Singular decode reads the last length-delimited record at the field
+    /// number and returns `None` when that record is not valid UTF-8, whatever
+    /// earlier records hold. Records with other wire types are ignored.
     pub struct StringCodec;
 
     impl ExtensionCodec for StringCodec {
@@ -759,7 +763,8 @@ pub mod codecs {
                 .iter()
                 .rev()
                 .filter(|f| f.number == number)
-                .find_map(|f| Self::decode_one(&f.data))
+                .find(|f| matches!(&f.data, UnknownFieldData::LengthDelimited(_)))
+                .and_then(|f| Self::decode_one(&f.data))
         }
         fn try_encode(
             number: u32,
@@ -1496,6 +1501,82 @@ mod tests {
         const E: Extension<StringCodec> = Extension::new(1, CARRIER);
         let mut c = Carrier::default();
         c.unknown.push(ld(1, vec![0xFF, 0xFE]));
+        assert_eq!(c.extension(&E), None);
+    }
+
+    #[test]
+    fn string_invalid_last_record_is_none() {
+        const E: Extension<StringCodec> = Extension::new(1, CARRIER);
+        let invalid = [
+            vec![0xFF],
+            vec![0x80],
+            vec![0xC0, 0xAF],
+            vec![0xC2],
+            vec![0xE2, 0x82],
+            vec![0xED, 0xA0, 0x80],
+            vec![0xF4, 0x90, 0x80, 0x80],
+            vec![b'a', 0xFF],
+        ];
+        for bytes in invalid {
+            let mut c = Carrier::default();
+            c.unknown.push(ld(1, b"earlier".to_vec()));
+            c.unknown.push(ld(1, bytes));
+            assert_eq!(c.extension(&E), None, "{:?}", c.unknown);
+        }
+    }
+
+    #[test]
+    fn string_last_record_wins_over_valid_or_invalid_prior_values() {
+        const E: Extension<StringCodec> = Extension::new(1, CARRIER);
+        for prior in [b"earlier".to_vec(), vec![0xFF]] {
+            for latest in ["latest", "", "\0", "caf\u{e9} \u{1F600}"] {
+                let mut c = Carrier::default();
+                c.unknown.push(ld(1, prior.clone()));
+                c.unknown.push(ld(1, latest.as_bytes().to_vec()));
+                assert_eq!(c.extension(&E).as_deref(), Some(latest));
+            }
+        }
+    }
+
+    #[test]
+    fn string_last_record_ignores_other_numbers_and_wire_types() {
+        const E: Extension<StringCodec> = Extension::new(1, CARRIER);
+        for (latest, expected) in [
+            (b"latest".to_vec(), Some("latest")),
+            (Vec::new(), Some("")),
+            (vec![0xFF], None),
+        ] {
+            let mut c = Carrier::default();
+            c.unknown.push(ld(1, b"earlier".to_vec()));
+            c.unknown.push(ld(1, latest));
+            c.unknown.push(ld(2, b"other".to_vec()));
+            c.unknown.push(varint(1, 42));
+            c.unknown.push(fixed32(1, 42));
+            c.unknown.push(fixed64(1, 42));
+            c.unknown.push(group(1, UnknownFields::new()));
+            assert_eq!(c.extension(&E).as_deref(), expected);
+        }
+    }
+
+    #[test]
+    fn string_invalid_last_record_uses_declared_default() {
+        const E: Extension<StringCodec> =
+            Extension::with_default(1, CARRIER, || "fallback".to_string());
+        let mut c = Carrier::default();
+        c.unknown.push(ld(1, b"earlier".to_vec()));
+        c.unknown.push(ld(1, vec![0xFF]));
+        assert_eq!(c.extension_or_default(&E), "fallback");
+    }
+
+    #[test]
+    fn string_absent_or_wrong_wire_type_only_is_none() {
+        const E: Extension<StringCodec> = Extension::new(1, CARRIER);
+        let mut c = Carrier::default();
+        assert_eq!(c.extension(&E), None);
+        c.unknown.push(ld(2, b"other".to_vec()));
+        c.unknown.push(varint(1, 42));
+        c.unknown.push(fixed32(1, 42));
+        c.unknown.push(fixed64(1, 42));
         assert_eq!(c.extension(&E), None);
     }
 

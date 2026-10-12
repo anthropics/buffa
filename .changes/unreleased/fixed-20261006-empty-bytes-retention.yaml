@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+  **An empty `bytes` field at the end of a `Bytes` input keeps the input allocated** (#509). `decode_bytes_to_bytes`, which generated `bytes::Bytes` fields call, split zero bytes off the exhausted input and got back a handle to the whole buffer, so the buffer lived as long as the empty field. An empty field is now a fresh empty `Bytes`.
+time: 2026-10-06T12:10:00.000000-07:00

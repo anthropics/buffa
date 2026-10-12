@@ -19,8 +19,10 @@ syn = { workspace = true }
 
 [dev-dependencies]
 arbitrary = { workspace = true }
-buffa = { workspace = true, features = ["std"] }
+buffa = { workspace = true, features = ["std", "json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 ecow = { workspace = true }
 smallvec = { version = "1", default-features = false }
 smallbox = { version = "0.8", default-features = false }
-indexmap = { version = "2", default-features = false, features = ["std"] }
+indexmap = { version = "2", default-features = false, features = ["std", "serde"] }

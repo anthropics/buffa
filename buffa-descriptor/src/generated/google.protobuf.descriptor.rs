@@ -86,17 +86,17 @@ impl ::core::default::Default for Edition {
 #[cfg(feature = "json")]
 const _: () = {
     impl ::serde::Serialize for Edition {
-        fn serialize<S: ::serde::Serializer>(
+        fn serialize<__S: ::serde::Serializer>(
             &self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             s.serialize_str(::buffa::Enumeration::proto_name(self))
         }
     }
     impl<'de> ::serde::Deserialize<'de> for Edition {
-        fn deserialize<D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize<__D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             struct _V;
             impl ::serde::de::Visitor<'_> for _V {
                 type Value = Edition;
@@ -108,17 +108,17 @@ const _: () = {
                         concat!("a string, integer, or null for ", stringify!(Edition)),
                     )
                 }
-                fn visit_str<E: ::serde::de::Error>(
+                fn visit_str<__E: ::serde::de::Error>(
                     self,
                     v: &str,
-                ) -> ::core::result::Result<Edition, E> {
+                ) -> ::core::result::Result<Edition, __E> {
                     <Edition as ::buffa::Enumeration>::from_proto_name(v)
                         .ok_or_else(|| { ::serde::de::Error::unknown_variant(v, &[]) })
                 }
-                fn visit_i64<E: ::serde::de::Error>(
+                fn visit_i64<__E: ::serde::de::Error>(
                     self,
                     v: i64,
-                ) -> ::core::result::Result<Edition, E> {
+                ) -> ::core::result::Result<Edition, __E> {
                     let v32 = i32::try_from(v)
                         .map_err(|_| {
                             ::serde::de::Error::custom(
@@ -132,10 +132,10 @@ const _: () = {
                             )
                         })
                 }
-                fn visit_u64<E: ::serde::de::Error>(
+                fn visit_u64<__E: ::serde::de::Error>(
                     self,
                     v: u64,
-                ) -> ::core::result::Result<Edition, E> {
+                ) -> ::core::result::Result<Edition, __E> {
                     let v32 = i32::try_from(v)
                         .map_err(|_| {
                             ::serde::de::Error::custom(
@@ -149,9 +149,9 @@ const _: () = {
                             )
                         })
                 }
-                fn visit_unit<E: ::serde::de::Error>(
+                fn visit_unit<__E: ::serde::de::Error>(
                     self,
-                ) -> ::core::result::Result<Edition, E> {
+                ) -> ::core::result::Result<Edition, __E> {
                     ::core::result::Result::Ok(::core::default::Default::default())
                 }
             }
@@ -159,15 +159,15 @@ const _: () = {
         }
     }
     impl ::buffa::json_helpers::ProtoElemJson for Edition {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -290,17 +290,17 @@ impl ::core::default::Default for SymbolVisibility {
 #[cfg(feature = "json")]
 const _: () = {
     impl ::serde::Serialize for SymbolVisibility {
-        fn serialize<S: ::serde::Serializer>(
+        fn serialize<__S: ::serde::Serializer>(
             &self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             s.serialize_str(::buffa::Enumeration::proto_name(self))
         }
     }
     impl<'de> ::serde::Deserialize<'de> for SymbolVisibility {
-        fn deserialize<D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize<__D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             struct _V;
             impl ::serde::de::Visitor<'_> for _V {
                 type Value = SymbolVisibility;
@@ -315,17 +315,17 @@ const _: () = {
                         ),
                     )
                 }
-                fn visit_str<E: ::serde::de::Error>(
+                fn visit_str<__E: ::serde::de::Error>(
                     self,
                     v: &str,
-                ) -> ::core::result::Result<SymbolVisibility, E> {
+                ) -> ::core::result::Result<SymbolVisibility, __E> {
                     <SymbolVisibility as ::buffa::Enumeration>::from_proto_name(v)
                         .ok_or_else(|| { ::serde::de::Error::unknown_variant(v, &[]) })
                 }
-                fn visit_i64<E: ::serde::de::Error>(
+                fn visit_i64<__E: ::serde::de::Error>(
                     self,
                     v: i64,
-                ) -> ::core::result::Result<SymbolVisibility, E> {
+                ) -> ::core::result::Result<SymbolVisibility, __E> {
                     let v32 = i32::try_from(v)
                         .map_err(|_| {
                             ::serde::de::Error::custom(
@@ -339,10 +339,10 @@ const _: () = {
                             )
                         })
                 }
-                fn visit_u64<E: ::serde::de::Error>(
+                fn visit_u64<__E: ::serde::de::Error>(
                     self,
                     v: u64,
-                ) -> ::core::result::Result<SymbolVisibility, E> {
+                ) -> ::core::result::Result<SymbolVisibility, __E> {
                     let v32 = i32::try_from(v)
                         .map_err(|_| {
                             ::serde::de::Error::custom(
@@ -356,9 +356,9 @@ const _: () = {
                             )
                         })
                 }
-                fn visit_unit<E: ::serde::de::Error>(
+                fn visit_unit<__E: ::serde::de::Error>(
                     self,
-                ) -> ::core::result::Result<SymbolVisibility, E> {
+                ) -> ::core::result::Result<SymbolVisibility, __E> {
                     ::core::result::Result::Ok(::core::default::Default::default())
                 }
             }
@@ -366,15 +366,15 @@ const _: () = {
         }
     }
     impl ::buffa::json_helpers::ProtoElemJson for SymbolVisibility {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -587,9 +587,9 @@ impl ::buffa::text::TextFormat for FileDescriptorSet {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for FileDescriptorSet {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         struct _V;
         impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = FileDescriptorSet;
@@ -600,10 +600,10 @@ impl<'de> ::serde::Deserialize<'de> for FileDescriptorSet {
                 f.write_str("struct FileDescriptorSet")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: ::serde::de::MapAccess<'de>>(
+            fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
-                mut map: A,
-            ) -> ::core::result::Result<FileDescriptorSet, A::Error> {
+                mut map: __A,
+            ) -> ::core::result::Result<FileDescriptorSet, __A::Error> {
                 let mut __f_file: ::core::option::Option<
                     ::buffa::alloc::vec::Vec<FileDescriptorProto>,
                 > = None;
@@ -615,12 +615,12 @@ impl<'de> ::serde::Deserialize<'de> for FileDescriptorSet {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<FileDescriptorProto>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<FileDescriptorProto>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -647,7 +647,7 @@ impl<'de> ::serde::Deserialize<'de> for FileDescriptorSet {
                                     ::core::result::Result::Err(__e),
                                 ) => {
                                     return ::core::result::Result::Err(
-                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                        <__A::Error as ::serde::de::Error>::custom(__e),
                                     );
                                 }
                                 ::core::option::Option::None => {}
@@ -673,15 +673,15 @@ impl<'de> ::serde::Deserialize<'de> for FileDescriptorSet {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for FileDescriptorSet {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -708,10 +708,10 @@ impl ::core::convert::From<::buffa::UnknownFields> for __FileDescriptorSetExtJso
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for __FileDescriptorSetExtJson {
-    fn serialize<S: ::serde::Serializer>(
+    fn serialize<__S: ::serde::Serializer>(
         &self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::buffa::extension_registry::serialize_extensions(
             "google.protobuf.FileDescriptorSet",
             &self.0,
@@ -721,9 +721,9 @@ impl ::serde::Serialize for __FileDescriptorSetExtJson {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for __FileDescriptorSetExtJson {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         ::buffa::extension_registry::deserialize_extensions(
                 "google.protobuf.FileDescriptorSet",
                 d,
@@ -791,8 +791,8 @@ pub struct FileDescriptorProto {
         serde(
             rename = "publicDependency",
             alias = "public_dependency",
-            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-            deserialize_with = "::buffa::json_helpers::null_as_default"
+            with = "::buffa::json_helpers::proto_seq",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
         )
     )]
     pub public_dependency: ::buffa::alloc::vec::Vec<i32>,
@@ -805,8 +805,8 @@ pub struct FileDescriptorProto {
         serde(
             rename = "weakDependency",
             alias = "weak_dependency",
-            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-            deserialize_with = "::buffa::json_helpers::null_as_default"
+            with = "::buffa::json_helpers::proto_seq",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
         )
     )]
     pub weak_dependency: ::buffa::alloc::vec::Vec<i32>,
@@ -961,7 +961,7 @@ impl FileDescriptorProto {
     ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
     pub fn with_name(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.name = Some(value.into());
         self
@@ -971,7 +971,7 @@ impl FileDescriptorProto {
     ///Sets [`Self::package`] to `Some(value)`, consuming and returning `self`.
     pub fn with_package(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.package = Some(value.into());
         self
@@ -981,7 +981,7 @@ impl FileDescriptorProto {
     ///Sets [`Self::syntax`] to `Some(value)`, consuming and returning `self`.
     pub fn with_syntax(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.syntax = Some(value.into());
         self
@@ -989,7 +989,7 @@ impl FileDescriptorProto {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::edition`] to `Some(value)`, consuming and returning `self`.
-    pub fn with_edition(mut self, value: impl Into<Edition>) -> Self {
+    pub fn with_edition(mut self, value: impl ::core::convert::Into<Edition>) -> Self {
         self.edition = Some(value.into());
         self
     }
@@ -1607,15 +1607,15 @@ impl ::buffa::text::TextFormat for FileDescriptorProto {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for FileDescriptorProto {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -1790,7 +1790,7 @@ impl DescriptorProto {
     ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
     pub fn with_name(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.name = Some(value.into());
         self
@@ -1798,7 +1798,10 @@ impl DescriptorProto {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::visibility`] to `Some(value)`, consuming and returning `self`.
-    pub fn with_visibility(mut self, value: impl Into<SymbolVisibility>) -> Self {
+    pub fn with_visibility(
+        mut self,
+        value: impl ::core::convert::Into<SymbolVisibility>,
+    ) -> Self {
         self.visibility = Some(value.into());
         self
     }
@@ -2316,15 +2319,15 @@ impl ::buffa::text::TextFormat for DescriptorProto {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for DescriptorProto {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -2588,15 +2591,15 @@ pub mod descriptor_proto {
     }
     #[cfg(feature = "json")]
     impl ::buffa::json_helpers::ProtoElemJson for ExtensionRange {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -2814,15 +2817,15 @@ pub mod descriptor_proto {
     }
     #[cfg(feature = "json")]
     impl ::buffa::json_helpers::ProtoElemJson for ReservedRange {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -2938,7 +2941,7 @@ impl ExtensionRangeOptions {
     ///Sets [`Self::verification`] to `Some(value)`, consuming and returning `self`.
     pub fn with_verification(
         mut self,
-        value: impl Into<extension_range_options::VerificationState>,
+        value: impl ::core::convert::Into<extension_range_options::VerificationState>,
     ) -> Self {
         self.verification = Some(value.into());
         self
@@ -3202,9 +3205,9 @@ impl ::buffa::text::TextFormat for ExtensionRangeOptions {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         struct _V;
         impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = ExtensionRangeOptions;
@@ -3215,10 +3218,10 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
                 f.write_str("struct ExtensionRangeOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: ::serde::de::MapAccess<'de>>(
+            fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
-                mut map: A,
-            ) -> ::core::result::Result<ExtensionRangeOptions, A::Error> {
+                mut map: __A,
+            ) -> ::core::result::Result<ExtensionRangeOptions, __A::Error> {
                 let mut __f_uninterpreted_option: ::core::option::Option<
                     ::buffa::alloc::vec::Vec<UninterpretedOption>,
                 > = None;
@@ -3239,12 +3242,12 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<UninterpretedOption>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -3259,14 +3262,14 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
                                     type Value = ::buffa::alloc::vec::Vec<
                                         extension_range_options::Declaration,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<
                                             extension_range_options::Declaration,
                                         >,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -3292,14 +3295,14 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
                                     type Value = ::core::option::Option<
                                         extension_range_options::VerificationState,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<
                                             extension_range_options::VerificationState,
                                         >,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -3326,7 +3329,7 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
                                     ::core::result::Result::Err(__e),
                                 ) => {
                                     return ::core::result::Result::Err(
-                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                        <__A::Error as ::serde::de::Error>::custom(__e),
                                     );
                                 }
                                 ::core::option::Option::None => {}
@@ -3361,15 +3364,15 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for ExtensionRangeOptions {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -3396,10 +3399,10 @@ impl ::core::convert::From<::buffa::UnknownFields> for __ExtensionRangeOptionsEx
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for __ExtensionRangeOptionsExtJson {
-    fn serialize<S: ::serde::Serializer>(
+    fn serialize<__S: ::serde::Serializer>(
         &self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::buffa::extension_registry::serialize_extensions(
             "google.protobuf.ExtensionRangeOptions",
             &self.0,
@@ -3409,9 +3412,9 @@ impl ::serde::Serialize for __ExtensionRangeOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for __ExtensionRangeOptionsExtJson {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         ::buffa::extension_registry::deserialize_extensions(
                 "google.protobuf.ExtensionRangeOptions",
                 d,
@@ -3463,17 +3466,17 @@ pub mod extension_range_options {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for VerificationState {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for VerificationState {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = VerificationState;
@@ -3488,19 +3491,19 @@ pub mod extension_range_options {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<VerificationState, E> {
+                    ) -> ::core::result::Result<VerificationState, __E> {
                         <VerificationState as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<VerificationState, E> {
+                    ) -> ::core::result::Result<VerificationState, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -3514,10 +3517,10 @@ pub mod extension_range_options {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<VerificationState, E> {
+                    ) -> ::core::result::Result<VerificationState, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -3531,9 +3534,9 @@ pub mod extension_range_options {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<VerificationState, E> {
+                    ) -> ::core::result::Result<VerificationState, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -3541,15 +3544,15 @@ pub mod extension_range_options {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for VerificationState {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -3685,7 +3688,7 @@ pub mod extension_range_options {
         ///Sets [`Self::full_name`] to `Some(value)`, consuming and returning `self`.
         pub fn with_full_name(
             mut self,
-            value: impl Into<::buffa::alloc::string::String>,
+            value: impl ::core::convert::Into<::buffa::alloc::string::String>,
         ) -> Self {
             self.full_name = Some(value.into());
             self
@@ -3695,7 +3698,7 @@ pub mod extension_range_options {
         ///Sets `type` to `Some(value)`, consuming and returning `self`.
         pub fn with_type(
             mut self,
-            value: impl Into<::buffa::alloc::string::String>,
+            value: impl ::core::convert::Into<::buffa::alloc::string::String>,
         ) -> Self {
             self.r#type = Some(value.into());
             self
@@ -3930,15 +3933,15 @@ pub mod extension_range_options {
     }
     #[cfg(feature = "json")]
     impl ::buffa::json_helpers::ProtoElemJson for Declaration {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -4156,7 +4159,7 @@ impl FieldDescriptorProto {
     ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
     pub fn with_name(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.name = Some(value.into());
         self
@@ -4173,7 +4176,7 @@ impl FieldDescriptorProto {
     ///Sets [`Self::label`] to `Some(value)`, consuming and returning `self`.
     pub fn with_label(
         mut self,
-        value: impl Into<field_descriptor_proto::Label>,
+        value: impl ::core::convert::Into<field_descriptor_proto::Label>,
     ) -> Self {
         self.label = Some(value.into());
         self
@@ -4181,7 +4184,10 @@ impl FieldDescriptorProto {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets `type` to `Some(value)`, consuming and returning `self`.
-    pub fn with_type(mut self, value: impl Into<field_descriptor_proto::Type>) -> Self {
+    pub fn with_type(
+        mut self,
+        value: impl ::core::convert::Into<field_descriptor_proto::Type>,
+    ) -> Self {
         self.r#type = Some(value.into());
         self
     }
@@ -4190,7 +4196,7 @@ impl FieldDescriptorProto {
     ///Sets [`Self::type_name`] to `Some(value)`, consuming and returning `self`.
     pub fn with_type_name(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.type_name = Some(value.into());
         self
@@ -4200,7 +4206,7 @@ impl FieldDescriptorProto {
     ///Sets [`Self::extendee`] to `Some(value)`, consuming and returning `self`.
     pub fn with_extendee(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.extendee = Some(value.into());
         self
@@ -4210,7 +4216,7 @@ impl FieldDescriptorProto {
     ///Sets [`Self::default_value`] to `Some(value)`, consuming and returning `self`.
     pub fn with_default_value(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.default_value = Some(value.into());
         self
@@ -4227,7 +4233,7 @@ impl FieldDescriptorProto {
     ///Sets [`Self::json_name`] to `Some(value)`, consuming and returning `self`.
     pub fn with_json_name(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.json_name = Some(value.into());
         self
@@ -4638,15 +4644,15 @@ impl ::buffa::text::TextFormat for FieldDescriptorProto {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for FieldDescriptorProto {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -4771,17 +4777,17 @@ pub mod field_descriptor_proto {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for Type {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for Type {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = Type;
@@ -4793,19 +4799,19 @@ pub mod field_descriptor_proto {
                             concat!("a string, integer, or null for ", stringify!(Type)),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<Type, E> {
+                    ) -> ::core::result::Result<Type, __E> {
                         <Type as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<Type, E> {
+                    ) -> ::core::result::Result<Type, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -4819,10 +4825,10 @@ pub mod field_descriptor_proto {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<Type, E> {
+                    ) -> ::core::result::Result<Type, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -4836,9 +4842,9 @@ pub mod field_descriptor_proto {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<Type, E> {
+                    ) -> ::core::result::Result<Type, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -4846,15 +4852,15 @@ pub mod field_descriptor_proto {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for Type {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -4986,17 +4992,17 @@ pub mod field_descriptor_proto {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for Label {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for Label {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = Label;
@@ -5008,19 +5014,19 @@ pub mod field_descriptor_proto {
                             concat!("a string, integer, or null for ", stringify!(Label)),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<Label, E> {
+                    ) -> ::core::result::Result<Label, __E> {
                         <Label as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<Label, E> {
+                    ) -> ::core::result::Result<Label, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -5034,10 +5040,10 @@ pub mod field_descriptor_proto {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<Label, E> {
+                    ) -> ::core::result::Result<Label, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -5051,9 +5057,9 @@ pub mod field_descriptor_proto {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<Label, E> {
+                    ) -> ::core::result::Result<Label, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -5061,15 +5067,15 @@ pub mod field_descriptor_proto {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for Label {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -5152,7 +5158,7 @@ impl OneofDescriptorProto {
     ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
     pub fn with_name(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.name = Some(value.into());
         self
@@ -5307,15 +5313,15 @@ impl ::buffa::text::TextFormat for OneofDescriptorProto {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for OneofDescriptorProto {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -5437,7 +5443,7 @@ impl EnumDescriptorProto {
     ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
     pub fn with_name(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.name = Some(value.into());
         self
@@ -5445,7 +5451,10 @@ impl EnumDescriptorProto {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::visibility`] to `Some(value)`, consuming and returning `self`.
-    pub fn with_visibility(mut self, value: impl Into<SymbolVisibility>) -> Self {
+    pub fn with_visibility(
+        mut self,
+        value: impl ::core::convert::Into<SymbolVisibility>,
+    ) -> Self {
         self.visibility = Some(value.into());
         self
     }
@@ -5748,15 +5757,15 @@ impl ::buffa::text::TextFormat for EnumDescriptorProto {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for EnumDescriptorProto {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -5980,15 +5989,15 @@ pub mod enum_descriptor_proto {
     }
     #[cfg(feature = "json")]
     impl ::buffa::json_helpers::ProtoElemJson for EnumReservedRange {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -6074,7 +6083,7 @@ impl EnumValueDescriptorProto {
     ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
     pub fn with_name(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.name = Some(value.into());
         self
@@ -6257,15 +6266,15 @@ impl ::buffa::text::TextFormat for EnumValueDescriptorProto {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for EnumValueDescriptorProto {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -6341,7 +6350,7 @@ impl ServiceDescriptorProto {
     ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
     pub fn with_name(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.name = Some(value.into());
         self
@@ -6540,15 +6549,15 @@ impl ::buffa::text::TextFormat for ServiceDescriptorProto {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for ServiceDescriptorProto {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -6664,7 +6673,7 @@ impl MethodDescriptorProto {
     ///Sets [`Self::name`] to `Some(value)`, consuming and returning `self`.
     pub fn with_name(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.name = Some(value.into());
         self
@@ -6674,7 +6683,7 @@ impl MethodDescriptorProto {
     ///Sets [`Self::input_type`] to `Some(value)`, consuming and returning `self`.
     pub fn with_input_type(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.input_type = Some(value.into());
         self
@@ -6684,7 +6693,7 @@ impl MethodDescriptorProto {
     ///Sets [`Self::output_type`] to `Some(value)`, consuming and returning `self`.
     pub fn with_output_type(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.output_type = Some(value.into());
         self
@@ -6959,15 +6968,15 @@ impl ::buffa::text::TextFormat for MethodDescriptorProto {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for MethodDescriptorProto {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -7073,6 +7082,7 @@ pub struct FileOptions {
     /// This option does nothing.
     ///
     /// Field 20: `java_generate_equals_and_hash`
+    #[deprecated]
     #[cfg_attr(
         feature = "json",
         serde(
@@ -7325,6 +7335,7 @@ pub struct FileOptions {
     #[doc(hidden)]
     pub __buffa_unknown_fields: __FileOptionsExtJson,
 }
+#[allow(deprecated)]
 impl ::core::fmt::Debug for FileOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("FileOptions")
@@ -7359,13 +7370,14 @@ impl FileOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileOptions";
 }
+#[allow(deprecated)]
 impl FileOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::java_package`] to `Some(value)`, consuming and returning `self`.
     pub fn with_java_package(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.java_package = Some(value.into());
         self
@@ -7375,7 +7387,7 @@ impl FileOptions {
     ///Sets [`Self::java_outer_classname`] to `Some(value)`, consuming and returning `self`.
     pub fn with_java_outer_classname(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.java_outer_classname = Some(value.into());
         self
@@ -7390,6 +7402,7 @@ impl FileOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::java_generate_equals_and_hash`] to `Some(value)`, consuming and returning `self`.
+    #[deprecated]
     pub fn with_java_generate_equals_and_hash(mut self, value: bool) -> Self {
         self.java_generate_equals_and_hash = Some(value);
         self
@@ -7406,7 +7419,7 @@ impl FileOptions {
     ///Sets [`Self::optimize_for`] to `Some(value)`, consuming and returning `self`.
     pub fn with_optimize_for(
         mut self,
-        value: impl Into<file_options::OptimizeMode>,
+        value: impl ::core::convert::Into<file_options::OptimizeMode>,
     ) -> Self {
         self.optimize_for = Some(value.into());
         self
@@ -7416,7 +7429,7 @@ impl FileOptions {
     ///Sets [`Self::go_package`] to `Some(value)`, consuming and returning `self`.
     pub fn with_go_package(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.go_package = Some(value.into());
         self
@@ -7461,7 +7474,7 @@ impl FileOptions {
     ///Sets [`Self::objc_class_prefix`] to `Some(value)`, consuming and returning `self`.
     pub fn with_objc_class_prefix(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.objc_class_prefix = Some(value.into());
         self
@@ -7471,7 +7484,7 @@ impl FileOptions {
     ///Sets [`Self::csharp_namespace`] to `Some(value)`, consuming and returning `self`.
     pub fn with_csharp_namespace(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.csharp_namespace = Some(value.into());
         self
@@ -7481,7 +7494,7 @@ impl FileOptions {
     ///Sets [`Self::swift_prefix`] to `Some(value)`, consuming and returning `self`.
     pub fn with_swift_prefix(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.swift_prefix = Some(value.into());
         self
@@ -7491,7 +7504,7 @@ impl FileOptions {
     ///Sets [`Self::php_class_prefix`] to `Some(value)`, consuming and returning `self`.
     pub fn with_php_class_prefix(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.php_class_prefix = Some(value.into());
         self
@@ -7501,7 +7514,7 @@ impl FileOptions {
     ///Sets [`Self::php_namespace`] to `Some(value)`, consuming and returning `self`.
     pub fn with_php_namespace(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.php_namespace = Some(value.into());
         self
@@ -7511,7 +7524,7 @@ impl FileOptions {
     ///Sets [`Self::php_metadata_namespace`] to `Some(value)`, consuming and returning `self`.
     pub fn with_php_metadata_namespace(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.php_metadata_namespace = Some(value.into());
         self
@@ -7521,7 +7534,7 @@ impl FileOptions {
     ///Sets [`Self::ruby_package`] to `Some(value)`, consuming and returning `self`.
     pub fn with_ruby_package(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.ruby_package = Some(value.into());
         self
@@ -7534,6 +7547,7 @@ impl ::buffa::MessageName for FileOptions {
     const FULL_NAME: &'static str = "google.protobuf.FileOptions";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FileOptions";
 }
+#[allow(deprecated)]
 impl ::buffa::Message for FileOptions {
     /// Returns the total encoded size in bytes.
     ///
@@ -7992,6 +8006,7 @@ impl ::buffa::ExtensionSet for FileOptions {
     }
 }
 #[cfg(feature = "text")]
+#[allow(deprecated)]
 impl ::buffa::text::TextFormat for FileOptions {
     fn encode_text(
         &self,
@@ -8217,10 +8232,11 @@ impl ::buffa::text::TextFormat for FileOptions {
     }
 }
 #[cfg(feature = "json")]
+#[allow(deprecated)]
 impl<'de> ::serde::Deserialize<'de> for FileOptions {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         struct _V;
         impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = FileOptions;
@@ -8231,10 +8247,10 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                 f.write_str("struct FileOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: ::serde::de::MapAccess<'de>>(
+            fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
-                mut map: A,
-            ) -> ::core::result::Result<FileOptions, A::Error> {
+                mut map: __A,
+            ) -> ::core::result::Result<FileOptions, __A::Error> {
                 let mut __f_java_package: ::core::option::Option<
                     ::core::option::Option<::buffa::alloc::string::String>,
                 > = None;
@@ -8340,12 +8356,12 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                                     type Value = ::core::option::Option<
                                         file_options::OptimizeMode,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<file_options::OptimizeMode>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -8458,12 +8474,12 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<UninterpretedOption>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -8490,7 +8506,7 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                                     ::core::result::Result::Err(__e),
                                 ) => {
                                     return ::core::result::Result::Err(
-                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                        <__A::Error as ::serde::de::Error>::custom(__e),
                                     );
                                 }
                                 ::core::option::Option::None => {}
@@ -8576,15 +8592,15 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for FileOptions {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -8611,10 +8627,10 @@ impl ::core::convert::From<::buffa::UnknownFields> for __FileOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for __FileOptionsExtJson {
-    fn serialize<S: ::serde::Serializer>(
+    fn serialize<__S: ::serde::Serializer>(
         &self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::buffa::extension_registry::serialize_extensions(
             "google.protobuf.FileOptions",
             &self.0,
@@ -8624,9 +8640,9 @@ impl ::serde::Serialize for __FileOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for __FileOptionsExtJson {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         ::buffa::extension_registry::deserialize_extensions(
                 "google.protobuf.FileOptions",
                 d,
@@ -8686,17 +8702,17 @@ pub mod file_options {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for OptimizeMode {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for OptimizeMode {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = OptimizeMode;
@@ -8710,19 +8726,19 @@ pub mod file_options {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<OptimizeMode, E> {
+                    ) -> ::core::result::Result<OptimizeMode, __E> {
                         <OptimizeMode as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<OptimizeMode, E> {
+                    ) -> ::core::result::Result<OptimizeMode, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -8736,10 +8752,10 @@ pub mod file_options {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<OptimizeMode, E> {
+                    ) -> ::core::result::Result<OptimizeMode, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -8753,9 +8769,9 @@ pub mod file_options {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<OptimizeMode, E> {
+                    ) -> ::core::result::Result<OptimizeMode, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -8763,15 +8779,15 @@ pub mod file_options {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for OptimizeMode {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -8920,6 +8936,7 @@ pub struct MessageOptions {
     /// teams have had time to migrate.
     ///
     /// Field 11: `deprecated_legacy_json_field_conflicts`
+    #[deprecated]
     #[cfg_attr(
         feature = "json",
         serde(
@@ -8960,6 +8977,7 @@ pub struct MessageOptions {
     #[doc(hidden)]
     pub __buffa_unknown_fields: __MessageOptionsExtJson,
 }
+#[allow(deprecated)]
 impl ::core::fmt::Debug for MessageOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("MessageOptions")
@@ -8986,6 +9004,7 @@ impl MessageOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MessageOptions";
 }
+#[allow(deprecated)]
 impl MessageOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
@@ -9018,6 +9037,7 @@ impl MessageOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::deprecated_legacy_json_field_conflicts`] to `Some(value)`, consuming and returning `self`.
+    #[deprecated]
     pub fn with_deprecated_legacy_json_field_conflicts(mut self, value: bool) -> Self {
         self.deprecated_legacy_json_field_conflicts = Some(value);
         self
@@ -9030,6 +9050,7 @@ impl ::buffa::MessageName for MessageOptions {
     const FULL_NAME: &'static str = "google.protobuf.MessageOptions";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.MessageOptions";
 }
+#[allow(deprecated)]
 impl ::buffa::Message for MessageOptions {
     /// Returns the total encoded size in bytes.
     ///
@@ -9224,6 +9245,7 @@ impl ::buffa::ExtensionSet for MessageOptions {
     }
 }
 #[cfg(feature = "text")]
+#[allow(deprecated)]
 impl ::buffa::text::TextFormat for MessageOptions {
     fn encode_text(
         &self,
@@ -9324,10 +9346,11 @@ impl ::buffa::text::TextFormat for MessageOptions {
     }
 }
 #[cfg(feature = "json")]
+#[allow(deprecated)]
 impl<'de> ::serde::Deserialize<'de> for MessageOptions {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         struct _V;
         impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = MessageOptions;
@@ -9338,10 +9361,10 @@ impl<'de> ::serde::Deserialize<'de> for MessageOptions {
                 f.write_str("struct MessageOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: ::serde::de::MapAccess<'de>>(
+            fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
-                mut map: A,
-            ) -> ::core::result::Result<MessageOptions, A::Error> {
+                mut map: __A,
+            ) -> ::core::result::Result<MessageOptions, __A::Error> {
                 let mut __f_message_set_wire_format: ::core::option::Option<
                     ::core::option::Option<bool>,
                 > = None;
@@ -9409,12 +9432,12 @@ impl<'de> ::serde::Deserialize<'de> for MessageOptions {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<UninterpretedOption>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -9441,7 +9464,7 @@ impl<'de> ::serde::Deserialize<'de> for MessageOptions {
                                     ::core::result::Result::Err(__e),
                                 ) => {
                                     return ::core::result::Result::Err(
-                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                        <__A::Error as ::serde::de::Error>::custom(__e),
                                     );
                                 }
                                 ::core::option::Option::None => {}
@@ -9485,15 +9508,15 @@ impl<'de> ::serde::Deserialize<'de> for MessageOptions {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for MessageOptions {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -9520,10 +9543,10 @@ impl ::core::convert::From<::buffa::UnknownFields> for __MessageOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for __MessageOptionsExtJson {
-    fn serialize<S: ::serde::Serializer>(
+    fn serialize<__S: ::serde::Serializer>(
         &self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::buffa::extension_registry::serialize_extensions(
             "google.protobuf.MessageOptions",
             &self.0,
@@ -9533,9 +9556,9 @@ impl ::serde::Serialize for __MessageOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for __MessageOptionsExtJson {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         ::buffa::extension_registry::deserialize_extensions(
                 "google.protobuf.MessageOptions",
                 d,
@@ -9678,6 +9701,7 @@ pub struct FieldOptions {
     /// For Google-internal migration only. Do not use.
     ///
     /// Field 10: `weak`
+    #[deprecated]
     #[cfg_attr(
         feature = "json",
         serde(rename = "weak", skip_serializing_if = "::core::option::Option::is_none")
@@ -9771,6 +9795,7 @@ pub struct FieldOptions {
     #[doc(hidden)]
     pub __buffa_unknown_fields: __FieldOptionsExtJson,
 }
+#[allow(deprecated)]
 impl ::core::fmt::Debug for FieldOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("FieldOptions")
@@ -9798,11 +9823,15 @@ impl FieldOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions";
 }
+#[allow(deprecated)]
 impl FieldOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::ctype`] to `Some(value)`, consuming and returning `self`.
-    pub fn with_ctype(mut self, value: impl Into<field_options::CType>) -> Self {
+    pub fn with_ctype(
+        mut self,
+        value: impl ::core::convert::Into<field_options::CType>,
+    ) -> Self {
         self.ctype = Some(value.into());
         self
     }
@@ -9816,7 +9845,10 @@ impl FieldOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::jstype`] to `Some(value)`, consuming and returning `self`.
-    pub fn with_jstype(mut self, value: impl Into<field_options::JSType>) -> Self {
+    pub fn with_jstype(
+        mut self,
+        value: impl ::core::convert::Into<field_options::JSType>,
+    ) -> Self {
         self.jstype = Some(value.into());
         self
     }
@@ -9844,6 +9876,7 @@ impl FieldOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::weak`] to `Some(value)`, consuming and returning `self`.
+    #[deprecated]
     pub fn with_weak(mut self, value: bool) -> Self {
         self.weak = Some(value);
         self
@@ -9860,7 +9893,7 @@ impl FieldOptions {
     ///Sets [`Self::retention`] to `Some(value)`, consuming and returning `self`.
     pub fn with_retention(
         mut self,
-        value: impl Into<field_options::OptionRetention>,
+        value: impl ::core::convert::Into<field_options::OptionRetention>,
     ) -> Self {
         self.retention = Some(value.into());
         self
@@ -9873,6 +9906,7 @@ impl ::buffa::MessageName for FieldOptions {
     const FULL_NAME: &'static str = "google.protobuf.FieldOptions";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FieldOptions";
 }
+#[allow(deprecated)]
 impl ::buffa::Message for FieldOptions {
     /// Returns the total encoded size in bytes.
     ///
@@ -10279,6 +10313,7 @@ impl ::buffa::ExtensionSet for FieldOptions {
     }
 }
 #[cfg(feature = "text")]
+#[allow(deprecated)]
 impl ::buffa::text::TextFormat for FieldOptions {
     fn encode_text(
         &self,
@@ -10433,10 +10468,11 @@ impl ::buffa::text::TextFormat for FieldOptions {
     }
 }
 #[cfg(feature = "json")]
+#[allow(deprecated)]
 impl<'de> ::serde::Deserialize<'de> for FieldOptions {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         struct _V;
         impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = FieldOptions;
@@ -10447,10 +10483,10 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                 f.write_str("struct FieldOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: ::serde::de::MapAccess<'de>>(
+            fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
-                mut map: A,
-            ) -> ::core::result::Result<FieldOptions, A::Error> {
+                mut map: __A,
+            ) -> ::core::result::Result<FieldOptions, __A::Error> {
                 let mut __f_ctype: ::core::option::Option<
                     ::core::option::Option<field_options::CType>,
                 > = None;
@@ -10500,12 +10536,12 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<field_options::CType>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<field_options::CType>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -10523,12 +10559,12 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<field_options::JSType>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<field_options::JSType>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -10568,12 +10604,12 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                                     type Value = ::core::option::Option<
                                         field_options::OptionRetention,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<field_options::OptionRetention>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -10588,12 +10624,12 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                                     type Value = ::buffa::alloc::vec::Vec<
                                         field_options::OptionTargetType,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<field_options::OptionTargetType>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::repeated_closed_enum::deserialize(d)
                                     }
@@ -10608,12 +10644,12 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                                     type Value = ::buffa::alloc::vec::Vec<
                                         field_options::EditionDefault,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<field_options::EditionDefault>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -10648,12 +10684,12 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<UninterpretedOption>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -10680,7 +10716,7 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                                     ::core::result::Result::Err(__e),
                                 ) => {
                                     return ::core::result::Result::Err(
-                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                        <__A::Error as ::serde::de::Error>::custom(__e),
                                     );
                                 }
                                 ::core::option::Option::None => {}
@@ -10745,15 +10781,15 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for FieldOptions {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -10780,10 +10816,10 @@ impl ::core::convert::From<::buffa::UnknownFields> for __FieldOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for __FieldOptionsExtJson {
-    fn serialize<S: ::serde::Serializer>(
+    fn serialize<__S: ::serde::Serializer>(
         &self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::buffa::extension_registry::serialize_extensions(
             "google.protobuf.FieldOptions",
             &self.0,
@@ -10793,9 +10829,9 @@ impl ::serde::Serialize for __FieldOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for __FieldOptionsExtJson {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         ::buffa::extension_registry::deserialize_extensions(
                 "google.protobuf.FieldOptions",
                 d,
@@ -10856,17 +10892,17 @@ pub mod field_options {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for CType {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for CType {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = CType;
@@ -10878,19 +10914,19 @@ pub mod field_options {
                             concat!("a string, integer, or null for ", stringify!(CType)),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<CType, E> {
+                    ) -> ::core::result::Result<CType, __E> {
                         <CType as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<CType, E> {
+                    ) -> ::core::result::Result<CType, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -10904,10 +10940,10 @@ pub mod field_options {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<CType, E> {
+                    ) -> ::core::result::Result<CType, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -10921,9 +10957,9 @@ pub mod field_options {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<CType, E> {
+                    ) -> ::core::result::Result<CType, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -10931,15 +10967,15 @@ pub mod field_options {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for CType {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -11006,17 +11042,17 @@ pub mod field_options {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for JSType {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for JSType {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = JSType;
@@ -11030,19 +11066,19 @@ pub mod field_options {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<JSType, E> {
+                    ) -> ::core::result::Result<JSType, __E> {
                         <JSType as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<JSType, E> {
+                    ) -> ::core::result::Result<JSType, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -11056,10 +11092,10 @@ pub mod field_options {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<JSType, E> {
+                    ) -> ::core::result::Result<JSType, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -11073,9 +11109,9 @@ pub mod field_options {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<JSType, E> {
+                    ) -> ::core::result::Result<JSType, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -11083,15 +11119,15 @@ pub mod field_options {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for JSType {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -11156,17 +11192,17 @@ pub mod field_options {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for OptionRetention {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for OptionRetention {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = OptionRetention;
@@ -11181,19 +11217,19 @@ pub mod field_options {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<OptionRetention, E> {
+                    ) -> ::core::result::Result<OptionRetention, __E> {
                         <OptionRetention as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<OptionRetention, E> {
+                    ) -> ::core::result::Result<OptionRetention, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -11207,10 +11243,10 @@ pub mod field_options {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<OptionRetention, E> {
+                    ) -> ::core::result::Result<OptionRetention, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -11224,9 +11260,9 @@ pub mod field_options {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<OptionRetention, E> {
+                    ) -> ::core::result::Result<OptionRetention, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -11234,15 +11270,15 @@ pub mod field_options {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for OptionRetention {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -11343,17 +11379,17 @@ pub mod field_options {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for OptionTargetType {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for OptionTargetType {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = OptionTargetType;
@@ -11368,19 +11404,19 @@ pub mod field_options {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<OptionTargetType, E> {
+                    ) -> ::core::result::Result<OptionTargetType, __E> {
                         <OptionTargetType as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<OptionTargetType, E> {
+                    ) -> ::core::result::Result<OptionTargetType, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -11394,10 +11430,10 @@ pub mod field_options {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<OptionTargetType, E> {
+                    ) -> ::core::result::Result<OptionTargetType, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -11411,9 +11447,9 @@ pub mod field_options {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<OptionTargetType, E> {
+                    ) -> ::core::result::Result<OptionTargetType, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -11421,15 +11457,15 @@ pub mod field_options {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for OptionTargetType {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -11566,7 +11602,10 @@ pub mod field_options {
         #[must_use = "with_* setters return `self` by value; assign or chain the result"]
         #[inline]
         ///Sets [`Self::edition`] to `Some(value)`, consuming and returning `self`.
-        pub fn with_edition(mut self, value: impl Into<super::Edition>) -> Self {
+        pub fn with_edition(
+            mut self,
+            value: impl ::core::convert::Into<super::Edition>,
+        ) -> Self {
             self.edition = Some(value.into());
             self
         }
@@ -11575,7 +11614,7 @@ pub mod field_options {
         ///Sets [`Self::value`] to `Some(value)`, consuming and returning `self`.
         pub fn with_value(
             mut self,
-            value: impl Into<::buffa::alloc::string::String>,
+            value: impl ::core::convert::Into<::buffa::alloc::string::String>,
         ) -> Self {
             self.value = Some(value.into());
             self
@@ -11734,15 +11773,15 @@ pub mod field_options {
     }
     #[cfg(feature = "json")]
     impl ::buffa::json_helpers::ProtoElemJson for EditionDefault {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -11851,7 +11890,7 @@ pub mod field_options {
         ///Sets [`Self::edition_introduced`] to `Some(value)`, consuming and returning `self`.
         pub fn with_edition_introduced(
             mut self,
-            value: impl Into<super::Edition>,
+            value: impl ::core::convert::Into<super::Edition>,
         ) -> Self {
             self.edition_introduced = Some(value.into());
             self
@@ -11861,7 +11900,7 @@ pub mod field_options {
         ///Sets [`Self::edition_deprecated`] to `Some(value)`, consuming and returning `self`.
         pub fn with_edition_deprecated(
             mut self,
-            value: impl Into<super::Edition>,
+            value: impl ::core::convert::Into<super::Edition>,
         ) -> Self {
             self.edition_deprecated = Some(value.into());
             self
@@ -11871,7 +11910,7 @@ pub mod field_options {
         ///Sets [`Self::deprecation_warning`] to `Some(value)`, consuming and returning `self`.
         pub fn with_deprecation_warning(
             mut self,
-            value: impl Into<::buffa::alloc::string::String>,
+            value: impl ::core::convert::Into<::buffa::alloc::string::String>,
         ) -> Self {
             self.deprecation_warning = Some(value.into());
             self
@@ -11879,7 +11918,10 @@ pub mod field_options {
         #[must_use = "with_* setters return `self` by value; assign or chain the result"]
         #[inline]
         ///Sets [`Self::edition_removed`] to `Some(value)`, consuming and returning `self`.
-        pub fn with_edition_removed(mut self, value: impl Into<super::Edition>) -> Self {
+        pub fn with_edition_removed(
+            mut self,
+            value: impl ::core::convert::Into<super::Edition>,
+        ) -> Self {
             self.edition_removed = Some(value.into());
             self
         }
@@ -12107,15 +12149,15 @@ pub mod field_options {
     }
     #[cfg(feature = "json")]
     impl ::buffa::json_helpers::ProtoElemJson for FeatureSupport {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -12375,9 +12417,9 @@ impl ::buffa::text::TextFormat for OneofOptions {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for OneofOptions {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         struct _V;
         impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = OneofOptions;
@@ -12388,10 +12430,10 @@ impl<'de> ::serde::Deserialize<'de> for OneofOptions {
                 f.write_str("struct OneofOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: ::serde::de::MapAccess<'de>>(
+            fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
-                mut map: A,
-            ) -> ::core::result::Result<OneofOptions, A::Error> {
+                mut map: __A,
+            ) -> ::core::result::Result<OneofOptions, __A::Error> {
                 let mut __f_features: ::core::option::Option<
                     ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
                 > = None;
@@ -12417,12 +12459,12 @@ impl<'de> ::serde::Deserialize<'de> for OneofOptions {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<UninterpretedOption>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -12449,7 +12491,7 @@ impl<'de> ::serde::Deserialize<'de> for OneofOptions {
                                     ::core::result::Result::Err(__e),
                                 ) => {
                                     return ::core::result::Result::Err(
-                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                        <__A::Error as ::serde::de::Error>::custom(__e),
                                     );
                                 }
                                 ::core::option::Option::None => {}
@@ -12478,15 +12520,15 @@ impl<'de> ::serde::Deserialize<'de> for OneofOptions {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for OneofOptions {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -12513,10 +12555,10 @@ impl ::core::convert::From<::buffa::UnknownFields> for __OneofOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for __OneofOptionsExtJson {
-    fn serialize<S: ::serde::Serializer>(
+    fn serialize<__S: ::serde::Serializer>(
         &self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::buffa::extension_registry::serialize_extensions(
             "google.protobuf.OneofOptions",
             &self.0,
@@ -12526,9 +12568,9 @@ impl ::serde::Serialize for __OneofOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for __OneofOptionsExtJson {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         ::buffa::extension_registry::deserialize_extensions(
                 "google.protobuf.OneofOptions",
                 d,
@@ -12591,6 +12633,7 @@ pub struct EnumOptions {
     /// had time to migrate.
     ///
     /// Field 6: `deprecated_legacy_json_field_conflicts`
+    #[deprecated]
     #[cfg_attr(
         feature = "json",
         serde(
@@ -12631,6 +12674,7 @@ pub struct EnumOptions {
     #[doc(hidden)]
     pub __buffa_unknown_fields: __EnumOptionsExtJson,
 }
+#[allow(deprecated)]
 impl ::core::fmt::Debug for EnumOptions {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("EnumOptions")
@@ -12652,6 +12696,7 @@ impl EnumOptions {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumOptions";
 }
+#[allow(deprecated)]
 impl EnumOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
@@ -12670,6 +12715,7 @@ impl EnumOptions {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::deprecated_legacy_json_field_conflicts`] to `Some(value)`, consuming and returning `self`.
+    #[deprecated]
     pub fn with_deprecated_legacy_json_field_conflicts(mut self, value: bool) -> Self {
         self.deprecated_legacy_json_field_conflicts = Some(value);
         self
@@ -12682,6 +12728,7 @@ impl ::buffa::MessageName for EnumOptions {
     const FULL_NAME: &'static str = "google.protobuf.EnumOptions";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumOptions";
 }
+#[allow(deprecated)]
 impl ::buffa::Message for EnumOptions {
     /// Returns the total encoded size in bytes.
     ///
@@ -12844,6 +12891,7 @@ impl ::buffa::ExtensionSet for EnumOptions {
     }
 }
 #[cfg(feature = "text")]
+#[allow(deprecated)]
 impl ::buffa::text::TextFormat for EnumOptions {
     fn encode_text(
         &self,
@@ -12923,10 +12971,11 @@ impl ::buffa::text::TextFormat for EnumOptions {
     }
 }
 #[cfg(feature = "json")]
+#[allow(deprecated)]
 impl<'de> ::serde::Deserialize<'de> for EnumOptions {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         struct _V;
         impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = EnumOptions;
@@ -12937,10 +12986,10 @@ impl<'de> ::serde::Deserialize<'de> for EnumOptions {
                 f.write_str("struct EnumOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: ::serde::de::MapAccess<'de>>(
+            fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
-                mut map: A,
-            ) -> ::core::result::Result<EnumOptions, A::Error> {
+                mut map: __A,
+            ) -> ::core::result::Result<EnumOptions, __A::Error> {
                 let mut __f_allow_alias: ::core::option::Option<
                     ::core::option::Option<bool>,
                 > = None;
@@ -12991,12 +13040,12 @@ impl<'de> ::serde::Deserialize<'de> for EnumOptions {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<UninterpretedOption>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -13023,7 +13072,7 @@ impl<'de> ::serde::Deserialize<'de> for EnumOptions {
                                     ::core::result::Result::Err(__e),
                                 ) => {
                                     return ::core::result::Result::Err(
-                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                        <__A::Error as ::serde::de::Error>::custom(__e),
                                     );
                                 }
                                 ::core::option::Option::None => {}
@@ -13061,15 +13110,15 @@ impl<'de> ::serde::Deserialize<'de> for EnumOptions {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for EnumOptions {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -13096,10 +13145,10 @@ impl ::core::convert::From<::buffa::UnknownFields> for __EnumOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for __EnumOptionsExtJson {
-    fn serialize<S: ::serde::Serializer>(
+    fn serialize<__S: ::serde::Serializer>(
         &self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::buffa::extension_registry::serialize_extensions(
             "google.protobuf.EnumOptions",
             &self.0,
@@ -13109,9 +13158,9 @@ impl ::serde::Serialize for __EnumOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for __EnumOptionsExtJson {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         ::buffa::extension_registry::deserialize_extensions(
                 "google.protobuf.EnumOptions",
                 d,
@@ -13505,9 +13554,9 @@ impl ::buffa::text::TextFormat for EnumValueOptions {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         struct _V;
         impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = EnumValueOptions;
@@ -13518,10 +13567,10 @@ impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
                 f.write_str("struct EnumValueOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: ::serde::de::MapAccess<'de>>(
+            fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
-                mut map: A,
-            ) -> ::core::result::Result<EnumValueOptions, A::Error> {
+                mut map: __A,
+            ) -> ::core::result::Result<EnumValueOptions, __A::Error> {
                 let mut __f_deprecated: ::core::option::Option<
                     ::core::option::Option<bool>,
                 > = None;
@@ -13580,12 +13629,12 @@ impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<UninterpretedOption>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -13612,7 +13661,7 @@ impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
                                     ::core::result::Result::Err(__e),
                                 ) => {
                                     return ::core::result::Result::Err(
-                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                        <__A::Error as ::serde::de::Error>::custom(__e),
                                     );
                                 }
                                 ::core::option::Option::None => {}
@@ -13650,15 +13699,15 @@ impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for EnumValueOptions {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -13685,10 +13734,10 @@ impl ::core::convert::From<::buffa::UnknownFields> for __EnumValueOptionsExtJson
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for __EnumValueOptionsExtJson {
-    fn serialize<S: ::serde::Serializer>(
+    fn serialize<__S: ::serde::Serializer>(
         &self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::buffa::extension_registry::serialize_extensions(
             "google.protobuf.EnumValueOptions",
             &self.0,
@@ -13698,9 +13747,9 @@ impl ::serde::Serialize for __EnumValueOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for __EnumValueOptionsExtJson {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         ::buffa::extension_registry::deserialize_extensions(
                 "google.protobuf.EnumValueOptions",
                 d,
@@ -14003,9 +14052,9 @@ impl ::buffa::text::TextFormat for ServiceOptions {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         struct _V;
         impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = ServiceOptions;
@@ -14016,10 +14065,10 @@ impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
                 f.write_str("struct ServiceOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: ::serde::de::MapAccess<'de>>(
+            fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
-                mut map: A,
-            ) -> ::core::result::Result<ServiceOptions, A::Error> {
+                mut map: __A,
+            ) -> ::core::result::Result<ServiceOptions, __A::Error> {
                 let mut __f_features: ::core::option::Option<
                     ::buffa::MessageField<FeatureSet, ::buffa::Inline<FeatureSet>>,
                 > = None;
@@ -14053,12 +14102,12 @@ impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<UninterpretedOption>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -14085,7 +14134,7 @@ impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
                                     ::core::result::Result::Err(__e),
                                 ) => {
                                     return ::core::result::Result::Err(
-                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                        <__A::Error as ::serde::de::Error>::custom(__e),
                                     );
                                 }
                                 ::core::option::Option::None => {}
@@ -14117,15 +14166,15 @@ impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for ServiceOptions {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -14152,10 +14201,10 @@ impl ::core::convert::From<::buffa::UnknownFields> for __ServiceOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for __ServiceOptionsExtJson {
-    fn serialize<S: ::serde::Serializer>(
+    fn serialize<__S: ::serde::Serializer>(
         &self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::buffa::extension_registry::serialize_extensions(
             "google.protobuf.ServiceOptions",
             &self.0,
@@ -14165,9 +14214,9 @@ impl ::serde::Serialize for __ServiceOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for __ServiceOptionsExtJson {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         ::buffa::extension_registry::deserialize_extensions(
                 "google.protobuf.ServiceOptions",
                 d,
@@ -14286,7 +14335,7 @@ impl MethodOptions {
     ///Sets [`Self::idempotency_level`] to `Some(value)`, consuming and returning `self`.
     pub fn with_idempotency_level(
         mut self,
-        value: impl Into<method_options::IdempotencyLevel>,
+        value: impl ::core::convert::Into<method_options::IdempotencyLevel>,
     ) -> Self {
         self.idempotency_level = Some(value.into());
         self
@@ -14530,9 +14579,9 @@ impl ::buffa::text::TextFormat for MethodOptions {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for MethodOptions {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         struct _V;
         impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = MethodOptions;
@@ -14543,10 +14592,10 @@ impl<'de> ::serde::Deserialize<'de> for MethodOptions {
                 f.write_str("struct MethodOptions")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: ::serde::de::MapAccess<'de>>(
+            fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
-                mut map: A,
-            ) -> ::core::result::Result<MethodOptions, A::Error> {
+                mut map: __A,
+            ) -> ::core::result::Result<MethodOptions, __A::Error> {
                 let mut __f_deprecated: ::core::option::Option<
                     ::core::option::Option<bool>,
                 > = None;
@@ -14574,12 +14623,12 @@ impl<'de> ::serde::Deserialize<'de> for MethodOptions {
                                     type Value = ::core::option::Option<
                                         method_options::IdempotencyLevel,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<method_options::IdempotencyLevel>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -14603,12 +14652,12 @@ impl<'de> ::serde::Deserialize<'de> for MethodOptions {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::buffa::alloc::vec::Vec<UninterpretedOption>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<UninterpretedOption>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -14635,7 +14684,7 @@ impl<'de> ::serde::Deserialize<'de> for MethodOptions {
                                     ::core::result::Result::Err(__e),
                                 ) => {
                                     return ::core::result::Result::Err(
-                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                        <__A::Error as ::serde::de::Error>::custom(__e),
                                     );
                                 }
                                 ::core::option::Option::None => {}
@@ -14670,15 +14719,15 @@ impl<'de> ::serde::Deserialize<'de> for MethodOptions {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for MethodOptions {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -14705,10 +14754,10 @@ impl ::core::convert::From<::buffa::UnknownFields> for __MethodOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for __MethodOptionsExtJson {
-    fn serialize<S: ::serde::Serializer>(
+    fn serialize<__S: ::serde::Serializer>(
         &self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::buffa::extension_registry::serialize_extensions(
             "google.protobuf.MethodOptions",
             &self.0,
@@ -14718,9 +14767,9 @@ impl ::serde::Serialize for __MethodOptionsExtJson {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for __MethodOptionsExtJson {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         ::buffa::extension_registry::deserialize_extensions(
                 "google.protobuf.MethodOptions",
                 d,
@@ -14779,17 +14828,17 @@ pub mod method_options {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for IdempotencyLevel {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for IdempotencyLevel {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = IdempotencyLevel;
@@ -14804,19 +14853,19 @@ pub mod method_options {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<IdempotencyLevel, E> {
+                    ) -> ::core::result::Result<IdempotencyLevel, __E> {
                         <IdempotencyLevel as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<IdempotencyLevel, E> {
+                    ) -> ::core::result::Result<IdempotencyLevel, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -14830,10 +14879,10 @@ pub mod method_options {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<IdempotencyLevel, E> {
+                    ) -> ::core::result::Result<IdempotencyLevel, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -14847,9 +14896,9 @@ pub mod method_options {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<IdempotencyLevel, E> {
+                    ) -> ::core::result::Result<IdempotencyLevel, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -14857,15 +14906,15 @@ pub mod method_options {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for IdempotencyLevel {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -15022,7 +15071,7 @@ impl UninterpretedOption {
     ///Sets [`Self::identifier_value`] to `Some(value)`, consuming and returning `self`.
     pub fn with_identifier_value(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.identifier_value = Some(value.into());
         self
@@ -15053,7 +15102,7 @@ impl UninterpretedOption {
     ///Sets [`Self::string_value`] to `Some(value)`, consuming and returning `self`.
     pub fn with_string_value(
         mut self,
-        value: impl Into<::buffa::alloc::vec::Vec<u8>>,
+        value: impl ::core::convert::Into<::buffa::alloc::vec::Vec<u8>>,
     ) -> Self {
         self.string_value = Some(value.into());
         self
@@ -15063,7 +15112,7 @@ impl UninterpretedOption {
     ///Sets [`Self::aggregate_value`] to `Some(value)`, consuming and returning `self`.
     pub fn with_aggregate_value(
         mut self,
-        value: impl Into<::buffa::alloc::string::String>,
+        value: impl ::core::convert::Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.aggregate_value = Some(value.into());
         self
@@ -15355,15 +15404,15 @@ impl ::buffa::text::TextFormat for UninterpretedOption {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for UninterpretedOption {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -15550,15 +15599,15 @@ pub mod uninterpreted_option {
     }
     #[cfg(feature = "json")]
     impl ::buffa::json_helpers::ProtoElemJson for NamePart {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -15721,7 +15770,7 @@ impl FeatureSet {
     ///Sets [`Self::field_presence`] to `Some(value)`, consuming and returning `self`.
     pub fn with_field_presence(
         mut self,
-        value: impl Into<feature_set::FieldPresence>,
+        value: impl ::core::convert::Into<feature_set::FieldPresence>,
     ) -> Self {
         self.field_presence = Some(value.into());
         self
@@ -15729,7 +15778,10 @@ impl FeatureSet {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::enum_type`] to `Some(value)`, consuming and returning `self`.
-    pub fn with_enum_type(mut self, value: impl Into<feature_set::EnumType>) -> Self {
+    pub fn with_enum_type(
+        mut self,
+        value: impl ::core::convert::Into<feature_set::EnumType>,
+    ) -> Self {
         self.enum_type = Some(value.into());
         self
     }
@@ -15738,7 +15790,7 @@ impl FeatureSet {
     ///Sets [`Self::repeated_field_encoding`] to `Some(value)`, consuming and returning `self`.
     pub fn with_repeated_field_encoding(
         mut self,
-        value: impl Into<feature_set::RepeatedFieldEncoding>,
+        value: impl ::core::convert::Into<feature_set::RepeatedFieldEncoding>,
     ) -> Self {
         self.repeated_field_encoding = Some(value.into());
         self
@@ -15748,7 +15800,7 @@ impl FeatureSet {
     ///Sets [`Self::utf8_validation`] to `Some(value)`, consuming and returning `self`.
     pub fn with_utf8_validation(
         mut self,
-        value: impl Into<feature_set::Utf8Validation>,
+        value: impl ::core::convert::Into<feature_set::Utf8Validation>,
     ) -> Self {
         self.utf8_validation = Some(value.into());
         self
@@ -15758,7 +15810,7 @@ impl FeatureSet {
     ///Sets [`Self::message_encoding`] to `Some(value)`, consuming and returning `self`.
     pub fn with_message_encoding(
         mut self,
-        value: impl Into<feature_set::MessageEncoding>,
+        value: impl ::core::convert::Into<feature_set::MessageEncoding>,
     ) -> Self {
         self.message_encoding = Some(value.into());
         self
@@ -15768,7 +15820,7 @@ impl FeatureSet {
     ///Sets [`Self::json_format`] to `Some(value)`, consuming and returning `self`.
     pub fn with_json_format(
         mut self,
-        value: impl Into<feature_set::JsonFormat>,
+        value: impl ::core::convert::Into<feature_set::JsonFormat>,
     ) -> Self {
         self.json_format = Some(value.into());
         self
@@ -15778,7 +15830,7 @@ impl FeatureSet {
     ///Sets [`Self::enforce_naming_style`] to `Some(value)`, consuming and returning `self`.
     pub fn with_enforce_naming_style(
         mut self,
-        value: impl Into<feature_set::EnforceNamingStyle>,
+        value: impl ::core::convert::Into<feature_set::EnforceNamingStyle>,
     ) -> Self {
         self.enforce_naming_style = Some(value.into());
         self
@@ -15788,7 +15840,9 @@ impl FeatureSet {
     ///Sets [`Self::default_symbol_visibility`] to `Some(value)`, consuming and returning `self`.
     pub fn with_default_symbol_visibility(
         mut self,
-        value: impl Into<feature_set::visibility_feature::DefaultSymbolVisibility>,
+        value: impl ::core::convert::Into<
+            feature_set::visibility_feature::DefaultSymbolVisibility,
+        >,
     ) -> Self {
         self.default_symbol_visibility = Some(value.into());
         self
@@ -16183,9 +16237,9 @@ impl ::buffa::text::TextFormat for FeatureSet {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for FeatureSet {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         struct _V;
         impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = FeatureSet;
@@ -16196,10 +16250,10 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                 f.write_str("struct FeatureSet")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: ::serde::de::MapAccess<'de>>(
+            fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
-                mut map: A,
-            ) -> ::core::result::Result<FeatureSet, A::Error> {
+                mut map: __A,
+            ) -> ::core::result::Result<FeatureSet, __A::Error> {
                 let mut __f_field_presence: ::core::option::Option<
                     ::core::option::Option<feature_set::FieldPresence>,
                 > = None;
@@ -16236,12 +16290,12 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                                     type Value = ::core::option::Option<
                                         feature_set::FieldPresence,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<feature_set::FieldPresence>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -16254,12 +16308,12 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
                                     type Value = ::core::option::Option<feature_set::EnumType>;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<feature_set::EnumType>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -16274,12 +16328,12 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                                     type Value = ::core::option::Option<
                                         feature_set::RepeatedFieldEncoding,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<feature_set::RepeatedFieldEncoding>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -16294,12 +16348,12 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                                     type Value = ::core::option::Option<
                                         feature_set::Utf8Validation,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<feature_set::Utf8Validation>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -16314,12 +16368,12 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                                     type Value = ::core::option::Option<
                                         feature_set::MessageEncoding,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<feature_set::MessageEncoding>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -16334,12 +16388,12 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                                     type Value = ::core::option::Option<
                                         feature_set::JsonFormat,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<feature_set::JsonFormat>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -16354,12 +16408,12 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                                     type Value = ::core::option::Option<
                                         feature_set::EnforceNamingStyle,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<feature_set::EnforceNamingStyle>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -16374,14 +16428,14 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                                     type Value = ::core::option::Option<
                                         feature_set::visibility_feature::DefaultSymbolVisibility,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::core::option::Option<
                                             feature_set::visibility_feature::DefaultSymbolVisibility,
                                         >,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::opt_closed_enum::deserialize(d)
                                     }
@@ -16408,7 +16462,7 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                                     ::core::result::Result::Err(__e),
                                 ) => {
                                     return ::core::result::Result::Err(
-                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                        <__A::Error as ::serde::de::Error>::custom(__e),
                                     );
                                 }
                                 ::core::option::Option::None => {}
@@ -16455,15 +16509,15 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for FeatureSet {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -16490,10 +16544,10 @@ impl ::core::convert::From<::buffa::UnknownFields> for __FeatureSetExtJson {
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for __FeatureSetExtJson {
-    fn serialize<S: ::serde::Serializer>(
+    fn serialize<__S: ::serde::Serializer>(
         &self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::buffa::extension_registry::serialize_extensions(
             "google.protobuf.FeatureSet",
             &self.0,
@@ -16503,9 +16557,9 @@ impl ::serde::Serialize for __FeatureSetExtJson {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for __FeatureSetExtJson {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         ::buffa::extension_registry::deserialize_extensions(
                 "google.protobuf.FeatureSet",
                 d,
@@ -16563,17 +16617,17 @@ pub mod feature_set {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for FieldPresence {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for FieldPresence {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = FieldPresence;
@@ -16587,19 +16641,19 @@ pub mod feature_set {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<FieldPresence, E> {
+                    ) -> ::core::result::Result<FieldPresence, __E> {
                         <FieldPresence as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<FieldPresence, E> {
+                    ) -> ::core::result::Result<FieldPresence, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -16613,10 +16667,10 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<FieldPresence, E> {
+                    ) -> ::core::result::Result<FieldPresence, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -16630,9 +16684,9 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<FieldPresence, E> {
+                    ) -> ::core::result::Result<FieldPresence, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -16640,15 +16694,15 @@ pub mod feature_set {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for FieldPresence {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -16722,17 +16776,17 @@ pub mod feature_set {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for EnumType {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for EnumType {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = EnumType;
@@ -16746,19 +16800,19 @@ pub mod feature_set {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<EnumType, E> {
+                    ) -> ::core::result::Result<EnumType, __E> {
                         <EnumType as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<EnumType, E> {
+                    ) -> ::core::result::Result<EnumType, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -16772,10 +16826,10 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<EnumType, E> {
+                    ) -> ::core::result::Result<EnumType, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -16789,9 +16843,9 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<EnumType, E> {
+                    ) -> ::core::result::Result<EnumType, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -16799,15 +16853,15 @@ pub mod feature_set {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for EnumType {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -16873,17 +16927,17 @@ pub mod feature_set {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for RepeatedFieldEncoding {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for RepeatedFieldEncoding {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = RepeatedFieldEncoding;
@@ -16898,10 +16952,10 @@ pub mod feature_set {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<RepeatedFieldEncoding, E> {
+                    ) -> ::core::result::Result<RepeatedFieldEncoding, __E> {
                         <RepeatedFieldEncoding as ::buffa::Enumeration>::from_proto_name(
                                 v,
                             )
@@ -16909,10 +16963,10 @@ pub mod feature_set {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<RepeatedFieldEncoding, E> {
+                    ) -> ::core::result::Result<RepeatedFieldEncoding, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -16926,10 +16980,10 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<RepeatedFieldEncoding, E> {
+                    ) -> ::core::result::Result<RepeatedFieldEncoding, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -16943,9 +16997,9 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<RepeatedFieldEncoding, E> {
+                    ) -> ::core::result::Result<RepeatedFieldEncoding, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -16953,15 +17007,15 @@ pub mod feature_set {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for RepeatedFieldEncoding {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -17031,17 +17085,17 @@ pub mod feature_set {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for Utf8Validation {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for Utf8Validation {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = Utf8Validation;
@@ -17056,19 +17110,19 @@ pub mod feature_set {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<Utf8Validation, E> {
+                    ) -> ::core::result::Result<Utf8Validation, __E> {
                         <Utf8Validation as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<Utf8Validation, E> {
+                    ) -> ::core::result::Result<Utf8Validation, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -17082,10 +17136,10 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<Utf8Validation, E> {
+                    ) -> ::core::result::Result<Utf8Validation, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -17099,9 +17153,9 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<Utf8Validation, E> {
+                    ) -> ::core::result::Result<Utf8Validation, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -17109,15 +17163,15 @@ pub mod feature_set {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for Utf8Validation {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -17183,17 +17237,17 @@ pub mod feature_set {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for MessageEncoding {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for MessageEncoding {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = MessageEncoding;
@@ -17208,19 +17262,19 @@ pub mod feature_set {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<MessageEncoding, E> {
+                    ) -> ::core::result::Result<MessageEncoding, __E> {
                         <MessageEncoding as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<MessageEncoding, E> {
+                    ) -> ::core::result::Result<MessageEncoding, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -17234,10 +17288,10 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<MessageEncoding, E> {
+                    ) -> ::core::result::Result<MessageEncoding, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -17251,9 +17305,9 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<MessageEncoding, E> {
+                    ) -> ::core::result::Result<MessageEncoding, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -17261,15 +17315,15 @@ pub mod feature_set {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for MessageEncoding {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -17335,17 +17389,17 @@ pub mod feature_set {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for JsonFormat {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for JsonFormat {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = JsonFormat;
@@ -17359,19 +17413,19 @@ pub mod feature_set {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<JsonFormat, E> {
+                    ) -> ::core::result::Result<JsonFormat, __E> {
                         <JsonFormat as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<JsonFormat, E> {
+                    ) -> ::core::result::Result<JsonFormat, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -17385,10 +17439,10 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<JsonFormat, E> {
+                    ) -> ::core::result::Result<JsonFormat, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -17402,9 +17456,9 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<JsonFormat, E> {
+                    ) -> ::core::result::Result<JsonFormat, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -17412,15 +17466,15 @@ pub mod feature_set {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for JsonFormat {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -17488,17 +17542,17 @@ pub mod feature_set {
     #[cfg(feature = "json")]
     const _: () = {
         impl ::serde::Serialize for EnforceNamingStyle {
-            fn serialize<S: ::serde::Serializer>(
+            fn serialize<__S: ::serde::Serializer>(
                 &self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 s.serialize_str(::buffa::Enumeration::proto_name(self))
             }
         }
         impl<'de> ::serde::Deserialize<'de> for EnforceNamingStyle {
-            fn deserialize<D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 struct _V;
                 impl ::serde::de::Visitor<'_> for _V {
                     type Value = EnforceNamingStyle;
@@ -17513,19 +17567,19 @@ pub mod feature_set {
                             ),
                         )
                     }
-                    fn visit_str<E: ::serde::de::Error>(
+                    fn visit_str<__E: ::serde::de::Error>(
                         self,
                         v: &str,
-                    ) -> ::core::result::Result<EnforceNamingStyle, E> {
+                    ) -> ::core::result::Result<EnforceNamingStyle, __E> {
                         <EnforceNamingStyle as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
                                 ::serde::de::Error::unknown_variant(v, &[])
                             })
                     }
-                    fn visit_i64<E: ::serde::de::Error>(
+                    fn visit_i64<__E: ::serde::de::Error>(
                         self,
                         v: i64,
-                    ) -> ::core::result::Result<EnforceNamingStyle, E> {
+                    ) -> ::core::result::Result<EnforceNamingStyle, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -17539,10 +17593,10 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_u64<E: ::serde::de::Error>(
+                    fn visit_u64<__E: ::serde::de::Error>(
                         self,
                         v: u64,
-                    ) -> ::core::result::Result<EnforceNamingStyle, E> {
+                    ) -> ::core::result::Result<EnforceNamingStyle, __E> {
                         let v32 = i32::try_from(v)
                             .map_err(|_| {
                                 ::serde::de::Error::custom(
@@ -17556,9 +17610,9 @@ pub mod feature_set {
                                 )
                             })
                     }
-                    fn visit_unit<E: ::serde::de::Error>(
+                    fn visit_unit<__E: ::serde::de::Error>(
                         self,
-                    ) -> ::core::result::Result<EnforceNamingStyle, E> {
+                    ) -> ::core::result::Result<EnforceNamingStyle, __E> {
                         ::core::result::Result::Ok(::core::default::Default::default())
                     }
                 }
@@ -17566,15 +17620,15 @@ pub mod feature_set {
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for EnforceNamingStyle {
-            fn serialize_proto_json<S: ::serde::Serializer>(
+            fn serialize_proto_json<__S: ::serde::Serializer>(
                 v: &Self,
-                s: S,
-            ) -> ::core::result::Result<S::Ok, S::Error> {
+                s: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
                 ::serde::Serialize::serialize(v, s)
             }
-            fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                d: D,
-            ) -> ::core::result::Result<Self, D::Error> {
+            fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                d: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
                 <Self as ::serde::Deserialize>::deserialize(d)
             }
         }
@@ -17721,15 +17775,15 @@ pub mod feature_set {
     }
     #[cfg(feature = "json")]
     impl ::buffa::json_helpers::ProtoElemJson for VisibilityFeature {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -17793,17 +17847,17 @@ pub mod feature_set {
         #[cfg(feature = "json")]
         const _: () = {
             impl ::serde::Serialize for DefaultSymbolVisibility {
-                fn serialize<S: ::serde::Serializer>(
+                fn serialize<__S: ::serde::Serializer>(
                     &self,
-                    s: S,
-                ) -> ::core::result::Result<S::Ok, S::Error> {
+                    s: __S,
+                ) -> ::core::result::Result<__S::Ok, __S::Error> {
                     s.serialize_str(::buffa::Enumeration::proto_name(self))
                 }
             }
             impl<'de> ::serde::Deserialize<'de> for DefaultSymbolVisibility {
-                fn deserialize<D: ::serde::Deserializer<'de>>(
-                    d: D,
-                ) -> ::core::result::Result<Self, D::Error> {
+                fn deserialize<__D: ::serde::Deserializer<'de>>(
+                    d: __D,
+                ) -> ::core::result::Result<Self, __D::Error> {
                     struct _V;
                     impl ::serde::de::Visitor<'_> for _V {
                         type Value = DefaultSymbolVisibility;
@@ -17818,10 +17872,10 @@ pub mod feature_set {
                                 ),
                             )
                         }
-                        fn visit_str<E: ::serde::de::Error>(
+                        fn visit_str<__E: ::serde::de::Error>(
                             self,
                             v: &str,
-                        ) -> ::core::result::Result<DefaultSymbolVisibility, E> {
+                        ) -> ::core::result::Result<DefaultSymbolVisibility, __E> {
                             <DefaultSymbolVisibility as ::buffa::Enumeration>::from_proto_name(
                                     v,
                                 )
@@ -17829,10 +17883,10 @@ pub mod feature_set {
                                     ::serde::de::Error::unknown_variant(v, &[])
                                 })
                         }
-                        fn visit_i64<E: ::serde::de::Error>(
+                        fn visit_i64<__E: ::serde::de::Error>(
                             self,
                             v: i64,
-                        ) -> ::core::result::Result<DefaultSymbolVisibility, E> {
+                        ) -> ::core::result::Result<DefaultSymbolVisibility, __E> {
                             let v32 = i32::try_from(v)
                                 .map_err(|_| {
                                     ::serde::de::Error::custom(
@@ -17848,10 +17902,10 @@ pub mod feature_set {
                                     )
                                 })
                         }
-                        fn visit_u64<E: ::serde::de::Error>(
+                        fn visit_u64<__E: ::serde::de::Error>(
                             self,
                             v: u64,
-                        ) -> ::core::result::Result<DefaultSymbolVisibility, E> {
+                        ) -> ::core::result::Result<DefaultSymbolVisibility, __E> {
                             let v32 = i32::try_from(v)
                                 .map_err(|_| {
                                     ::serde::de::Error::custom(
@@ -17867,9 +17921,9 @@ pub mod feature_set {
                                     )
                                 })
                         }
-                        fn visit_unit<E: ::serde::de::Error>(
+                        fn visit_unit<__E: ::serde::de::Error>(
                             self,
-                        ) -> ::core::result::Result<DefaultSymbolVisibility, E> {
+                        ) -> ::core::result::Result<DefaultSymbolVisibility, __E> {
                             ::core::result::Result::Ok(
                                 ::core::default::Default::default(),
                             )
@@ -17879,15 +17933,15 @@ pub mod feature_set {
                 }
             }
             impl ::buffa::json_helpers::ProtoElemJson for DefaultSymbolVisibility {
-                fn serialize_proto_json<S: ::serde::Serializer>(
+                fn serialize_proto_json<__S: ::serde::Serializer>(
                     v: &Self,
-                    s: S,
-                ) -> ::core::result::Result<S::Ok, S::Error> {
+                    s: __S,
+                ) -> ::core::result::Result<__S::Ok, __S::Error> {
                     ::serde::Serialize::serialize(v, s)
                 }
-                fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                    d: D,
-                ) -> ::core::result::Result<Self, D::Error> {
+                fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                    d: __D,
+                ) -> ::core::result::Result<Self, __D::Error> {
                     <Self as ::serde::Deserialize>::deserialize(d)
                 }
             }
@@ -18028,14 +18082,20 @@ impl FeatureSetDefaults {
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::minimum_edition`] to `Some(value)`, consuming and returning `self`.
-    pub fn with_minimum_edition(mut self, value: impl Into<Edition>) -> Self {
+    pub fn with_minimum_edition(
+        mut self,
+        value: impl ::core::convert::Into<Edition>,
+    ) -> Self {
         self.minimum_edition = Some(value.into());
         self
     }
     #[must_use = "with_* setters return `self` by value; assign or chain the result"]
     #[inline]
     ///Sets [`Self::maximum_edition`] to `Some(value)`, consuming and returning `self`.
-    pub fn with_maximum_edition(mut self, value: impl Into<Edition>) -> Self {
+    pub fn with_maximum_edition(
+        mut self,
+        value: impl ::core::convert::Into<Edition>,
+    ) -> Self {
         self.maximum_edition = Some(value.into());
         self
     }
@@ -18243,15 +18303,15 @@ impl ::buffa::text::TextFormat for FeatureSetDefaults {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for FeatureSetDefaults {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -18346,7 +18406,10 @@ pub mod feature_set_defaults {
         #[must_use = "with_* setters return `self` by value; assign or chain the result"]
         #[inline]
         ///Sets [`Self::edition`] to `Some(value)`, consuming and returning `self`.
-        pub fn with_edition(mut self, value: impl Into<super::Edition>) -> Self {
+        pub fn with_edition(
+            mut self,
+            value: impl ::core::convert::Into<super::Edition>,
+        ) -> Self {
             self.edition = Some(value.into());
             self
         }
@@ -18558,15 +18621,15 @@ pub mod feature_set_defaults {
     }
     #[cfg(feature = "json")]
     impl ::buffa::json_helpers::ProtoElemJson for FeatureSetEditionDefault {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -18818,9 +18881,9 @@ impl ::buffa::text::TextFormat for SourceCodeInfo {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for SourceCodeInfo {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         struct _V;
         impl<'de> ::serde::de::Visitor<'de> for _V {
             type Value = SourceCodeInfo;
@@ -18831,10 +18894,10 @@ impl<'de> ::serde::Deserialize<'de> for SourceCodeInfo {
                 f.write_str("struct SourceCodeInfo")
             }
             #[allow(clippy::field_reassign_with_default)]
-            fn visit_map<A: ::serde::de::MapAccess<'de>>(
+            fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
-                mut map: A,
-            ) -> ::core::result::Result<SourceCodeInfo, A::Error> {
+                mut map: __A,
+            ) -> ::core::result::Result<SourceCodeInfo, __A::Error> {
                 let mut __f_location: ::core::option::Option<
                     ::buffa::alloc::vec::Vec<source_code_info::Location>,
                 > = None;
@@ -18848,12 +18911,12 @@ impl<'de> ::serde::Deserialize<'de> for SourceCodeInfo {
                                     type Value = ::buffa::alloc::vec::Vec<
                                         source_code_info::Location,
                                     >;
-                                    fn deserialize<D: ::serde::Deserializer<'de>>(
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
                                         self,
-                                        d: D,
+                                        d: __D,
                                     ) -> ::core::result::Result<
                                         ::buffa::alloc::vec::Vec<source_code_info::Location>,
-                                        D::Error,
+                                        __D::Error,
                                     > {
                                         ::buffa::json_helpers::null_as_default(d)
                                     }
@@ -18880,7 +18943,7 @@ impl<'de> ::serde::Deserialize<'de> for SourceCodeInfo {
                                     ::core::result::Result::Err(__e),
                                 ) => {
                                     return ::core::result::Result::Err(
-                                        <A::Error as ::serde::de::Error>::custom(__e),
+                                        <__A::Error as ::serde::de::Error>::custom(__e),
                                     );
                                 }
                                 ::core::option::Option::None => {}
@@ -18906,15 +18969,15 @@ impl<'de> ::serde::Deserialize<'de> for SourceCodeInfo {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for SourceCodeInfo {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -18941,10 +19004,10 @@ impl ::core::convert::From<::buffa::UnknownFields> for __SourceCodeInfoExtJson {
 }
 #[cfg(feature = "json")]
 impl ::serde::Serialize for __SourceCodeInfoExtJson {
-    fn serialize<S: ::serde::Serializer>(
+    fn serialize<__S: ::serde::Serializer>(
         &self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::buffa::extension_registry::serialize_extensions(
             "google.protobuf.SourceCodeInfo",
             &self.0,
@@ -18954,9 +19017,9 @@ impl ::serde::Serialize for __SourceCodeInfoExtJson {
 }
 #[cfg(feature = "json")]
 impl<'de> ::serde::Deserialize<'de> for __SourceCodeInfoExtJson {
-    fn deserialize<D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize<__D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         ::buffa::extension_registry::deserialize_extensions(
                 "google.protobuf.SourceCodeInfo",
                 d,
@@ -19018,8 +19081,8 @@ pub mod source_code_info {
             feature = "json",
             serde(
                 rename = "path",
-                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-                deserialize_with = "::buffa::json_helpers::null_as_default"
+                with = "::buffa::json_helpers::proto_seq",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
             )
         )]
         pub path: ::buffa::alloc::vec::Vec<i32>,
@@ -19034,8 +19097,8 @@ pub mod source_code_info {
             feature = "json",
             serde(
                 rename = "span",
-                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-                deserialize_with = "::buffa::json_helpers::null_as_default"
+                with = "::buffa::json_helpers::proto_seq",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
             )
         )]
         pub span: ::buffa::alloc::vec::Vec<i32>,
@@ -19152,7 +19215,7 @@ pub mod source_code_info {
         ///Sets [`Self::leading_comments`] to `Some(value)`, consuming and returning `self`.
         pub fn with_leading_comments(
             mut self,
-            value: impl Into<::buffa::alloc::string::String>,
+            value: impl ::core::convert::Into<::buffa::alloc::string::String>,
         ) -> Self {
             self.leading_comments = Some(value.into());
             self
@@ -19162,7 +19225,7 @@ pub mod source_code_info {
         ///Sets [`Self::trailing_comments`] to `Some(value)`, consuming and returning `self`.
         pub fn with_trailing_comments(
             mut self,
-            value: impl Into<::buffa::alloc::string::String>,
+            value: impl ::core::convert::Into<::buffa::alloc::string::String>,
         ) -> Self {
             self.trailing_comments = Some(value.into());
             self
@@ -19478,15 +19541,15 @@ pub mod source_code_info {
     }
     #[cfg(feature = "json")]
     impl ::buffa::json_helpers::ProtoElemJson for Location {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -19684,15 +19747,15 @@ impl ::buffa::text::TextFormat for GeneratedCodeInfo {
 }
 #[cfg(feature = "json")]
 impl ::buffa::json_helpers::ProtoElemJson for GeneratedCodeInfo {
-    fn serialize_proto_json<S: ::serde::Serializer>(
+    fn serialize_proto_json<__S: ::serde::Serializer>(
         v: &Self,
-        s: S,
-    ) -> ::core::result::Result<S::Ok, S::Error> {
+        s: __S,
+    ) -> ::core::result::Result<__S::Ok, __S::Error> {
         ::serde::Serialize::serialize(v, s)
     }
-    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-        d: D,
-    ) -> ::core::result::Result<Self, D::Error> {
+    fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+        d: __D,
+    ) -> ::core::result::Result<Self, __D::Error> {
         <Self as ::serde::Deserialize>::deserialize(d)
     }
 }
@@ -19727,8 +19790,8 @@ pub mod generated_code_info {
             feature = "json",
             serde(
                 rename = "path",
-                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-                deserialize_with = "::buffa::json_helpers::null_as_default"
+                with = "::buffa::json_helpers::proto_seq",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
             )
         )]
         pub path: ::buffa::alloc::vec::Vec<i32>,
@@ -19811,7 +19874,7 @@ pub mod generated_code_info {
         ///Sets [`Self::source_file`] to `Some(value)`, consuming and returning `self`.
         pub fn with_source_file(
             mut self,
-            value: impl Into<::buffa::alloc::string::String>,
+            value: impl ::core::convert::Into<::buffa::alloc::string::String>,
         ) -> Self {
             self.source_file = Some(value.into());
             self
@@ -19835,7 +19898,9 @@ pub mod generated_code_info {
         ///Sets [`Self::semantic`] to `Some(value)`, consuming and returning `self`.
         pub fn with_semantic(
             mut self,
-            value: impl Into<super::generated_code_info::annotation::Semantic>,
+            value: impl ::core::convert::Into<
+                super::generated_code_info::annotation::Semantic,
+            >,
         ) -> Self {
             self.semantic = Some(value.into());
             self
@@ -20106,15 +20171,15 @@ pub mod generated_code_info {
     }
     #[cfg(feature = "json")]
     impl ::buffa::json_helpers::ProtoElemJson for Annotation {
-        fn serialize_proto_json<S: ::serde::Serializer>(
+        fn serialize_proto_json<__S: ::serde::Serializer>(
             v: &Self,
-            s: S,
-        ) -> ::core::result::Result<S::Ok, S::Error> {
+            s: __S,
+        ) -> ::core::result::Result<__S::Ok, __S::Error> {
             ::serde::Serialize::serialize(v, s)
         }
-        fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-            d: D,
-        ) -> ::core::result::Result<Self, D::Error> {
+        fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+            d: __D,
+        ) -> ::core::result::Result<Self, __D::Error> {
             <Self as ::serde::Deserialize>::deserialize(d)
         }
     }
@@ -20169,17 +20234,17 @@ pub mod generated_code_info {
         #[cfg(feature = "json")]
         const _: () = {
             impl ::serde::Serialize for Semantic {
-                fn serialize<S: ::serde::Serializer>(
+                fn serialize<__S: ::serde::Serializer>(
                     &self,
-                    s: S,
-                ) -> ::core::result::Result<S::Ok, S::Error> {
+                    s: __S,
+                ) -> ::core::result::Result<__S::Ok, __S::Error> {
                     s.serialize_str(::buffa::Enumeration::proto_name(self))
                 }
             }
             impl<'de> ::serde::Deserialize<'de> for Semantic {
-                fn deserialize<D: ::serde::Deserializer<'de>>(
-                    d: D,
-                ) -> ::core::result::Result<Self, D::Error> {
+                fn deserialize<__D: ::serde::Deserializer<'de>>(
+                    d: __D,
+                ) -> ::core::result::Result<Self, __D::Error> {
                     struct _V;
                     impl ::serde::de::Visitor<'_> for _V {
                         type Value = Semantic;
@@ -20193,19 +20258,19 @@ pub mod generated_code_info {
                                 ),
                             )
                         }
-                        fn visit_str<E: ::serde::de::Error>(
+                        fn visit_str<__E: ::serde::de::Error>(
                             self,
                             v: &str,
-                        ) -> ::core::result::Result<Semantic, E> {
+                        ) -> ::core::result::Result<Semantic, __E> {
                             <Semantic as ::buffa::Enumeration>::from_proto_name(v)
                                 .ok_or_else(|| {
                                     ::serde::de::Error::unknown_variant(v, &[])
                                 })
                         }
-                        fn visit_i64<E: ::serde::de::Error>(
+                        fn visit_i64<__E: ::serde::de::Error>(
                             self,
                             v: i64,
-                        ) -> ::core::result::Result<Semantic, E> {
+                        ) -> ::core::result::Result<Semantic, __E> {
                             let v32 = i32::try_from(v)
                                 .map_err(|_| {
                                     ::serde::de::Error::custom(
@@ -20219,10 +20284,10 @@ pub mod generated_code_info {
                                     )
                                 })
                         }
-                        fn visit_u64<E: ::serde::de::Error>(
+                        fn visit_u64<__E: ::serde::de::Error>(
                             self,
                             v: u64,
-                        ) -> ::core::result::Result<Semantic, E> {
+                        ) -> ::core::result::Result<Semantic, __E> {
                             let v32 = i32::try_from(v)
                                 .map_err(|_| {
                                     ::serde::de::Error::custom(
@@ -20236,9 +20301,9 @@ pub mod generated_code_info {
                                     )
                                 })
                         }
-                        fn visit_unit<E: ::serde::de::Error>(
+                        fn visit_unit<__E: ::serde::de::Error>(
                             self,
-                        ) -> ::core::result::Result<Semantic, E> {
+                        ) -> ::core::result::Result<Semantic, __E> {
                             ::core::result::Result::Ok(
                                 ::core::default::Default::default(),
                             )
@@ -20248,15 +20313,15 @@ pub mod generated_code_info {
                 }
             }
             impl ::buffa::json_helpers::ProtoElemJson for Semantic {
-                fn serialize_proto_json<S: ::serde::Serializer>(
+                fn serialize_proto_json<__S: ::serde::Serializer>(
                     v: &Self,
-                    s: S,
-                ) -> ::core::result::Result<S::Ok, S::Error> {
+                    s: __S,
+                ) -> ::core::result::Result<__S::Ok, __S::Error> {
                     ::serde::Serialize::serialize(v, s)
                 }
-                fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
-                    d: D,
-                ) -> ::core::result::Result<Self, D::Error> {
+                fn deserialize_proto_json<'de, __D: ::serde::Deserializer<'de>>(
+                    d: __D,
+                ) -> ::core::result::Result<Self, __D::Error> {
                     <Self as ::serde::Deserialize>::deserialize(d)
                 }
             }

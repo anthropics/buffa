@@ -21,6 +21,10 @@ buffa-types = { workspace = true, features = ["json", "chrono", "jiff", "reflect
 # The SmolStr preset crate, used by the string_type fixtures and as the template
 # for the crate-local newtypes in `reprs`.
 buffa-smolstr = { workspace = true, features = ["serde"] }
+# Derives the `ProtoString` impl, and with its `serde` key the JSON impls, of
+# the crate-local string newtypes in the `vtable_string_repr` and `string_map`
+# fixtures.
+buffa-remote-derive = { path = "../buffa-remote-derive" }
 bytes = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

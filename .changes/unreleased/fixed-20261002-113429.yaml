@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`buffa_yaml::Error::source()` forwards the source of the underlying YAML error** (#511). It returned `None` for every error. The source is present when a reader or writer fails with an `io::Error` whose payload has a source of its own; the `io::Error` itself is not in the chain. A malformed-YAML error still has no source, because its message is already the whole diagnostic. `buffa-yaml` is not yet published.
+time: 2026-10-02T11:34:29.104247+02:00

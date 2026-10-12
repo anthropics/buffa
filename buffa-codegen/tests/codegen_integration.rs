@@ -282,6 +282,43 @@ fn codegen_name_collisions() {
 }
 
 #[test]
+fn codegen_renames_keyword_members_that_collide_after_escaping() {
+    let proto = r#"
+        syntax = "proto2";
+        package test;
+
+        message FieldCollision {
+            optional int32 self = 1;
+            optional int32 self_ = 2;
+            optional int32 crate = 3;
+            optional int32 crate_ = 4;
+        }
+
+        message OneofCollision {
+            optional int32 self_ = 1;
+            oneof self {
+                string choice = 2;
+            }
+        }
+    "#;
+
+    for idiomatic_field_names in [false, true] {
+        let mut config = CodeGenConfig::default();
+        config.idiomatic_field_names = idiomatic_field_names;
+        let content = generate_proto(proto, &config);
+        let field_body = struct_body(&content, "FieldCollision");
+        assert!(field_body.contains("pub self__:"), "{field_body}");
+        assert!(field_body.contains("pub self_:"), "{field_body}");
+        assert!(field_body.contains("pub crate__:"), "{field_body}");
+        assert!(field_body.contains("pub crate_:"), "{field_body}");
+
+        let oneof_body = struct_body(&content, "OneofCollision");
+        assert!(oneof_body.contains("pub self_:"), "{oneof_body}");
+        assert!(oneof_body.contains("pub self__:"), "{oneof_body}");
+    }
+}
+
+#[test]
 fn codegen_cross_package_uses_super() {
     let basic_path = Path::new(PROTOS_DIR).join("basic.proto");
     let nested_path = Path::new(PROTOS_DIR).join("nested_deep.proto");
@@ -612,14 +649,14 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
     // Only ONE From impl (for T, which appears once), not two for Placeholder.
     assert_eq!(
         content
-            .matches("impl From<super::super::super::Placeholder> for Kind")
+            .matches("impl ::core::convert::From<super::super::super::Placeholder> for Kind")
             .count(),
         0,
         "duplicate-type From impls must be skipped: {content}"
     );
     assert_eq!(
         content
-            .matches("impl From<super::super::super::T> for Kind")
+            .matches("impl ::core::convert::From<super::super::super::T> for Kind")
             .count(),
         1,
         "unique-type From impl must still be generated: {content}"
@@ -1168,17 +1205,23 @@ fn inline_string_field_selective_and_override() {
 
 #[test]
 fn inline_string_custom_emits_generic_arbitrary_builder() {
-    use buffa_codegen::StringRepr;
+    use buffa_codegen::{BytesRepr, StringRepr};
     let mut config = no_views();
     config.generate_arbitrary = true;
     config
         .string_fields
         .push((".".into(), StringRepr::Custom("::ecow::EcoString".into())));
+    config.bytes_fields.push((".".into(), BytesRepr::Bytes));
     let content = generate_proto(
         r#"
         syntax = "proto3";
         package test;
-        message Msg { string name = 1; }
+        message Msg {
+            string name = 1;
+            optional string nick = 2;
+            repeated string tags = 3;
+            bytes blob = 4;
+        }
         "#,
         &config,
     );
@@ -1186,11 +1229,163 @@ fn inline_string_custom_emits_generic_arbitrary_builder() {
         content.contains("::ecow::EcoString"),
         "string field should use the custom type: {content}"
     );
-    // A non-default string repr attaches the type-agnostic generic builder,
-    // regardless of whether the type has a native Arbitrary impl.
-    assert!(
-        content.contains("arbitrary(with = ::buffa::__private::arbitrary_proto_string"),
-        "custom string field must use the generic arbitrary_proto_string builder: {content}"
+    // A non-default repr attaches the builder for the field's shape, whether
+    // or not the type has a native Arbitrary impl.
+    assert_eq!(
+        ["name", "nick", "tags", "blob"].map(|field| arbitrary_builder_of(&content, field)),
+        [
+            Some("arbitrary_proto_string"),
+            Some("arbitrary_proto_string_opt"),
+            Some("arbitrary_proto_string_vec"),
+            Some("arbitrary_proto_bytes"),
+        ]
+    );
+}
+
+/// The `::buffa::__private` function named by the `arbitrary(with = ...)`
+/// attribute on `field`, or `None` when the field has no such attribute.
+fn arbitrary_builder_of<'a>(content: &'a str, field: &str) -> Option<&'a str> {
+    let decl = content
+        .find(&format!("pub {field}:"))
+        .unwrap_or_else(|| panic!("no field `{field}` in: {content}"));
+    // The field's attributes follow the previous `pub` item: the preceding
+    // field, or the struct itself.
+    let before = &content[..decl];
+    let attrs = &before[before.rfind("pub ").unwrap_or(0)..];
+    let prefix = "arbitrary(with = ::buffa::__private::";
+    let rest = &attrs[attrs.find(prefix)? + prefix.len()..];
+    Some(&rest[..rest.find(')').expect("unterminated arbitrary attribute")])
+}
+
+const ARBITRARY_MAP_PROTO: &str = r#"
+    syntax = "proto3";
+    package test;
+    message Msg {
+        map<string, int32> string_key = 1;
+        map<int32, string> string_value = 2;
+        map<string, string> both_strings = 3;
+        map<string, bytes> string_key_bytes_value = 4;
+        map<int32, bytes> bytes_value = 5;
+        map<int32, int32> no_string_or_bytes = 6;
+    }
+"#;
+
+/// Asserts the builder of each field of [`ARBITRARY_MAP_PROTO`], in field
+/// order.
+#[track_caller]
+fn assert_arbitrary_map_builders(config: &CodeGenConfig, expected: [Option<&str>; 6]) {
+    let content = generate_proto(ARBITRARY_MAP_PROTO, config);
+    let fields = [
+        "string_key",
+        "string_value",
+        "both_strings",
+        "string_key_bytes_value",
+        "bytes_value",
+        "no_string_or_bytes",
+    ];
+    assert_eq!(
+        fields.map(|field| arbitrary_builder_of(&content, field)),
+        expected,
+        "builders of {fields:?}"
+    );
+}
+
+#[test]
+fn arbitrary_map_builder_matches_the_slots_that_convert() {
+    use buffa_codegen::{BytesRepr, StringRepr};
+
+    let custom_string = (
+        ".".to_owned(),
+        StringRepr::Custom("::ecow::EcoString".into()),
+    );
+    let bytes = (".".to_owned(), BytesRepr::Bytes);
+
+    // Custom string and `bytes::Bytes`: every slot that is `string` or `bytes`
+    // converts.
+    let mut config = no_views();
+    config.generate_arbitrary = true;
+    config.string_fields.push(custom_string.clone());
+    config.bytes_fields.push(bytes.clone());
+    assert_arbitrary_map_builders(
+        &config,
+        [
+            Some("arbitrary_proto_string_map_key"),
+            Some("arbitrary_proto_string_map_value"),
+            Some("arbitrary_proto_string_map"),
+            Some("arbitrary_proto_string_bytes_map"),
+            Some("arbitrary_proto_bytes_map"),
+            None,
+        ],
+    );
+
+    // Custom string, default `Vec<u8>`: a `bytes` value uses its own impl.
+    let mut config = no_views();
+    config.generate_arbitrary = true;
+    config.string_fields.push(custom_string);
+    assert_arbitrary_map_builders(
+        &config,
+        [
+            Some("arbitrary_proto_string_map_key"),
+            Some("arbitrary_proto_string_map_value"),
+            Some("arbitrary_proto_string_map"),
+            Some("arbitrary_proto_string_map_key"),
+            None,
+            None,
+        ],
+    );
+
+    // Default `String`, `bytes::Bytes`: a `string` key uses its own impl, so a
+    // `map<string, bytes>` takes the builder that converts only the value.
+    let mut config = no_views();
+    config.generate_arbitrary = true;
+    config.bytes_fields.push(bytes);
+    assert_arbitrary_map_builders(
+        &config,
+        [
+            None,
+            None,
+            None,
+            Some("arbitrary_proto_bytes_map"),
+            Some("arbitrary_proto_bytes_map"),
+            None,
+        ],
+    );
+}
+
+#[test]
+fn arbitrary_builder_for_a_proto2_repeated_field_is_the_vec_builder() {
+    use buffa_codegen::{BytesRepr, StringRepr};
+
+    let mut config = no_views();
+    config.generate_arbitrary = true;
+    config
+        .string_fields
+        .push((".".into(), StringRepr::Custom("::ecow::EcoString".into())));
+    config.bytes_fields.push((".".into(), BytesRepr::Bytes));
+    // In a proto2 file a `repeated` field inherits the file's explicit
+    // `field_presence`, which sets `FieldInfo::is_optional`; its field type
+    // is still `Vec<T>`.
+    let content = generate_proto(
+        r#"
+        syntax = "proto2";
+        package test;
+        message Msg {
+            repeated string names = 1;
+            repeated bytes blobs = 2;
+            optional string name = 3;
+            optional bytes blob = 4;
+        }
+        "#,
+        &config,
+    );
+    assert_eq!(
+        ["names", "blobs", "name", "blob"].map(|field| arbitrary_builder_of(&content, field)),
+        [
+            Some("arbitrary_proto_string_vec"),
+            Some("arbitrary_proto_bytes_vec"),
+            Some("arbitrary_proto_string_opt"),
+            Some("arbitrary_proto_bytes_opt"),
+        ]
     );
 }
 
@@ -1567,7 +1762,7 @@ fn with_setters_emitted_for_explicit_presence_fields() {
 
     // String setter uses impl Into<...> for &str ergonomics.
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "string setter should use impl Into: {content}"
     );
 
@@ -1624,7 +1819,7 @@ fn with_setters_bytes_type_uses_into() {
         "with_data missing: {content}"
     );
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "bytes::Bytes setter should use impl Into: {content}"
     );
 }
@@ -1646,7 +1841,7 @@ fn with_setters_vec_u8_uses_into() {
         "with_data missing: {content}"
     );
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "Vec<u8> setter should use impl Into: {content}"
     );
 }
@@ -1669,7 +1864,7 @@ fn with_setters_enum_uses_into() {
         "with_color missing: {content}"
     );
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "enum setter should use impl Into: {content}"
     );
 }

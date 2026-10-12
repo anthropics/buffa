@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`buffa-codegen` returns an error for a message or enum descriptor with no name or an empty name, where it panicked** (#513). For such a type in a file being generated, `generate` now returns `CodeGenError::MissingField("message.name")` or `MissingField("enum.name")`. Only a hand-built or synthesized descriptor set can omit a type name; protoc always sets it.
+time: 2026-10-02T20:59:00+02:00

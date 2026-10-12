@@ -7,7 +7,13 @@ package stringproto2;
 // `Default` impl and `clear()` both materialize the literal via the configured
 // representation's `From<String>` rather than `String::from`. Compiling this
 // module is the regression guard for that path.
+//
+// `tags` and `nick` are compiled with `generate_arbitrary`: `tags` inherits
+// the file's explicit `field_presence`, as `nick` does, and the generated
+// `Arbitrary` must still build `tags` as a `Vec` and `nick` as an `Option`.
 message Defaults {
   required string name = 1 [default = "anonymous"];
   optional int32 n = 2;
+  repeated string tags = 3;
+  optional string nick = 4;
 }

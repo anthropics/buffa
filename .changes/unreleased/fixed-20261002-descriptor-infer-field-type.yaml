@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` takes a field's kind from `type_name` when `type` is unset** (#514). A `FieldDescriptorProto` may leave `type` unset and name a message or enum in `type_name`; protoc and protobuf-go then take the kind from the type that the name resolves to. The pool linked such a field as `double`. It now links it as that message or enum, whether the field is singular, repeated, a map, a map value, a oneof member or an extension. The name must be fully qualified, as protoc writes it; the pool does not resolve a name relative to the field's scope.
+    A `type_name` on such a field that resolves to no type is now `PoolError::UnresolvedTypeName`, and one that names a type the file does not import is `PoolError::TypeNotImported`; both linked before. protoc always sets `type`, so its output links as it did. `buffa-codegen` does not infer the kind and still generates a `double` for such a field, so the generated type and a pool built from the same descriptors disagree about it; generate code from descriptors that set `type`.
+time: 2026-10-02T20:59:00+02:00

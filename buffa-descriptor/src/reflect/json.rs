@@ -329,9 +329,10 @@ impl Serialize for MapKeyRef<'_> {
 // expands about twentyfold. The charges match the reflective binary
 // decoder's (`reflect/dynamic.rs`) element for element. A
 // `google.protobuf.Any` payload has two costs with no counterpart there:
-// the `serde_json::Value` tree it is buffered into, which is not charged,
-// and its elements, which are charged here while the binary decoder leaves
-// `Any.value` undecoded.
+// the `serde_json::Value` tree it is buffered into, which is charged as a
+// map entry for each object member and as a repeated element for each array
+// element for as long as the buffer is held, and its elements, which are
+// charged here while the binary decoder leaves `Any.value` undecoded.
 
 /// Display text of the error for a parse that exceeds its element-memory
 /// budget. `buffa::DecodeError::ElementMemoryLimitExceeded` displays the same
@@ -369,12 +370,12 @@ impl DynamicMessage {
     ///
     /// The repeated elements and map entries the parse builds are bounded by
     /// [`buffa::DEFAULT_ELEMENT_MEMORY_LIMIT`] (32 MiB). To parse with
-    /// another limit, build a [`DynamicMessageSeed`], set
+    /// another limit, call [`Self::from_json_with_element_memory_limit`]. For
+    /// both a limit and lenient unknown fields, use a [`DynamicMessageSeed`].
+    /// The limit also covers the buffer that a `google.protobuf.Any` payload
+    /// is read into; the documentation of
     /// [`with_element_memory_limit`](DynamicMessageSeed::with_element_memory_limit)
-    /// and call [`parse_json`](DynamicMessageSeed::parse_json). The limit
-    /// does not bound the memory a `google.protobuf.Any` payload takes to
-    /// read; see
-    /// [`with_element_memory_limit`](DynamicMessageSeed::with_element_memory_limit).
+    /// gives each charge.
     ///
     /// # Errors
     ///
@@ -382,13 +383,85 @@ impl DynamicMessage {
     /// not match the message descriptor, or exceeds the element-memory limit.
     /// [`DynamicMessageSeed::is_element_memory_limit_error`] identifies the
     /// last case.
-    #[doc(alias = "from_json_with_element_memory_limit")]
+    ///
+    /// # Panics
+    ///
+    /// Panics if `msg_idx` is out of range for `pool`, which happens only
+    /// with an index issued by a different pool. See
+    /// [`DescriptorPool::message`].
     pub fn from_json(
         pool: Arc<DescriptorPool>,
         msg_idx: MessageIndex,
         json: &str,
     ) -> Result<Self, serde_json::Error> {
         DynamicMessageSeed::new(pool, msg_idx).parse_json(json)
+    }
+
+    /// Parse proto3 canonical JSON under a caller-supplied element-memory
+    /// limit, in bytes.
+    ///
+    /// `element_memory_limit` is the memory the parse may spend on repeated
+    /// elements and map entries. Each repeated element is charged
+    /// `size_of::<Value>()` bytes, and each map entry the size of a
+    /// [`MapKey`] plus a [`Value`]. It is a memory budget, so it differs
+    /// from an element count and from a bound on the input length.
+    /// [`DynamicMessageSeed::with_element_memory_limit`] lists every charge.
+    ///
+    /// [`Self::from_json`] applies [`buffa::DEFAULT_ELEMENT_MEMORY_LIMIT`]
+    /// (32 MiB). Lower it for a tighter bound on untrusted input, or raise
+    /// it for trusted input with very many elements. With `0`, the parse
+    /// fails at the first repeated element or map entry, and input that
+    /// holds only singular fields still parses. `usize::MAX` means no limit.
+    ///
+    /// Unknown fields are an error, as in `from_json`. To ignore them under
+    /// a limit, call
+    /// `DynamicMessageSeed::new(pool, msg_idx).ignore_unknown_fields(true).with_element_memory_limit(n).parse_json(json)`.
+    ///
+    /// The limit also covers the buffer that a `google.protobuf.Any` payload
+    /// is read into, so a payload needs room for its buffer and its message
+    /// together.
+    ///
+    /// ```no_run
+    /// # use std::sync::Arc;
+    /// # use buffa_descriptor::{DescriptorPool, DynamicMessage};
+    /// # fn parse(pool: Arc<DescriptorPool>, json: &str) -> Result<(), serde_json::Error> {
+    /// let request = pool.message_index("my.pkg.Request").expect("message is in the pool");
+    /// let msg = DynamicMessage::from_json_with_element_memory_limit(
+    ///     pool,
+    ///     request,
+    ///     json,
+    ///     8 * 1024 * 1024,
+    /// )?;
+    /// # drop(msg);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a `serde_json::Error` if the input:
+    ///
+    /// - is not valid JSON;
+    /// - does not match the message descriptor;
+    /// - builds repeated elements and map entries that cost more than
+    ///   `element_memory_limit`.
+    ///   [`DynamicMessageSeed::is_element_memory_limit_error`] identifies
+    ///   this case.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `msg_idx` is out of range for `pool`, which happens only
+    /// with an index issued by a different pool. See
+    /// [`DescriptorPool::message`].
+    pub fn from_json_with_element_memory_limit(
+        pool: Arc<DescriptorPool>,
+        msg_idx: MessageIndex,
+        json: &str,
+        element_memory_limit: usize,
+    ) -> Result<Self, serde_json::Error> {
+        DynamicMessageSeed::new(pool, msg_idx)
+            .with_element_memory_limit(element_memory_limit)
+            .parse_json(json)
     }
 
     /// Parse proto3 canonical JSON, silently discarding unknown fields.
@@ -405,13 +478,24 @@ impl DynamicMessage {
     /// null elements in repeated fields, malformed values on *known*
     /// fields — remain errors.
     ///
-    /// The element-memory limit applies as it does to [`Self::from_json`].
+    /// The element-memory limit is the [`Self::from_json`] default,
+    /// [`buffa::DEFAULT_ELEMENT_MEMORY_LIMIT`]. To ignore unknown fields
+    /// under another limit, call
+    /// `DynamicMessageSeed::new(pool, msg_idx).ignore_unknown_fields(true).with_element_memory_limit(n).parse_json(json)`.
     ///
     /// # Errors
     ///
     /// Returns a `serde_json::Error` if the input is not valid JSON, a
     /// *known* field does not match its descriptor, or the parse exceeds
     /// the element-memory limit.
+    /// [`DynamicMessageSeed::is_element_memory_limit_error`] identifies the
+    /// last case.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `msg_idx` is out of range for `pool`, which happens only
+    /// with an index issued by a different pool. See
+    /// [`DescriptorPool::message`].
     pub fn from_json_ignoring_unknown(
         pool: Arc<DescriptorPool>,
         msg_idx: MessageIndex,
@@ -444,9 +528,10 @@ impl DynamicMessage {
 ///
 /// This is also the long-form API for combining parse options: the
 /// `from_json_*` constructors on [`DynamicMessage`] are conveniences over
-/// `DynamicMessageSeed::new(..).<options>.parse_json(..)`. New parse
-/// options are added here as builder-style setters rather than as new
-/// `from_json_*` constructor permutations.
+/// `DynamicMessageSeed::new(..).<options>.parse_json(..)`. `from_json`
+/// leaves every option at its default and each `from_json_*` constructor
+/// sets exactly one; every option has a builder-style setter here, and a
+/// parse that needs two uses the seed.
 ///
 /// Prefer [`parse_json`](Self::parse_json) to driving the seed by hand. A
 /// hand-driven [`DeserializeSeed::deserialize`] leaves the check for
@@ -471,7 +556,7 @@ impl DynamicMessage {
 pub struct DynamicMessageSeed {
     pool: Arc<DescriptorPool>,
     msg_idx: MessageIndex,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     element_memory_limit: usize,
 }
 
@@ -482,7 +567,7 @@ impl DynamicMessageSeed {
         Self {
             pool,
             msg_idx,
-            ignore_unknown: false,
+            flags: ParseFlags::default(),
             element_memory_limit: buffa::DEFAULT_ELEMENT_MEMORY_LIMIT,
         }
     }
@@ -491,9 +576,32 @@ impl DynamicMessageSeed {
     ///
     /// The setting propagates to nested messages, repeated elements, and map
     /// values. See [`DynamicMessage::from_json_ignoring_unknown`].
+    ///
+    /// An unknown field inside a `google.protobuf.Any` payload is buffered
+    /// with the rest of the payload before it is discarded, and the buffer
+    /// counts toward the
+    /// [element-memory limit](Self::with_element_memory_limit).
     #[must_use]
     pub fn ignore_unknown_fields(mut self, ignore: bool) -> Self {
-        self.ignore_unknown = ignore;
+        self.flags.ignore_unknown = ignore;
+        self
+    }
+
+    /// Require a `/` in the `@type` of a `google.protobuf.Any` (default:
+    /// accept a bare full name too).
+    ///
+    /// By default `"@type": "my.pkg.Request"` resolves like
+    /// `"@type": "type.googleapis.com/my.pkg.Request"`, as it does in
+    /// protobuf-go and Python. With this set, an `@type` without a `/` is a
+    /// parse error, as it is in C++ and Java; `any.proto` says that a type
+    /// URL contains at least one `/`. The setting propagates to every nested
+    /// `Any`, including one inside another `Any`'s payload.
+    ///
+    /// The setting covers parsing only: [`DynamicMessage::to_json`] and
+    /// [`DynamicMessage::unpack_any`] resolve a bare full name.
+    #[must_use]
+    pub fn strict_any_type_urls(mut self, strict: bool) -> Self {
+        self.flags.strict_any_type_urls = strict;
         self
     }
 
@@ -517,14 +625,29 @@ impl DynamicMessageSeed {
     ///
     /// # `google.protobuf.Any` payloads
     ///
-    /// The limit does not bound the memory an `Any` payload takes to read.
-    /// `@type` can follow the fields it types, so the payload object is
-    /// buffered as a `serde_json::Value` tree before any of it is charged,
-    /// and only the message built from that tree draws on the budget. Peak
-    /// memory for such input grows with the input length whatever the limit
-    /// is; one measurement put it at about 27 times the input length for an
-    /// `Any` full of empty objects. If an `Any` is reachable from the
-    /// message type, cap the input length as well.
+    /// `@type` can follow the fields it types, so the parser buffers an `Any`
+    /// payload as a `serde_json::Value` tree and decodes the message from
+    /// that tree. The buffer draws on the same budget. At every depth of the
+    /// payload, each object member is charged as a map entry and each array
+    /// element as a repeated element. The members include `@type`, singular
+    /// fields and unknown fields. The parser returns the buffer's charge
+    /// after it decodes the payload. The elements that the decode built stay
+    /// charged until the parse ends.
+    ///
+    /// A payload needs room for its buffer and its message together, on top
+    /// of what the parse has kept when it reaches the `Any`. So an `Any`
+    /// that follows a large repeated field has less room than one that
+    /// precedes it. When the order of members can vary, size the limit for
+    /// the `Any` coming last. Each enclosing `Any` buffers a nested `Any`
+    /// again, so a value at `Any` depth *d* is charged in *d* buffers while
+    /// the innermost payload is decoded.
+    ///
+    /// A message costs more inside an `Any` than as a field of its own type.
+    /// Where a [`Value`] is 64 bytes and a [`MapKey`] 24, as on a 64-bit
+    /// target with a current compiler, the default lets a payload of
+    /// singular fields buffer 381,300 members. A payload that is one
+    /// repeated field of scalars can have about 262,000 elements, because
+    /// each is charged in the buffer and again in the message.
     #[must_use]
     pub fn with_element_memory_limit(mut self, bytes: usize) -> Self {
         self.element_memory_limit = bytes;
@@ -544,9 +667,14 @@ impl DynamicMessageSeed {
     /// not match the message descriptor, or exceeds the element-memory
     /// limit. See
     /// [`with_element_memory_limit`](Self::with_element_memory_limit) for
-    /// what that limit leaves unbounded.
+    /// what that limit charges.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the seed's message index is out of range for its pool,
+    /// which happens only with an index issued by a different pool. See
+    /// [`DescriptorPool::message`].
     #[doc(alias = "from_json")]
-    #[doc(alias = "from_json_with_element_memory_limit")]
     pub fn parse_json(self, json: &str) -> Result<DynamicMessage, serde_json::Error> {
         let mut d = serde_json::Deserializer::from_str(json);
         let msg = self.deserialize(&mut d)?;
@@ -577,9 +705,9 @@ impl DynamicMessageSeed {
     /// The check is on the error's text, which starts with
     /// `element memory limit exceeded`, the text
     /// [`buffa::DecodeError::ElementMemoryLimitExceeded`] displays. It holds
-    /// for an error from [`parse_json`](Self::parse_json),
-    /// [`DynamicMessage::from_json`], or a `serde_json` deserializer driving
-    /// the seed directly. A seed driven by another format's `Deserializer`
+    /// for an error from [`parse_json`](Self::parse_json), any
+    /// `DynamicMessage::from_json*` constructor, or a `serde_json`
+    /// deserializer driving the seed directly. A seed driven by another format's `Deserializer`
     /// reports the same text through that format's error type.
     #[must_use]
     pub fn is_element_memory_limit_error(err: &serde_json::Error) -> bool {
@@ -596,11 +724,21 @@ impl<'de> DeserializeSeed<'de> for DynamicMessageSeed {
         NestedSeed {
             pool: self.pool,
             msg_idx: self.msg_idx,
-            ignore_unknown: self.ignore_unknown,
+            flags: self.flags,
             budget: &budget,
         }
         .deserialize(d)
     }
+}
+
+/// The parse options that [`DynamicMessageSeed`] sets and every nested seed
+/// carries.
+#[derive(Clone, Copy, Default)]
+struct ParseFlags {
+    /// Discard unknown fields instead of erroring.
+    ignore_unknown: bool,
+    /// Reject an `Any` `@type` that has no `/`.
+    strict_any_type_urls: bool,
 }
 
 /// The internal twin of [`DynamicMessageSeed`] that borrows the parse's
@@ -612,7 +750,7 @@ impl<'de> DeserializeSeed<'de> for DynamicMessageSeed {
 struct NestedSeed<'a> {
     pool: Arc<DescriptorPool>,
     msg_idx: MessageIndex,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -622,18 +760,12 @@ impl<'de> DeserializeSeed<'de> for NestedSeed<'_> {
     fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
         let md = self.pool.message(self.msg_idx);
         if let Some(wkt) = WktKind::from_full_name(&md.full_name) {
-            return wkt.deserialize_message(
-                self.pool,
-                self.msg_idx,
-                d,
-                self.ignore_unknown,
-                self.budget,
-            );
+            return wkt.deserialize_message(self.pool, self.msg_idx, d, self.flags, self.budget);
         }
         d.deserialize_map(MessageVisitor {
             pool: self.pool,
             msg_idx: self.msg_idx,
-            ignore_unknown: self.ignore_unknown,
+            flags: self.flags,
             budget: self.budget,
         })
     }
@@ -642,7 +774,7 @@ impl<'de> DeserializeSeed<'de> for NestedSeed<'_> {
 struct MessageVisitor<'a> {
     pool: Arc<DescriptorPool>,
     msg_idx: MessageIndex,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -704,7 +836,7 @@ impl<'de> Visitor<'de> for MessageVisitor<'_> {
                 // lenient mode. There is no descriptor to deduplicate
                 // against, and the spec's no-duplicates rule is in terms
                 // of fields, not arbitrary keys.
-                if self.ignore_unknown {
+                if self.flags.ignore_unknown {
                     map.next_value::<de::IgnoredAny>()?;
                     continue;
                 }
@@ -732,7 +864,7 @@ impl<'de> Visitor<'de> for MessageVisitor<'_> {
                 pool: &self.pool,
                 kind,
                 enum_type,
-                ignore_unknown: self.ignore_unknown,
+                flags: self.flags,
                 budget: self.budget,
             })?;
             // null → leave the field unset (per spec, except NullValue which
@@ -794,7 +926,7 @@ struct FieldSeed<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: FieldKind,
     enum_type: Option<EnumType>,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -810,7 +942,7 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
                 pool: self.pool,
                 kind: sk,
                 enum_type: self.enum_type,
-                ignore_unknown: self.ignore_unknown,
+                flags: self.flags,
                 budget: self.budget,
             }
             .deserialize(d),
@@ -818,7 +950,7 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
                 pool: self.pool,
                 kind: sk,
                 enum_type: self.enum_type,
-                ignore_unknown: self.ignore_unknown,
+                flags: self.flags,
                 budget: self.budget,
             }),
             FieldKind::Map { key, value } => d.deserialize_any(MapFieldVisitor {
@@ -826,7 +958,7 @@ impl<'de> DeserializeSeed<'de> for FieldSeed<'_> {
                 key,
                 value,
                 enum_type: self.enum_type,
-                ignore_unknown: self.ignore_unknown,
+                flags: self.flags,
                 budget: self.budget,
             }),
         }
@@ -837,7 +969,7 @@ struct SingularSeed<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: SingularKind,
     enum_type: Option<EnumType>,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -856,7 +988,7 @@ impl<'de> DeserializeSeed<'de> for SingularSeed<'_> {
                     return NestedSeed {
                         pool: Arc::clone(self.pool),
                         msg_idx: midx,
-                        ignore_unknown: self.ignore_unknown,
+                        flags: self.flags,
                         budget: self.budget,
                     }
                     .deserialize(d)
@@ -866,7 +998,7 @@ impl<'de> DeserializeSeed<'de> for SingularSeed<'_> {
                 d.deserialize_option(NestedMessageVisitor {
                     pool: self.pool,
                     midx,
-                    ignore_unknown: self.ignore_unknown,
+                    flags: self.flags,
                     budget: self.budget,
                 })
             }
@@ -901,7 +1033,7 @@ fn deserialize_optional_scalar<'de, D: Deserializer<'de>>(
 struct NestedMessageVisitor<'a> {
     pool: &'a Arc<DescriptorPool>,
     midx: MessageIndex,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -924,7 +1056,7 @@ impl<'de> Visitor<'de> for NestedMessageVisitor<'_> {
         NestedSeed {
             pool: Arc::clone(self.pool),
             msg_idx: self.midx,
-            ignore_unknown: self.ignore_unknown,
+            flags: self.flags,
             budget: self.budget,
         }
         .deserialize(d)
@@ -1128,7 +1260,7 @@ struct ListVisitor<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: SingularKind,
     enum_type: Option<EnumType>,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -1146,7 +1278,7 @@ impl<'de> Visitor<'de> for ListVisitor<'_> {
             pool: self.pool,
             kind: self.kind,
             enum_type: self.enum_type,
-            ignore_unknown: self.ignore_unknown,
+            flags: self.flags,
             budget: self.budget,
         })? {
             // Per the spec, repeated fields cannot contain null elements.
@@ -1166,7 +1298,7 @@ struct MapFieldVisitor<'a> {
     key: ScalarType,
     value: SingularKind,
     enum_type: Option<EnumType>,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &'a Cell<usize>,
 }
 
@@ -1188,7 +1320,7 @@ impl<'de> Visitor<'de> for MapFieldVisitor<'_> {
                 pool: self.pool,
                 kind: self.value,
                 enum_type: self.enum_type,
-                ignore_unknown: self.ignore_unknown,
+                flags: self.flags,
                 budget: self.budget,
             })?;
             let v = v.ok_or_else(|| de::Error::custom("null value in map field"))?;

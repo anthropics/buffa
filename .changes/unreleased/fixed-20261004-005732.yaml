@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Reflective JSON parsing accepts `null` for a wrapper message** (#539). `DynamicMessage::from_json` rejected `null` where the message itself is a wrapper (`google.protobuf.Int32Value` and the other eight): a wrapper parsed directly, and a wrapper carried as an `Any` payload (`{"@type": "type.googleapis.com/google.protobuf.Int32Value", "value": null}`). Both now produce the default wrapper, as the generated types do. A `null` wrapper field inside another message was already read as unset.
+time: 2026-10-04T00:57:32.343425+02:00

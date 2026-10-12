@@ -29,6 +29,8 @@ fn sample() -> Lists {
         names: ::buffa::alloc::vec!["alpha".into(), "beta".into()].into(),
         items: ::buffa::alloc::vec![inner(7), inner(9)].into(),
         fixed: ::buffa::alloc::vec![10, -20, 30].into(),
+        labels: ::buffa::alloc::vec!["gamma".into()].into(),
+        blobs: ::buffa::alloc::vec![bytes::Bytes::from_static(b"\x00raw")].into(),
         ..Default::default()
     }
 }
@@ -42,6 +44,8 @@ fn field_types_are_custom_list() {
     let _: &CustomList<::buffa::alloc::string::String> = &m.names;
     let _: &CustomList<Inner> = &m.items;
     let _: &CustomList<i32> = &m.fixed;
+    let _: &CustomList<crate::reprs::EcoStr> = &m.labels;
+    let _: &CustomList<bytes::Bytes> = &m.blobs;
 }
 
 #[test]
@@ -75,4 +79,17 @@ fn view_to_owned_round_trip() {
         .expect("decode view")
         .to_owned_message();
     assert_eq!(owned, sample());
+}
+
+/// `EcoStr` has no `Arbitrary` impl, so `Lists: Arbitrary` compiling shows that
+/// `labels` got a builder that makes each element from a `String` and returns
+/// the custom collection.
+#[cfg(feature = "arbitrary")]
+#[test]
+fn arbitrary_builds_custom_list_of_custom_strings() {
+    use arbitrary::{Arbitrary, Unstructured};
+
+    let raw: [u8; 256] = core::array::from_fn(|i| (i as u8) | 1);
+    let msg = Lists::arbitrary(&mut Unstructured::new(&raw)).unwrap();
+    let _: &CustomList<crate::reprs::EcoStr> = &msg.labels;
 }

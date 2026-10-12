@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`text::Tokenizer::line_col` accepts a byte offset inside a multi-byte UTF-8 character** (#508). It panicked on such an offset; it now reports the line and column of the character the offset falls in. The textproto decoder passes token starts, which are character boundaries, so the panic was reachable only by calling `line_col` with an offset of your own.
+time: 2026-10-02T11:03:08.224537+02:00

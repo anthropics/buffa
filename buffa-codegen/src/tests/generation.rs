@@ -2980,3 +2980,71 @@ fn test_exclude_packages_filter_runs_before_context_build() {
         "no local path to the excluded package may be emitted: {content}"
     );
 }
+
+#[test]
+fn repeated_message_named_like_a_local_map_entry_is_a_list() {
+    // message Other { message ItemsEntry { string key = 1; int32 value = 2; } }
+    // message Holder {
+    //   map<string, int32> items = 1;
+    //   repeated Other.ItemsEntry records = 2;
+    // }
+    let entry = |options: Option<MessageOptions>| DescriptorProto {
+        name: Some("ItemsEntry".to_string()),
+        field: vec![
+            make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+            make_field("value", 2, Label::LABEL_OPTIONAL, Type::TYPE_INT32),
+        ],
+        options: options.unwrap_or_default().into(),
+        ..Default::default()
+    };
+    let message_field = |name: &str, number: i32, type_name: &str| FieldDescriptorProto {
+        type_name: Some(type_name.to_string()),
+        ..make_field(name, number, Label::LABEL_REPEATED, Type::TYPE_MESSAGE)
+    };
+    let other = DescriptorProto {
+        name: Some("Other".to_string()),
+        nested_type: vec![entry(None)],
+        ..Default::default()
+    };
+    let holder = DescriptorProto {
+        name: Some("Holder".to_string()),
+        field: vec![
+            message_field("items", 1, ".pkg.Holder.ItemsEntry"),
+            message_field("records", 2, ".pkg.Other.ItemsEntry"),
+        ],
+        nested_type: vec![entry(Some(MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }))],
+        ..Default::default()
+    };
+
+    assert!(crate::message::is_map_field(&holder, &holder.field[0]));
+    assert!(!crate::message::is_map_field(&holder, &holder.field[1]));
+    // A message whose name only ends with `Holder` is another message.
+    let prefixed = message_field("records", 2, ".pkg.NotHolder.ItemsEntry");
+    assert!(!crate::message::is_map_field(&holder, &prefixed));
+    // A file without a package, and a type name without the leading dot.
+    for type_name in [".Holder.ItemsEntry", "Holder.ItemsEntry"] {
+        let field = message_field("items", 1, type_name);
+        assert!(crate::message::is_map_field(&holder, &field), "{type_name}");
+    }
+
+    let mut file = proto3_file("holder.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type = vec![other, holder];
+    let files = generate(
+        &[file],
+        &["holder.proto".to_string()],
+        &CodeGenConfig {
+            generate_views: false,
+            ..Default::default()
+        },
+    )
+    .expect("generation succeeds");
+    let content = joined(&files);
+    assert!(
+        content.contains("pub records: ::buffa::alloc::vec::Vec<"),
+        "{content}"
+    );
+}

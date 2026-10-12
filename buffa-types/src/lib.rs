@@ -38,21 +38,23 @@
 //!
 //! The crate adds conversions and helper methods to the generated types:
 //!
-//! - `Timestamp` ↔ [`std::time::SystemTime`] (requires `std` feature)
-//! - `Duration` ↔ [`std::time::Duration`] (requires `std` feature)
-//! - `Timestamp` ↔ [`chrono::DateTime`] (requires `chrono` feature; any time
+//! - `Timestamp` ↔ [`std::time::SystemTime`](https://doc.rust-lang.org/std/time/struct.SystemTime.html) (requires `std` feature)
+//! - `Duration` ↔ [`core::time::Duration`] (also available without `std`)
+//! - `Timestamp` ↔ [`chrono::DateTime`](https://docs.rs/chrono/latest/chrono/struct.DateTime.html) (requires `chrono` feature; any time
 //!   zone in, `Utc` out)
-//! - `Duration` ↔ [`chrono::TimeDelta`] (requires `chrono` feature)
-//! - `Timestamp` ↔ [`jiff::Timestamp`] (requires `jiff` feature)
-//! - `Duration` ↔ [`jiff::SignedDuration`] (requires `jiff` feature)
+//! - `Duration` ↔ [`chrono::TimeDelta`](https://docs.rs/chrono/latest/chrono/struct.TimeDelta.html) (requires `chrono` feature)
+//! - `Timestamp` ↔ [`jiff::Timestamp`](https://docs.rs/jiff/latest/jiff/struct.Timestamp.html) (requires `jiff` feature)
+//! - `Duration` ↔ [`jiff::SignedDuration`](https://docs.rs/jiff/latest/jiff/struct.SignedDuration.html) (requires `jiff` feature)
 //! - [`Any`] packing and unpacking: [`Any::pack_message`],
 //!   [`Any::unpack_message`], [`Any::is_message`]
+//! - [`FieldMask`] path helpers: [`FieldMask::covers`], [`FieldMask::normalize`],
+//!   [`FieldMask::union`], [`FieldMask::intersection`]
 //! - `Value` constructors: [`Value::null`](google::protobuf::Value::null), `From<f64>`, `From<String>`, `From<bool>`, etc.
 //! - Wrapper type `From`/`Into` impls
 //!
 //! # Cargo features
 //!
-//! - **`std`** (default) — standard-library integration (`SystemTime`/`Duration`
+//! - **`std`** (default) — standard-library integration (`SystemTime`
 //!   conversions, `std::error::Error`). Without it the crate is `no_std` + `alloc`.
 //! - **`json`** — proto3 canonical JSON serde for the JSON-mappable WKTs
 //!   (`Timestamp`, `Duration`, `Any`, `Struct`/`Value`/`ListValue`, `FieldMask`,

@@ -42,6 +42,12 @@ message OneofNoValidation {
   }
 }
 
+message RequiredBytesDefaults {
+  string raw_text = 1 [features.field_presence = LEGACY_REQUIRED, features.utf8_validation = NONE, default = "café\n"];
+  bytes blob = 2 [features.field_presence = LEGACY_REQUIRED, default = "\x00\xFF"];
+  string checked = 3 [features.field_presence = LEGACY_REQUIRED, default = "checked"];
+}
+
 // A NONE-validated string key becomes a bytes key under strict mapping. Keep
 // wrapper and WKT message values here to exercise the bytes-key map ProtoJSON
 // path, including its rejection of null map values.

@@ -1,0 +1,5 @@
+kind: Added
+body: |-
+    **`MessageField` and `MessageFieldView` implement `Hash`** (#563, refs #559) when their message or view does, hashing presence and the value as `Option<&T>` does, so that it agrees with the presence-aware `==`. A message holding a singular message field can now derive `Hash` like one holding only scalars, provided the nested message implements `Hash` too (buffa-types' well-known types do not yet). `UnknownFields`, `UnknownField` and `UnknownFieldData` now implement `Eq` as well as `Hash`, so a message that preserves unknown fields can derive `Eq` and be a `HashMap` or `HashSet` key when its own fields allow it.
+    `field.hash(state)` used to reach `T::hash` through `Deref` when `T: Hash`, ignoring presence; it now resolves to the new impl. Hash `*field` to keep hashing the value alone, matching `*a == *b`.
+time: 2026-10-04T21:00:00.000000000+00:00

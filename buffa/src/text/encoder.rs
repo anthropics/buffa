@@ -55,6 +55,14 @@ pub struct TextEncoder<'a> {
     pretty: bool,
     emit_unknown: bool,
     last: Last,
+    /// The extension name that
+    /// [`write_extension_fields`](Self::write_extension_fields) wrote. It is
+    /// set only while that entry's `text_encode` runs and the name is still
+    /// the last thing written: the next write clears it, and so does the
+    /// return of `text_encode`.
+    /// [`write_repeated_extension`](Self::write_repeated_extension) writes it
+    /// again before each element after the first.
+    ext_name: Option<&'static str>,
 }
 
 impl<'a> TextEncoder<'a> {
@@ -67,6 +75,7 @@ impl<'a> TextEncoder<'a> {
             pretty: false,
             emit_unknown: false,
             last: Last::Open,
+            ext_name: None,
         }
     }
 
@@ -80,6 +89,7 @@ impl<'a> TextEncoder<'a> {
             pretty: true,
             emit_unknown: false,
             last: Last::Open,
+            ext_name: None,
         }
     }
 
@@ -102,6 +112,7 @@ impl<'a> TextEncoder<'a> {
     fn prepare(&mut self, next: Last) -> core::fmt::Result {
         let prev = self.last;
         self.last = next;
+        self.ext_name = None;
         if !self.pretty {
             // Single line: space between end-of-field and start of next name.
             if prev == Last::Value && next == Last::Name {
@@ -203,7 +214,52 @@ impl<'a> TextEncoder<'a> {
     ) -> core::fmt::Result {
         // No `:` before a message value — just a space before `{`.
         self.prepare(Last::Value)?;
-        self.w.write_str(" {")?;
+        self.w.write_char(' ')?;
+        self.write_message_body(f)
+    }
+
+    /// Write the elements of a repeated message or group extension, after
+    /// the caller has written the extension's bracketed name once.
+    ///
+    /// The two forms are documented on
+    /// [`repeated_message_encode_text`](crate::type_registry::repeated_message_encode_text).
+    /// The per-element form is preferred because a parser reads it without
+    /// support for message lists.
+    pub(crate) fn write_repeated_extension<M: super::TextFormat>(
+        &mut self,
+        messages: &[M],
+    ) -> core::fmt::Result {
+        debug_assert!(self.ext_name.is_none() || self.last == Last::Name);
+        match (self.ext_name, messages) {
+            (Some(name), [first, rest @ ..]) => {
+                self.write_message(first)?;
+                for message in rest {
+                    self.write_extension_name(name)?;
+                    self.write_message(message)?;
+                }
+                Ok(())
+            }
+            (None, _) | (Some(_), []) => self.write_message_list(messages),
+        }
+    }
+
+    fn write_message_list<M: super::TextFormat>(&mut self, messages: &[M]) -> core::fmt::Result {
+        self.prepare(Last::Value)?;
+        self.w.write_str(": [")?;
+        for (index, message) in messages.iter().enumerate() {
+            if index > 0 {
+                self.w.write_str(", ")?;
+            }
+            self.write_message_body(|enc| message.encode_text(enc))?;
+        }
+        self.w.write_char(']')
+    }
+
+    fn write_message_body(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> core::fmt::Result,
+    ) -> core::fmt::Result {
+        self.w.write_char('{')?;
         self.depth += 1;
         let outer_last = self.last;
         self.last = Last::Open;
@@ -267,7 +323,9 @@ impl<'a> TextEncoder<'a> {
     }
 
     /// Write registered extensions from `fields` as `[full_name] { ... }`
-    /// entries. Unregistered field numbers are left for the caller's
+    /// entries: one entry per extension, or one per element for a repeated
+    /// message or group extension.
+    /// Unregistered field numbers are left for the caller's
     /// [`write_unknown_fields`](Self::write_unknown_fields) (debug-only,
     /// default off).
     ///
@@ -289,9 +347,9 @@ impl<'a> TextEncoder<'a> {
         if fields.is_empty() {
             return Ok(());
         }
-        // One emit per field number — the entry's text_encode reads all
-        // records at that number (merge semantics). Mirrors JSON's
-        // serialize_extensions dedup loop.
+        // One `text_encode` call per field number: the entry reads every
+        // record at that number. Mirrors JSON's `serialize_extensions` dedup
+        // loop.
         let mut seen = alloc::collections::BTreeSet::new();
         for uf in fields.iter() {
             if !seen.insert(uf.number) {
@@ -302,7 +360,9 @@ impl<'a> TextEncoder<'a> {
                 continue;
             };
             self.write_extension_name(entry.full_name)?;
+            self.ext_name = Some(entry.full_name);
             (entry.text_encode)(uf.number, fields, self)?;
+            self.ext_name = None;
         }
         Ok(())
     }
@@ -429,7 +489,13 @@ impl<'a> TextEncoder<'a> {
         write!(self.w, ": {v}")
     }
 
-    /// Write an `f32` value. NaN → `nan`, infinities → `inf`/`-inf`.
+    /// Write an `f32` value as the shortest decimal that reads back as the
+    /// same `f32`, in positional notation (`0.1`, not `0.10000000149011612`).
+    /// NaN is `nan` and the infinities are `inf` and `-inf`.
+    ///
+    /// Where a reader that parses an `f64` and narrows it would take those
+    /// digits to a neighbouring `f32`, the value is written with its `f64`
+    /// digits instead.
     ///
     /// # Errors
     ///
@@ -437,7 +503,20 @@ impl<'a> TextEncoder<'a> {
     pub fn write_f32(&mut self, v: f32) -> core::fmt::Result {
         self.prepare(Last::Value)?;
         self.w.write_str(": ")?;
-        write_float(self.w, v as f64)
+        if v.is_finite() {
+            let mut digits = F32Digits::new();
+            if write!(digits, "{v}").is_ok() {
+                // A reader that parses a `float` as an `f64` and narrows it,
+                // as protobuf C++ and protobuf-go do, rounds twice. For two
+                // values, ±7.038531e-26, that takes the shortest `f32` digits
+                // one ulp away from `v`. They get the widened digits, which
+                // every reader takes back to `v`.
+                if let Some(short) = digits.as_str().filter(|s| narrows_to(s, v)) {
+                    return self.w.write_str(short);
+                }
+            }
+        }
+        write_float(self.w, f64::from(v))
     }
 
     /// Write an `f64` value. NaN → `nan`, infinities → `inf`/`-inf`.
@@ -505,6 +584,48 @@ impl<'a> TextEncoder<'a> {
     pub fn write_enum_number(&mut self, v: i32) -> core::fmt::Result {
         self.write_i32(v)
     }
+}
+
+/// The `Display` text of one finite `f32`, held on the stack.
+struct F32Digits {
+    buf: [u8; Self::CAPACITY],
+    len: usize,
+}
+
+impl F32Digits {
+    /// Buffer length in bytes. A finite `f32` prints as at most 48 bytes (a
+    /// sign and `0.` before 45 decimal places, for example the negative
+    /// subnormal nearest zero), so 64 leaves a margin. A longer text fails
+    /// the write, and `write_f32` then prints the `f64` digits.
+    const CAPACITY: usize = 64;
+
+    const fn new() -> Self {
+        Self {
+            buf: [0; Self::CAPACITY],
+            len: 0,
+        }
+    }
+
+    fn as_str(&self) -> Option<&str> {
+        core::str::from_utf8(self.buf.get(..self.len)?).ok()
+    }
+}
+
+impl Write for F32Digits {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let end = self.len + s.len();
+        let dst = self.buf.get_mut(self.len..end).ok_or(core::fmt::Error)?;
+        dst.copy_from_slice(s.as_bytes());
+        self.len = end;
+        Ok(())
+    }
+}
+
+/// Whether `digits`, parsed as an `f64` and narrowed, is exactly `v`.
+fn narrows_to(digits: &str, v: f32) -> bool {
+    digits
+        .parse::<f64>()
+        .is_ok_and(|wide| (wide as f32).to_bits() == v.to_bits())
 }
 
 /// Write a float with textproto conventions for non-finites.
@@ -616,6 +737,101 @@ mod tests {
             enc.write_f64(v).unwrap();
             assert_eq!(s, want, "value: {v}");
         }
+    }
+
+    fn f32_text(v: f32) -> String {
+        let mut s = String::new();
+        let mut enc = TextEncoder::new(&mut s);
+        enc.write_field_name("f").unwrap();
+        enc.write_f32(v).unwrap();
+        s
+    }
+
+    #[test]
+    fn f32_uses_its_own_shortest_digits() {
+        #[rustfmt::skip]
+        let cases: &[(f32, &str)] = &[
+            (0.1,               "f: 0.1"),
+            (-2.2,              "f: -2.2"),
+            (1.5,               "f: 1.5"),
+            (-0.0,              "f: -0"),
+            // Nine significant digits, the most an `f32` needs.
+            (10.000_010_5,      "f: 10.0000105"),
+            (f32::MAX,          "f: 340282350000000000000000000000000000000"),
+            (f32::NAN,          "f: nan"),
+            (f32::NEG_INFINITY, "f: -inf"),
+        ];
+        for &(v, want) in cases {
+            assert_eq!(f32_text(v), want, "value: {v}");
+        }
+    }
+
+    #[test]
+    fn f32_digits_hold_the_longest_values() {
+        // No `f32` is longer than the negative subnormal nearest zero, 48
+        // bytes. A value that outgrew the buffer would print its widened
+        // digits.
+        for v in [
+            -f32::from_bits(1),
+            -f32::MIN_POSITIVE,
+            f32::MIN,
+            -f32::from_bits(0x007f_ffff),
+        ] {
+            let short = alloc::format!("{v}");
+            assert!(short.len() <= F32Digits::CAPACITY, "value: {v}");
+            assert_eq!(f32_text(v), alloc::format!("f: {short}"), "value: {v}");
+        }
+        assert_eq!(alloc::format!("{}", -f32::from_bits(1)).len(), 48);
+    }
+
+    #[test]
+    fn f32_digits_reject_text_past_the_capacity() {
+        let mut digits = F32Digits::new();
+        for _ in 0..F32Digits::CAPACITY {
+            digits.write_str("1").unwrap();
+        }
+        assert!(digits.write_str("1").is_err());
+        assert_eq!(digits.as_str().map(str::len), Some(F32Digits::CAPACITY));
+    }
+
+    #[test]
+    fn f32_keeps_widened_digits_where_a_narrowing_reader_would_miss() {
+        // The shortest digits of this value are `7.038531e-26`. Read as an
+        // `f64` and narrowed, they give its neighbour 0x15ae_43fe.
+        // `f32_fallback_values_exhaustive` shows that this value and its
+        // negation are the only ones.
+        for v in [f32::from_bits(0x15ae_43fd), -f32::from_bits(0x15ae_43fd)] {
+            let short = alloc::format!("{v}");
+            assert!(!narrows_to(&short, v));
+
+            let text = f32_text(v);
+            let digits = text.strip_prefix("f: ").unwrap();
+            assert_ne!(digits, short);
+            assert_eq!(digits, alloc::format!("{}", f64::from(v)));
+            // Both kinds of reader take the widened digits back to `v`.
+            assert!(narrows_to(digits, v));
+            assert_eq!(digits.parse::<f32>().unwrap().to_bits(), v.to_bits());
+        }
+    }
+
+    #[test]
+    #[ignore = "visits every f32; run with --release"]
+    fn f32_fallback_values_exhaustive() {
+        let mut fallbacks = alloc::vec::Vec::new();
+        for bits in 0..=u32::MAX {
+            let v = f32::from_bits(bits);
+            if !v.is_finite() {
+                continue;
+            }
+            let mut digits = F32Digits::new();
+            write!(digits, "{v}").unwrap();
+            let short = digits.as_str().unwrap();
+            assert_eq!(short.parse::<f32>().unwrap().to_bits(), bits);
+            if !narrows_to(short, v) {
+                fallbacks.push(bits);
+            }
+        }
+        assert_eq!(fallbacks, [0x15ae_43fd, 0x95ae_43fd]);
     }
 
     #[test]

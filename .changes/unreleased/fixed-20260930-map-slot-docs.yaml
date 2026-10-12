@@ -1,4 +1,4 @@
 kind: Fixed
 body: |-
-    **Rustdoc and `DESIGN.md` said that `map` keys and values keep `String` and `Vec<u8>` under a `string_type` or `bytes_type` rule** (#494). A rule that matches a `map` field applies to its `string` key and value and to its `bytes` value. The docs on the `string_type` methods, `StringRepr`, `BytesRepr` and `generate_arbitrary` now say so, and list what a custom string type in a `map` must implement: `Hash + Eq` or `Ord` as a key, `serde` under JSON, `Arbitrary` under `generate_arbitrary`, and a crate-local type under vtable reflection.
+    **Rustdoc and `DESIGN.md` said that `map` keys and values keep `String` and `Vec<u8>` under a `string_type` or `bytes_type` rule** (#494). A rule that matches a `map` field applies to its `string` key and value and to its `bytes` value. The docs on the `string_type` methods, `StringRepr`, `BytesRepr` and `generate_arbitrary` now say so, and list what a custom string type in a `map` must implement: `Hash + Eq` or `Ord` as a key, `serde` under JSON, and a crate-local type under vtable reflection.
 time: 2026-09-30T21:58:02-07:00

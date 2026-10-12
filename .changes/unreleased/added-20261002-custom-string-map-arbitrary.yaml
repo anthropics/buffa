@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **A custom string type used as a `map` key or value needs no `Arbitrary` impl under `generate_arbitrary`** (#500). Codegen attaches a builder that makes a `String` and converts it through `From<String>`, as it already did for singular, optional, repeated and oneof fields. Before, a message with such a `map` field implemented `Arbitrary` only when the custom type did, and a crate cannot add that impl to a string type it takes from another crate. The builders are generic over the map container, so a custom map type on such a field needs no `Arbitrary` impl either. A custom string type or custom map type that does implement `Arbitrary` is now built through the converting builder on these fields, so a fuzz corpus decodes to different values for them.
+time: 2026-10-02T00:20:03+02:00

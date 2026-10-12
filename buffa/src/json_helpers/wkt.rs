@@ -14,7 +14,6 @@
 
 use crate::alloc::format;
 use crate::alloc::string::String;
-use crate::alloc::vec::Vec;
 
 // ── Bounds ──────────────────────────────────────────────────────────────────
 
@@ -281,24 +280,19 @@ fn fmt_nanos_min(nanos: i32) -> String {
 /// `field_mask_path_round_trips` check before serializing per the spec.
 #[must_use]
 pub fn snake_to_camel(path: &str) -> String {
-    path.split('.')
-        .map(|component| {
-            let mut out = String::with_capacity(component.len());
-            let mut capitalize_next = false;
-            for ch in component.chars() {
-                if ch == '_' {
-                    capitalize_next = true;
-                } else if capitalize_next {
-                    out.extend(ch.to_uppercase());
-                    capitalize_next = false;
-                } else {
-                    out.push(ch);
-                }
-            }
-            out
-        })
-        .collect::<Vec<_>>()
-        .join(".")
+    let mut out = String::with_capacity(path.len());
+    let mut capitalize_next = false;
+    for ch in path.chars() {
+        if ch == '_' {
+            capitalize_next = true;
+        } else if capitalize_next {
+            out.extend(ch.to_uppercase());
+            capitalize_next = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 /// Convert a lowerCamelCase field-mask path to snake_case, handling dotted
@@ -309,53 +303,53 @@ pub fn snake_to_camel(path: &str) -> String {
 /// first character in a proto field name.
 #[must_use]
 pub fn camel_to_snake(path: &str) -> String {
-    path.split('.')
-        .map(|component| {
-            let mut out = String::with_capacity(component.len() + 4);
-            for ch in component.chars() {
-                if ch.is_uppercase() {
-                    out.push('_');
-                    out.extend(ch.to_lowercase());
-                } else {
-                    out.push(ch);
-                }
-            }
-            out
-        })
-        .collect::<Vec<_>>()
-        .join(".")
+    let mut out = String::with_capacity(path.len() + 4);
+    for ch in path.chars() {
+        if ch.is_uppercase() {
+            out.push('_');
+            out.extend(ch.to_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 /// Whether a snake_case `FieldMask` path is valid in proto3 JSON.
 ///
-/// Two checks: every dotted component must be an ASCII identifier of the
-/// form `[a-z_][a-z0-9_]*` (C++ accepts only `[0-9a-zA-Z.]` in the JSON
-/// form; protobuf-go requires each snake-cased component to be a valid
-/// proto name), and the path must round-trip, `camel_to_snake(snake_to_camel(p)) == p`,
-/// which rejects double underscores (`foo__bar`), digits after underscores
-/// (`foo_3_bar`), and uppercase in the snake form (`fooBar`). Whitespace,
-/// `-`, `/` and other non-identifier characters fail the first check even
-/// though they would survive the round-trip.
+/// Every dotted component must be an ASCII identifier of the form
+/// `[a-z_][a-z0-9_]*` (C++ accepts only `[0-9a-zA-Z.]` in the JSON form;
+/// protobuf-go requires each snake-cased component to be a valid proto
+/// name), and every underscore must be followed by a lowercase letter. The
+/// second rule is the condition under which
+/// `camel_to_snake(snake_to_camel(p)) == p`: it rejects a double underscore
+/// (`foo__bar`), a digit after an underscore (`foo_3_bar`) and a trailing
+/// underscore (`foo_`). Uppercase (`fooBar`), whitespace, `-`, `/` and other
+/// non-identifier characters fail the first rule.
 ///
 /// The exact path `*` is accepted as a deliberate divergence from both
 /// references, which reject it: AIP-161 uses it as the full-mask wildcard
 /// and it was accepted before the character check existed.
 ///
 /// The name predates the character check and is kept for compatibility.
+/// The check reads the path once and does not allocate.
 #[must_use]
 pub fn field_mask_path_round_trips(path: &str) -> bool {
     if path == "*" {
         return true;
     }
     path.split('.').all(|component| {
-        let Some((first, rest)) = component.as_bytes().split_first() else {
+        let bytes = component.as_bytes();
+        let Some(first) = bytes.first() else {
             return false;
         };
         (first.is_ascii_lowercase() || *first == b'_')
-            && rest
-                .iter()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_')
-    }) && camel_to_snake(&snake_to_camel(path)) == path
+            && bytes.iter().enumerate().all(|(i, b)| {
+                b.is_ascii_lowercase()
+                    || b.is_ascii_digit()
+                    || (*b == b'_' && bytes.get(i + 1).is_some_and(u8::is_ascii_lowercase))
+            })
+    })
 }
 
 // ── Civil calendar ──────────────────────────────────────────────────────────
@@ -367,9 +361,15 @@ pub fn field_mask_path_round_trips(path: &str) -> bool {
 /// Convert days-since-unix-epoch to a proleptic Gregorian `(year, month, day)`.
 #[must_use]
 pub fn days_to_date(z: i64) -> (i64, u8, u8) {
-    let z = z + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
+    let (era, doe) = match z.checked_add(719_468) {
+        Some(z) => (z.div_euclid(146_097), z.rem_euclid(146_097)),
+        None => {
+            // Add the epoch offset to the bounded remainder instead.
+            let era = z.div_euclid(146_097);
+            let doe = z.rem_euclid(146_097) + 719_468;
+            (era + doe / 146_097, doe % 146_097)
+        }
+    };
     let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
     let y = yoe + era * 400;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
@@ -382,19 +382,20 @@ pub fn days_to_date(z: i64) -> (i64, u8, u8) {
 /// Convert a proleptic Gregorian `(year, month, day)` to days-since-unix-epoch.
 ///
 /// Returns `None` if the date is invalid (out-of-range month, or day exceeding
-/// the Gregorian month length including the leap-year rule for February).
+/// the Gregorian month length including the leap-year rule for February),
+/// or if the day count cannot be represented as an `i64`.
 #[must_use]
 pub fn date_to_days(y: i64, m: u8, d: u8) -> Option<i64> {
     if !(1..=12).contains(&m) || d == 0 || u32::from(d) > days_in_month(y, u32::from(m)) {
         return None;
     }
-    let y = if m <= 2 { y - 1 } else { y };
+    let y = if m <= 2 { y.checked_sub(1)? } else { y };
     let era = y.div_euclid(400);
     let yoe = y.rem_euclid(400);
     let mp = if m > 2 { m - 3 } else { m + 9 } as i64;
     let doy = (153 * mp + 2) / 5 + i64::from(d) - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    Some(era * 146_097 + doe - 719_468)
+    i64::try_from(i128::from(era) * 146_097 + i128::from(doe) - 719_468).ok()
 }
 
 /// Days in `month` of `year` (1-indexed month). Validates the Gregorian
@@ -417,6 +418,69 @@ fn days_in_month(year: i64, month: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn civil_calendar_extreme_days_round_trip() {
+        let cases = [
+            (i64::MIN, (-25_252_734_927_764_585, 6, 7)),
+            (i64::MIN + 1, (-25_252_734_927_764_585, 6, 8)),
+            (i64::MAX - 1, (25_252_734_927_768_524, 7, 26)),
+            (i64::MAX, (25_252_734_927_768_524, 7, 27)),
+        ];
+        for (days, date) in cases {
+            assert_eq!(days_to_date(days), date, "days: {days}");
+            assert_eq!(date_to_days(date.0, date.1, date.2), Some(days));
+        }
+        for days in [i64::MAX - 719_468, i64::MAX - 719_467] {
+            let (year, month, day) = days_to_date(days);
+            assert_eq!(date_to_days(year, month, day), Some(days));
+        }
+    }
+
+    #[test]
+    fn civil_calendar_rejects_days_outside_i64_range() {
+        assert_eq!(date_to_days(-25_252_734_927_764_585, 6, 6), None);
+        assert_eq!(date_to_days(25_252_734_927_768_524, 7, 28), None);
+        for year in [i64::MIN, i64::MAX] {
+            for month in 1..=12 {
+                assert_eq!(date_to_days(year, month, 1), None);
+            }
+        }
+    }
+
+    #[test]
+    fn civil_calendar_round_trip() {
+        let cases = [
+            (-719_469, (0, 2, 29)),
+            (-719_468, (0, 3, 1)),
+            (-719_162, (1, 1, 1)),
+            (-1, (1969, 12, 31)),
+            (0, (1970, 1, 1)),
+            (11_016, (2000, 2, 29)),
+            (2_932_896, (9999, 12, 31)),
+        ];
+        for (days, date) in cases {
+            assert_eq!(days_to_date(days), date, "days: {days}");
+            assert_eq!(date_to_days(date.0, date.1, date.2), Some(days));
+        }
+    }
+
+    #[test]
+    fn civil_calendar_rejects_invalid_dates() {
+        for (year, month, day) in [
+            (2024, 0, 1),
+            (2024, 13, 1),
+            (2024, 1, 0),
+            (2024, 4, 31),
+            (1900, 2, 29),
+            (2023, 2, 29),
+            (2024, 2, 30),
+            (i64::MIN, 2, 30),
+            (i64::MAX, 2, 29),
+        ] {
+            assert_eq!(date_to_days(year, month, day), None);
+        }
+    }
 
     #[test]
     fn timestamp_round_trip() {
@@ -505,6 +569,111 @@ mod tests {
         assert!(parse_duration("--5s").is_err()); // double sign
         assert!(parse_duration("1.5").is_err()); // no suffix
         assert!(parse_duration("1.5e9s").is_err()); // exponent
+    }
+
+    #[test]
+    fn snake_to_camel_preserves_conversion_edges() {
+        for (path, expected) in [
+            ("", ""),
+            ("plain", "plain"),
+            ("*", "*"),
+            ("foo_bar_baz", "fooBarBaz"),
+            ("_foo", "Foo"),
+            ("foo_", "foo"),
+            ("foo__bar", "fooBar"),
+            ("foo_3_bar", "foo3Bar"),
+            (".", "."),
+            ("..", ".."),
+            (".foo_bar.", ".fooBar."),
+            ("foo_.bar_baz", "foo.barBaz"),
+            ("_._foo", ".Foo"),
+            ("foo_.._bar", "foo..Bar"),
+            ("café_au_lait", "caféAuLait"),
+            ("foo_ß._é", "fooSS.É"),
+            ("İ_σ", "İΣ"),
+            ("😀_foo.日_本", "😀Foo.日本"),
+        ] {
+            assert_eq!(snake_to_camel(path), expected, "path: {path:?}");
+        }
+    }
+
+    #[test]
+    fn camel_to_snake_preserves_conversion_edges() {
+        for (path, expected) in [
+            ("", ""),
+            ("plain", "plain"),
+            ("*", "*"),
+            ("fooBarBaz", "foo_bar_baz"),
+            ("Foo", "_foo"),
+            ("URLValue", "_u_r_l_value"),
+            ("fooBar3", "foo_bar3"),
+            ("_fooBar", "_foo_bar"),
+            ("foo_bar", "foo_bar"),
+            (".", "."),
+            ("..", ".."),
+            (".FooBar.", "._foo_bar."),
+            ("Foo..Bar", "_foo.._bar"),
+            ("caféAuLait", "café_au_lait"),
+            ("İstanbul.Σ", "_i\u{307}stanbul._σ"),
+            ("😀Foo.日本", "😀_foo.日本"),
+        ] {
+            assert_eq!(camel_to_snake(path), expected, "path: {path:?}");
+        }
+    }
+
+    #[test]
+    fn field_mask_nested_paths_round_trip() {
+        for path in [
+            "a.b.c.d",
+            "user.profile.display_name",
+            "_user._profile._display_name",
+            "foo1.bar2.baz3_qux4",
+        ] {
+            assert!(field_mask_path_round_trips(path), "path: {path:?}");
+            assert_eq!(camel_to_snake(&snake_to_camel(path)), path);
+        }
+    }
+
+    #[test]
+    fn field_mask_path_identifier_and_underscore_rules() {
+        for path in ["a", "a0", "_a", "_a0", "a_b", "a0_b1", "_a._b", "*"] {
+            assert!(field_mask_path_round_trips(path), "path: {path:?}");
+        }
+        for path in [
+            "_", "__a", "_0", "a_", "a__b", "a_0", "a_.b", "a._", "0a", "a.0b", "a.*", "*.a",
+            "a\0b", "a\nb", "café", "日本", "a.É", "a_é", "a_😀",
+        ] {
+            assert!(!field_mask_path_round_trips(path), "path: {path:?}");
+        }
+        let long_path = "_a0.b_c1.".repeat(128) + "d_e2";
+        assert!(field_mask_path_round_trips(&long_path));
+        assert!(!field_mask_path_round_trips(&(long_path + "_")));
+    }
+
+    #[test]
+    fn field_mask_validation_matches_conversion_round_trip() {
+        fn check_paths(path: &mut String, remaining: u8) {
+            let identifiers = path.split('.').all(|component| {
+                let mut chars = component.chars();
+                matches!(chars.next(), Some('a'..='z' | '_'))
+                    && chars.all(|ch| matches!(ch, 'a'..='z' | '0'..='9' | '_'))
+            });
+            let expected =
+                path == "*" || (identifiers && camel_to_snake(&snake_to_camel(path)) == *path);
+            assert_eq!(
+                field_mask_path_round_trips(path),
+                expected,
+                "path: {path:?}"
+            );
+            if remaining > 0 {
+                for ch in ['a', 'z', '0', '9', '_', '.', 'A', '*', 'é', '\0'] {
+                    path.push(ch);
+                    check_paths(path, remaining - 1);
+                    path.pop();
+                }
+            }
+        }
+        check_paths(&mut String::new(), 5);
     }
 
     #[test]

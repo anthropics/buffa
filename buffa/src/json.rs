@@ -6,8 +6,10 @@
 //! implementations.
 //!
 //! The options here are runtime ones: unknown enum *values*
-//! ([`JsonParseOptions::ignore_unknown_enum_values`]) and unregistered
-//! extension keys ([`JsonParseOptions::strict_extension_keys`]). Unknown
+//! ([`JsonParseOptions::ignore_unknown_enum_values`]), unregistered
+//! extension keys ([`JsonParseOptions::strict_extension_keys`]) and
+//! `google.protobuf.Any` `@type` values without a `/`
+//! ([`JsonParseOptions::strict_any_type_urls`]). Unknown
 //! *field names* are not governed here: generated deserializers ignore them
 //! unless the code was generated with
 //! `buffa_build::Config::deny_unknown_json_fields` (or its path-scoped
@@ -60,25 +62,36 @@
 //! in debug builds; the second call is silently ignored in release). Treat the
 //! first successful call as locking in behaviour for the process lifetime.
 //!
-//! # Unknown enum names by field shape
+//! # What `ignore_unknown_enum_values` changes for each kind of field
 //!
-//! For these field shapes, `ignore_unknown_enum_values` treats an unknown enum
-//! name the same way in `std` and `no_std` builds:
+//! The option covers enum values that the enum does not declare. With the
+//! option set, a generated message type handles such a value as the table
+//! says, in `std` and `no_std` builds alike unless a cell names the build:
 //!
-//! - a singular enum field takes the enum's default value (0 for an open
-//!   enum);
-//! - an `optional` enum field is left unset;
-//! - an unknown entry in a `repeated enum` or `map<_, enum>` field is dropped
-//!   from the container.
+//! | Field | Unknown name | Undeclared number, closed enum |
+//! |---|---|---|
+//! | implicit presence, or `required` | default value (0 for an open enum) | parse error |
+//! | explicit presence (the Rust type is `Option`) | left unset | left unset |
+//! | `repeated` or `map` | element or entry dropped | element or entry dropped |
+//! | `oneof` member, open enum | member set, with value 0 (`std`); parse error (`no_std`) | does not apply |
+//! | `oneof` member, closed enum | parse error | parse error |
+//! | extension | parse error | kept |
 //!
-//! An enum member of a `oneof` and an enum-typed extension are read by the
-//! enum's own decoder, which this list does not cover. An unknown name in an
-//! open-enum `oneof` member takes the default value with `std` and is a
-//! parse error without it. In a closed-enum `oneof` member or an enum-typed
-//! extension it is a parse error whether or not the option is set.
+//! An undeclared number is an integer in the `i32` range that the enum does
+//! not declare. An open enum keeps one as
+//! [`EnumValue::Unknown`](crate::EnumValue::Unknown) in every kind of field.
+//! With the option off, each cell is a parse error, and an extension still
+//! keeps the number.
 //!
-//! An unknown number in an open-enum field is kept as
-//! `EnumValue::Unknown(n)` whether or not the option is set.
+//! A value that cannot be an enum value is a parse error in every kind of
+//! field, with the option on or off. Such a value is a bool, an object, an
+//! array, a number written with a fraction or an exponent (such as `1.0`), or
+//! an integer outside the `i32` range. A `null` element of a `repeated` or
+//! `map` field is read as the enum's default value.
+//!
+//! The option applies to generated message types. JSON parsing of a
+//! `DynamicMessage` in `buffa-descriptor` does not read the option, and an
+//! unknown enum name is a parse error there.
 
 /// Options controlling protobuf JSON parsing behavior.
 ///
@@ -92,9 +105,13 @@
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct JsonParseOptions {
-    /// When `true`, an unknown enum string value is replaced with the default
-    /// value, left unset, or skipped, depending on the field's shape, instead
-    /// of producing an error. See the [module docs](self) for each shape.
+    /// When `true`, an enum name that the enum does not declare is replaced
+    /// with the default value, left unset, or dropped, depending on the kind
+    /// of field. In an `optional`, `repeated` or `map` field of a closed
+    /// enum, a number in the `i32` range that the enum does not declare is
+    /// left unset or dropped too. A value that cannot be an enum value, such
+    /// as a bool or `1.5`, is a parse error with the option on or off. See
+    /// the [module docs](self) for each kind of field. Default: `false`.
     pub ignore_unknown_enum_values: bool,
     /// When `true`, `"[pkg.ext]"` JSON keys that are not in the extension
     /// registry produce a parse error instead of being silently dropped.
@@ -116,17 +133,39 @@ pub struct JsonParseOptions {
     /// which also rejects `"[pkg.ext]"` keys on a message generated with
     /// preservation off.
     pub strict_extension_keys: bool,
+    /// When `true`, the `@type` of a `google.protobuf.Any` must be a type
+    /// URL: it must contain a `/`. A bare message full name such as
+    /// `"pkg.Message"` is a parse error.
+    ///
+    /// With the default (`false`), a bare full name is accepted when the
+    /// type registry has a JSON entry for a message of that name, and the
+    /// `Any` keeps it as its `type_url`. protobuf-go and Python read such a
+    /// name. C++ and Java reject it, and `any.proto` says that a type URL
+    /// contains at least one `/`. Set `true` to reject what C++ and Java
+    /// reject.
+    ///
+    /// A bare name without a JSON entry is a parse error with the option on
+    /// or off, and so is an `@type` that is empty or ends in `/`.
+    ///
+    /// The option covers parsing, and generated message types only.
+    /// Serialization writes the `type_url` an `Any` holds, and
+    /// `Any::type_name` and `Any::is_message` in `buffa-types` read a bare
+    /// name with the option on or off: test `type_url` for a `/` yourself
+    /// where that matters. JSON parsing of a `DynamicMessage` does not read
+    /// the option. Set `DynamicMessageSeed::strict_any_type_urls` in
+    /// `buffa-descriptor` for that.
+    pub strict_any_type_urls: bool,
 }
 
 impl JsonParseOptions {
-    /// Create new parse options with all flags at their default (strict) values.
+    /// Create new parse options with every flag at its default, `false`.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set whether unknown enum string values are ignored instead of
-    /// producing a parse error. See the [module docs](self) for what
-    /// "ignored" means for each field shape.
+    /// Set whether enum values that the enum does not declare are ignored
+    /// instead of producing a parse error. See the [module docs](self) for
+    /// what "ignored" means for each kind of field.
     #[must_use]
     pub fn ignore_unknown_enum_values(mut self, ignore: bool) -> Self {
         self.ignore_unknown_enum_values = ignore;
@@ -138,6 +177,15 @@ impl JsonParseOptions {
     #[must_use]
     pub fn strict_extension_keys(mut self, strict: bool) -> Self {
         self.strict_extension_keys = strict;
+        self
+    }
+
+    /// Set whether the `@type` of a `google.protobuf.Any` must contain a `/`
+    /// (`true`), or may also be the bare full name of a registered message
+    /// (`false`, the default).
+    #[must_use]
+    pub fn strict_any_type_urls(mut self, strict: bool) -> Self {
+        self.strict_any_type_urls = strict;
         self
     }
 }
@@ -156,13 +204,14 @@ mod std_impl {
             Cell::new(JsonParseOptions {
                 ignore_unknown_enum_values: false,
                 strict_extension_keys: false,
+                strict_any_type_urls: false,
             })
         };
     }
 
     /// Run a closure with the given parse options active.
     ///
-    /// The options affect enum deserialization within the closure. This is
+    /// The options affect JSON deserialization within the closure. This is
     /// **thread-local** state — concurrent parses on different threads are
     /// independent. The previous options are restored when the closure returns
     /// (or panics), so scopes nest correctly.
@@ -188,6 +237,10 @@ mod std_impl {
 
     pub(crate) fn strict_extension_keys() -> bool {
         OPTIONS.with(|c| c.get().strict_extension_keys)
+    }
+
+    pub(crate) fn strict_any_type_urls() -> bool {
+        OPTIONS.with(|c| c.get().strict_any_type_urls)
     }
 }
 
@@ -223,6 +276,7 @@ mod global {
     static DEFAULT: JsonParseOptions = JsonParseOptions {
         ignore_unknown_enum_values: false,
         strict_extension_keys: false,
+        strict_any_type_urls: false,
     };
 
     /// Set the global JSON parse options.
@@ -279,6 +333,10 @@ mod global {
     pub(crate) fn strict_extension_keys() -> bool {
         get().strict_extension_keys
     }
+
+    pub(crate) fn strict_any_type_urls() -> bool {
+        get().strict_any_type_urls
+    }
 }
 
 #[cfg(not(feature = "std"))]
@@ -318,6 +376,19 @@ pub(crate) fn strict_extension_keys() -> bool {
     }
 }
 
+/// Returns `true` if a `google.protobuf.Any` `@type` without a `/` should
+/// produce a parse error.
+pub(crate) fn strict_any_type_urls() -> bool {
+    #[cfg(feature = "std")]
+    {
+        std_impl::strict_any_type_urls()
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        global::strict_any_type_urls()
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -347,6 +418,17 @@ mod tests {
         });
         // Restored after closure returns.
         assert!(!ignore_unknown_enum_values());
+    }
+
+    #[test]
+    fn thread_local_scope_enables_strict_any_type_urls() {
+        assert!(!strict_any_type_urls());
+        let opts = JsonParseOptions::new().strict_any_type_urls(true);
+        with_json_parse_options(&opts, || {
+            assert!(strict_any_type_urls());
+            assert!(!ignore_unknown_enum_values());
+        });
+        assert!(!strict_any_type_urls());
     }
 
     #[test]

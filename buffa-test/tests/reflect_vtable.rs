@@ -238,3 +238,35 @@ fn vtable_owned_view_entry_point() {
         ValueRef::String("Ada")
     ));
 }
+
+#[test]
+fn vtable_view_implicit_float_presence_is_by_bit_pattern() {
+    // Fields 11 (float) and 12 (double) of AllScalars have implicit presence.
+    let negative = AllScalars {
+        f_float: -0.0,
+        f_double: -0.0,
+        ..Default::default()
+    };
+    let bytes = negative.encode_to_vec();
+    let view = AllScalarsView::decode_view(&bytes).expect("decode_view");
+    let r: &dyn ReflectMessage = &view;
+    let md = r.message_descriptor();
+
+    assert!(r.has(md.field(11).unwrap()));
+    assert!(r.has(md.field(12).unwrap()));
+    let mut numbers = Vec::new();
+    r.for_each_set(&mut |fd, _| numbers.push(fd.number()));
+    numbers.sort_unstable();
+    assert_eq!(numbers, vec![11u32, 12u32]);
+
+    // Positive zero written explicitly on the wire: tag 11/fixed32 and tag
+    // 12/fixed64, each with an all-zero payload.
+    let mut positive = vec![0x5D, 0, 0, 0, 0, 0x61];
+    positive.extend_from_slice(&[0; 8]);
+    let view = AllScalarsView::decode_view(&positive).expect("decode_view");
+    let r: &dyn ReflectMessage = &view;
+
+    assert!(!r.has(md.field(11).unwrap()));
+    assert!(!r.has(md.field(12).unwrap()));
+    r.for_each_set(&mut |fd, _| panic!("field {} reported as set", fd.number()));
+}

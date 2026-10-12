@@ -1510,7 +1510,8 @@ impl DynamicMessage {
     /// Decode the message wrapped in this `google.protobuf.Any`.
     ///
     /// Reads `type_url` (field 1), resolves the type name (the segment after
-    /// the last `/`) against this message's pool, and decodes `value`
+    /// the last `/`, or the whole string when it has no `/`) against this
+    /// message's pool, and decodes `value`
     /// (field 2) into a [`DynamicMessage`] of that type. This is the binary
     /// counterpart of the `Any` JSON `@type` expansion; CEL `dyn` evaluation
     /// unpacks `Any` values this way.
@@ -2482,7 +2483,10 @@ fn default_value_ref(kind: FieldKind, pool: &Arc<DescriptorPool>) -> ValueRef<'_
     static EMPTY_MAP: MapValue = MapValue::new();
     match kind {
         FieldKind::Singular(SingularKind::Scalar(s)) => default_scalar_ref(s),
-        FieldKind::Singular(SingularKind::Enum(_)) => ValueRef::EnumNumber(0),
+        FieldKind::Singular(SingularKind::Enum(eidx)) => {
+            // Linked enums are nonempty; their first declared value is the default.
+            ValueRef::EnumNumber(pool.enumeration(eidx).values()[0].number())
+        }
         FieldKind::Singular(SingularKind::Message(msg_idx)) => {
             ValueRef::Message(ReflectCow::Empty(EmptyMessage { pool, msg_idx }))
         }

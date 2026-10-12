@@ -747,8 +747,10 @@ fn rustdoc_label_resolves_to_path(
     type_map: &HashMap<String, String>,
 ) -> bool {
     let last = rust_path.rsplit("::").next().unwrap_or(rust_path);
-    // A keyword-named type is emitted as `r#name`; the bare `[name]` label
-    // would not resolve, so it keeps the escaped explicit target.
+    // A path that ends in a keyword is written `r#name`; the bare `[name]`
+    // label would not resolve, so it keeps the escaped explicit target. A
+    // generated type never has such a name (`escape_type_name`), but an
+    // exact `extern_path` entry can map a type to one.
     if display.trim() != last || crate::idents::is_rust_keyword(last) {
         return false;
     }
@@ -1576,13 +1578,24 @@ mod tests {
 
     #[test]
     fn test_resolve_proto_ref_keyword_name_keeps_escaped_explicit_target() {
-        // `type` is emitted as `r#type`; a bare `[type]` label would not
-        // resolve, so the same-module shortcut must not apply.
+        // A path ending in `type` is written `r#type`; a bare `[type]` label
+        // would not resolve, so the same-module shortcut must not apply.
         let mut map = HashMap::new();
         map.insert(".pkg.type".into(), "pkg::type".into());
         map.insert(".pkg.Book".into(), "pkg::Book".into());
         let result = resolve_proto_ref("type", "", "pkg.Book", &map);
         assert_eq!(result.as_deref(), Some("[type](crate::pkg::r#type)"));
+    }
+
+    #[test]
+    fn test_resolve_proto_ref_escaped_type_name_keeps_explicit_target() {
+        // `message type` is generated as `type_`, which the label `[type]`
+        // does not name.
+        let mut map = HashMap::new();
+        map.insert(".pkg.type".into(), "pkg::type_".into());
+        map.insert(".pkg.Book".into(), "pkg::Book".into());
+        let result = resolve_proto_ref("type", "", "pkg.Book", &map);
+        assert_eq!(result.as_deref(), Some("[type](crate::pkg::type_)"));
     }
 
     #[test]

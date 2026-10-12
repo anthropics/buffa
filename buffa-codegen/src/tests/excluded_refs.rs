@@ -608,13 +608,11 @@ fn test_no_warn_map_value_when_generated() {
 }
 
 #[test]
-fn test_map_entry_guard_prevents_suffix_collision() {
-    // Suffix collision, singular form:
-    // `dep.proto` exports a message named `PricesEntry` (same simple name as the
-    // synthetic map-entry `Order.PricesEntry`). A field `dep.PricesEntry legacy = 2`
-    // is NOT a map field (label=OPTIONAL, type=MESSAGE), so `find_map_entry` must
-    // not match it against the synthetic entry. Without the label/type guard, the
-    // imported-type field would be silently skipped instead of warned about.
+fn test_imported_message_named_like_map_entry_warns() {
+    // Singular form: `dep.proto` exports a message named `PricesEntry`, the
+    // simple name of the synthetic map entry `Order.PricesEntry`. A field
+    // `dep.PricesEntry legacy = 2` is a message field of an imported type, not
+    // a map, and must be warned about.
     let dep = dep_file_with_message("dep.proto", "dep", "PricesEntry");
     let mut kept = proto3_file("kept.proto");
     kept.package = Some("svc".to_string());
@@ -672,14 +670,11 @@ fn test_map_entry_guard_prevents_suffix_collision() {
 }
 
 #[test]
-fn test_repeated_suffix_collision_still_warns() {
-    // Suffix collision, repeated form:
-    // `dep.proto` exports `dep.PricesEntry`. A `repeated dep.PricesEntry legacy`
-    // field has the same label and type as a real map field, so `is_map_field`
-    // matches the synthetic `Order.PricesEntry` entry via suffix. The field
-    // check runs before the map-value branch, so `legacy` warns as an excluded
-    // reference, and the map-value branch then finds no cross-package
-    // type_name in the entry's value slot, so it adds nothing.
+fn test_repeated_imported_message_named_like_map_entry_warns_once() {
+    // Repeated form: `dep.proto` exports `dep.PricesEntry`. A
+    // `repeated dep.PricesEntry legacy` field has the label and type of a map
+    // field but names another package's message, so it is a list. It warns
+    // once, as an excluded reference; the map-value branch does not run.
     let dep = dep_file_with_message("dep.proto", "dep", "PricesEntry");
     let mut kept = proto3_file("kept.proto");
     kept.package = Some("svc".to_string());

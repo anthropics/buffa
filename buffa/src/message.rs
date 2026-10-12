@@ -1167,9 +1167,8 @@ pub trait MessageName {
 /// charges the repeated elements and map entries it builds against a limit
 /// that defaults to [`DEFAULT_ELEMENT_MEMORY_LIMIT`] and is changed with
 /// `buffa_descriptor::DynamicMessageSeed::with_element_memory_limit`, not
-/// here. That limit does not cover the buffer a `google.protobuf.Any`
-/// payload is read into, so a schema carrying an `Any` still needs the input
-/// length capped.
+/// here. The parser also charges that limit for the buffer it reads a
+/// `google.protobuf.Any` payload into, until it has decoded the payload.
 ///
 /// # Examples
 ///

@@ -526,11 +526,12 @@ fn decode_varint_slow(buf: &mut impl Buf) -> Result<u64, DecodeError> {
 /// Compute the encoded length of a varint.
 #[inline]
 pub const fn varint_len(value: u64) -> usize {
-    if value == 0 {
-        return 1;
-    }
-    let bits = 64 - value.leading_zeros() as usize;
-    bits.div_ceil(7)
+    // ceil(significant bits / 7) without a branch or a real division (`/ 64`
+    // is a shift). `value | 1` makes zero count as one bit, and
+    // `(9 * log2 + 73) / 64` equals `log2 / 7 + 1` for every log2 in 0..=63
+    // (protobuf's VarintSize64).
+    let log2 = 63 - (value | 1).leading_zeros();
+    ((log2 * 9 + 73) / 64) as usize
 }
 
 /// Skip one field value from `buf` according to the wire type in `tag`.
@@ -863,6 +864,25 @@ mod tests {
             let decoded = decode_varint(&mut buf.as_slice()).unwrap();
             assert_eq!(v, decoded, "roundtrip failed for {v}");
         }
+    }
+
+    #[test]
+    fn test_varint_len_at_every_bit_length() {
+        // Both sides of every 7-bit group boundary, and of every bit length,
+        // since the branch-free formula works on the bit length.
+        let mut values = vec![0u64, u64::MAX];
+        for bits in 1..64 {
+            let pow = 1u64 << bits;
+            values.extend([pow - 1, pow, pow + 1]);
+        }
+        for v in values {
+            let mut buf = Vec::new();
+            encode_varint(v, &mut buf);
+            assert_eq!(varint_len(v), buf.len(), "varint_len mismatch for {v}");
+        }
+        // Still usable in const contexts.
+        const LENS: [usize; 3] = [varint_len(0), varint_len(127), varint_len(u64::MAX)];
+        assert_eq!(LENS, [1, 1, 10]);
     }
 
     #[test]

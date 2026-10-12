@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **`ignore_unknown_enum_values` no longer hides enum values of the wrong JSON type** (#515). With the option on, an `optional`, `repeated` or `map` enum field dropped every value it could not decode: `true`, `{}`, `[]`, `1.5`, and a number outside `i32`. Those are now parse errors, as they already were for a singular field. The option still drops an unknown enum name, and for a closed enum a number in `i32` range that the enum does not declare. (`no_std` builds dropped such values for closed enums only; their open-enum fields already rejected them.)
+    Input that parsed under the option in 0.9 can now fail: a lenient caller whose peers send a non-enum value in one of these fields gets an error where the value used to disappear. The option has no setting that restores the old behaviour, so correct the sender or remove the value before parsing.
+time: 2026-10-02T19:12:10.007+00:00

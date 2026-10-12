@@ -16,6 +16,21 @@ pub mod debug_redact {
     buffa::include_proto!("debug_redact");
 }
 
+/// `[deprecated = true]` — generated fields and enum values carry
+/// `#[deprecated]`, and the impls that must visit them carry
+/// `#[allow(deprecated)]`, so this module compiles without warnings.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod deprecated {
+    buffa::include_proto!("deprecated");
+}
+
+/// `[default = DEPRECATED_VALUE]` in proto2: no field is deprecated, yet the
+/// generated default, `clear` and extension getter name a deprecated variant.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod deprecated_proto2 {
+    buffa::include_proto!("deprecated_proto2");
+}
+
 /// `skip_debug` — hand-written `Debug` impls for the types `build.rs` names
 /// in its rules.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
@@ -114,48 +129,14 @@ pub mod inline_field {
     non_camel_case_types
 )]
 pub mod vtable_string_repr {
-    /// `String`-backed newtype satisfying `buffa::ProtoString` (`Deref<str>` +
-    /// `AsRef<str>` + `From<String>`/`From<&str>`). It derives `Serialize` /
-    /// `Deserialize` because a `repeated string` JSON field serializes its
-    /// elements through their native serde impls (singular fields use the
+    /// `String`-backed newtype whose `buffa::ProtoString` impl and conversions
+    /// come from the remote derive. The `serde` key supplies `Serialize` /
+    /// `Deserialize`, because the `repeated`, `optional` and oneof JSON fields
+    /// call the string type's own serde impls (a singular field uses the
     /// `proto_string` with-module instead, which needs only `AsRef`/`From`).
-    #[derive(Clone, PartialEq, Eq, Default, Debug, ::serde::Serialize, ::serde::Deserialize)]
+    #[derive(Clone, PartialEq, Eq, Default, Debug, ::buffa_remote_derive::ProtoString)]
+    #[buffa(remote = ::buffa::alloc::string::String, serde)]
     pub struct LocalStr(pub ::buffa::alloc::string::String);
-
-    impl ::core::ops::Deref for LocalStr {
-        type Target = str;
-        fn deref(&self) -> &str {
-            &self.0
-        }
-    }
-    impl ::core::convert::AsRef<str> for LocalStr {
-        fn as_ref(&self) -> &str {
-            &self.0
-        }
-    }
-    impl ::core::convert::From<::buffa::alloc::string::String> for LocalStr {
-        fn from(s: ::buffa::alloc::string::String) -> Self {
-            LocalStr(s)
-        }
-    }
-    impl ::core::convert::From<&str> for LocalStr {
-        fn from(s: &str) -> Self {
-            LocalStr(::buffa::alloc::string::String::from(s))
-        }
-    }
-    impl ::buffa::ProtoString for LocalStr {
-        fn copy_from_str(value: &str) -> Self {
-            Self::from(value)
-        }
-
-        fn from_wire(
-            payload: ::buffa::WirePayload<'_>,
-        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-            ::core::str::from_utf8(payload.as_slice())
-                .map(|s| LocalStr(::buffa::alloc::string::String::from(s)))
-                .map_err(|_| ::buffa::DecodeError::InvalidUtf8)
-        }
-    }
 
     buffa::include_proto!("vtable_string_repr");
 }
@@ -216,7 +197,10 @@ pub mod repeated_type {
     /// A `Vec`-backed collection implementing `buffa::ProtoList<T>`. `Default`
     /// is hand-written (not derived) so it does not require `T: Default`, which
     /// the supertrait bound would otherwise force on every element type.
+    /// `Arbitrary` is derived for the fields whose element type has its own
+    /// impl; `labels` and `blobs` are built through `From<Vec<T>>` instead.
     #[derive(Clone, PartialEq, Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
     pub struct CustomList<T>(pub ::buffa::alloc::vec::Vec<T>);
 
     impl<T> ::core::default::Default for CustomList<T> {
@@ -400,13 +384,20 @@ pub mod map_type {
 /// `HashMap` key bound and every JSON dispatch path. The type is crate-local
 /// because vtable reflection emits `impl ReflectMapKey` / `impl ReflectElement`
 /// for it (a foreign type would be an orphan-rule error — exactly as for a
-/// custom `repeated` element). The seven fields cover every custom-string-key/value
-/// JSON dispatch path; exercised by `src/tests/string_map.rs`.
+/// custom `repeated` element). The fields cover every custom-string-key/value
+/// JSON dispatch path and every generated `Arbitrary` map builder that converts
+/// a string slot; exercised by `tests/string_map.rs` and
+/// `src/tests/string_map.rs`.
 #[allow(clippy::derivable_impls, non_camel_case_types)]
 pub mod string_map {
-    /// `String`-backed newtype satisfying `buffa::ProtoString`, plus the
-    /// `Hash + Eq + Ord` a map key needs and `Serialize`/`Deserialize` the JSON
-    /// paths need.
+    /// `String`-backed newtype with the `Hash + Eq + Ord` a map key needs. The
+    /// remote derive supplies its `buffa::ProtoString` impl and conversions,
+    /// and the `serde` key the `Serialize`/`Deserialize` the JSON paths need.
+    ///
+    /// It has no `Arbitrary` impl. The fixture is compiled with
+    /// `generate_arbitrary`, so under the `arbitrary` feature the crate builds
+    /// only if every map field with a `MapStr` slot got a builder that makes
+    /// the `MapStr` from a `String`.
     #[derive(
         Clone,
         PartialEq,
@@ -416,50 +407,10 @@ pub mod string_map {
         Hash,
         Default,
         Debug,
-        ::serde::Serialize,
-        ::serde::Deserialize,
+        ::buffa_remote_derive::ProtoString,
     )]
-    // A custom string used in a `map` under `generate_arbitrary` must impl
-    // `Arbitrary` (unlike singular/repeated string fields, which get a generic
-    // builder): the map arbitrary path has no per-key shim. Deriving it on the
-    // newtype is the one-line requirement.
-    #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+    #[buffa(remote = ::buffa::alloc::string::String, serde)]
     pub struct MapStr(pub ::buffa::alloc::string::String);
-
-    impl ::core::ops::Deref for MapStr {
-        type Target = str;
-        fn deref(&self) -> &str {
-            &self.0
-        }
-    }
-    impl ::core::convert::AsRef<str> for MapStr {
-        fn as_ref(&self) -> &str {
-            &self.0
-        }
-    }
-    impl ::core::convert::From<::buffa::alloc::string::String> for MapStr {
-        fn from(s: ::buffa::alloc::string::String) -> Self {
-            MapStr(s)
-        }
-    }
-    impl ::core::convert::From<&str> for MapStr {
-        fn from(s: &str) -> Self {
-            MapStr(::buffa::alloc::string::String::from(s))
-        }
-    }
-    impl ::buffa::ProtoString for MapStr {
-        fn copy_from_str(value: &str) -> Self {
-            Self::from(value)
-        }
-
-        fn from_wire(
-            payload: ::buffa::WirePayload<'_>,
-        ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-            ::core::str::from_utf8(payload.as_slice())
-                .map(|s| MapStr(::buffa::alloc::string::String::from(s)))
-                .map_err(|_| ::buffa::DecodeError::InvalidUtf8)
-        }
-    }
 
     buffa::include_proto!("string_map");
 }
@@ -551,6 +502,11 @@ pub mod keywords {
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod keyword_collisions {
+    buffa::include_proto!("test.keyword_collisions");
+}
+
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
 pub mod nested {
     buffa::include_proto!("test.nested");
 }
@@ -624,6 +580,16 @@ pub mod reflectcollide {
 #[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
 pub mod prelude_shadow {
     buffa::include_proto!("test.prelude_shadow");
+}
+
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    dead_code,
+    non_camel_case_types
+)]
+pub mod type_name_escapes {
+    buffa::include_proto!("test.type_name_escapes");
 }
 
 #[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
@@ -1040,6 +1006,22 @@ pub mod string_proto2 {
     ));
 }
 
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod bytes_proto2 {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/bytes_proto2_variant/test.proto2.mod.rs"
+    ));
+}
+
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod custom_bytes_proto2 {
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/custom_bytes_proto2_variant/test.proto2.mod.rs"
+    ));
+}
+
 // Views + preserve_unknown_fields=false: covers the else-branches in view
 // codegen that omit the unknown-fields view field. Compilation IS the test.
 #[allow(
@@ -1101,10 +1083,13 @@ pub mod string_copy;
 pub mod string_copy_counted;
 
 // The table codec is tested by compiling a schema twice under renamed packages
-// and comparing the results (see `tests::table_codec`). `tcu`, `tc2u`, `tc3u`
-// and `wideu` use the default unrolled codec; `tct`, `tc2t`, `tc3t` and `widet`
-// are the same schemas with `codec_strategy = Table`, and `tcx` is `tct` again
-// with options that change the names and fields a table refers to. They exist
+// and comparing the results (see `tests::table_codec`). `tcu`, `tc2u`, `tc3u`,
+// `tc4u`, `tc5u`, `tc6u` and `wideu` use the default unrolled codec; `tct`,
+// `tc2t`, `tc3t`, `tc4t`, `tc5t`, `tc6t` and `widet` are the same schemas with
+// `codec_strategy = Table` (`tc5` and `tc6` are built with options, the same
+// for both codecs), and
+// `tcx` and `tc4x` are `tct` and `tc4t` again with options that change the
+// names and fields a table refers to. They exist
 // only on Rust 1.77 or later (see build.rs). The table modules forbid unsafe
 // code, which checks that the `unsafe` a table needs stays inside `buffa`'s
 // macros.
@@ -1143,6 +1128,45 @@ pub mod tc3t {
 }
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
 #[cfg(has_table_codec)]
+pub mod tc4u {
+    buffa::include_proto!("tc4u");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc4t {
+    buffa::include_proto!("tc4t");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc4x {
+    buffa::include_proto!("tc4x");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc5u {
+    buffa::include_proto!("tc5u");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc5t {
+    buffa::include_proto!("tc5t");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc6u {
+    buffa::include_proto!("tc6u");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tc6t {
+    buffa::include_proto!("tc6t");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
 pub mod wideu {
     buffa::include_proto!("wideu");
 }
@@ -1158,10 +1182,108 @@ pub mod widet {
 pub mod tcx {
     buffa::include_proto!("tcx");
 }
+// The proto2 schema with unknown fields dropped: `tclu`, `tclt`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tclu {
+    buffa::include_proto!("tclu");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tclt {
+    buffa::include_proto!("tclt");
+}
+// Maps; see protos/table_codec_maps.proto.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcmu {
+    buffa::include_proto!("tcmu");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcmt {
+    buffa::include_proto!("tcmt");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcbu {
+    buffa::include_proto!("tcbu");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcbt {
+    buffa::include_proto!("tcbt");
+}
+// Maps of two collection types, and of strings and bytes without UTF-8
+// validation; see the two protos.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcru {
+    buffa::include_proto!("tcru");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcrt {
+    buffa::include_proto!("tcrt");
+}
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcu8u {
+    buffa::include_proto!("tcu8u");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod tcu8t {
+    buffa::include_proto!("tcu8t");
+}
+
+// `bru` is `table_bridge.proto` unrolled, and `brt` has the table codec except
+// for `Hot`, so table and unrolled messages hold each other. `xe` is a package
+// of table messages that `xfu` (unrolled) and `xft` (table) hold through an
+// `extern_path`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod bru {
+    buffa::include_proto!("bru");
+}
+#[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+#[cfg(has_table_codec)]
+pub mod brt {
+    buffa::include_proto!("brt");
+}
+#[forbid(unsafe_code)]
+#[cfg(has_table_codec)]
+pub mod xe {
+    buffa::include_proto!("xe");
+}
+#[cfg(has_table_codec)]
+pub mod xfu {
+    buffa::include_proto!("xfu");
+}
+#[forbid(unsafe_code)]
+#[cfg(has_table_codec)]
+pub mod xft {
+    buffa::include_proto!("xft");
+}
+
+// `tbz` has the table codec and `bytes` fields stored as `bytes::Bytes`. The
+// messages that have or hold such a field stay unrolled.
+#[cfg(has_table_codec)]
+pub mod tbz {
+    buffa::include_proto!("tbz");
+}
 
 // Two packages, the second holding messages of the first: `xau`/`xbu` unrolled,
 // `xat`/`xbt` with the table codec, and `xti` with the table codec and
 // `file_per_package` with `idiomatic_imports`, which holds `xati` and `xbti`.
+// `xa*` holds an enum, whose generated `Default` impl clippy wants derived.
+#[allow(clippy::derivable_impls)]
 #[cfg(has_table_codec)]
 pub mod xau {
     buffa::include_proto!("xau");
@@ -1171,6 +1293,7 @@ pub mod xbu {
     buffa::include_proto!("xbu");
 }
 #[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls)]
 #[cfg(has_table_codec)]
 pub mod xat {
     buffa::include_proto!("xat");
@@ -1181,6 +1304,7 @@ pub mod xbt {
     buffa::include_proto!("xbt");
 }
 #[forbid(unsafe_code)]
+#[allow(clippy::derivable_impls)]
 #[cfg(has_table_codec)]
 pub mod xti {
     include!(concat!(

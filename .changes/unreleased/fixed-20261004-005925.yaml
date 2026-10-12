@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a packed setting on a field that cannot be packed** (#542). `packed = true` on a singular field, or on a repeated string, bytes, message or group field, linked and was ignored; it is now `PoolError::InvalidPackedOption`, as protoc rejects it. The editions spelling is checked too: a field's own `features.repeated_field_encoding` is `PoolError::InvalidRepeatedFieldEncoding` when the field is not repeated, or when the value is `PACKED` and the elements cannot be packed. A value inherited from the file or message applies to the fields it fits, and the fields of a map entry may carry the map field's value. protobuf-go ignores `packed = true` on such a field.
+time: 2026-10-04T00:59:25.450442+02:00

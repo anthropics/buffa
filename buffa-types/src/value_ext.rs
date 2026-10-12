@@ -302,14 +302,18 @@ impl serde::Serialize for Value {
     ///
     /// # Errors
     ///
-    /// Serialization fails if the `number` variant holds a non-finite value
+    /// Serialization fails if no variant is set. It also fails if the
+    /// `number` variant holds a non-finite value
     /// (`NaN`, `Infinity`, `-Infinity`), because JSON numbers cannot represent
     /// those values.  Use [`DoubleValue`](crate::google::protobuf::DoubleValue) if you need to
     /// serialize non-finite floating-point values (which uses the proto3 JSON
     /// string encoding `"NaN"` / `"Infinity"` / `"-Infinity"`).
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match &self.kind {
-            None | Some(KindOneof::NullValue(_)) => s.serialize_unit(),
+            None => Err(serde::ser::Error::custom(
+                "google.protobuf.Value.kind must be set",
+            )),
+            Some(KindOneof::NullValue(_)) => s.serialize_unit(),
             Some(KindOneof::NumberValue(n)) => {
                 if !n.is_finite() {
                     return Err(serde::ser::Error::custom(
@@ -456,6 +460,7 @@ impl<'de> serde::Deserialize<'de> for ListValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::{vec, vec::Vec};
 
     #[test]
     fn value_null() {
@@ -648,6 +653,48 @@ mod tests {
     #[cfg(feature = "json")]
     mod serde_tests {
         use super::*;
+
+        #[test]
+        fn value_unset_serialize_is_error() {
+            let v = Value::default();
+            assert!(serde_json::to_string(&v).is_err());
+        }
+
+        #[test]
+        fn value_with_only_unknown_fields_serialize_is_error() {
+            use buffa::Message;
+
+            let v = Value::decode_from_slice(&[0x38, 0x01]).unwrap();
+            assert!(v.kind.is_none());
+            assert!(serde_json::to_string(&v).is_err());
+        }
+
+        #[test]
+        fn unset_value_in_containers_serialize_is_error() {
+            let st = Struct::from_fields([("unset", Value::default())]);
+            assert!(serde_json::to_string(&st).is_err());
+            assert!(serde_json::to_string(&Value::from(st)).is_err());
+
+            let list = ListValue::from_values([Value::null(), Value::default()]);
+            assert!(serde_json::to_string(&list).is_err());
+            assert!(serde_json::to_string(&Value::from(list)).is_err());
+        }
+
+        #[test]
+        fn value_default_variants_roundtrip() {
+            for (v, expected) in [
+                (Value::null(), "null"),
+                (Value::from(0.0_f64), "0.0"),
+                (Value::from(false), "false"),
+                (Value::from(""), r#""""#),
+                (Value::from(Struct::new()), "{}"),
+                (Value::from(ListValue::default()), "[]"),
+            ] {
+                let json = serde_json::to_string(&v).unwrap();
+                assert_eq!(json, expected);
+                assert_eq!(serde_json::from_str::<Value>(&json).unwrap(), v);
+            }
+        }
 
         #[test]
         fn value_null_roundtrip() {

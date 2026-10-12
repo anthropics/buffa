@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`FieldMask::covers` and `FieldMask::normalize` in `buffa-types`** (#512). `covers(path)` is true when the mask contains `path` or one of its ancestors, so a mask of `user` covers `user.name` and does not cover `username`; the existing `contains` is an exact match. `normalize()` sorts the paths by their dot-separated components and removes duplicates and paths that another path covers, in place. Both read a mask as a list of paths: an empty mask covers nothing, `*` is an ordinary path, paths are compared in proto field-name spelling and are not checked against a descriptor, and a backtick-quoted map key is not parsed.
+time: 2026-10-02T09:40:25.939765-04:00

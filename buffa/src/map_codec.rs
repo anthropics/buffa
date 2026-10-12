@@ -154,7 +154,9 @@ pub type Map<K, V> = crate::__private::HashMap<K, V>;
 ///   inner map's impl. This requirement is `std`-only (vtable reflection
 ///   requires `std`), so a `no_std` build never needs it.
 /// - `arbitrary::Arbitrary` under the `arbitrary` feature (derivable on a
-///   newtype).
+///   newtype). Not needed on a map field whose key or value is a custom string
+///   type or whose value is a non-default bytes type: generated code builds
+///   that field through `MapStorage` and `Default`.
 /// - `serde::Serialize` / `Deserialize` under a JSON-enabled build. The proto3
 ///   JSON codec drives serialization through this trait, so **every** proto map
 ///   key/value type is supported regardless of the container — there is no

@@ -156,3 +156,35 @@ fn to_dynamic_scales_its_memory_bounds_and_floors_them_at_the_defaults() {
         "an unbounded re-decode would leave decode_view -> to_dynamic with no ceiling"
     );
 }
+
+#[test]
+fn implicit_float_has_arms_compare_bit_patterns() {
+    // `-0.0 != 0.0` is false, so a value comparison would report a field
+    // holding negative zero as unset although the encoder writes it.
+    let mut file = proto3_file("vt_float.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Floats".to_string()),
+        field: vec![
+            make_field("ratio", 1, Label::LABEL_OPTIONAL, Type::TYPE_FLOAT),
+            make_field("weight", 2, Label::LABEL_OPTIONAL, Type::TYPE_DOUBLE),
+        ],
+        ..Default::default()
+    });
+    let files = generate(&[file], &["vt_float.proto".to_string()], &vtable_config())
+        .expect("should generate");
+    let flat: String = joined(&files)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+
+    for arm in [
+        "1u32=>self.ratio.to_bits()!=0,",
+        "2u32=>self.weight.to_bits()!=0,",
+    ] {
+        assert_eq!(
+            flat.matches(arm).count(),
+            2,
+            "the owned and the view `has` must each emit `{arm}`"
+        );
+    }
+}

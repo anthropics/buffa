@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 /// When a message is decoded with a schema that doesn't include all fields
 /// present on the wire, the unknown fields are stored here so they can be
 /// re-encoded without data loss.
-#[derive(Clone, Debug, Default, PartialEq, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct UnknownFields {
     fields: Vec<UnknownField>,
 }
@@ -122,7 +122,7 @@ impl IntoIterator for UnknownFields {
 }
 
 /// A single unknown field (field number + wire data).
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct UnknownField {
     pub number: u32,
     pub data: UnknownFieldData,
@@ -159,7 +159,7 @@ impl UnknownField {
 }
 
 /// The wire data for an unknown field.
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum UnknownFieldData {
     Varint(u64),
     Fixed64(u64),
@@ -207,6 +207,21 @@ impl<'a> arbitrary::Arbitrary<'a> for UnknownFields {
 mod tests {
     use super::*;
     use crate::encoding::MAX_FIELD_NUMBER;
+
+    /// A message that preserves unknown fields holds an `UnknownFields`, so it
+    /// can be a `HashSet` or `HashMap` key only if this type is `Eq + Hash`.
+    #[test]
+    fn unknown_fields_are_usable_in_a_hashed_key() {
+        let mut fields = UnknownFields::default();
+        fields.push(UnknownField {
+            number: 1,
+            data: UnknownFieldData::Group(UnknownFields::default()),
+        });
+        let mut set = std::collections::HashSet::new();
+        assert!(set.insert(fields.clone()));
+        assert!(!set.insert(fields));
+        assert!(set.insert(UnknownFields::default()));
+    }
 
     fn varint_field(number: u32, value: u64) -> UnknownField {
         UnknownField {

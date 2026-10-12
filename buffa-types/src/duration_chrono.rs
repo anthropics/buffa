@@ -112,6 +112,35 @@ impl TryFrom<Duration> for chrono::TimeDelta {
     /// exceeds `chrono::TimeDelta`'s representable range (`±i64::MAX`
     /// milliseconds).
     fn try_from(d: Duration) -> Result<Self, Self::Error> {
+        Self::try_from(&d)
+    }
+}
+
+#[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]
+impl TryFrom<&Duration> for chrono::TimeDelta {
+    type Error = DurationChronoError;
+
+    /// Convert a borrowed protobuf [`Duration`] to a [`chrono::TimeDelta`],
+    /// leaving the message in place.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use buffa_types::Duration;
+    ///
+    /// let proto = Duration::from_millis(-1_500);
+    /// let duration: chrono::TimeDelta = (&proto).try_into().unwrap();
+    /// assert_eq!(duration, chrono::TimeDelta::milliseconds(-1_500));
+    /// assert_eq!(proto.seconds, -1);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DurationChronoError::InvalidNanos`] if `nanos` is out of range
+    /// or its sign is inconsistent with `seconds`. Returns
+    /// [`DurationChronoError::Overflow`] if the duration exceeds
+    /// `chrono::TimeDelta`'s representable range.
+    fn try_from(d: &Duration) -> Result<Self, Self::Error> {
         if d.nanos < -999_999_999 || d.nanos > 999_999_999 {
             return Err(DurationChronoError::InvalidNanos);
         }
