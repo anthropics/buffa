@@ -3182,13 +3182,14 @@ fn proto3_optional_fields_without_oneofs_are_rejected_transactionally() {
     );
 }
 
-/// A two-file set: `extendable.proto` declares `Extendable`, and a second file
+/// A two-file set: `extendable.proto` declares `MethodOptions`, and a second file
 /// with the given `syntax` declares a file-level and a message-nested
 /// extension of it, both marked `proto3_optional`.
 ///
 /// protoc sets the flag on an `optional` extension declared in a proto3 file.
-/// It allows such an extension only on an options message; `Extendable`
-/// stands in for one so the set does not need `descriptor.proto`.
+/// It allows such an extension only on an options message; the fixture
+/// declares `google.protobuf.MethodOptions` itself so the set does not need
+/// `descriptor.proto`.
 fn proto3_optional_extension_set(
     syntax: &str,
 ) -> buffa_descriptor::generated::descriptor::FileDescriptorSet {
@@ -3199,7 +3200,7 @@ fn proto3_optional_extension_set(
     };
 
     let optional_extension = |name: &str, number: i32| FieldDescriptorProto {
-        extendee: Some(".valid.test.Extendable".into()),
+        extendee: Some(".google.protobuf.MethodOptions".into()),
         proto3_optional: Some(true),
         ..scalar_field(name, number, Type::TYPE_BOOL)
     };
@@ -3207,10 +3208,10 @@ fn proto3_optional_extension_set(
         file: vec![
             FileDescriptorProto {
                 name: Some("extendable.proto".into()),
-                package: Some("valid.test".into()),
+                package: Some("google.protobuf".into()),
                 syntax: Some("proto2".into()),
                 message_type: vec![DescriptorProto {
-                    name: Some("Extendable".into()),
+                    name: Some("MethodOptions".into()),
                     extension_range: vec![ExtensionRange {
                         start: Some(100),
                         end: Some(200),

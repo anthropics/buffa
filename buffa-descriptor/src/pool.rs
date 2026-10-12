@@ -464,6 +464,12 @@ pub enum PoolError {
     /// A field or extension in a proto3 file has `TYPE_GROUP`. Proto2 uses
     /// legacy groups; editions use `message_encoding = DELIMITED`.
     GroupFieldInProto3 { field: String },
+    /// A proto3 file extends a message that is not a `google.protobuf.*Options`
+    /// message. protoc allows proto3 extensions only for defining options.
+    Proto3ExtensionTargetNotOptions { field: String },
+    /// A proto3 field uses a closed enum. protoc rejects closed enums in all
+    /// proto3 field kinds (singular, repeated, optional, oneof, map-value).
+    Proto3ClosedEnumField { field: String },
     /// Two extension ranges declared by the same message overlap. `end` is
     /// exclusive, as in `DescriptorProto.ExtensionRange`. Carries both ranges
     /// as declared: `start..end` is the later of the two in declaration
@@ -827,6 +833,13 @@ impl core::fmt::Display for PoolError {
             }
             Self::GroupFieldInProto3 { field } => {
                 write!(f, "field {field} uses a group type in proto3")
+            }
+            Self::Proto3ExtensionTargetNotOptions { field } => write!(
+                f,
+                "field {field} extends a non-Options message in proto3"
+            ),
+            Self::Proto3ClosedEnumField { field } => {
+                write!(f, "field {field} uses a closed enum in proto3")
             }
             Self::OverlappingExtensionRange {
                 message,
@@ -1446,6 +1459,26 @@ impl DescriptorPool {
         debug_assert_eq!(self.message_file.len(), self.messages.len());
         debug_assert_eq!(self.enum_file.len(), self.enums.len());
         self.files.extend(new_files);
+
+        for msg_idx in first_new_message..self.messages.len() {
+            let file_idx = self.message_file[msg_idx];
+            if self.files[file_idx].syntax.as_deref() != Some("proto3") {
+                continue;
+            }
+            let message = &self.messages[msg_idx];
+            for field in &message.fields {
+                // Singular implicit-presence fields are open PR #609's scope;
+                // skip them here so the two checks never double-report.
+                let defers_to_implicit_presence_check =
+                    matches!(field.kind(), FieldKind::Singular(_))
+                        && field.presence() == FieldPresence::Implicit;
+                if !defers_to_implicit_presence_check && field.enum_type == Some(EnumType::Closed) {
+                    return Err(PoolError::Proto3ClosedEnumField {
+                        field: format!("{}.{}", message.full_name, field.name),
+                    });
+                }
+            }
+        }
 
         Ok(())
     }
@@ -2465,6 +2498,27 @@ impl DescriptorPool {
         };
         self.register_symbol(&fqn, SymbolKind::Extension)?;
         let extendee = self.resolve_message_type_name(ext.extendee.as_deref(), &fqn, scope)?;
+        if scope.proto3 {
+            let extendee_msg = &self.messages[extendee.0 as usize];
+            // protoc allows proto3 extensions only for defining options: the
+            // extendee must be one of the nine `google.protobuf.*Options`
+            // messages, not merely a message whose name ends in `Options`.
+            let is_options = matches!(
+                extendee_msg.full_name.as_str(),
+                "google.protobuf.FileOptions"
+                    | "google.protobuf.MessageOptions"
+                    | "google.protobuf.FieldOptions"
+                    | "google.protobuf.OneofOptions"
+                    | "google.protobuf.EnumOptions"
+                    | "google.protobuf.EnumValueOptions"
+                    | "google.protobuf.ServiceOptions"
+                    | "google.protobuf.MethodOptions"
+                    | "google.protobuf.ExtensionRangeOptions"
+            );
+            if !is_options {
+                return Err(PoolError::Proto3ExtensionTargetNotOptions { field: fqn });
+            }
+        }
         // The field links exactly like a declared field. `containing_msg` is
         // `None` because extensions cannot be map fields (a map requires a
         // synthetic MapEntry message nested in the declaring message, which

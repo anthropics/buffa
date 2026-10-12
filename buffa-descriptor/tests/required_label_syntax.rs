@@ -3,11 +3,14 @@
 use buffa::editions::FieldPresence;
 use buffa::Message;
 use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
-use buffa_descriptor::generated::descriptor::feature_set::FieldPresence as DescriptorPresence;
+use buffa_descriptor::generated::descriptor::feature_set::{
+    EnumType, FieldPresence as DescriptorPresence,
+};
 use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
 use buffa_descriptor::generated::descriptor::{
-    DescriptorProto, Edition, EnumDescriptorProto, EnumValueDescriptorProto, FeatureSet,
-    FieldDescriptorProto, FieldOptions, FileDescriptorProto, FileDescriptorSet, FileOptions,
+    DescriptorProto, Edition, EnumDescriptorProto, EnumOptions, EnumValueDescriptorProto,
+    FeatureSet, FieldDescriptorProto, FieldOptions, FileDescriptorProto, FileDescriptorSet,
+    FileOptions,
 };
 use buffa_descriptor::{DescriptorPool, FieldKind, PoolError, ScalarType, SingularKind};
 
@@ -55,6 +58,27 @@ fn extension_host() -> FileDescriptorProto {
     }
 }
 
+/// The `google.protobuf.MethodOptions` message, declared locally so the set
+/// does not need `descriptor.proto`. proto3 files may only extend options
+/// messages, so proto3 test variants extend this instead of `Host`.
+fn options_host() -> FileDescriptorProto {
+    FileDescriptorProto {
+        name: Some("options_host.proto".into()),
+        package: Some("google.protobuf".into()),
+        syntax: Some("proto2".into()),
+        message_type: vec![DescriptorProto {
+            name: Some("MethodOptions".into()),
+            extension_range: vec![ExtensionRange {
+                start: Some(100),
+                end: Some(200),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
 fn non_proto2_files() -> [FileDescriptorProto; 3] {
     let mut edition_2024 = file(Some("editions"));
     edition_2024.edition = Some(Edition::EDITION_2024);
@@ -83,7 +107,7 @@ fn assert_rejected_transactionally_with(
 ) {
     let file_name = file.name.clone().unwrap();
     let mut pool = DescriptorPool::new(FileDescriptorSet {
-        file: vec![extension_host()],
+        file: vec![extension_host(), options_host()],
         ..Default::default()
     })
     .unwrap();
@@ -94,8 +118,9 @@ fn assert_rejected_transactionally_with(
         })
         .expect_err("the file must be rejected");
     assert_error(&err);
-    assert_eq!(pool.files().len(), 1);
-    assert_eq!(pool.messages().len(), 1);
+    assert_eq!(pool.files().len(), 2);
+    assert_eq!(pool.messages().len(), 2);
+    assert_eq!(pool.enums().len(), 0);
     assert_eq!(pool.extensions().len(), 0);
     assert!(pool.file_by_name(&file_name).is_none());
     assert!(pool.file_containing_symbol(expected_field).is_none());
@@ -168,15 +193,24 @@ fn required_extension_labels_are_rejected_outside_proto2() {
     }
 }
 
-/// `file` importing `host.proto`, with its message's field replaced by an
-/// extension of `Host`, declared at file level or nested in the message.
+/// `file` importing the host proto(s), with its message's field replaced by an
+/// extension, declared at file level or nested in the message.
 /// Returns the file and the extension's full name.
+///
+/// A proto3 file may only extend an options message, so proto3 variants
+/// extend the `MethodOptions` stand-in and import its file; other syntaxes
+/// extend `Host` as before.
 fn with_extension(
     mut file: FileDescriptorProto,
-    extension: FieldDescriptorProto,
+    mut extension: FieldDescriptorProto,
     nested: bool,
 ) -> (FileDescriptorProto, &'static str) {
-    file.dependency.push("host.proto".into());
+    if file.syntax.as_deref() == Some("proto3") {
+        extension.extendee = Some(".google.protobuf.MethodOptions".into());
+        file.dependency.push("options_host.proto".into());
+    } else {
+        file.dependency.push("host.proto".into());
+    }
     file.message_type[0].field.clear();
     if nested {
         file.message_type[0].extension.push(extension);
@@ -268,7 +302,7 @@ fn optional_and_repeated_extensions_link_in_every_syntax() {
             };
             let (file, name) = with_extension(file.clone(), extension, false);
             let pool = DescriptorPool::new(FileDescriptorSet {
-                file: vec![extension_host(), file],
+                file: vec![extension_host(), options_host(), file],
                 ..Default::default()
             })
             .unwrap();
@@ -290,7 +324,7 @@ fn extensions_with_an_unset_label_link_as_singular_in_every_syntax() {
         };
         let (file, name) = with_extension(file, extension, false);
         let pool = DescriptorPool::new(FileDescriptorSet {
-            file: vec![extension_host(), file],
+            file: vec![extension_host(), options_host(), file],
             ..Default::default()
         })
         .unwrap();
@@ -466,6 +500,15 @@ fn singular_extensions_have_explicit_presence_in_implicit_presence_files() {
                         number: Some(0),
                         ..Default::default()
                     }],
+                    options: EnumOptions {
+                        features: FeatureSet {
+                            enum_type: Some(EnumType::OPEN),
+                            ..Default::default()
+                        }
+                        .into(),
+                        ..Default::default()
+                    }
+                    .into(),
                     ..Default::default()
                 });
                 let extension = FieldDescriptorProto {
@@ -476,7 +519,7 @@ fn singular_extensions_have_explicit_presence_in_implicit_presence_files() {
                 };
                 let (file, name) = with_extension(file, extension, nested);
                 let pool = DescriptorPool::new(FileDescriptorSet {
-                    file: vec![extension_host(), file],
+                    file: vec![extension_host(), options_host(), file],
                     ..Default::default()
                 })
                 .unwrap();

@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects proto3 extensions of non-`Options` messages and closed enums in proto3 fields** (#640). Matches protoc enforcement: proto3 `extend` blocks may only target the nine `google.protobuf.*Options` messages, and closed enums are rejected in repeated, optional, oneof, and map-value fields in proto3 files. Singular implicit-presence closed enums stay with open PR #609 to avoid double-reporting. Proto2 behavior is unchanged.
+time: 2026-10-12T04:30:00+05:30
