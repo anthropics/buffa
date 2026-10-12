@@ -2102,7 +2102,9 @@ impl Config {
     ///   `build.rs` via `include!(concat!(env!("OUT_DIR"), "/<name>"))`.
     /// - **Explicit `out_dir`**: emits sibling-relative `include!("foo.rs")`,
     ///   for checking the generated code into the source tree and referencing
-    ///   it as a module (e.g. `mod gen;`).
+    ///   it as a module (e.g. `mod gen;`). The include file then has to sit in
+    ///   `out_dir` itself: `name` must be a bare file name, and
+    ///   [`compile`](Self::compile) rejects a name with a directory part.
     ///
     /// # Example — `build.rs` / `$OUT_DIR`
     ///
@@ -2149,7 +2151,9 @@ impl Config {
     /// - [`shared_descriptor_pool`](Self::shared_descriptor_pool) is set
     ///   without reflection enabled, without
     ///   [`include_file`](Self::include_file), or with an `include_file`
-    ///   that is not a bare file name or lacks a file-name stem
+    ///   lacking a file-name stem (the sidecar is named after it)
+    /// - an explicit [`out_dir`](Self::out_dir) is combined with an
+    ///   [`include_file`](Self::include_file) that is not a bare file name
     /// - `protoc` or `buf` cannot be found on `PATH` (when using those sources)
     /// - the proto compiler exits with a non-zero status (syntax errors,
     ///   missing imports, etc.)
@@ -2212,13 +2216,6 @@ impl Config {
                             (the shared descriptor module is emitted into it)"
                     .into());
             };
-            if !is_bare_file_name(include_name) {
-                return Err(format!(
-                    "shared_descriptor_pool requires include_file to be a bare file name; \
-                     got {include_name:?}"
-                )
-                .into());
-            }
             // The sidecar is named after the include file's stem; reject names
             // without one ("", ".", "..") here rather than writing a stray
             // misnamed sidecar before the include-file write fails. The stem
@@ -2245,6 +2242,20 @@ impl Config {
         // `include!(concat!(env!("OUT_DIR"), "/_include.rs"))` from src/
         // still resolves to absolute paths.
         let relative_includes = self.out_dir.is_some();
+        // Those relative paths (and the shared pool's sidecar path) name
+        // siblings of the include file, so the include file has to sit in the
+        // output directory itself. `$OUT_DIR` mode emits absolute paths, which
+        // resolve from any directory.
+        if let Some(include_name) = self.include_file.as_deref() {
+            if relative_includes && !is_bare_file_name(include_name) {
+                return Err(format!(
+                    "include_file must be a bare file name when out_dir is set \
+                     (the generated include! paths are relative to the include file); \
+                     got {include_name:?}"
+                )
+                .into());
+            }
+        }
         let out_dir = self
             .out_dir
             .or_else(|| std::env::var("OUT_DIR").ok().map(PathBuf::from))
@@ -2421,7 +2432,11 @@ impl Config {
     }
 }
 
+/// Whether `name` places a file directly in the directory it is joined to. A
+/// leading `./` is accepted; a backslash and a drive prefix are rejected on
+/// every platform, so one build script behaves the same everywhere.
 fn is_bare_file_name(name: &str) -> bool {
+    let name = name.strip_prefix("./").unwrap_or(name);
     if name.contains('/') || name.contains('\\') || name.contains('\0') {
         return false;
     }
@@ -2843,7 +2858,7 @@ mod tests {
 
     #[test]
     fn shared_pool_include_file_name_accepts_bare_names() {
-        for name in ["gen_mod.rs", ".gen_mod.rs", "gen_mod"] {
+        for name in ["gen_mod.rs", ".gen_mod.rs", "gen_mod", "./gen_mod.rs"] {
             assert!(is_bare_file_name(name), "{name:?} should be bare");
         }
     }
@@ -2853,7 +2868,7 @@ mod tests {
         for name in [
             "",
             ".",
-            "./gen_mod.rs",
+            "./",
             "..",
             "../gen_mod.rs",
             "nested/gen_mod.rs",

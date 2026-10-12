@@ -1,3 +1,5 @@
 kind: Fixed
-body: '**Reject path-qualified `include_file` names when shared descriptor pools are enabled.** The descriptor sidecar stays at the output root, so nested include files cannot resolve it.'
+body: |-
+    **`buffa_build::Config::compile` rejects a path-qualified `include_file` when `out_dir` is set** (#611).
+    With an explicit `out_dir` the include file names the package files, and the shared descriptor pool's sidecar, by paths relative to itself, so `.out_dir("src/gen").include_file("nested/mod.rs")` wrote an include file whose `include!` paths did not resolve. `compile` returns an error for such a name, with `shared_descriptor_pool` on or off. In `$OUT_DIR` mode the emitted paths are absolute, and a nested include file is accepted as before.
 time: 2026-10-07T14:27:57.12335+02:00
