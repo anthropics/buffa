@@ -631,8 +631,9 @@ impl Config {
     ///
     /// Requires [`include_file`](Self::include_file) (the shared module is
     /// emitted into that file at the tree root) and reflection to be enabled;
-    /// [`compile`](Self::compile) errors otherwise. The include file name must
-    /// be a bare file name, not a path. See
+    /// [`compile`](Self::compile) errors otherwise. With an explicit
+    /// [`out_dir`](Self::out_dir) the include file name must be a bare file
+    /// name, not a path, as for any include file in that mode. See
     /// [`CodeGenConfig::shared_descriptor_pool`].
     ///
     /// In this mode the generated tree must be consumed *through the include
