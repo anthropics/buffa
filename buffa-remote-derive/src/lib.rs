@@ -331,9 +331,11 @@
 //! ownership; `insert`/`clear` take `&mut self`; `len`/`iter` take `&self`.
 //! `iter` additionally must yield `(&Key, &Value)` pairs, matching
 //! `storage_iter`'s contract. A receiver or item-type mismatch is a type error
-//! at the generated call site, not a special diagnostic from this macro. A key
-//! may be repeated with the same path, which is what two `cfg_attr`s whose
-//! conditions both hold produce; a repeat with a different path is an error.
+//! at the generated call site, not a special diagnostic from this macro. An
+//! override key may be repeated with the same path, which is what two
+//! `cfg_attr`s whose conditions both hold produce; a repeat with a different
+//! path is an error, so two `cfg_attr`s that select different paths need
+//! mutually exclusive conditions.
 //!
 //! # Reserved identifiers
 //!

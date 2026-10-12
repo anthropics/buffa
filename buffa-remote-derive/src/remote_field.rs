@@ -174,10 +174,17 @@ fn parse_attrs(
                     // that both hold look the same here as a key written
                     // twice. Two different paths have no such reading.
                     Entry::Occupied(first) if same_tokens(first.get(), &path) => Ok(()),
-                    Entry::Occupied(first) => Err(meta.error(format!(
-                        "conflicting `{key}` override: `{}` was already given",
-                        path_text(first.get())
-                    ))),
+                    Entry::Occupied(first) => {
+                        let mut error = meta.error(format!(
+                            "conflicting `{key}` override: `{}` was already given",
+                            path_text(first.get())
+                        ));
+                        error.combine(syn::Error::new_spanned(
+                            first.get(),
+                            format!("`{key}` first given here"),
+                        ));
+                        Err(error)
+                    }
                 }
             } else {
                 Err(meta.error(format!(
@@ -206,10 +213,25 @@ fn same_tokens(a: &syn::Path, b: &syn::Path) -> bool {
     a.to_token_stream().to_string() == b.to_token_stream().to_string()
 }
 
-/// `path` as the user wrote it, without the spaces `TokenStream`'s `Display`
-/// puts between tokens.
+/// `path` as the user wrote it: `TokenStream`'s `Display` output without the
+/// spaces it puts between tokens, except a space that separates two words
+/// (`dyn Any`).
 fn path_text(path: &syn::Path) -> String {
-    path.to_token_stream().to_string().replace(' ', "")
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut text = String::new();
+    let mut after_space = false;
+    for c in path.to_token_stream().to_string().chars() {
+        if c == ' ' {
+            after_space = true;
+            continue;
+        }
+        if after_space && is_word(c) && text.chars().next_back().is_some_and(is_word) {
+            text.push(' ');
+        }
+        after_space = false;
+        text.push(c);
+    }
+    text
 }
 
 /// Requires the struct to have exactly one type parameter and returns it —
@@ -340,7 +362,7 @@ mod tests {
             struct Wrapped<T>(Holder<T>);
         };
         let within: DeriveInput = syn::parse_quote! {
-            #[buffa(remote = Holder<T>, new = Holder::wrap, new = Holder :: wrap)]
+            #[buffa(remote = Holder<T>, new = Holder::wrap, new = Holder::wrap)]
             struct Wrapped<T>(Holder<T>);
         };
 
@@ -350,6 +372,33 @@ mod tests {
             assert_eq!(overrides.len(), 1);
             assert_eq!(path_text(&overrides["new"]), "Holder::wrap");
         }
+    }
+
+    #[test]
+    fn conflicting_override_reports_both_sites() {
+        let input: DeriveInput = syn::parse_quote! {
+            #[buffa(remote = Holder<T>, new = Holder::wrap)]
+            #[buffa(new = Holder::new)]
+            struct Wrapped<T>(Holder<T>);
+        };
+
+        let error = parse_with_overrides(&input, &["new"])
+            .err()
+            .expect("a second, different path should be rejected");
+        let messages: Vec<String> = error.into_iter().map(|e| e.to_string()).collect();
+        assert_eq!(
+            messages,
+            [
+                "conflicting `new` override: `Holder::wrap` was already given",
+                "`new` first given here",
+            ]
+        );
+    }
+
+    #[test]
+    fn path_text_keeps_the_space_between_two_words() {
+        let path: syn::Path = syn::parse_quote!(Holder::<dyn Any, &'a mut [u8; 4]>::wrap);
+        assert_eq!(path_text(&path), "Holder::<dyn Any,&'a mut[u8;4]>::wrap");
     }
 
     #[test]
