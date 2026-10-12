@@ -3259,8 +3259,8 @@ fn warn_excluded_refs_msg(
 ///
 /// - [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has no
 ///   matching descriptor.
-/// - [`CodeGenError::GeneratedFileNameCollision`] if two generated files
-///   would be written to the same output path.
+/// - [`CodeGenError::OutputFileNameConflict`] if two generated files would
+///   be written to the same output path.
 /// - [`CodeGenError::InvalidTypeNamePrefix`] if
 ///   [`CodeGenConfig::type_name_prefix`] is neither empty nor PascalCase.
 /// - [`CodeGenError::Other`] if `config` sets an option without the option
@@ -3645,6 +3645,7 @@ pub fn generate_with_diagnostics(
 
     let empty_impls = TokenStream::new();
     let mut output = Vec::new();
+    let mut output_names = OutputNames::default();
     let mut custom_emitted = false;
     for (package, files) in by_package {
         let impls = if custom_emitted {
@@ -3653,24 +3654,47 @@ pub fn generate_with_diagnostics(
             custom_emitted = true;
             &custom_elem_impls
         };
-        generate_package(&ctx, &package, &files, &fds_bytes, impls, &mut output)?;
+        generate_package(
+            &ctx,
+            &package,
+            &files,
+            &fds_bytes,
+            impls,
+            &mut output_names,
+            &mut output,
+        )?;
     }
-
-    validate_generated_file_names(&output)?;
 
     Ok((output, ctx.take_warnings()))
 }
 
-fn validate_generated_file_names(files: &[GeneratedFile]) -> Result<(), CodeGenError> {
-    let mut names = std::collections::HashSet::with_capacity(files.len());
-    for file in files {
-        if !names.insert(file.name.as_str()) {
-            return Err(CodeGenError::GeneratedFileNameCollision {
-                file_name: file.name.clone(),
-            });
+/// The output paths assigned so far in one [`generate`] call, each with the
+/// input it was generated from, in the form
+/// [`CodeGenError::OutputFileNameConflict`] documents.
+#[derive(Default)]
+struct OutputNames(std::collections::HashMap<String, String>);
+
+impl OutputNames {
+    /// Records that `source` generates `file_name`.
+    ///
+    /// # Errors
+    ///
+    /// [`CodeGenError::OutputFileNameConflict`] if another input already
+    /// generates `file_name`.
+    fn claim(&mut self, file_name: &str, source: String) -> Result<(), CodeGenError> {
+        use std::collections::hash_map::Entry;
+        match self.0.entry(file_name.to_owned()) {
+            Entry::Occupied(first) => Err(CodeGenError::OutputFileNameConflict {
+                file_name: file_name.to_owned(),
+                first_source: first.get().clone(),
+                second_source: source,
+            }),
+            Entry::Vacant(slot) => {
+                slot.insert(source);
+                Ok(())
+            }
         }
     }
-    Ok(())
 }
 
 /// Generate a module tree that assembles per-package `.mod.rs` files into
@@ -4529,6 +4553,7 @@ fn generate_package(
     // element types, collected generation-wide and emitted into exactly one
     // package's `__buffa` module (empty for every package but the first).
     custom_elem_impls: &TokenStream,
+    output_names: &mut OutputNames,
     out: &mut Vec<GeneratedFile>,
 ) -> Result<(), CodeGenError> {
     // Registry paths are package-root-relative; `register_types` lives at
@@ -4599,12 +4624,14 @@ fn generate_package(
                         kind: GeneratedFileKind,
                         tokens: TokenStream,
                         section: &mut Vec<TokenStream>,
+                        output_names: &mut OutputNames,
                         out: &mut Vec<GeneratedFile>|
              -> Result<(), CodeGenError> {
                 if tokens.is_empty() {
                     return Ok(());
                 }
                 let name = format!("{stem}{suffix}.rs");
+                output_names.claim(&name, source.to_owned())?;
                 section.push(quote! { include!(#name); });
                 out.push(GeneratedFile {
                     name,
@@ -4619,6 +4646,7 @@ fn generate_package(
                 GeneratedFileKind::Owned,
                 pc.owned,
                 &mut sections.owned,
+                output_names,
                 out,
             )?;
             emit(
@@ -4626,6 +4654,7 @@ fn generate_package(
                 GeneratedFileKind::View,
                 pc.view,
                 &mut sections.view,
+                output_names,
                 out,
             )?;
             emit(
@@ -4633,6 +4662,7 @@ fn generate_package(
                 GeneratedFileKind::LazyView,
                 pc.lazy_view,
                 &mut sections.lazy_view,
+                output_names,
                 out,
             )?;
             emit(
@@ -4640,6 +4670,7 @@ fn generate_package(
                 GeneratedFileKind::Oneof,
                 pc.oneof,
                 &mut sections.oneof,
+                output_names,
                 out,
             )?;
             emit(
@@ -4647,6 +4678,7 @@ fn generate_package(
                 GeneratedFileKind::ViewOneof,
                 pc.view_oneof,
                 &mut sections.view_oneof,
+                output_names,
                 out,
             )?;
             emit(
@@ -4654,6 +4686,7 @@ fn generate_package(
                 GeneratedFileKind::Ext,
                 pc.ext,
                 &mut sections.ext,
+                output_names,
                 out,
             )?;
         }
@@ -4662,12 +4695,19 @@ fn generate_package(
 
     let reexport_block = surviving_root_reexports(ctx, files, &reg, root_reexports);
 
+    let mod_name = if ctx.config.file_per_package {
+        package_to_filename(current_package)
+    } else {
+        package_to_mod_filename(current_package)
+    };
+    let mod_source = if current_package.is_empty() {
+        "the unnamed package".to_owned()
+    } else {
+        format!("package {current_package}")
+    };
+    output_names.claim(&mod_name, mod_source)?;
     out.push(GeneratedFile {
-        name: if ctx.config.file_per_package {
-            package_to_filename(current_package)
-        } else {
-            package_to_mod_filename(current_package)
-        },
+        name: mod_name,
         package: current_package.to_string(),
         kind: GeneratedFileKind::PackageMod,
         content: generate_package_mod(
@@ -5281,16 +5321,30 @@ pub enum CodeGenError {
     /// A requested file was not present in the descriptor set.
     #[error("file_to_generate '{0}' not found in descriptor set")]
     FileNotFound(String),
-    /// More than one generated source would be written to the same path.
+    /// Two generated files would be written to the same output path. A
+    /// content file is named after its `.proto` path with `/` replaced by
+    /// `.`, so `foo/bar.proto` and `foo.bar.proto` both produce `foo.bar.rs`;
+    /// a package's module file is `<package>.mod.rs`, which is also the
+    /// content file of `foo/mod.proto` in package `foo`.
     ///
-    /// Resolve the conflict by renaming one of the proto files or changing its
-    /// package so every generated file has a distinct output path.
+    /// Resolve by renaming one of the proto files, or by setting
+    /// [`CodeGenConfig::file_per_package`], which emits one file per package
+    /// and no per-proto content files.
     #[error(
-        "generated output file name collision at '{file_name}': multiple generated files map here"
+        "output file name conflict: {first_source} and {second_source} both \
+         generate '{file_name}'; rename one of the proto files"
     )]
-    GeneratedFileNameCollision {
-        /// Path claimed by more than one generated file.
+    OutputFileNameConflict {
+        /// The output path that both inputs map to.
         file_name: String,
+        /// The input that generated the path first: the `.proto` file path
+        /// as its descriptor names it for a content file, or
+        /// `package <name>` (`the unnamed package` for a file that declares
+        /// no package) for a package's module file.
+        first_source: String,
+        /// The input that generated the path second, in the same form as
+        /// `first_source`.
+        second_source: String,
     },
     /// Unexpected descriptor state (e.g. a map entry or oneof that cannot be
     /// resolved to a known descriptor field).

@@ -669,11 +669,12 @@ fn test_rejects_proto_paths_with_the_same_generated_stem() {
     )
     .expect_err("distinct proto paths must not overwrite the same content files");
 
-    assert!(matches!(
-        err,
-        CodeGenError::GeneratedFileNameCollision { ref file_name }
-            if file_name == "foo.bar.rs"
-    ));
+    assert_output_conflict(&err, "foo.bar.rs", "foo/bar.proto", "foo.bar.proto");
+    assert_eq!(
+        err.to_string(),
+        "output file name conflict: foo/bar.proto and foo.bar.proto both generate \
+         'foo.bar.rs'; rename one of the proto files"
+    );
 }
 
 #[test]
@@ -692,11 +693,99 @@ fn test_rejects_content_file_that_collides_with_package_stitcher() {
     )
     .expect_err("content file must not overwrite the package stitcher");
 
-    assert!(matches!(
-        err,
-        CodeGenError::GeneratedFileNameCollision { ref file_name }
-            if file_name == "foo.mod.rs"
-    ));
+    assert_output_conflict(&err, "foo.mod.rs", "foo.mod.proto", "package foo");
+}
+
+#[test]
+fn test_rejects_mod_proto_in_a_directory_named_after_its_package() {
+    // `foo/mod.proto` in package `foo`: the layout most likely to produce
+    // a content file named like its own package's module file.
+    let mut file = proto3_file("foo/mod.proto");
+    file.package = Some("foo".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Message".to_string()),
+        ..Default::default()
+    });
+
+    let err = generate(
+        &[file],
+        &["foo/mod.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("content file must not overwrite the package stitcher");
+
+    assert_output_conflict(&err, "foo.mod.rs", "foo/mod.proto", "package foo");
+    assert_eq!(
+        err.to_string(),
+        "output file name conflict: foo/mod.proto and package foo both generate \
+         'foo.mod.rs'; rename one of the proto files"
+    );
+}
+
+#[test]
+fn test_rejects_content_file_that_collides_with_another_packages_stitcher() {
+    // The stitcher of package `a` is generated before the content file of
+    // `a.mod.proto` in package `b`, so the package is the first source.
+    let mut first = proto3_file("a.proto");
+    first.package = Some("a".to_string());
+    let mut second = proto3_file("a.mod.proto");
+    second.package = Some("b".to_string());
+    second.message_type.push(DescriptorProto {
+        name: Some("Message".to_string()),
+        ..Default::default()
+    });
+
+    let err = generate(
+        &[first, second],
+        &["a.proto".to_string(), "a.mod.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("content file must not overwrite another package's stitcher");
+
+    assert_output_conflict(&err, "a.mod.rs", "package a", "a.mod.proto");
+}
+
+#[test]
+fn test_rejects_mod_proto_colliding_with_the_unnamed_packages_stitcher() {
+    let mut file = proto3_file("__buffa.mod.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Message".to_string()),
+        ..Default::default()
+    });
+
+    let err = generate(
+        &[file],
+        &["__buffa.mod.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("content file must not overwrite the unnamed package's stitcher");
+
+    assert_output_conflict(
+        &err,
+        "__buffa.mod.rs",
+        "__buffa.mod.proto",
+        "the unnamed package",
+    );
+}
+
+/// Asserts that `err` is an `OutputFileNameConflict` with exactly these fields.
+#[track_caller]
+fn assert_output_conflict(err: &CodeGenError, file: &str, first: &str, second: &str) {
+    match err {
+        CodeGenError::OutputFileNameConflict {
+            file_name,
+            first_source,
+            second_source,
+        } => assert_eq!(
+            (
+                file_name.as_str(),
+                first_source.as_str(),
+                second_source.as_str()
+            ),
+            (file, first, second)
+        ),
+        other => panic!("expected OutputFileNameConflict, got {other:?}"),
+    }
 }
 
 #[test]
@@ -721,11 +810,7 @@ fn test_rejects_collisions_between_content_kinds() {
     )
     .expect_err("owned and view outputs must not share a path");
 
-    assert!(matches!(
-        err,
-        CodeGenError::GeneratedFileNameCollision { ref file_name }
-            if file_name == "foo.__view.rs"
-    ));
+    assert_output_conflict(&err, "foo.__view.rs", "foo.proto", "foo.__view.proto");
 }
 
 #[test]
