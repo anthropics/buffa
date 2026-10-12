@@ -1327,7 +1327,7 @@ The element-memory limit bounds what a decode *materializes* rather than what it
 
 Eager view decoding charges repeated message, group, string, and bytes elements by the size of each stored view element; map entries are charged by their key and value slot sizes. A view borrows string and bytes contents rather than copying them, so a view element can differ in size from its owned type (for example, `&str` versus `String`). Near the configured limit, the owned and view decoders can return different results.
 
-The default `Message::decode` / `decode_from_slice` methods enforce the defaults (100 depth, 2 GiB max input, 1M unknown fields, 32 MiB of element memory). Default view entry points such as `FooView::decode_view` and `OwnedView::decode` use the same recursion, unknown-field, and element-memory budgets, but do not enforce a max input size. Use `DecodeOptions::decode_view` or `OwnedView::decode_with_options` when you need an input-size cap or different limits.
+The default `Message::decode` / `decode_from_slice` methods apply the default limits (100 depth, 1M unknown fields, 32 MiB of element memory), and so do the default view entry points such as `FooView::decode_view` and `OwnedView::decode`. These default entry points, owned and view alike, do not check the size of the input: only the `DecodeOptions` methods compare it with `max_message_size`. Use `DecodeOptions` when you need an input-size cap or different limits: `decode` or `decode_from_slice` for an owned message, `decode_view` or `OwnedView::decode_with_options` for a view.
 
 ### What these limits do and do not bound
 
