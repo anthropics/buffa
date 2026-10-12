@@ -2,12 +2,16 @@ syntax = "proto2";
 
 package deprecated_proto2;
 
-// The proto2 half of `[deprecated = true]`: a *default value* that names a
-// deprecated enum variant, or an alias of one. No field here is deprecated, yet
-// the generated `Default` impl, `Message::clear`, and an extension's default
-// getter all spell the value out, so they need the guard. Compiled by build.rs,
-// which is what proves the paths — see the codegen unit tests for the emission
-// itself.
+// The proto2 half of `[deprecated = true]`. Compiled by build.rs, which is what
+// proves the paths — see the codegen unit tests for the emission itself.
+//
+// `Holder` and `Plan`: a *default value* that names a deprecated enum variant,
+// or an alias of one. Their fields are live, yet the generated `Default` impl,
+// `Message::clear`, and an extension's default getter all spell the value out,
+// so they need the guard.
+//
+// `Quota`: deprecated `required` fields, whose `has_*` accessors on the views
+// are deprecated with them.
 
 enum Size {
   OLD = 1 [deprecated = true];
@@ -39,4 +43,16 @@ enum Tier {
 
 message Plan {
   required Tier tier = 1 [default = STARTER];
+}
+
+message Limits {
+  optional int32 max = 1;
+}
+
+// `has_limits` reads the view field by name, and `has_code` reads the bit the
+// decoder records.
+message Quota {
+  required Limits limits = 1 [deprecated = true];
+  required int32 code = 2 [deprecated = true];
+  optional string label = 3;
 }
