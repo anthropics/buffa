@@ -4,6 +4,7 @@
 
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
+use core::iter::FusedIterator;
 
 use crate::google::protobuf::__buffa::oneof::value::Kind as KindOneof;
 use crate::google::protobuf::{ListValue, NullValue, Struct, Value};
@@ -248,6 +249,13 @@ impl IntoIterator for ListValue {
     }
 }
 
+impl<V: Into<Value>> Extend<V> for ListValue {
+    /// Appends each item, converted to a [`Value`], in iteration order.
+    fn extend<T: IntoIterator<Item = V>>(&mut self, iter: T) {
+        self.values.extend(iter.into_iter().map(Into::into));
+    }
+}
+
 impl FromIterator<Value> for ListValue {
     /// Collect [`Value`] items into a [`ListValue`].
     fn from_iter<T: IntoIterator<Item = Value>>(iter: T) -> Self {
@@ -325,6 +333,159 @@ impl Struct {
     /// ```
     pub fn remove(&mut self, key: &str) -> Option<Value> {
         self.fields.remove(key)
+    }
+
+    /// Returns `true` if the struct has a value for `key`.
+    pub fn contains_key(&self, key: &str) -> bool {
+        self.fields.contains_key(key)
+    }
+
+    /// Returns the number of fields in the struct.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    /// Returns `true` if the struct has no fields.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    /// Returns an iterator over the key-value pairs of the struct.
+    ///
+    /// [`fields`](Struct::fields) is a hash map, so the iteration order is
+    /// unspecified and can differ between two structs with the same fields.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::google::protobuf::Struct;
+    ///
+    /// let s = Struct::from_fields([("a", 1.0_f64), ("b", 2.0_f64)]);
+    /// let total: f64 = s.iter().filter_map(|(_, v)| v.as_number()).sum();
+    /// assert_eq!(total, 3.0);
+    /// ```
+    #[inline]
+    pub fn iter(&self) -> StructIter<'_> {
+        StructIter(self.fields.iter())
+    }
+
+    /// Returns an iterator over the keys of the struct and mutable references
+    /// to their values, in unspecified order.
+    #[inline]
+    pub fn iter_mut(&mut self) -> StructIterMut<'_> {
+        StructIterMut(self.fields.iter_mut())
+    }
+}
+
+type Fields = ::buffa::__private::HashMap<String, Value>;
+
+/// Implements `Iterator`, `ExactSizeIterator` and `FusedIterator` for a
+/// newtype over one of the hash map's iterators.
+macro_rules! forward_iterator {
+    ($name:ident $(<$lt:lifetime>)?, $item:ty) => {
+        impl$(<$lt>)? Iterator for $name$(<$lt>)? {
+            type Item = $item;
+
+            #[inline]
+            fn next(&mut self) -> Option<Self::Item> {
+                self.0.next()
+            }
+
+            #[inline]
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                self.0.size_hint()
+            }
+
+            // The map's own `fold` walks the table a group at a time;
+            // `for_each`, `sum` and `collect` reach it through this.
+            #[inline]
+            fn fold<B, F: FnMut(B, Self::Item) -> B>(self, init: B, f: F) -> B {
+                self.0.fold(init, f)
+            }
+
+            #[inline]
+            fn count(self) -> usize {
+                self.0.count()
+            }
+        }
+
+        impl$(<$lt>)? ExactSizeIterator for $name$(<$lt>)? {
+            #[inline]
+            fn len(&self) -> usize {
+                self.0.len()
+            }
+        }
+
+        impl$(<$lt>)? FusedIterator for $name$(<$lt>)? {}
+    };
+}
+
+/// An iterator over the key-value pairs of a [`Struct`], in unspecified
+/// order.
+///
+/// Returned by [`Struct::iter`] and by iterating over `&Struct`.
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+#[derive(Clone, Debug)]
+pub struct StructIter<'a>(<&'a Fields as IntoIterator>::IntoIter);
+
+forward_iterator!(StructIter<'a>, (&'a String, &'a Value));
+
+/// An iterator over the keys of a [`Struct`] and mutable references to their
+/// values, in unspecified order.
+///
+/// Returned by [`Struct::iter_mut`] and by iterating over `&mut Struct`.
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+#[derive(Debug)]
+pub struct StructIterMut<'a>(<&'a mut Fields as IntoIterator>::IntoIter);
+
+forward_iterator!(StructIterMut<'a>, (&'a String, &'a mut Value));
+
+/// An owning iterator over the key-value pairs of a [`Struct`], in
+/// unspecified order.
+///
+/// Returned by iterating over a `Struct` by value.
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+#[derive(Debug)]
+pub struct StructIntoIter(<Fields as IntoIterator>::IntoIter);
+
+forward_iterator!(StructIntoIter, (String, Value));
+
+impl<'a> IntoIterator for &'a Struct {
+    type Item = (&'a String, &'a Value);
+    type IntoIter = StructIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Struct {
+    type Item = (&'a String, &'a mut Value);
+    type IntoIter = StructIterMut<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
+impl IntoIterator for Struct {
+    type Item = (String, Value);
+    type IntoIter = StructIntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        StructIntoIter(self.fields.into_iter())
+    }
+}
+
+impl<K: Into<String>, V: Into<Value>> Extend<(K, V)> for Struct {
+    /// Inserts each key-value pair, as [`insert`](Struct::insert) does: a key
+    /// that is already present has its value replaced. To merge one struct
+    /// into another, extend it with the other by value: `a.extend(b)`.
+    fn extend<T: IntoIterator<Item = (K, V)>>(&mut self, iter: T) {
+        self.fields
+            .extend(iter.into_iter().map(|(k, v)| (k.into(), v.into())));
     }
 }
 
@@ -728,6 +889,175 @@ mod tests {
         assert!(iter.next_back().is_none());
         assert!(iter.next().is_none());
         assert!(list.is_empty());
+    }
+
+    #[test]
+    fn list_value_extend_converts_and_appends() {
+        let mut list = ListValue::from_values([1.0_f64]);
+        list.extend(["a", "b"]);
+        list.extend(vec![Value::from(true)]);
+        assert_eq!(list.len(), 4);
+        assert_eq!(list.values[0].as_number(), Some(1.0));
+        assert_eq!(list.values[1].as_str(), Some("a"));
+        assert_eq!(list.values[2].as_str(), Some("b"));
+        assert_eq!(list.values[3].as_bool(), Some(true));
+        list.extend(core::iter::empty::<Value>());
+        assert_eq!(list.len(), 4);
+    }
+
+    #[test]
+    fn struct_len_is_empty_and_contains_key() {
+        let mut s = Struct::new();
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
+        assert!(!s.contains_key("a"));
+        s.insert("a", 1.0_f64);
+        s.insert("b", true);
+        assert!(!s.is_empty());
+        assert_eq!(s.len(), 2);
+        assert!(s.contains_key("a"));
+        assert!(!s.contains_key("A"));
+    }
+
+    fn sorted_keys<'a>(pairs: impl Iterator<Item = (&'a String, &'a Value)>) -> Vec<&'a str> {
+        let mut keys: Vec<_> = pairs.map(|(k, _)| k.as_str()).collect();
+        keys.sort_unstable();
+        keys
+    }
+
+    #[test]
+    fn struct_iter_and_ref_into_iter_visit_every_field() {
+        let s = Struct::from_fields([("b", 2.0_f64), ("a", 1.0_f64), ("c", 3.0_f64)]);
+        let iter = s.iter();
+        assert_eq!(iter.len(), 3);
+        assert_eq!(sorted_keys(iter), ["a", "b", "c"]);
+        assert_eq!(sorted_keys((&s).into_iter()), ["a", "b", "c"]);
+        let mut total = 0.0;
+        for (_, value) in &s {
+            total += value.as_number().unwrap();
+        }
+        assert_eq!(total, 6.0);
+        assert_eq!(Struct::new().iter().next(), None);
+    }
+
+    #[test]
+    fn struct_iter_mut_and_mut_ref_into_iter_edit_values() {
+        let mut s = Struct::from_fields([("a", 1.0_f64), ("b", 2.0_f64)]);
+        assert_eq!(s.iter_mut().len(), 2);
+        for (_, value) in s.iter_mut() {
+            *value = Value::from(value.as_number().unwrap() * 10.0);
+        }
+        for (key, value) in &mut s {
+            if key == "a" {
+                *value = Value::from("x");
+            }
+        }
+        assert_eq!(s.get("a").and_then(Value::as_str), Some("x"));
+        assert_eq!(s.get("b").and_then(Value::as_number), Some(20.0));
+    }
+
+    #[test]
+    fn struct_owned_into_iter_yields_every_pair() {
+        let s = Struct::from_fields([("a", 1.0_f64), ("b", 2.0_f64)]);
+        let iter = s.into_iter();
+        assert_eq!(iter.len(), 2);
+        let mut pairs: Vec<(String, Value)> = iter.collect();
+        pairs.sort_unstable_by(|x, y| x.0.cmp(&y.0));
+        assert_eq!(pairs[0].0, "a");
+        assert_eq!(pairs[0].1.as_number(), Some(1.0));
+        assert_eq!(pairs[1].0, "b");
+        assert_eq!(pairs[1].1.as_number(), Some(2.0));
+    }
+
+    #[test]
+    fn struct_iterators_are_fused_and_size_exact() {
+        let s = Struct::from_fields([("a", 1.0_f64)]);
+        let mut iter = s.iter();
+        assert_eq!(iter.size_hint(), (1, Some(1)));
+        assert!(iter.next().is_some());
+        assert_eq!(iter.len(), 0);
+        assert!(iter.next().is_none());
+        assert!(iter.next().is_none());
+        let mut owned = s.into_iter();
+        assert!(owned.next().is_some());
+        assert!(owned.next().is_none());
+        assert!(owned.next().is_none());
+    }
+
+    #[test]
+    fn struct_iterators_implement_exact_size_and_fused() {
+        // `FusedIterator` is a marker the compiler does not tie to the inner
+        // iterator, so check the claim on the inner types directly.
+        fn assert_traits<I: ExactSizeIterator + FusedIterator>() {}
+        assert_traits::<<&Fields as IntoIterator>::IntoIter>();
+        assert_traits::<<&mut Fields as IntoIterator>::IntoIter>();
+        assert_traits::<<Fields as IntoIterator>::IntoIter>();
+        assert_traits::<StructIter<'_>>();
+        assert_traits::<StructIterMut<'_>>();
+        assert_traits::<StructIntoIter>();
+
+        let mut s = Struct::from_fields([("a", 1.0_f64)]);
+        let mut iter = s.iter_mut();
+        assert_eq!(iter.len(), 1);
+        assert!(iter.next().is_some());
+        assert!(iter.next().is_none());
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn struct_iterators_forward_fold_and_count() {
+        let s = Struct::from_fields([("a", 1.0_f64), ("b", 2.0_f64), ("c", 3.0_f64)]);
+        assert_eq!(s.iter().count(), 3);
+        let total = s
+            .iter()
+            .fold(0.0, |acc, (_, v)| acc + v.as_number().unwrap());
+        assert_eq!(total, 6.0);
+        let mut keys = Vec::new();
+        s.clone().into_iter().for_each(|(k, _)| keys.push(k));
+        keys.sort_unstable();
+        assert_eq!(keys, ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn struct_extend_merges_another_struct_by_value() {
+        let mut a = Struct::from_fields([("x", 1.0_f64), ("y", 2.0_f64)]);
+        let b = Struct::from_fields([("y", 20.0_f64), ("z", 30.0_f64)]);
+        a.extend(b);
+        assert_eq!(a.len(), 3);
+        assert_eq!(a.get("y").and_then(Value::as_number), Some(20.0));
+        assert_eq!(a.get("z").and_then(Value::as_number), Some(30.0));
+    }
+
+    #[test]
+    fn struct_extend_converts_and_overwrites_existing_keys() {
+        let mut s = Struct::from_fields([("a", 1.0_f64), ("b", 2.0_f64)]);
+        s.extend([("b", "two"), ("c", "three")]);
+        s.extend(vec![(String::from("d"), Value::from(true))]);
+        assert_eq!(s.len(), 4);
+        assert_eq!(s.get("a").and_then(Value::as_number), Some(1.0));
+        assert_eq!(s.get("b").and_then(Value::as_str), Some("two"));
+        assert_eq!(s.get("c").and_then(Value::as_str), Some("three"));
+        assert_eq!(s.get("d").and_then(Value::as_bool), Some(true));
+    }
+
+    #[test]
+    fn generic_code_accepts_every_collection_type() {
+        fn extend_and_count<C, T>(mut c: C, items: impl IntoIterator<Item = T>) -> usize
+        where
+            C: Extend<T> + IntoIterator,
+        {
+            c.extend(items);
+            c.into_iter().count()
+        }
+        assert_eq!(extend_and_count(Struct::new(), [("a", 1.0_f64)]), 1);
+        assert_eq!(extend_and_count(ListValue::default(), [1.0_f64, 2.0]), 2);
+        assert_eq!(
+            extend_and_count(
+                crate::google::protobuf::FieldMask::default(),
+                ["a", "b", "c"]
+            ),
+            3
+        );
     }
 
     #[test]

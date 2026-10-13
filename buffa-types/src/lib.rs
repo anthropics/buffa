@@ -50,6 +50,12 @@
 //! - [`FieldMask`] path helpers: [`FieldMask::covers`], [`FieldMask::normalize`],
 //!   [`FieldMask::union`], [`FieldMask::intersection`]
 //! - `Value` constructors: [`Value::null`](google::protobuf::Value::null), `From<f64>`, `From<String>`, `From<bool>`, etc.
+//! - Collection impls: [`Struct`], [`ListValue`] and [`FieldMask`] each have
+//!   `len`, `is_empty`, `iter`, `IntoIterator`, `FromIterator` and `Extend`.
+//!   `Extend` accepts anything `Into` the element type, while `FromIterator`
+//!   on [`Struct`] and [`ListValue`] takes `(String, Value)` and [`Value`]
+//!   items. [`Struct`] iterates through [`StructIter`], [`StructIterMut`] and
+//!   [`StructIntoIter`], in unspecified order.
 //! - Wrapper type `From`/`Into` impls
 //!
 //! # Equality and hashing
@@ -237,10 +243,12 @@ pub use google::protobuf::{
     Any, Duration, Empty, FieldMask, ListValue, NullValue, Struct, Timestamp, Value,
 };
 
-// Re-export error types from extension modules (these are hand-written types
-// in private modules, so re-exporting is the only way to make them accessible).
+// Re-export error and iterator types from extension modules (these are
+// hand-written types in private modules, so re-exporting is the only way to
+// make them accessible).
 pub use duration_ext::DurationError;
 pub use timestamp_ext::TimestampError;
+pub use value_ext::{StructIntoIter, StructIter, StructIterMut};
 
 #[cfg(feature = "chrono")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono")))]

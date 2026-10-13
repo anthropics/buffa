@@ -227,6 +227,14 @@ impl<T: Into<String>> FromIterator<T> for FieldMask {
     }
 }
 
+impl<T: Into<String>> Extend<T> for FieldMask {
+    /// Appends each path in iteration order, without validating or
+    /// normalizing, as [`FieldMask::from_paths`] does.
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        self.paths.extend(iter.into_iter().map(Into::into));
+    }
+}
+
 impl<'a> IntoIterator for &'a FieldMask {
     type Item = &'a String;
     type IntoIter = core::slice::Iter<'a, String>;
@@ -359,6 +367,14 @@ mod tests {
         assert_eq!(mask, FieldMask::default());
         let mask: FieldMask = core::iter::empty::<&str>().collect();
         assert_eq!(mask, FieldMask::default());
+    }
+
+    #[test]
+    fn extend_appends_without_normalizing() {
+        let mut mask = FieldMask::from_paths(["user"]);
+        mask.extend(["user.name", "user"]);
+        mask.extend(vec![String::from("settings")]);
+        assert_eq!(mask.paths, ["user", "user.name", "user", "settings"]);
     }
 
     #[test]
