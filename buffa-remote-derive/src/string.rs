@@ -30,9 +30,8 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let as_str =
         remote_field::qualified_call(field_ty, quote! { ::core::convert::AsRef<str> }, "as_ref");
 
-    let ctor_from_string = remote.construct(quote! { #from_string(s) });
-    let ctor_from_str = remote.construct(quote! { #from_str(s) });
-    let ctor_from_wire = remote.construct(quote! { #from_str(s) });
+    let ctor_from_string = remote.construct(quote! { #from_string(__buffa_string) });
+    let ctor_from_str = remote.construct(quote! { #from_str(__buffa_str) });
 
     let arbitrary_impl = forwarders::arbitrary(
         &remote,
@@ -62,29 +61,29 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
 
         impl #impl_generics ::core::convert::From<::buffa::alloc::string::String> for #ident #ty_generics #where_clause {
             #[inline]
-            fn from(s: ::buffa::alloc::string::String) -> Self {
+            fn from(__buffa_string: ::buffa::alloc::string::String) -> Self {
                 #ctor_from_string
             }
         }
 
         impl #impl_generics ::core::convert::From<&str> for #ident #ty_generics #where_clause {
             #[inline]
-            fn from(s: &str) -> Self {
+            fn from(__buffa_str: &str) -> Self {
                 #ctor_from_str
             }
         }
 
         impl #impl_generics ::buffa::ProtoString for #ident #ty_generics #where_clause {
             #[inline]
-            fn copy_from_str(s: &str) -> Self {
+            fn copy_from_str(__buffa_str: &str) -> Self {
                 #ctor_from_str
             }
 
             #[inline]
             fn from_wire(
-                payload: ::buffa::WirePayload<'_>,
+                __buffa_payload: ::buffa::WirePayload<'_>,
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-                payload.to_str().map(|s| #ctor_from_wire)
+                __buffa_payload.to_str().map(|__buffa_str| #ctor_from_str)
             }
         }
 

@@ -121,6 +121,41 @@ fn main() {
         ".google.protobuf.Any.value".to_string(),
         buffa_codegen::BytesRepr::Bytes,
     )];
+    // Every message that holds no floating-point value derives Eq and Hash.
+    // The list is explicit because the rest cannot: `DoubleValue` and
+    // `FloatValue` hold a float, and `Value`, `Struct` and `ListValue` reach
+    // one through `Value.number_value`.
+    config.message_attributes = [
+        "Timestamp",
+        "Duration",
+        "FieldMask",
+        "Empty",
+        "Any",
+        "SourceContext",
+        "Int32Value",
+        "Int64Value",
+        "UInt32Value",
+        "UInt64Value",
+        "BoolValue",
+        "StringValue",
+        "BytesValue",
+        "Type",
+        "Field",
+        "Enum",
+        "EnumValue",
+        "Option",
+        "Api",
+        "Method",
+        "Mixin",
+    ]
+    .into_iter()
+    .map(|name| {
+        (
+            format!(".google.protobuf.{name}"),
+            "#[derive(Eq, Hash)]".to_string(),
+        )
+    })
+    .collect();
 
     let files_to_generate: Vec<String> = WKT_PROTOS.iter().map(|s| s.to_string()).collect();
 

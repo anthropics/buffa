@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`StringValue` implements `AsMut<str>` and `BytesValue` implements `AsMut<[u8]>`** (#610), beside their existing `AsRef` impls, so both can be passed to a function that is generic over `AsMut`. The borrow allows in-place edits that keep the length; `&mut wrapper.value` gives the whole `String` or `Vec<u8>`.
+time: 2026-10-07T14:00:58.943571+02:00

@@ -528,7 +528,7 @@ fn a_table_generated_with_a_type_prefix_boxed_fields_and_no_unknown_slot_agrees(
 
 // ---------------------------------------------------------------------------
 // More schema shapes: nested declarations, shadowed names, every kind, editions
-// features, and a message wider than the dense array
+// features, and messages with more fields than a dense slot can count
 // ---------------------------------------------------------------------------
 
 macro_rules! shape_samples {
@@ -835,12 +835,28 @@ fn nested_messages_decode_the_same_from_a_buffer_of_two_chunks() {
     assert_same_chained::<crate::tc3u::E, crate::tc3t::E>(&editions);
 }
 
+// Messages with one entry fewer than, exactly, and one entry more than the 255
+// that a dense slot can count. Each sets the fields either side of the end of
+// its dense array (63 is the last number in it, 64 the first that the table
+// searches for) and its first and last fields.
 macro_rules! edge_widths {
     ($($name:ident: $ty:ident, $last:ident;)*) => {$(
         #[test]
         fn $name() {
-            let unrolled = crate::wideu::$ty { f1: 1, $last: 9, ..Default::default() };
-            let table = crate::widet::$ty { f1: 1, $last: 9, ..Default::default() };
+            let unrolled = crate::wideu::$ty {
+                f1: 1,
+                f63: 63,
+                f64: 64,
+                $last: 9,
+                ..Default::default()
+            };
+            let table = crate::widet::$ty {
+                f1: 1,
+                f63: 63,
+                f64: 64,
+                $last: 9,
+                ..Default::default()
+            };
             let wire = assert_same_codec(&unrolled, &table);
             assert_same_on_corrupt_input::<crate::wideu::$ty, crate::widet::$ty>(&wire, false);
         }
@@ -848,9 +864,9 @@ macro_rules! edge_widths {
 }
 
 edge_widths! {
-    a_message_with_254_fields_agrees: W254, f254;
-    a_message_with_255_fields_agrees: W255, f255;
-    a_message_with_256_fields_agrees: W256, f256;
+    both_lookups_of_a_message_with_254_fields_agree: W254, f254;
+    both_lookups_of_a_message_with_255_fields_agree: W255, f255;
+    both_lookups_of_a_message_with_256_fields_agree: W256, f256;
 }
 
 #[test]
@@ -2528,7 +2544,7 @@ macro_rules! wide_oneof_samples {
 }
 
 #[test]
-fn a_oneof_in_a_message_too_wide_for_a_dense_lookup_agrees() {
+fn a_oneof_after_254_fields_in_a_wide_message_agrees() {
     let opts = buffa::DecodeOptions::new();
     let (unrolled, table) = (wide_oneof_samples!(wideu), wide_oneof_samples!(widet));
     for (u, t) in unrolled.iter().zip(&table) {

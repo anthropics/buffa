@@ -1,0 +1,38 @@
+[package]
+name = "buffa-proto-options"
+description = "Rust types for buffa's custom protobuf options (buffa/ext/options.proto)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["protobuf", "protocol-buffers", "options", "codegen"]
+categories = ["encoding", "no-std"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+buffa = { workspace = true }
+buffa-descriptor = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
+arbitrary = { workspace = true, optional = true }
+
+[features]
+default = ["std"]
+std = ["buffa/std", "serde?/std"]
+# The impls below are generated for every option message and compiled only
+# when the matching feature is on, so a consumer that reads the options
+# through the binary codec does not compile serde.
+views = []
+json = ["buffa/json", "dep:serde"]
+text = ["buffa/text"]
+# Enables `std`: the `arbitrary` derive expands to `std` paths.
+arbitrary = ["std", "buffa/arbitrary", "dep:arbitrary"]
+# `impl ReflectMessage` for the option messages. Enables `std`, because the
+# embedded descriptor pool is built in a `std::sync::OnceLock`.
+reflect = ["dep:buffa-descriptor", "buffa-descriptor/reflect", "buffa-descriptor/std", "std"]
+
+[dev-dependencies]
+buffa-descriptor = { workspace = true, features = ["std"] }

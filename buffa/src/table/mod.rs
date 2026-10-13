@@ -667,8 +667,8 @@ impl<M> Table<M> {
     ///
     /// `abi` is the [`ABI`] the caller was generated for. `entries` are the
     /// fields sorted by number; `dense` is the lookup array described on
-    /// [`MessageTable`], which must be empty if there are 255 entries or more;
-    /// `aux` holds the descriptors that entries index by their `aux` value;
+    /// [`MessageTable`]; `aux` holds the descriptors that entries index by
+    /// their `aux` value;
     /// `unknown` is the offset of the message's `UnknownFields`, if it keeps
     /// any.
     ///
@@ -781,10 +781,6 @@ impl<M> Table<M> {
         assert!(
             leaders == groups,
             "buffa table: every oneof descriptor needs exactly one leading member"
-        );
-        assert!(
-            dense.is_empty() || entries.len() < 255,
-            "buffa table: the dense lookup needs fewer than 255 entries"
         );
         // Every dense slot names the entry with its number, and every entry
         // below the dense range has a slot, so the two agree.

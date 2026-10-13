@@ -170,8 +170,7 @@ fn read_proto(file: &str) -> String {
 }
 
 /// A message with 300 fields, of which 280 are messages, so that a table needs
-/// more than 255 entries (which turns off its dense array) and more than 255
-/// field descriptors.
+/// more than 255 entries and more than 255 field descriptors.
 fn wide_proto() -> String {
     let mut proto = String::from(
         "syntax = \"proto3\";\npackage wide;\nmessage Leaf { int32 x = 1; }\nmessage Wide {\n",
@@ -183,8 +182,9 @@ fn wide_proto() -> String {
         proto.push_str(&format!("  int32 f{n} = {n};\n"));
     }
     proto.push_str("}\n");
-    // Messages one field either side of the 255 that a dense array cannot
-    // index.
+    // Messages one field either side of 255 entries, the most that a dense
+    // array's `u8` slots can count. Each has a dense array for its fields
+    // numbered below 64, and the table searches for the rest.
     for count in [254, 255, 256] {
         proto.push_str(&format!("message W{count} {{\n"));
         for n in 1..=count {
@@ -192,8 +192,8 @@ fn wide_proto() -> String {
         }
         proto.push_str("}\n");
     }
-    // A oneof in a message with more entries than a dense array can index, so
-    // the table searches for its members.
+    // A oneof whose members are numbered 255 and up, past the dense array, in
+    // a message with more than 255 entries.
     proto.push_str("enum WideColor {\n  WIDE_UNSPECIFIED = 0;\n  WIDE_RED = 1;\n}\n");
     proto.push_str("message WideOneof {\n");
     for n in 1..=254 {
@@ -641,6 +641,7 @@ fn main() {
     buffa_build::Config::new()
         .files(&["protos/wkt_usage.proto"])
         .includes(&["protos/"])
+        .type_attribute(".test.wkt.TimestampKey", "#[derive(Eq, Hash)]")
         .compile()
         .expect("buffa_build failed for wkt_usage.proto");
 
@@ -984,12 +985,18 @@ fn main() {
     // `-D warnings`. `generate_arbitrary` adds the `Arbitrary` impls, which
     // only a build with the `arbitrary` feature compiles. One field takes its
     // `#[deprecated]` from `field_attribute`, which marks and guards the same
-    // items as the option.
+    // items as the option. `HandMarkedGroup.body` takes one from
+    // `oneof_struct_field_attribute`, which guards the impls that visit the
+    // oneof's struct field.
     let mut deprecated = buffa_build::Config::new()
         .files(&["protos/deprecated.proto"])
         .includes(&["protos/"])
         .field_attribute(
             ".deprecated.LegacyProfile.hand_marked",
+            "#[deprecated(note = \"marked in build.rs\")]",
+        )
+        .oneof_struct_field_attribute(
+            ".deprecated.HandMarkedGroup.body",
             "#[deprecated(note = \"marked in build.rs\")]",
         )
         .generate_views(true)
@@ -1023,6 +1030,28 @@ fn main() {
         .generate_arbitrary(true)
         .compile()
         .expect("buffa_build failed for deprecated_proto2.proto");
+
+    // `oneof_struct_field_attribute` — a `Serialize` that the caller derives,
+    // with `generate_json` off. `UnknownFields` does not implement
+    // `Serialize`, so the derive needs unknown-field preservation off.
+    buffa_build::Config::new()
+        .files(&["protos/oneof_struct_field_attr.proto"])
+        .includes(&["protos/"])
+        .preserve_unknown_fields(false)
+        .message_attribute(
+            ".oneof_struct_field_attr.Event",
+            "#[derive(serde::Serialize)]",
+        )
+        .oneof_attribute(
+            ".oneof_struct_field_attr.Event.payload",
+            "#[derive(serde::Serialize)]",
+        )
+        .oneof_struct_field_attribute(
+            ".oneof_struct_field_attr.Event.payload",
+            "#[serde(skip_serializing_if = \"Option::is_none\")]",
+        )
+        .compile()
+        .expect("buffa_build failed for oneof_struct_field_attr.proto");
 
     // `skip_debug` — the hand-written `Debug` impls in `src/lib.rs` compile
     // only if the generated ones are omitted. Views enabled so the view of a
@@ -1419,6 +1448,17 @@ fn main() {
         .shared_descriptor_pool(true)
         .compile()
         .expect("buffa_build failed for shared_pool protos");
+
+    // `buffa.ext` options. protoc resolves the import from the
+    // `buffa-proto-options` crate's `protos/` directory, codegen runs over a
+    // schema that sets every option, and vtable reflection embeds the
+    // descriptors so that tests/ext_options.rs can read the options back.
+    buffa_build::Config::new()
+        .files(&["protos/ext_options.proto"])
+        .includes(&["protos/", "../buffa-proto-options/protos/"])
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for ext_options.proto");
 
     // Edition 2024 — requires protoc v30+ (stabilized edition 2024).
     // Older protoc rejects it with "later than the maximum supported edition".

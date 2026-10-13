@@ -275,9 +275,10 @@ pub fn arbitrary(
         TakeRest::Seed => quote! {
             #[inline]
             fn arbitrary_take_rest(
-                u: ::#krate::Unstructured<#lifetime>,
+                __buffa_unstructured: ::#krate::Unstructured<#lifetime>,
             ) -> ::#krate::Result<Self> {
-                let __buffa_seed: #seed = ::#krate::Arbitrary::arbitrary_take_rest(u)?;
+                let __buffa_seed: #seed =
+                    ::#krate::Arbitrary::arbitrary_take_rest(__buffa_unstructured)?;
                 ::core::result::Result::Ok(#build)
             }
         },
@@ -290,9 +291,9 @@ pub fn arbitrary(
         {
             #[inline]
             fn arbitrary(
-                u: &mut ::#krate::Unstructured<#lifetime>,
+                __buffa_unstructured: &mut ::#krate::Unstructured<#lifetime>,
             ) -> ::#krate::Result<Self> {
-                let __buffa_seed: #seed = ::#krate::Arbitrary::arbitrary(u)?;
+                let __buffa_seed: #seed = ::#krate::Arbitrary::arbitrary(__buffa_unstructured)?;
                 ::core::result::Result::Ok(#build)
             }
 
@@ -389,6 +390,90 @@ mod tests {
             }
             for want in wants {
                 assert!(keyed.contains(want), "{name}: expected `{want}`:\n{keyed}");
+            }
+        }
+    }
+
+    /// Every binding an expansion introduces starts with `__buffa_`: the
+    /// parameters, the closure parameters and the `let` bindings. A plain
+    /// name becomes a constant pattern beside a constant of that name, and
+    /// takes the place of a one-segment override path with that name (#652).
+    #[test]
+    fn every_binding_starts_with_the_reserved_prefix() {
+        struct Bindings(Vec<syn::Ident>);
+        impl<'ast> syn::visit::Visit<'ast> for Bindings {
+            fn visit_pat_ident(&mut self, pat: &'ast syn::PatIdent) {
+                self.0.push(pat.ident.clone());
+                syn::visit::visit_pat_ident(self, pat);
+            }
+        }
+        // A named field and every override key, beside the tuple structs
+        // without overrides that the other helpers expand.
+        type Derive = fn(syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream>;
+        let overridden: [(&'static str, Derive, syn::DeriveInput); 5] = [
+            (
+                "string",
+                crate::string::derive,
+                parse_quote! {
+                    #[buffa(remote = Remote, arbitrary, serde)]
+                    struct S { inner: Remote }
+                },
+            ),
+            (
+                "bytes",
+                crate::bytes::derive,
+                parse_quote! {
+                    #[buffa(remote = Remote, as_shared = shared, arbitrary, serde)]
+                    struct B { inner: Remote }
+                },
+            ),
+            (
+                "list",
+                crate::list::derive,
+                parse_quote! {
+                    #[buffa(remote = Remote, arbitrary, serde)]
+                    struct L<T> { inner: Remote }
+                },
+            ),
+            (
+                "box",
+                crate::box_ptr::derive,
+                parse_quote! {
+                    #[buffa(remote = Remote, new = make, into_inner = take, arbitrary, serde)]
+                    struct P<T> { inner: Remote }
+                },
+            ),
+            (
+                "map",
+                crate::map::derive,
+                parse_quote! {
+                    #[buffa(
+                        remote = Remote, len = count, insert = put, clear = wipe, iter = entries,
+                        arbitrary, serde,
+                    )]
+                    struct M<K, V> { inner: Remote }
+                },
+            ),
+        ];
+        let overridden = overridden.into_iter().map(|(name, derive, input)| {
+            (
+                name,
+                derive(input).expect("overridden expansion").to_string(),
+            )
+        });
+        let arbitrary = expansions()
+            .into_iter()
+            .map(|(name, _, keyed)| (name, keyed));
+        for (name, expansion) in arbitrary.chain(serde_expansions()).chain(overridden) {
+            let file: syn::File = syn::parse_str(&expansion).expect("the expansion parses");
+            let mut bindings = Bindings(Vec::new());
+            syn::visit::Visit::visit_file(&mut bindings, &file);
+            assert!(!bindings.0.is_empty(), "{name}: no bindings:\n{expansion}");
+            for binding in bindings.0 {
+                assert!(
+                    binding.to_string().starts_with("__buffa_"),
+                    "{name}: binding `{binding}`:\n{expansion}"
+                );
             }
         }
     }

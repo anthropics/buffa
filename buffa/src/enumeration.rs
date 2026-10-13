@@ -225,7 +225,10 @@ impl<'de, E: Enumeration> serde::Deserialize<'de> for EnumValue<E> {
                         if crate::json::ignore_unknown_enum_values() {
                             return Ok(EnumValue::from(0));
                         }
-                        Err(serde::de::Error::unknown_variant(v, &[]))
+                        Err(serde::de::Error::invalid_value(
+                            serde::de::Unexpected::Str(v),
+                            &"a known enum variant name",
+                        ))
                     }
                 }
             }
@@ -537,6 +540,15 @@ mod tests {
                 let result = serde_json::from_str::<EnumValue<Color>>(json);
                 assert_eq!(result.ok(), expected, "input: {json}");
             }
+        }
+
+        #[test]
+        fn deserialize_unknown_string_error_names_the_value() {
+            let err = serde_json::from_str::<EnumValue<Color>>(r#""PURPLE""#).unwrap_err();
+            assert_eq!(
+                err.to_string(),
+                r#"invalid value: string "PURPLE", expected a known enum variant name at line 1 column 8"#
+            );
         }
 
         #[test]

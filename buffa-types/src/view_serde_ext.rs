@@ -9,23 +9,18 @@
 //!
 //! When views and JSON are both enabled in `buffa-build`, generated view types
 //! reference WKT view types (`TimestampView<'_>`, …) directly, so those WKT
-//! views also need `Serialize`. [`StringValueView`] and [`BytesValueView`]
-//! serialize their borrowed payloads directly. The remaining impls delegate
-//! to the owned type via
+//! views also need `Serialize`. [`StringValueView`], [`BytesValueView`],
+//! [`StructView`], [`ValueView`] and [`ListValueView`] serialize their borrowed
+//! fields directly. The remaining impls delegate to the owned type via
 //! [`MessageView::to_owned_message`](buffa::MessageView::to_owned_message),
 //! materializing each WKT field for parity with the owned proto3 JSON
 //! encoding. The rest of the parent message stays zero-copy.
 //!
 //! For the flat WKTs ([`Timestamp`](crate::Timestamp),
 //! [`Duration`](crate::Duration), [`FieldMask`](crate::FieldMask), the
-//! scalar wrappers, [`Empty`](crate::Empty)) this copies the fields and any
-//! retained unknown fields. For
-//! [`Struct`](crate::Struct) / [`Value`](crate::Value) /
-//! [`ListValue`](crate::ListValue) / [`Any`](crate::Any) the entire owned
-//! tree is materialized before serde sees it — large nested `Struct` payloads
-//! lose the zero-copy benefit on the serialize path.  Hand-rolling those four
-//! impls to walk the view directly would close the gap; tracked as a
-//! follow-up on the view JSON issue.
+//! scalar wrappers, [`Empty`](crate::Empty)) the remaining impls copy the
+//! fields and any retained unknown fields. [`AnyView`] still converts to an
+//! owned `Any` before registry-based JSON serialization.
 //!
 //! `Deserialize` is intentionally not implemented: view types borrow from a
 //! source buffer and cannot be constructed from arbitrary JSON.
@@ -66,12 +61,9 @@ wkt_view_serialize!(
     FloatValueView,
     Int32ValueView,
     Int64ValueView,
-    ListValueView,
-    StructView,
     TimestampView,
     UInt32ValueView,
     UInt64ValueView,
-    ValueView,
 );
 
 impl serde::Serialize for StringValueView<'_> {
@@ -85,6 +77,56 @@ impl serde::Serialize for BytesValueView<'_> {
     /// Serializes the borrowed bytes as base64 without constructing an owned wrapper.
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         buffa::json_helpers::bytes::serialize(self.value, s)
+    }
+}
+
+impl serde::Serialize for ValueView<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use crate::google::protobuf::__buffa::view::oneof::value::Kind;
+
+        match self.kind.as_ref() {
+            None => Err(serde::ser::Error::custom(
+                "google.protobuf.Value.kind must be set",
+            )),
+            Some(Kind::NullValue(_)) => s.serialize_unit(),
+            Some(Kind::NumberValue(value)) => {
+                if !value.is_finite() {
+                    return Err(serde::ser::Error::custom(
+                        "Value.number_value must be finite; NaN and Infinity are not valid JSON numbers",
+                    ));
+                }
+                s.serialize_f64(*value)
+            }
+            Some(Kind::StringValue(value)) => s.serialize_str(value),
+            Some(Kind::BoolValue(value)) => s.serialize_bool(*value),
+            Some(Kind::StructValue(value)) => serde::Serialize::serialize(value.as_ref(), s),
+            Some(Kind::ListValue(value)) => serde::Serialize::serialize(value.as_ref(), s),
+        }
+    }
+}
+
+impl serde::Serialize for StructView<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        let entries = self.fields.iter_unique();
+        let mut map = s.serialize_map(Some(entries.len()))?;
+        for (key, value) in entries {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
+impl serde::Serialize for ListValueView<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+
+        let mut seq = s.serialize_seq(Some(self.values.len()))?;
+        for value in &self.values {
+            seq.serialize_element(value)?;
+        }
+        seq.end()
     }
 }
 
@@ -290,6 +332,53 @@ mod tests {
                 ..Default::default()
             }
         );
+    }
+
+    #[test]
+    fn struct_view_serialization_keeps_last_duplicate_key() {
+        use crate::google::protobuf::__buffa::view::{
+            oneof::value::Kind as KindView, StructView as WktStructView, ValueView as WktValueView,
+        };
+
+        let view = WktStructView {
+            fields: buffa::MapView::new(vec![
+                (
+                    "key",
+                    WktValueView {
+                        kind: Some(KindView::StringValue("first")),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "key",
+                    WktValueView {
+                        kind: Some(KindView::StringValue("last")),
+                        ..Default::default()
+                    },
+                ),
+            ]),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            serde_json::to_value(&view).expect("serialize view"),
+            serde_json::json!({"key": "last"})
+        );
+    }
+
+    #[test]
+    fn value_view_rejects_non_finite_numbers() {
+        let view = ValueView {
+            kind: Some(
+                crate::google::protobuf::__buffa::view::oneof::value::Kind::NumberValue(f64::NAN),
+            ),
+            ..Default::default()
+        };
+
+        let error = serde_json::to_string(&view).expect_err("NaN is not a JSON number");
+        assert!(error
+            .to_string()
+            .contains("Value.number_value must be finite"));
     }
 
     #[test]

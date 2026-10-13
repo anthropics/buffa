@@ -31,6 +31,13 @@ pub mod deprecated_proto2 {
     buffa::include_proto!("deprecated_proto2");
 }
 
+/// `oneof_struct_field_attribute` — `build.rs` derives `serde::Serialize` and
+/// puts a serde attribute on the struct field holding the oneof.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod oneof_struct_field_attr {
+    buffa::include_proto!("oneof_struct_field_attr");
+}
+
 /// `skip_debug` — hand-written `Debug` impls for the types `build.rs` names
 /// in its rules.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
@@ -693,6 +700,13 @@ pub mod open_enums_enum_rule {
 )]
 pub mod open_enums_no_unknowns {
     buffa::include_proto!("test.openenums_nounknowns");
+}
+
+/// `buffa.ext` options fixture: every option set once. See
+/// tests/ext_options.rs.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod ext_options {
+    buffa::include_proto!("test.extoptions");
 }
 
 // Mixed-mode reflection fixtures: bridge-mode dependency, vtable-mode parent

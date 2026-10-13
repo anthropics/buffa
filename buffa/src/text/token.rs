@@ -107,7 +107,9 @@ const MESSAGE_LIST: u8 = b'(';
 
 /// `expected` text of the error for a scalar that follows a field name, or
 /// opens a list element, without a `:` after the name.
-const COLON_BEFORE_SCALAR: &str = "':' before scalar value";
+/// `TextDecoder::read_repeated_scalar_into` reports the same text at the `[`
+/// of an empty list that follows such a name.
+pub(super) const COLON_BEFORE_SCALAR: &str = "':' before scalar value";
 
 /// Internal: the last-emitted token kind, driving the state machine.
 /// Slightly richer than [`TokenKind`] because it tracks the consumed
@@ -248,6 +250,15 @@ impl<'a> Tokenizer<'a> {
     fn err(&self, pos: usize, kind: ParseErrorKind) -> ParseError {
         let (line, col) = self.line_col(pos);
         ParseError::new(line, col, kind)
+    }
+
+    /// Whether the innermost open delimiter is a list that follows a field
+    /// name without a `:`.
+    ///
+    /// Valid once the list's `[` is read; a peek at the token after it leaves
+    /// the answer unchanged.
+    pub(super) fn in_list_without_separator(&self) -> bool {
+        self.current_open() == (OpenKind::List { scalars: false })
     }
 
     pub(super) fn err_here(&self, kind: ParseErrorKind) -> ParseError {

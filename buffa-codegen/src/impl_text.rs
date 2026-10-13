@@ -512,8 +512,9 @@ fn enum_type_path(
 /// and `.map(EnumValue::from)` into `Result<EnumValue<E>, _>`.
 ///
 /// `dec` is the decoder ident — `dec` for outer-loop scalars, `__d` inside
-/// `read_repeated_into` / `merge_map_entry` closures. Callers add `?` when
-/// they need the value; `read_repeated_into` closures pass it through as-is.
+/// `read_repeated_scalar_into` / `merge_map_entry` closures. Callers add `?`
+/// when they need the value; `read_repeated_scalar_into` closures pass it
+/// through as-is.
 fn enum_read(closed: bool, enum_ty: &TokenStream, dec: &proc_macro2::Ident) -> TokenStream {
     if closed {
         quote! { #dec.read_closed_enum_by_name::<#enum_ty>() }
@@ -742,10 +743,31 @@ fn repeated_merge_arm(
     let ty = effective_type(ctx, field, features);
     let (_, name_pat) = text_field_name(proto_name, field, ty);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, proto_name);
+    // Enumerated so that a new `Type` variant is a compile error here, not a
+    // field that takes the scalar rule by default.
+    let read_repeated = match ty {
+        Type::TYPE_MESSAGE | Type::TYPE_GROUP => format_ident!("read_repeated_into"),
+        Type::TYPE_ENUM
+        | Type::TYPE_BOOL
+        | Type::TYPE_INT32
+        | Type::TYPE_INT64
+        | Type::TYPE_UINT32
+        | Type::TYPE_UINT64
+        | Type::TYPE_SINT32
+        | Type::TYPE_SINT64
+        | Type::TYPE_FIXED32
+        | Type::TYPE_FIXED64
+        | Type::TYPE_SFIXED32
+        | Type::TYPE_SFIXED64
+        | Type::TYPE_FLOAT
+        | Type::TYPE_DOUBLE
+        | Type::TYPE_STRING
+        | Type::TYPE_BYTES => format_ident!("read_repeated_scalar_into"),
+    };
 
-    // read_repeated_into handles both `f: [a, b]` and `f: a` forms. The
-    // closure takes `&mut TextDecoder` as `__d` (not `dec`, which is already
-    // borrowed by the outer loop).
+    // The type-specific repeated reader handles both `f: [a, b]` and `f: a`
+    // forms. The closure takes `&mut TextDecoder` as `__d` (not `dec`, which
+    // is already borrowed by the outer loop).
     let elem = match ty {
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => quote! {
             {
@@ -805,7 +827,7 @@ fn repeated_merge_arm(
         }
     };
     Ok(quote! {
-        #name_pat => dec.read_repeated_into(&mut self.#ident, |__d| #elem)?,
+        #name_pat => dec.#read_repeated(&mut self.#ident, |__d| #elem)?,
     })
 }
 

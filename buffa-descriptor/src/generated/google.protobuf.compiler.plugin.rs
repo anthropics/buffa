@@ -664,7 +664,7 @@ impl ::buffa::text::TextFormat for CodeGeneratorRequest {
                     dec.merge_message(self.compiler_version.get_or_insert_default())?
                 }
                 "file_to_generate" => {
-                    dec.read_repeated_into(
+                    dec.read_repeated_scalar_into(
                         &mut self.file_to_generate,
                         |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
                     )?
@@ -1175,7 +1175,10 @@ pub mod code_generator_response {
                     ) -> ::core::result::Result<Feature, __E> {
                         <Feature as ::buffa::Enumeration>::from_proto_name(v)
                             .ok_or_else(|| {
-                                ::serde::de::Error::unknown_variant(v, &[])
+                                ::serde::de::Error::invalid_value(
+                                    ::serde::de::Unexpected::Str(v),
+                                    &"a known enum variant name",
+                                )
                             })
                     }
                     fn visit_i64<__E: ::serde::de::Error>(

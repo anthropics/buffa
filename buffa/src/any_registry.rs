@@ -270,12 +270,9 @@ mod tests {
         assert!(!regular.is_wkt);
     }
 
-    /// Serializes tests that manipulate the global `ANY_REGISTRY`.
-    static REGISTRY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[test]
     fn global_registry() {
-        let _guard = REGISTRY_TEST_LOCK.lock().unwrap();
+        let _guard = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
         let mut registry = AnyRegistry::new();
         registry.register(entry!("type.googleapis.com/test.Global", false));
         set_any_registry(Box::new(registry));
@@ -294,7 +291,7 @@ mod tests {
 
     #[test]
     fn set_registry_twice_supersedes_first() {
-        let _guard = REGISTRY_TEST_LOCK.lock().unwrap();
+        let _guard = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
         let mut first = AnyRegistry::new();
         first.register(entry!("type.googleapis.com/test.First", false));
         set_any_registry(Box::new(first));

@@ -818,8 +818,12 @@ impl<'de> serde::Deserialize<'de> for Color {
                 f.write_str("a string, integer, or null for Color")
             }
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Color, E> {
-                <Color as crate::Enumeration>::from_proto_name(v)
-                    .ok_or_else(|| serde::de::Error::unknown_variant(v, &[]))
+                <Color as crate::Enumeration>::from_proto_name(v).ok_or_else(|| {
+                    serde::de::Error::invalid_value(
+                        serde::de::Unexpected::Str(v),
+                        &"a known enum variant name",
+                    )
+                })
             }
             fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Color, E> {
                 <Color as crate::Enumeration>::from_i32(v as i32)
@@ -1589,6 +1593,17 @@ fn closed_enum_deserialize_table() {
     }
 }
 
+#[test]
+fn closed_enum_unknown_string_error_names_the_value() {
+    let err = serde_json::from_str::<SerdeClosedEnum>(r#""PURPLE""#)
+        .map(|v| v.0)
+        .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        r#"invalid value: string "PURPLE", expected a known enum variant name at line 1 column 8"#
+    );
+}
+
 // ── opt_closed_enum tests ─────────────────────────────────────────────
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -1630,6 +1645,49 @@ fn repeated_closed_enum_roundtrip() {
 fn repeated_closed_enum_null_is_empty() {
     let v: SerdeRepeatedClosedEnum = serde_json::from_str("null").unwrap();
     assert!(v.0.is_empty());
+}
+
+#[test]
+fn closed_enum_containers_reject_null_elements() {
+    for ignore_unknown_enum_values in [false, true] {
+        let opts = crate::json::JsonParseOptions {
+            ignore_unknown_enum_values,
+            ..Default::default()
+        };
+        crate::json::with_json_parse_options(&opts, || {
+            for json in [
+                "[null]",
+                r#"[null,"ONE"]"#,
+                r#"["ONE",null]"#,
+                r#"["ZERO",null,1]"#,
+                r#"["UNKNOWN",null]"#,
+            ] {
+                let result = repeated_closed_enum::deserialize::<BareEnum, _>(
+                    &mut serde_json::Deserializer::from_str(json),
+                );
+                assert!(
+                    result.is_err(),
+                    "accepted {json}, lenient={ignore_unknown_enum_values}"
+                );
+            }
+
+            for json in [
+                r#"{"a":null}"#,
+                r#"{"a":null,"b":"ONE"}"#,
+                r#"{"a":1,"b":null}"#,
+                r#"{"a":"UNKNOWN","b":null}"#,
+            ] {
+                let result = map_closed_enum::deserialize::<
+                    crate::__private::HashMap<String, BareEnum>,
+                    _,
+                >(&mut serde_json::Deserializer::from_str(json));
+                assert!(
+                    result.is_err(),
+                    "accepted {json}, lenient={ignore_unknown_enum_values}"
+                );
+            }
+        });
+    }
 }
 
 // ── closed-enum bound relaxation: works without `impl Deserialize` ────
@@ -1706,16 +1764,21 @@ fn opt_closed_enum_works_without_deserialize_impl() {
 }
 
 #[test]
+fn opt_closed_enum_unknown_string_error_names_the_value() {
+    let mut d = serde_json::Deserializer::from_str(r#""PURPLE""#);
+    let err = opt_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        r#"invalid value: string "PURPLE", expected a known enum variant name"#
+    );
+}
+
+#[test]
 fn repeated_closed_enum_works_without_deserialize_impl() {
-    let json = r#"["ZERO","ONE",1,null]"#;
+    let json = r#"["ZERO","ONE",1]"#;
     let mut d = serde_json::Deserializer::from_str(json);
     let got = repeated_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap();
-    // null inside a sequence decodes to the default variant, matching the
-    // codegen-emitted Deserialize impl's `visit_unit`.
-    assert_eq!(
-        got,
-        vec![BareEnum::Zero, BareEnum::One, BareEnum::One, BareEnum::Zero]
-    );
+    assert_eq!(got, vec![BareEnum::Zero, BareEnum::One, BareEnum::One]);
 }
 
 #[test]
@@ -1762,10 +1825,10 @@ fn closed_enum_lenient_drops_unknown_but_rejects_malformed_values() {
             );
         }
 
-        // A string is a name whatever its text, and `null` is the default.
-        let mut d = serde_json::Deserializer::from_str(r#"["", "1", null]"#);
+        // A string is a name whatever its text.
+        let mut d = serde_json::Deserializer::from_str(r#"["", "1"]"#);
         let values = repeated_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap();
-        assert_eq!(values, vec![BareEnum::Zero]);
+        assert!(values.is_empty());
 
         // Repeated and map containers keep the same distinction.
         let mut d = serde_json::Deserializer::from_str(r#"["ZERO","UNKNOWN","ONE",99,-1]"#);

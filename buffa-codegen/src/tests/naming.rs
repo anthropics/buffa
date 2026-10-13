@@ -1744,3 +1744,149 @@ fn test_missing_type_name_is_reported_before_a_type_name_conflict() {
     .expect_err("an unnamed message is rejected");
     assert!(matches!(err, CodeGenError::MissingField(_)), "{err}");
 }
+
+/// A file in `my.pkg` whose `Msg` message has one oneof `kind` with a
+/// `string` member per entry of `members`, in declaration order.
+fn oneof_member_file(members: &[&str]) -> FileDescriptorProto {
+    let mut file = proto3_file("oneof_members.proto");
+    file.package = Some("my.pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: members
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                let mut field = make_field(
+                    name,
+                    index as i32 + 1,
+                    Label::LABEL_OPTIONAL,
+                    Type::TYPE_STRING,
+                );
+                field.oneof_index = Some(0);
+                field
+            })
+            .collect(),
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("kind".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    file
+}
+
+#[track_caller]
+fn assert_oneof_variant_conflict(first: &str, second: &str, rust_name: &str) {
+    assert_oneof_variant_conflict_in_file(
+        oneof_member_file(&[first, second]),
+        "my.pkg.Msg",
+        first,
+        second,
+        rust_name,
+        &CodeGenConfig::default(),
+    );
+}
+
+#[track_caller]
+fn assert_oneof_variant_conflict_in_file(
+    file: FileDescriptorProto,
+    message_name: &str,
+    first: &str,
+    second: &str,
+    rust_name: &str,
+    config: &CodeGenConfig,
+) {
+    let err = generate(&[file], &["oneof_members.proto".to_string()], config)
+        .expect_err("colliding oneof member names must be rejected");
+    let CodeGenError::OneofVariantNameConflict {
+        message_name: got_message,
+        oneof_name,
+        first_field,
+        second_field,
+        rust_name: got_rust_name,
+    } = &err
+    else {
+        panic!("expected OneofVariantNameConflict, got: {err}");
+    };
+    assert_eq!(
+        (
+            got_message.as_str(),
+            oneof_name.as_str(),
+            first_field.as_str(),
+            second_field.as_str(),
+            got_rust_name.as_str()
+        ),
+        (message_name, "kind", first, second, rust_name)
+    );
+}
+
+#[test]
+fn test_oneof_members_with_same_pascal_case_are_rejected() {
+    assert_oneof_variant_conflict("foo", "foo_", "Foo");
+    assert_oneof_variant_conflict("foo_bar", "foo__bar", "FooBar");
+}
+
+#[test]
+fn test_oneof_members_with_same_keyword_escaped_name_are_rejected() {
+    assert_oneof_variant_conflict("self", "self_", "Self_");
+}
+
+#[test]
+fn test_oneof_variant_conflict_message_names_the_oneof_both_members_and_the_remedy() {
+    let err = generate(
+        &[oneof_member_file(&["foo", "foo_"])],
+        &["oneof_members.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("colliding oneof member names must be rejected");
+    assert_eq!(
+        err.to_string(),
+        "oneof variant name conflict in message 'my.pkg.Msg': members 'foo' and 'foo_' of \
+         oneof 'kind' both map to Rust variant 'Foo'; rename one of them"
+    );
+}
+
+#[test]
+fn test_oneof_variant_conflict_reports_the_first_two_colliding_members() {
+    // A third member that does not collide, declared between the two that
+    // do, is not reported.
+    assert_oneof_variant_conflict_in_file(
+        oneof_member_file(&["foo", "bar", "foo_"]),
+        "my.pkg.Msg",
+        "foo",
+        "foo_",
+        "Foo",
+        &CodeGenConfig::default(),
+    );
+}
+
+#[test]
+fn test_nested_oneof_variant_conflict_reports_full_name_without_views() {
+    let mut file = oneof_member_file(&["foo", "foo_"]);
+    let inner = file.message_type.pop().expect("inner message");
+    file.message_type.push(DescriptorProto {
+        name: Some("Outer".to_string()),
+        nested_type: vec![inner],
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        generate_views: false,
+        ..Default::default()
+    };
+    assert_oneof_variant_conflict_in_file(file, "my.pkg.Outer.Msg", "foo", "foo_", "Foo", &config);
+}
+
+#[test]
+fn test_oneof_members_with_different_names_are_accepted() {
+    let files = generate(
+        &[oneof_member_file(&["foo", "foo_bar", "self"])],
+        &["oneof_members.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("distinct oneof member names must generate");
+    let content = joined(&files);
+    assert!(content.contains("pub enum Kind"), "{content}");
+    assert!(content.contains("Foo("), "{content}");
+    assert!(content.contains("FooBar("), "{content}");
+    assert!(content.contains("Self_("), "{content}");
+}

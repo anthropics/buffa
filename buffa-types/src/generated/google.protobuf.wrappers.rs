@@ -474,6 +474,7 @@ pub const __FLOAT_VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa
 /// The JSON representation for `Int64Value` is JSON string.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Int64Value {
     /// The int64 value.
     ///
@@ -708,6 +709,7 @@ pub const __INT64VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa:
 /// The JSON representation for `UInt64Value` is JSON string.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct UInt64Value {
     /// The uint64 value.
     ///
@@ -942,6 +944,7 @@ pub const __U_INT64VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buff
 /// The JSON representation for `Int32Value` is JSON number.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Int32Value {
     /// The int32 value.
     ///
@@ -1176,6 +1179,7 @@ pub const __INT32VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa:
 /// The JSON representation for `UInt32Value` is JSON number.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct UInt32Value {
     /// The uint32 value.
     ///
@@ -1410,6 +1414,7 @@ pub const __U_INT32VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buff
 /// The JSON representation for `BoolValue` is JSON `true` and `false`.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct BoolValue {
     /// The bool value.
     ///
@@ -1644,6 +1649,7 @@ pub const __BOOL_VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa:
 /// The JSON representation for `StringValue` is JSON string.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct StringValue {
     /// The string value.
     ///
@@ -1878,6 +1884,7 @@ pub const __STRING_VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buff
 /// The JSON representation for `BytesValue` is JSON string.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct BytesValue {
     /// The bytes value.
     ///

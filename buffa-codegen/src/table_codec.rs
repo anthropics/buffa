@@ -95,7 +95,7 @@ pub(crate) fn generate_table_impl(
     }
     let oneof_impls = oneofs.into_impls();
 
-    let dense = dense_lookup(&fields);
+    let dense = dense_lookup(&fields, &dotted_fqn)?;
     let abi = proc_macro2::Literal::u32_unsuffixed(TABLE_ABI);
 
     let unknown = if ctx.preserve_unknown_fields(proto_fqn) {
@@ -162,13 +162,18 @@ pub(crate) fn generate_table_impl(
 }
 
 /// `dense[n]` is one plus the index of the field numbered `n`, or `0`, for
-/// the numbers up to the highest field number below 64. Empty, so that the
-/// table searches instead, for a message with 255 fields or more, because
-/// `Table::new` accepts a dense array only when every index fits below 255.
-fn dense_lookup(fields: &[TableField<'_>]) -> Vec<u8> {
-    if fields.len() >= 255 {
-        return Vec::new();
-    }
+/// the numbers up to the highest field number below 64.
+///
+/// Entries are sorted by field number, and protobuf field numbers start at
+/// one, so when the numbers are distinct a field numbered below 64 is among
+/// the first 63 entries. Its one-based index therefore fits in `u8` whatever
+/// the total number of fields.
+///
+/// # Errors
+///
+/// Returns an error if the one-based index of a field numbered below 64 does
+/// not fit in `u8`, which takes a message whose field numbers repeat.
+fn dense_lookup(fields: &[TableField<'_>], dotted_fqn: &str) -> Result<Vec<u8>, CodeGenError> {
     let top = fields
         .iter()
         .map(|f| f.number)
@@ -178,11 +183,18 @@ fn dense_lookup(fields: &[TableField<'_>]) -> Vec<u8> {
     let mut dense = vec![0u8; top + 1];
     for (i, f) in fields.iter().enumerate() {
         if let Some(slot) = dense.get_mut(f.number as usize) {
-            // At most 254 fields, so this fits.
-            *slot = (i + 1) as u8;
+            // Distinct field numbers put a field numbered below 64 among the
+            // first 63 sorted entries.
+            *slot = u8::try_from(i + 1).map_err(|_| {
+                CodeGenError::Other(format!(
+                    "table codec: {dotted_fqn} has more than 255 fields numbered {} or \
+                     lower, so its field numbers are not distinct",
+                    f.number
+                ))
+            })?;
         }
     }
-    dense
+    Ok(dense)
 }
 
 /// The `__table_entry!` for one field, and the aux descriptor it needs, which

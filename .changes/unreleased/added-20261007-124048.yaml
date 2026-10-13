@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`FieldMask` implements `FromIterator<T>` for every `T: Into<String>`** (#608), so an iterator of `&str` or `String` paths ends in `.collect::<FieldMask>()`. It forwards to `FieldMask::from_paths`: the paths keep their order and duplicates and are not validated or normalized.
+time: 2026-10-07T12:40:48.040549+02:00

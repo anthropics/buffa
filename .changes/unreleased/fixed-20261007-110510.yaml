@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a field or oneof whose full name is the full name of another symbol** (#597). A message whose field or oneof was named like one of its nested messages or enums, a value of one of its nested enums, or an extension declared in its scope linked, although those names share one scope and protoc reports the second as already defined. Each case is `PoolError::DuplicateName`, for proto2, proto3 and editions files alike.
+time: 2026-10-07T11:05:10.654912+02:00
