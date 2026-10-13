@@ -585,6 +585,18 @@ mod tests {
         }
 
         #[test]
+        fn duration_empty_fraction_is_error() {
+            for input in [r#""1.s""#, r#""-1.s""#] {
+                assert!(
+                    serde_json::from_str::<Duration>(input).is_err(),
+                    "input should be rejected: {input}"
+                );
+            }
+            let valid: Duration = serde_json::from_str(r#""1.0s""#).unwrap();
+            assert_eq!((valid.seconds, valid.nanos), (1, 0));
+        }
+
+        #[test]
         fn parse_duration_rejects_double_sign() {
             // Regression: "--5s" used to strip one '-' then parse "-5"
             // via i64::parse, yielding +5 via double negation. Now rejected.

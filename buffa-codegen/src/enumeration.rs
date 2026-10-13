@@ -36,7 +36,10 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
 
                     fn visit_str<__E: ::serde::de::Error>(self, v: &str) -> ::core::result::Result<#name_ident, __E> {
                         <#name_ident as ::buffa::Enumeration>::from_proto_name(v).ok_or_else(|| {
-                            ::serde::de::Error::unknown_variant(v, &[])
+                            ::serde::de::Error::invalid_value(
+                                ::serde::de::Unexpected::Str(v),
+                                &"a known enum variant name",
+                            )
                         })
                     }
 

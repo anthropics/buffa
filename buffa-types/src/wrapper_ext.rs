@@ -32,13 +32,26 @@ macro_rules! impl_wrapper {
     };
 }
 
-impl_wrapper!(BoolValue, bool);
-impl_wrapper!(DoubleValue, f64);
-impl_wrapper!(FloatValue, f32);
-impl_wrapper!(Int32Value, i32);
-impl_wrapper!(Int64Value, i64);
-impl_wrapper!(UInt32Value, u32);
-impl_wrapper!(UInt64Value, u64);
+macro_rules! impl_scalar_wrapper {
+    ($wrapper:ty, $inner:ty) => {
+        impl_wrapper!($wrapper, $inner);
+
+        impl From<&$wrapper> for $inner {
+            #[doc = concat!("Copies the inner `", stringify!($inner), "` from a borrowed [`", stringify!($wrapper), "`], leaving the message in place.")]
+            fn from(w: &$wrapper) -> Self {
+                w.value
+            }
+        }
+    };
+}
+
+impl_scalar_wrapper!(BoolValue, bool);
+impl_scalar_wrapper!(DoubleValue, f64);
+impl_scalar_wrapper!(FloatValue, f32);
+impl_scalar_wrapper!(Int32Value, i32);
+impl_scalar_wrapper!(Int64Value, i64);
+impl_scalar_wrapper!(UInt32Value, u32);
+impl_scalar_wrapper!(UInt64Value, u64);
 impl_wrapper!(StringValue, String);
 impl_wrapper!(BytesValue, Vec<u8>);
 
@@ -75,6 +88,20 @@ impl AsRef<[u8]> for BytesValue {
     /// any function that accepts `&[u8]` (e.g. via `.as_ref()`).
     fn as_ref(&self) -> &[u8] {
         &self.value
+    }
+}
+
+impl AsMut<str> for StringValue {
+    /// Borrows the inner string for in-place edits that preserve UTF-8.
+    fn as_mut(&mut self) -> &mut str {
+        &mut self.value
+    }
+}
+
+impl AsMut<[u8]> for BytesValue {
+    /// Borrows the inner bytes for in-place edits.
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.value
     }
 }
 
@@ -223,6 +250,75 @@ mod tests {
     use super::*;
     use alloc::vec;
 
+    macro_rules! borrowed_scalar_cases {
+        ($test:ident, $wrapper:ty, $inner:ty, $values:expr) => {
+            #[test]
+            fn $test() {
+                for value in $values {
+                    let wrapper = <$wrapper>::from(value);
+                    let extracted: $inner = (&wrapper).into();
+                    assert_eq!(extracted, value);
+                    assert_eq!(wrapper.value, value);
+                    assert_eq!(<$inner>::from(wrapper), value);
+                }
+            }
+        };
+    }
+
+    borrowed_scalar_cases!(borrowed_bool_value, BoolValue, bool, [false, true]);
+    borrowed_scalar_cases!(
+        borrowed_int32_value,
+        Int32Value,
+        i32,
+        [i32::MIN, -1, 0, i32::MAX]
+    );
+    borrowed_scalar_cases!(
+        borrowed_int64_value,
+        Int64Value,
+        i64,
+        [i64::MIN, -1, 0, i64::MAX]
+    );
+    borrowed_scalar_cases!(borrowed_uint32_value, UInt32Value, u32, [0, 1, u32::MAX]);
+    borrowed_scalar_cases!(borrowed_uint64_value, UInt64Value, u64, [0, 1, u64::MAX]);
+
+    #[test]
+    fn borrowed_double_value_preserves_bits() {
+        for bits in [
+            0,
+            (-0.0_f64).to_bits(),
+            f64::MIN.to_bits(),
+            f64::MAX.to_bits(),
+            f64::INFINITY.to_bits(),
+            f64::NEG_INFINITY.to_bits(),
+            0x7ff8_0000_0000_0042,
+        ] {
+            let wrapper = DoubleValue::from(f64::from_bits(bits));
+            let extracted: f64 = (&wrapper).into();
+            assert_eq!(extracted.to_bits(), bits);
+            assert_eq!(wrapper.value.to_bits(), bits);
+            assert_eq!(f64::from(wrapper).to_bits(), bits);
+        }
+    }
+
+    #[test]
+    fn borrowed_float_value_preserves_bits() {
+        for bits in [
+            0,
+            (-0.0_f32).to_bits(),
+            f32::MIN.to_bits(),
+            f32::MAX.to_bits(),
+            f32::INFINITY.to_bits(),
+            f32::NEG_INFINITY.to_bits(),
+            0x7fc0_0042,
+        ] {
+            let wrapper = FloatValue::from(f32::from_bits(bits));
+            let extracted: f32 = (&wrapper).into();
+            assert_eq!(extracted.to_bits(), bits);
+            assert_eq!(wrapper.value.to_bits(), bits);
+            assert_eq!(f32::from(wrapper).to_bits(), bits);
+        }
+    }
+
     #[test]
     fn bool_value_roundtrip() {
         let w = BoolValue::from(true);
@@ -324,6 +420,46 @@ mod tests {
             b.len()
         }
         assert_eq!(takes_bytes(w.as_ref()), 3);
+    }
+
+    #[test]
+    fn string_value_as_mut_edits_in_place() {
+        fn uppercase(value: &mut impl AsMut<str>) {
+            value.as_mut().make_ascii_uppercase();
+        }
+        let mut w = StringValue::from("hello é🦀");
+        let pointer = w.value.as_ptr();
+        let capacity = w.value.capacity();
+        uppercase(&mut w);
+        assert_eq!(w.value, "HELLO é🦀");
+        assert_eq!(w.value.as_ptr(), pointer);
+        assert_eq!(w.value.capacity(), capacity);
+    }
+
+    #[test]
+    fn bytes_value_as_mut_edits_in_place() {
+        fn reverse(value: &mut impl AsMut<[u8]>) {
+            value.as_mut().reverse();
+        }
+        let mut w = BytesValue::from(vec![0, 128, 255]);
+        let pointer = w.value.as_ptr();
+        let capacity = w.value.capacity();
+        reverse(&mut w);
+        assert_eq!(w.value, vec![255, 128, 0]);
+        assert_eq!(w.value.as_ptr(), pointer);
+        assert_eq!(w.value.capacity(), capacity);
+    }
+
+    #[test]
+    fn wrapper_as_mut_empty_payloads() {
+        let mut string = StringValue::default();
+        let mut bytes = BytesValue::default();
+        let text: &mut str = string.as_mut();
+        text.make_ascii_uppercase();
+        assert!(text.is_empty());
+        let payload: &mut [u8] = bytes.as_mut();
+        payload.reverse();
+        assert!(payload.is_empty());
     }
 
     #[cfg(feature = "json")]

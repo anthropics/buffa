@@ -149,9 +149,17 @@ pub trait MessageView<'a>: Sized {
     /// [`RECURSION_LIMIT`](crate::RECURSION_LIMIT),
     /// [`DEFAULT_UNKNOWN_FIELD_LIMIT`](crate::DEFAULT_UNKNOWN_FIELD_LIMIT), and
     /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](crate::DEFAULT_ELEMENT_MEMORY_LIMIT).
-    /// A view of a repeated field costs element memory just as the owned decode
-    /// does — each element occupies a `size_of::<FooView>()` slot in a `Vec`
-    /// even though its string and bytes contents stay borrowed.
+    /// Repeated message, group, string, and bytes elements are charged by the
+    /// size of the view element stored in the `Vec`; map entries are charged by
+    /// their key and value slot sizes. Borrowed string and bytes contents are
+    /// not charged. Repeated numeric and enum elements are not charged, whether
+    /// packed or unpacked. Since a view element can have a different size from
+    /// its owned type (`&str` versus `String`), a payload near the limit can
+    /// have a different result in owned and view decoding.
+    ///
+    /// This method does not enforce a maximum input size; use
+    /// [`DecodeOptions::decode_view`](crate::DecodeOptions::decode_view) when
+    /// an input-size cap is required.
     fn decode_view(buf: &'a [u8]) -> Result<Self, DecodeError>;
 
     /// Decode a view under custom decode limits.
@@ -215,7 +223,7 @@ pub trait MessageView<'a>: Sized {
     ///
     /// Returns a [`DecodeError`] on malformed input, a wire-type mismatch, or
     /// when a configured decode limit (recursion depth, unknown-field
-    /// allowance) is exceeded.
+    /// allowance, or element-memory budget) is exceeded.
     fn decode_view_ctx(buf: &'a [u8], ctx: crate::DecodeContext<'_>) -> Result<Self, DecodeError>
     where
         Self: Default,
@@ -239,7 +247,7 @@ pub trait MessageView<'a>: Sized {
     ///
     /// Returns a [`DecodeError`] on malformed input, a wire-type mismatch, or
     /// when a configured decode limit (recursion depth, unknown-field
-    /// allowance) is exceeded.
+    /// allowance, or element-memory budget) is exceeded.
     fn merge_into_view(
         &mut self,
         buf: &'a [u8],
@@ -318,8 +326,8 @@ pub trait MessageView<'a>: Sized {
     ///
     /// # Errors
     ///
-    /// Returns a [`DecodeError`] on malformed payloads or wire-type
-    /// mismatches.
+    /// Returns a [`DecodeError`] on malformed payloads, wire-type mismatches,
+    /// or when a configured decode limit is exceeded.
     fn merge_view_field(
         &mut self,
         tag: crate::encoding::Tag,
@@ -728,7 +736,8 @@ pub trait HasMessageView: crate::Message + Sized {
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data.
+    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data or
+    /// exceeds a default recursion, unknown-field, or element-memory limit.
     #[inline]
     fn decode_view(buf: &[u8]) -> Result<Self::View<'_>, DecodeError> {
         <Self::View<'_> as MessageView<'_>>::decode_view(buf)
@@ -736,7 +745,7 @@ pub trait HasMessageView: crate::Message + Sized {
 
     /// Decode a borrowed [`View`](Self::View) under custom
     /// [`DecodeOptions`](crate::DecodeOptions) (recursion limit, max message
-    /// size, unknown-field limit).
+    /// size, unknown-field limit, and element-memory limit).
     ///
     /// Convenience for generic code; equivalent to
     /// [`DecodeOptions::decode_view::<M::View<'_>>`](crate::DecodeOptions::decode_view).
@@ -758,10 +767,15 @@ pub trait HasMessageView: crate::Message + Sized {
     /// Convenience for generic code; equivalent to decoding an
     /// [`OwnedView<Self::View<'static>>`](OwnedView) and converting it with
     /// `From`.
+    /// Like [`decode_view`](Self::decode_view), this does not enforce
+    /// `max_message_size`; use
+    /// [`decode_view_handle_with_options`](Self::decode_view_handle_with_options)
+    /// for that.
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data.
+    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data or
+    /// exceeds a default recursion, unknown-field, or element-memory limit.
     fn decode_view_handle(bytes: Bytes) -> Result<Self::ViewHandle, DecodeError>
     where
         Self::View<'static>: ViewLifetimeParametric,
@@ -773,7 +787,7 @@ pub trait HasMessageView: crate::Message + Sized {
 
     /// Decode a [`ViewHandle`](Self::ViewHandle) with custom
     /// [`DecodeOptions`](crate::DecodeOptions) (recursion limit, max message
-    /// size).
+    /// size, unknown-field limit, and element-memory limit).
     ///
     /// # Errors
     ///
@@ -2883,10 +2897,13 @@ where
     /// The view borrows directly from the buffer's data. Because [`Bytes`] is
     /// reference-counted and its data pointer is stable across moves, the
     /// view's borrows remain valid for the lifetime of this `OwnedView`.
+    /// This method does not enforce an input-size cap; use
+    /// [`decode_with_options`](Self::decode_with_options) when one is required.
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data.
+    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data or
+    /// exceeds a default recursion, unknown-field, or element-memory limit.
     pub fn decode(bytes: Bytes) -> Result<Self, DecodeError>
     where
         V: ViewLifetimeParametric,
@@ -2908,7 +2925,8 @@ where
     }
 
     /// Decode a view with custom [`DecodeOptions`](crate::DecodeOptions)
-    /// (recursion limit, max message size).
+    /// (recursion limit, max message size, unknown-field limit, and
+    /// element-memory limit).
     ///
     /// # Errors
     ///

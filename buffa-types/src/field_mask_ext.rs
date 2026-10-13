@@ -209,6 +209,24 @@ fn normalized_paths(paths: &[String]) -> Vec<&str> {
     paths
 }
 
+impl<T: Into<String>> FromIterator<T> for FieldMask {
+    /// Collect field paths into a [`FieldMask`], preserving their order and duplicates.
+    ///
+    /// Like [`FieldMask::from_paths`], this does not validate or normalize paths.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::FieldMask;
+    ///
+    /// let mask: FieldMask = ["user.name", "user.email"].into_iter().collect();
+    /// assert_eq!(mask.paths, ["user.name", "user.email"]);
+    /// ```
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        Self::from_paths(iter)
+    }
+}
+
 impl<'a> IntoIterator for &'a FieldMask {
     type Item = &'a String;
     type IntoIter = core::slice::Iter<'a, String>;
@@ -309,6 +327,39 @@ mod tests {
     use super::*;
     use alloc::string::ToString;
     use alloc::{vec, vec::Vec};
+
+    #[test]
+    fn collect_paths_preserves_input() {
+        let paths = ["user.name", "user", "user.name", "", "é.child", "*"];
+        let mask: FieldMask = paths.into_iter().collect();
+        assert_eq!(mask.paths, paths);
+        assert_eq!(mask, FieldMask::from_paths(paths));
+    }
+
+    #[test]
+    fn collect_owned_paths_moves_strings() {
+        let path = String::from("user.name");
+        let ptr = path.as_ptr();
+        let mask: FieldMask = core::iter::once(path).collect();
+        assert_eq!(mask.paths, ["user.name"]);
+        assert_eq!(mask.paths[0].as_ptr(), ptr);
+        assert!(mask.__buffa_unknown_fields.is_empty());
+    }
+
+    #[test]
+    fn collect_borrowed_strings() {
+        let paths = [String::from("user.name"), String::from("user.email")];
+        let mask: FieldMask = paths.iter().collect();
+        assert_eq!(mask.paths, paths);
+    }
+
+    #[test]
+    fn collect_empty_paths() {
+        let mask: FieldMask = core::iter::empty::<String>().collect();
+        assert_eq!(mask, FieldMask::default());
+        let mask: FieldMask = core::iter::empty::<&str>().collect();
+        assert_eq!(mask, FieldMask::default());
+    }
 
     #[test]
     fn from_paths_empty() {

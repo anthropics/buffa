@@ -213,6 +213,12 @@ impl ListValue {
     pub fn iter(&self) -> core::slice::Iter<'_, Value> {
         self.values.iter()
     }
+
+    /// Returns an iterator over mutable references to the values in the list.
+    #[inline]
+    pub fn iter_mut(&mut self) -> core::slice::IterMut<'_, Value> {
+        self.values.iter_mut()
+    }
 }
 
 impl<'a> IntoIterator for &'a ListValue {
@@ -221,6 +227,15 @@ impl<'a> IntoIterator for &'a ListValue {
 
     fn into_iter(self) -> Self::IntoIter {
         self.values.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut ListValue {
+    type Item = &'a mut Value;
+    type IntoIter = core::slice::IterMut<'a, Value>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter_mut()
     }
 }
 
@@ -277,6 +292,39 @@ impl Struct {
     /// Returns the value for `key` if present.
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.fields.get(key)
+    }
+
+    /// Returns a mutable reference to the value for `key` if present.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::google::protobuf::{Struct, Value};
+    ///
+    /// let mut s = Struct::from_fields([("enabled", false)]);
+    /// *s.get_mut("enabled").unwrap() = Value::from(true);
+    /// assert_eq!(s.get("enabled").and_then(Value::as_bool), Some(true));
+    /// ```
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut Value> {
+        self.fields.get_mut(key)
+    }
+
+    /// Removes `key`, returning its value if present.
+    ///
+    /// A missing key leaves the struct unchanged.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::google::protobuf::Struct;
+    ///
+    /// let mut s = Struct::from_fields([("name", "Alice")]);
+    /// let value = s.remove("name").unwrap();
+    /// assert_eq!(value.as_str(), Some("Alice"));
+    /// assert!(s.get("name").is_none());
+    /// ```
+    pub fn remove(&mut self, key: &str) -> Option<Value> {
+        self.fields.remove(key)
     }
 }
 
@@ -517,6 +565,69 @@ mod tests {
     }
 
     #[test]
+    fn struct_get_mut_replaces_existing_value() {
+        let mut s = Struct::from_fields([("enabled", false), ("other", true)]);
+        *s.get_mut("enabled").unwrap() = Value::from(true);
+        assert_eq!(s.get("enabled").and_then(Value::as_bool), Some(true));
+        assert_eq!(s.get("other").and_then(Value::as_bool), Some(true));
+        assert_eq!(s.fields.len(), 2);
+    }
+
+    #[test]
+    fn struct_get_mut_missing_key_does_not_insert() {
+        let mut empty = Struct::new();
+        assert!(empty.get_mut("missing").is_none());
+        assert!(empty.fields.is_empty());
+
+        let mut s = Struct::from_fields([("key", 1_i32)]);
+        let before = s.clone();
+        assert!(s.get_mut("Key").is_none());
+        assert!(s.get_mut("missing").is_none());
+        assert_eq!(s, before);
+    }
+
+    #[test]
+    fn struct_get_mut_edits_nested_value() {
+        let mut s = Struct::from_fields([("nested", Struct::from_fields([("count", 1_i32)]))]);
+        s.get_mut("nested")
+            .unwrap()
+            .as_struct_mut()
+            .unwrap()
+            .insert("count", 2_i32);
+        assert_eq!(
+            s.get("nested")
+                .unwrap()
+                .as_struct()
+                .unwrap()
+                .get("count")
+                .and_then(Value::as_number),
+            Some(2.0)
+        );
+    }
+
+    #[test]
+    fn struct_remove_returns_value_and_keeps_other_fields() {
+        let mut s = Struct::from_fields([("key", "value"), ("other", "unchanged")]);
+        let value = s.remove("key").unwrap();
+        assert_eq!(value.as_str(), Some("value"));
+        assert!(s.get("key").is_none());
+        assert_eq!(s.get("other").and_then(Value::as_str), Some("unchanged"));
+        assert_eq!(s.fields.len(), 1);
+        assert!(s.remove("key").is_none());
+    }
+
+    #[test]
+    fn struct_remove_missing_key_leaves_fields_unchanged() {
+        let mut s = Struct::new();
+        assert!(s.remove("missing").is_none());
+        assert!(s.fields.is_empty());
+        s.insert("present", true);
+        assert!(s.remove("missing").is_none());
+        assert_eq!(s.fields.len(), 1);
+        assert_eq!(s.get("present").and_then(Value::as_bool), Some(true));
+    }
+
+    #[test]
     fn struct_from_fields() {
         let s = Struct::from_fields([("a", Value::from(1.0_f64)), ("b", Value::from(2.0_f64))]);
         assert_eq!(s.get("a").and_then(|v| v.as_number()), Some(1.0));
@@ -579,6 +690,44 @@ mod tests {
         let l = ListValue::from_values(["a", "b"]);
         let strs: Vec<&str> = (&l).into_iter().map(|v| v.as_str().unwrap()).collect();
         assert_eq!(strs, ["a", "b"]);
+    }
+
+    #[test]
+    fn list_value_iter_mut() {
+        let mut list = ListValue::from_values([1.0_f64, 2.0, 3.0]);
+        let mut iter = list.iter_mut();
+        assert_eq!(iter.len(), 3);
+        *iter.next().unwrap() = Value::from(10.0_f64);
+        *iter.next_back().unwrap() = Value::null();
+        assert_eq!(iter.len(), 1);
+        *iter.next().unwrap() = Value::from("middle");
+        assert!(iter.next().is_none());
+        assert!(iter.next_back().is_none());
+        assert_eq!(
+            list.values,
+            [Value::from(10.0_f64), Value::from("middle"), Value::null()]
+        );
+    }
+
+    #[test]
+    fn list_value_mut_ref_into_iter() {
+        let mut list = ListValue::from_values([false, true]);
+        for value in &mut list {
+            *value = Value::from(!value.as_bool().unwrap());
+        }
+        assert_eq!(list.values, [Value::from(true), Value::from(false)]);
+    }
+
+    #[test]
+    fn list_value_empty_mutable_iteration() {
+        let mut list = ListValue::default();
+        assert_eq!(list.iter_mut().len(), 0);
+        assert!(list.iter_mut().next().is_none());
+        let mut iter = (&mut list).into_iter();
+        assert_eq!(iter.len(), 0);
+        assert!(iter.next_back().is_none());
+        assert!(iter.next().is_none());
+        assert!(list.is_empty());
     }
 
     #[test]

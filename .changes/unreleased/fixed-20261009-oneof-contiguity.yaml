@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**`DescriptorPool` rejects oneofs whose member fields are not declared consecutively** (#636). Hand-built or synthesized descriptors with another field separating the members now fail with `PoolError::NonconsecutiveOneofFields`, matching protoc. Only declaration order matters; adjacent members with nonconsecutive or unsorted field numbers remain valid.'
+time: 2026-10-09T10:00:00Z

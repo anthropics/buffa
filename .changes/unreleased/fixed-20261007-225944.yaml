@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **The `jiff` and `chrono` conversion docs give the valid `Timestamp` and `Duration` ranges as the protobuf spec states them** (#673). The `From<jiff::Timestamp>` docs said that every `jiff::Timestamp` fits the proto range and attributed the limit of years 0001–9999 to the JSON mapping. `timestamp.proto` sets that limit for the type, and jiff reaches back to about year -9999, so an instant before year 0001 converts to a `Timestamp` outside the valid range. The `TryFrom<&Timestamp> for jiff::Timestamp` docs give the jiff range: it ends at `9999-12-30T22:00:00.999999999Z`, about 26 hours before the last valid `Timestamp`, so a valid `Timestamp` in the last 26 hours of year 9999 returns `TimestampError::Overflow`. The conversions behave as before.
+time: 2026-10-07T22:59:44.918659+02:00

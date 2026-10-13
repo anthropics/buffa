@@ -35,11 +35,15 @@
 
 use alloc::boxed::Box;
 
-/// Return the protobuf full name carried by an `Any` type URL.
+/// Return the protobuf full name carried by an `Any` type URL, for the text
+/// registry.
 ///
 /// The `Any` contract identifies the embedded message by the path segment
-/// after the final slash; the URL prefix is application-defined.
-pub(crate) fn any_type_name(type_url: &str) -> Option<&str> {
+/// after the final slash; the URL prefix is application-defined. A string
+/// without a slash carries no name here: text format writes `[name] { ... }`
+/// for an extension field, so only a URL is expanded.
+#[cfg(feature = "text")]
+fn any_type_name(type_url: &str) -> Option<&str> {
     let (_, type_name) = type_url.rsplit_once('/')?;
     (!type_name.is_empty()).then_some(type_name)
 }
@@ -155,7 +159,7 @@ impl Drop for AnyExpansionGuard {
 #[doc(hidden)]
 #[must_use]
 pub fn enter_any_expansion() -> Option<AnyExpansionGuard> {
-    any_depth::enter(MAX_ANY_EXPANSION_DEPTH).then_some(AnyExpansionGuard(()))
+    any_depth::enter(MAX_ANY_EXPANSION_DEPTH).then(|| AnyExpansionGuard(()))
 }
 
 // A cap this high stops bounding anything: 100 levels of expansion is already
@@ -430,9 +434,9 @@ impl TypeRegistry {
     /// Look up a JSON `Any` entry by type URL.
     ///
     /// A registered URL finds its own entry. Any other URL is matched by the
-    /// message full name after its last `/`. The entry's `type_url` is the
-    /// registered one, so keep the URL you looked up as the `Any`'s
-    /// `type_url`.
+    /// message full name after its last `/`, and a string without a `/` as a
+    /// bare full name. The entry's `type_url` is the registered one, so keep
+    /// the URL you looked up as the `Any`'s `type_url`.
     #[cfg(feature = "json")]
     pub fn json_any_by_url(&self, type_url: &str) -> Option<&JsonAnyEntry> {
         self.json_any.lookup(type_url)
@@ -453,8 +457,10 @@ impl TypeRegistry {
     /// Look up a text `Any` entry by type URL.
     ///
     /// A registered URL finds its own entry. Any other URL is matched by the
-    /// message full name after its last `/`. The entry's `type_url` is the
-    /// registered one, so keep the URL you looked up as the `Any`'s
+    /// message full name after its last `/`. A string without a `/` is found
+    /// only by an exact match, unlike in
+    /// [`json_any_by_url`](Self::json_any_by_url). The entry's `type_url` is
+    /// the registered one, so keep the URL you looked up as the `Any`'s
     /// `type_url`.
     #[cfg(feature = "text")]
     pub fn text_any_by_url(&self, type_url: &str) -> Option<&TextAnyEntry> {
@@ -960,12 +966,6 @@ where
 mod tests {
     use super::*;
 
-    /// Serializes the tests below that install or clear the global registry.
-    /// `set_type_registry` replaces the JSON and the text halves together, so
-    /// the `json` and `text` tests must share one lock.
-    #[cfg(any(feature = "json", feature = "text"))]
-    static GLOBAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[test]
     fn default_is_empty() {
         let reg = TypeRegistry::default();
@@ -982,6 +982,17 @@ mod tests {
         let reg = TypeRegistry::new();
         let s = alloc::format!("{reg:?}");
         assert!(s.contains("TypeRegistry"), "{s}");
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn refusing_any_expansion_does_not_decrement_active_depth() {
+        let _guards: alloc::vec::Vec<_> = (0..MAX_ANY_EXPANSION_DEPTH)
+            .map(|_| enter_any_expansion().expect("entry below the cap must succeed"))
+            .collect();
+
+        assert!(enter_any_expansion().is_none());
+        assert!(enter_any_expansion().is_none());
     }
 
     // ── JSON half ───────────────────────────────────────────────────────────
@@ -1035,7 +1046,7 @@ mod tests {
 
         #[test]
         fn set_type_registry_installs_json_halves() {
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
 
             let mut reg = TypeRegistry::new();
             reg.register_json_any(any_entry("type.googleapis.com/test.Unified", false));
@@ -1060,7 +1071,7 @@ mod tests {
             let _: ExtensionRegistryEntry = ext_entry(1, "a", "B");
             let _: JsonRegistry = TypeRegistry::new();
             // Deprecated fn redirects.
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
             set_json_registry(TypeRegistry::new());
             crate::any_registry::clear_any_registry();
         }
@@ -1275,7 +1286,7 @@ mod tests {
 
         #[test]
         fn repeated_entries_parse_with_a_merge_that_reads_one_message() {
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
             let records = install_repeated_entries();
 
             let mut s = alloc::string::String::new();
@@ -1296,7 +1307,7 @@ mod tests {
 
         #[test]
         fn repeated_helper_does_not_repeat_a_name_from_an_earlier_entry() {
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
             let fields = fields_from(install_repeated_entries());
 
             let mut s = alloc::string::String::new();
@@ -1346,7 +1357,7 @@ mod tests {
                 Ok(())
             }
 
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
             let fields = install_custom_entry(write_no_value);
 
             let mut s = alloc::string::String::new();
@@ -1370,7 +1381,7 @@ mod tests {
                 repeated_message_encode_text::<Inner>(n, f, enc)
             }
 
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
             let fields = install_custom_entry(value_then_a_direct_call);
 
             let mut s = alloc::string::String::new();
@@ -1519,7 +1530,7 @@ mod tests {
 
         #[test]
         fn set_type_registry_installs_text_halves() {
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
 
             let mut reg = TypeRegistry::new();
             reg.register_text_any(TextAnyEntry {
@@ -1550,7 +1561,7 @@ mod tests {
 
         #[test]
         fn bracketed_names_with_trivia_resolve_through_the_registry() {
-            let _g = GLOBAL_LOCK.lock().unwrap();
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
 
             let mut reg = TypeRegistry::new();
             reg.register_text_any(TextAnyEntry {
