@@ -453,6 +453,7 @@ impl Oneofs {
         }
         Ok(Self {
             prefix: ancillary_prefix(
+                scope.ctx,
                 AncillaryKind::Oneof,
                 scope.current_package,
                 scope.proto_fqn,
