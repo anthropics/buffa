@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DynamicMessage::merge` keeps the known values of a packed closed-enum list that it read before a decode error** (#670). When a packed record of a repeated closed-enum field failed part-way, for example on a truncated varint, the reflective decoder dropped the known values it had already read from that record, while the unknown values from the same record stayed in the unknown fields. Each known value is now stored as it is read, which is what the reflective decoder does for every other packed field. The contents of a message after a failed merge are not part of the documented contract; the change makes the closed-enum path agree with its siblings.
+time: 2026-10-07T22:48:46.097694+02:00

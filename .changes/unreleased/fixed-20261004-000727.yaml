@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Textproto accepts the `\X` hex escape** (#531). `"\X41"` was rejected as an unrecognised escape; it now reads as `A`, like `"\x41"`, with one or two hex digits. The C++ text-format parser accepts both spellings; protobuf-go accepts only `\x`.
+time: 2026-10-04T00:07:27.938247+02:00

@@ -132,6 +132,51 @@ fn any_json_spreads_payload_extensions() {
     assert_eq!(parsed.unpack_any().unwrap(), opts);
 }
 
+#[cfg(feature = "json")]
+#[test]
+fn any_json_accepts_a_bare_type_name_unless_strict() {
+    use buffa_descriptor::DynamicMessageSeed;
+
+    let p = pool();
+    let any_idx = p.message_index("google.protobuf.Any").unwrap();
+    let strict = DynamicMessageSeed::new(Arc::clone(&p), any_idx).strict_any_type_urls(true);
+
+    let bare = r#"{"@type":"reflect.opt.Annotated"}"#;
+    let nested_bare = r#"{"@type":"type.googleapis.com/google.protobuf.Any","value":{"@type":"reflect.opt.Annotated"}}"#;
+    for input in [bare, nested_bare] {
+        let parsed = DynamicMessage::from_json(Arc::clone(&p), any_idx, input)
+            .unwrap_or_else(|err| panic!("{input}: {err}"));
+        assert_eq!(parsed.to_json().unwrap(), input);
+
+        let err = strict.clone().parse_json(input).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("\"reflect.opt.Annotated\" must contain a '/'"),
+            "{input}: {err}"
+        );
+    }
+
+    let parsed = DynamicMessage::from_json(Arc::clone(&p), any_idx, bare).unwrap();
+    assert_eq!(
+        parsed
+            .unpack_any()
+            .unwrap()
+            .message_descriptor()
+            .full_name(),
+        "reflect.opt.Annotated"
+    );
+
+    // A bare name the pool does not know is an error in both modes, and a
+    // type URL parses in both.
+    let unknown = r#"{"@type":"no.Such"}"#;
+    assert!(DynamicMessage::from_json(Arc::clone(&p), any_idx, unknown).is_err());
+    assert!(strict.clone().parse_json(unknown).is_err());
+    let url = r#"{"@type":"type.googleapis.com/google.protobuf.Any","value":{"@type":"x/reflect.opt.Annotated"}}"#;
+    let parsed = DynamicMessage::from_json(Arc::clone(&p), any_idx, url).unwrap();
+    assert_eq!(parsed.to_json().unwrap(), url);
+    assert_eq!(strict.parse_json(url).unwrap(), parsed);
+}
+
 /// Read a custom option off a re-encoded options message: decode it as a
 /// `DynamicMessage` of `options_type` and pull the extension's value. This
 /// is the documented generic flow for reading a custom option by name when
@@ -305,4 +350,128 @@ fn symbol_to_file() {
     // Leading dot accepted; unknown symbol is None.
     assert!(p.file_containing_symbol(".reflect.opt.Annotated").is_some());
     assert!(p.file_containing_symbol("reflect.opt.Nope").is_none());
+}
+
+fn enum_symbol_file(
+    package: Option<&str>,
+) -> buffa_descriptor::generated::descriptor::FileDescriptorProto {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, EnumDescriptorProto, EnumOptions, EnumValueDescriptorProto,
+        FileDescriptorProto,
+    };
+
+    let make_enum = || EnumDescriptorProto {
+        name: Some("State".into()),
+        value: [("STATE_UNKNOWN", 0), ("STATE_READY", 1), ("STATE_ALIAS", 1)]
+            .into_iter()
+            .map(|(name, number)| EnumValueDescriptorProto {
+                name: Some(name.into()),
+                number: Some(number),
+                ..Default::default()
+            })
+            .collect(),
+        options: EnumOptions {
+            allow_alias: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    };
+
+    FileDescriptorProto {
+        name: Some("enum_symbols.proto".into()),
+        package: package.map(str::to_owned),
+        syntax: Some("proto3".into()),
+        enum_type: vec![make_enum()],
+        message_type: vec![DescriptorProto {
+            name: Some("Container".into()),
+            enum_type: vec![make_enum()],
+            nested_type: vec![DescriptorProto {
+                name: Some("Nested".into()),
+                enum_type: vec![make_enum()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn symbol_to_file_for_enum_values_uses_parent_scope() {
+    use buffa_descriptor::generated::descriptor::FileDescriptorSet;
+
+    for package in [None, Some(""), Some("reflect.symbol")] {
+        let set = FileDescriptorSet {
+            file: vec![enum_symbol_file(package)],
+            ..Default::default()
+        };
+        let p = DescriptorPool::decode(set.encode_to_vec().as_slice()).unwrap();
+        let prefix = package
+            .filter(|name| !name.is_empty())
+            .map(|name| format!("{name}."))
+            .unwrap_or_default();
+
+        for scope in ["", "Container.", "Container.Nested."] {
+            let enum_name = format!("{prefix}{scope}State");
+            assert!(p.enum_by_name(&enum_name).is_some());
+            assert_eq!(
+                p.file_containing_symbol(&enum_name)
+                    .and_then(|file| file.name.as_deref()),
+                Some("enum_symbols.proto")
+            );
+
+            for name in ["STATE_UNKNOWN", "STATE_READY", "STATE_ALIAS"] {
+                let symbol = format!("{prefix}{scope}{name}");
+                for query in [symbol.clone(), format!(".{symbol}")] {
+                    assert_eq!(
+                        p.file_containing_symbol(&query)
+                            .and_then(|file| file.name.as_deref()),
+                        Some("enum_symbols.proto"),
+                        "package={package:?}, query={query}"
+                    );
+                }
+                assert!(p
+                    .file_containing_symbol(&format!("{enum_name}.{name}"))
+                    .is_none());
+            }
+        }
+        assert!(p
+            .file_containing_symbol(&format!("{prefix}MISSING"))
+            .is_none());
+    }
+}
+
+#[test]
+fn symbol_to_file_for_root_enum_values_after_adding_files() {
+    use buffa_descriptor::generated::descriptor::FileDescriptorSet;
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    let mut named = enum_symbol_file(Some("added.symbol"));
+    named.name = Some("named_enum_symbols.proto".into());
+    for file in [enum_symbol_file(None), named] {
+        p.add_file_descriptor_set(FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        })
+        .unwrap();
+
+        for symbol in ["STATE_UNKNOWN", "STATE_READY", "STATE_ALIAS"] {
+            assert_eq!(
+                p.file_containing_symbol(symbol)
+                    .and_then(|file| file.name.as_deref()),
+                Some("enum_symbols.proto")
+            );
+        }
+        assert_eq!(
+            p.file_containing_symbol("reflect.opt.Annotated")
+                .and_then(|file| file.name.as_deref()),
+            Some("reflect_test_options.proto")
+        );
+    }
+    assert_eq!(
+        p.file_containing_symbol("added.symbol.STATE_READY")
+            .and_then(|file| file.name.as_deref()),
+        Some("named_enum_symbols.proto")
+    );
 }

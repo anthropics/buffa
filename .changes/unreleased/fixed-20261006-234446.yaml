@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **A singular string extension whose newest record is not valid UTF-8 reads as absent** (#576). `ExtensionSet::extension` returned the value of an older valid record at the same field number. It now returns `None`, as its documentation says for malformed data, and `extension_or_default` returns the declared default. Serializing such a message to JSON fails with `no value present` where it printed the older value. Records with another wire type are skipped as before.
+time: 2026-10-06T23:44:46.830575+02:00

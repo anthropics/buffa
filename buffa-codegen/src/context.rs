@@ -75,6 +75,11 @@ pub struct CodeGenContext<'a> {
     /// enum field opened by an enum-type override needs an explicit generated
     /// default (`EnumValue::Known(first)` instead of the derived wire-zero).
     enum_first_value: HashMap<String, i32>,
+    /// Enum FQN → proto names of its values whose generated item is
+    /// `#[deprecated]`; see [`Self::enum_value_is_deprecated`].
+    /// Built on first use, and consulted only when a field declares an explicit
+    /// enum `default_value`, so the common path never walks the descriptor set.
+    deprecated_enum_values: std::cell::OnceCell<HashMap<String, HashSet<String>>>,
     /// Map from fully-qualified protobuf element name to its source comment.
     ///
     /// Keys use dotted FQN form without a leading dot, matching the `proto_fqn`
@@ -134,6 +139,13 @@ pub struct CodeGenContext<'a> {
     /// Oneof proto names that keep their verbatim spelling under
     /// `idiomatic_field_names` (their snake_case conversion collided).
     oneof_keep_verbatim: HashSet<String>,
+    /// `(proto_name, field_number)` → Rust source name, for a field whose
+    /// keyword-escaped identifier is also another member's name in at least
+    /// one message that declares the field (see [`crate::field_names`]).
+    keyword_field_renames: HashMap<(String, i32), String>,
+    /// Proto oneof name → Rust source name; the oneof counterpart of
+    /// `keyword_field_renames`.
+    keyword_oneof_renames: HashMap<String, String>,
     /// Package-root import phase for `CodeGenConfig::idiomatic_imports`
     /// (file_per_package mode only). [`ImportsPhase::Off`] outside the
     /// two-pass window, so every path resolver below is a no-op by default.
@@ -222,6 +234,17 @@ fn deconflict_package_modules(message_names: &[String], children: &HashSet<Strin
     out
 }
 
+/// The rustdoc note for a `kind` ("field" or "oneof") that the keyword-escape
+/// plan renamed to `resolved` (`self__`).
+fn keyword_rename_note(kind: &str, resolved: &str) -> String {
+    let stem = resolved.trim_end_matches('_');
+    format!(
+        " Note: `{stem}_`, the usual Rust name of this {kind}, is the name of another \
+         member of this message or of a message that declares the same {kind}, so this \
+         {kind} is `{resolved}`."
+    )
+}
+
 impl<'a> CodeGenContext<'a> {
     /// Build a context from file descriptors, populating the type map.
     ///
@@ -234,12 +257,15 @@ impl<'a> CodeGenContext<'a> {
     /// this constructor — use [`for_generate`](Self::for_generate), which
     /// computes and passes the file-level mappings, when generating code
     /// that may reference descriptor types.
+    ///
+    /// This constructor plans keyword-escaped member names over every file
+    /// in `files`. `for_generate` plans them over the generated files only.
     pub fn new(
         files: &'a [FileDescriptorProto],
         config: &'a CodeGenConfig,
         effective_extern_paths: &[(String, String)],
     ) -> Self {
-        Self::with_extern_resolution(files, config, effective_extern_paths, &[])
+        Self::with_extern_resolution(files, config, effective_extern_paths, &[], None)
     }
 
     /// Build a context with both package-level and file-level extern
@@ -264,11 +290,17 @@ impl<'a> CodeGenContext<'a> {
     /// auto-injected descriptor-types routing. They are not part of the
     /// public `CodeGenConfig` API; user-facing `extern_path` entries are keyed
     /// by proto package *or* type FQN.
+    ///
+    /// `generated_files` names the files that this run generates. Only their
+    /// messages take part in the keyword-escape plan
+    /// ([`crate::field_names::plan_keyword_escapes`]); `None` means every
+    /// file.
     pub(crate) fn with_extern_resolution(
         files: &'a [FileDescriptorProto],
         config: &'a CodeGenConfig,
         effective_extern_paths: &[(String, String)],
         file_extern_paths: &[(String, String)],
+        generated_files: Option<&HashSet<String>>,
     ) -> Self {
         let mut type_map = HashMap::new();
         let mut package_of = HashMap::new();
@@ -452,16 +484,24 @@ impl<'a> CodeGenContext<'a> {
             }
         }
 
-        // Plan the idiomatic field-name conversion up front so every
-        // emission site resolves the same Rust name for a field. The plan's
-        // collision warnings are seeded into the sink now and drained with
-        // the rest after generation.
-        let (field_renames, oneof_keep_verbatim, plan_warnings) = if config.idiomatic_field_names {
-            let plan = crate::field_names::plan_field_names(files);
-            (plan.field_renames, plan.oneof_keep_verbatim, plan.warnings)
-        } else {
-            (HashMap::new(), HashSet::new(), Vec::new())
-        };
+        // Plan field and oneof names up front so every emission site resolves
+        // the same Rust name for a member. Both plans' warnings are seeded
+        // into the sink now and drained with the rest after generation.
+        let (field_renames, oneof_keep_verbatim, mut plan_warnings) =
+            if config.idiomatic_field_names {
+                let plan = crate::field_names::plan_field_names(files);
+                (plan.field_renames, plan.oneof_keep_verbatim, plan.warnings)
+            } else {
+                (HashMap::new(), HashSet::new(), Vec::new())
+            };
+        let keyword_plan = crate::field_names::plan_keyword_escapes(
+            files,
+            config.idiomatic_field_names,
+            &field_renames,
+            &oneof_keep_verbatim,
+            generated_files,
+        );
+        plan_warnings.extend(keyword_plan.warnings);
 
         Self {
             files,
@@ -477,6 +517,7 @@ impl<'a> CodeGenContext<'a> {
             } else {
                 HashMap::new()
             },
+            deprecated_enum_values: std::cell::OnceCell::new(),
             comment_map,
             nested_module_names,
             unboxed_oneof_variants,
@@ -484,32 +525,34 @@ impl<'a> CodeGenContext<'a> {
             table_plan: std::cell::OnceCell::new(),
             field_renames,
             oneof_keep_verbatim,
+            keyword_field_renames: keyword_plan.field_renames,
+            keyword_oneof_renames: keyword_plan.oneof_renames,
             warnings: std::cell::RefCell::new(plan_warnings),
             imports: std::cell::RefCell::new(crate::imports::ImportsPhase::Off),
         }
     }
 
-    /// The Rust source name for a proto field (pre keyword escaping).
+    /// The Rust source name for a proto field, before
+    /// [`make_field_ident`](crate::idents::make_field_ident) escapes it.
     ///
     /// With `idiomatic_field_names` off this is the proto name verbatim.
     /// With it on, the name is snake_case-converted, unless the collision
-    /// plan recorded an exception for `(name, number)` (see
-    /// [`crate::field_names`]).
+    /// plan recorded an exception for `(name, number)`. In both modes, a
+    /// rename that the keyword-escape plan recorded for `(name, number)`
+    /// replaces the result; such a name (`self__`) needs no escaping. See
+    /// [`crate::field_names`].
     pub(crate) fn field_rust_name<'n>(&'n self, name: &'n str, number: i32) -> Cow<'n, str> {
-        if !self.config.idiomatic_field_names {
-            return Cow::Borrowed(name);
-        }
-        if !self.field_renames.is_empty() {
-            if let Some(renamed) = self.field_renames.get(&(name.to_string(), number)) {
+        if !self.keyword_field_renames.is_empty() {
+            if let Some(renamed) = self.keyword_field_renames.get(&(name.to_string(), number)) {
                 return Cow::Borrowed(renamed.as_str());
             }
         }
-        let converted = crate::field_names::idiomatic_snake_case(name);
-        if converted == name {
-            Cow::Borrowed(name)
-        } else {
-            Cow::Owned(converted)
-        }
+        crate::field_names::planned_field_name(
+            self.config.idiomatic_field_names,
+            &self.field_renames,
+            name,
+            number,
+        )
     }
 
     /// The Rust field identifier for a proto field:
@@ -518,20 +561,22 @@ impl<'a> CodeGenContext<'a> {
         crate::idents::make_field_ident(&self.field_rust_name(name, number))
     }
 
-    /// The Rust source name for a oneof (pre keyword escaping).
+    /// The Rust source name for a oneof, before
+    /// [`make_field_ident`](crate::idents::make_field_ident) escapes it.
     ///
     /// Mirrors [`field_rust_name`](Self::field_rust_name); a oneof whose
     /// conversion collided keeps its verbatim proto name.
     pub(crate) fn oneof_rust_name<'n>(&'n self, name: &'n str) -> Cow<'n, str> {
-        if !self.config.idiomatic_field_names || self.oneof_keep_verbatim.contains(name) {
-            return Cow::Borrowed(name);
+        if !self.keyword_oneof_renames.is_empty() {
+            if let Some(renamed) = self.keyword_oneof_renames.get(name) {
+                return Cow::Borrowed(renamed.as_str());
+            }
         }
-        let converted = crate::field_names::idiomatic_snake_case(name);
-        if converted == name {
-            Cow::Borrowed(name)
-        } else {
-            Cow::Owned(converted)
-        }
+        crate::field_names::planned_oneof_name(
+            self.config.idiomatic_field_names,
+            &self.oneof_keep_verbatim,
+            name,
+        )
     }
 
     /// The Rust field identifier for a oneof:
@@ -540,11 +585,15 @@ impl<'a> CodeGenContext<'a> {
         crate::idents::make_field_ident(&self.oneof_rust_name(name))
     }
 
-    /// Doc note for a field whose Rust name was *adjusted* by the
-    /// `idiomatic_field_names` collision plan (an `_f<number>` suffix or a
-    /// verbatim fallback). `None` for the plain conversion — there the
-    /// `Field N: `name`` doc tag already discloses the proto name.
+    /// Doc note for a field whose Rust name was adjusted to resolve a
+    /// collision. Returns `None` when neither plan adjusted the name; the
+    /// ``Field N: `name` `` doc tag then gives the proto name.
     pub(crate) fn field_rename_note(&self, name: &str, number: i32) -> Option<String> {
+        if !self.keyword_field_renames.is_empty() {
+            if let Some(resolved) = self.keyword_field_renames.get(&(name.to_string(), number)) {
+                return Some(keyword_rename_note("field", resolved));
+            }
+        }
         if !self.config.idiomatic_field_names || self.field_renames.is_empty() {
             return None;
         }
@@ -554,6 +603,13 @@ impl<'a> CodeGenContext<'a> {
              member of this message; the Rust name was adjusted to `{resolved}` \
              (`_f<n>` suffixes carry the field number)."
         ))
+    }
+
+    /// Doc note for a oneof that the keyword-escape plan renamed; `None` for
+    /// every other oneof.
+    pub(crate) fn oneof_rename_note(&self, name: &str) -> Option<String> {
+        let resolved = self.keyword_oneof_renames.get(name)?;
+        Some(keyword_rename_note("oneof", resolved))
     }
 
     /// `#[allow(non_snake_case)]` when any of `msg`'s emitted member names —
@@ -764,7 +820,8 @@ impl<'a> CodeGenContext<'a> {
     ) -> Self {
         let paths = crate::effective_extern_paths(files, files_to_generate, config);
         let file_paths = crate::effective_file_extern_paths(files_to_generate, config);
-        Self::with_extern_resolution(files, config, &paths, &file_paths)
+        let generated_files: HashSet<String> = files_to_generate.iter().cloned().collect();
+        Self::with_extern_resolution(files, config, &paths, &file_paths, Some(&generated_files))
     }
 
     /// Look up the Rust type path for a fully-qualified protobuf type name.
@@ -798,6 +855,24 @@ impl<'a> CodeGenContext<'a> {
     /// per spec. `None` for enums not in this compilation set (extern_path).
     pub(crate) fn enum_first_value(&self, proto_fqn: &str) -> Option<i32> {
         self.enum_first_value.get(proto_fqn).copied()
+    }
+
+    /// Whether the generated item for the enum value `value_name` of enum
+    /// `proto_fqn` is `#[deprecated]`, by the rule in
+    /// [`deprecated_items`](crate::enumeration::deprecated_items).
+    /// `proto_fqn` is the dotted form used by
+    /// `FieldDescriptorProto::type_name` (`.pkg.Enum`, `.pkg.Msg.Nested`).
+    ///
+    /// Enums imported from a dependency file are in `files` along with the
+    /// compilation set's own, so an `extern_path` remap still resolves here and
+    /// this build emits its own guard — the remapped Rust type is a different
+    /// item whose deprecation state we cannot see, and a missing guard would
+    /// only warn inside the other crate's generated code.
+    pub(crate) fn enum_value_is_deprecated(&self, proto_fqn: &str, value_name: &str) -> bool {
+        self.deprecated_enum_values
+            .get_or_init(|| collect_deprecated_enum_values(self.files))
+            .get(proto_fqn)
+            .is_some_and(|names| names.contains(value_name))
     }
 
     /// Look up the Rust type path relative to the current code generation
@@ -1567,7 +1642,8 @@ pub(crate) fn resolve_extern_prefix(
 ///    e.g. `.google.protobuf.Timestamp = ::pbjson_types::Timestamp`).
 /// 2. Otherwise the **longest dotted-prefix** entry (a package or an enclosing
 ///    type) applies, with the proto segments past that prefix rendered as
-///    `snake_case` modules and the final segment kept as the Rust type name —
+///    `snake_case` modules and the final segment as the Rust type name, escaped
+///    by [`escape_type_name`](crate::idents::escape_type_name) —
 ///    exactly the path [`CodeGenContext::new`] would otherwise build from
 ///    [`resolve_extern_prefix`] plus the type name, so package-prefix mappings
 ///    resolve identically to before.
@@ -1605,7 +1681,8 @@ pub(crate) fn resolve_extern_type(fqn: &str, extern_paths: &[(String, String)]) 
             .unwrap_or("")
     };
     let mut segments = rest.split('.').collect::<Vec<_>>();
-    // The final segment is the type name (kept verbatim); the rest are modules.
+    // The final segment is the type name, escaped by the rule the owning
+    // crate's codegen applied; the rest are modules.
     let type_name = segments.pop()?;
     let mut path = rust_prefix.to_string();
     for module in segments {
@@ -1613,7 +1690,7 @@ pub(crate) fn resolve_extern_type(fqn: &str, extern_paths: &[(String, String)]) 
         path.push_str(&to_snake_case(module));
     }
     path.push_str("::");
-    path.push_str(type_name);
+    path.push_str(&crate::idents::escape_type_name(type_name));
     Some(path)
 }
 
@@ -1664,7 +1741,10 @@ fn resolve_type_path(
         (path, true)
     } else {
         (
-            join_mod(local_module, &format!("{type_name_prefix}{name}")),
+            join_mod(
+                local_module,
+                &crate::idents::local_type_name(type_name_prefix, name),
+            ),
             false,
         )
     }
@@ -1719,7 +1799,10 @@ fn register_nested_types(
                     (rust.clone(), child)
                 }
                 None => (
-                    format!("{parent_mod}::{type_name_prefix}{name}"),
+                    format!(
+                        "{parent_mod}::{}",
+                        crate::idents::local_type_name(type_name_prefix, name)
+                    ),
                     format!("{parent_mod}::{}", to_snake_case(name)),
                 ),
             };
@@ -1738,7 +1821,12 @@ fn register_nested_types(
                 .iter()
                 .find(|(proto, _)| proto == &fqn)
                 .map(|(_, rust)| rust.clone())
-                .unwrap_or_else(|| format!("{parent_mod}::{type_name_prefix}{name}"));
+                .unwrap_or_else(|| {
+                    format!(
+                        "{parent_mod}::{}",
+                        crate::idents::local_type_name(type_name_prefix, name)
+                    )
+                });
             type_map.insert(fqn.clone(), rust_path);
             package_of.insert(fqn, package.to_string());
         }
@@ -1754,6 +1842,57 @@ fn collect_enum_first_values(files: &[FileDescriptorProto]) -> HashMap<String, i
         }
     }
     fn walk_msg(map: &mut HashMap<String, i32>, prefix: &str, msg: &DescriptorProto) {
+        let Some(name) = msg.name.as_deref() else {
+            return;
+        };
+        let child_prefix = format!("{prefix}{name}.");
+        for e in &msg.enum_type {
+            record(map, &child_prefix, e);
+        }
+        for nested in &msg.nested_type {
+            walk_msg(map, &child_prefix, nested);
+        }
+    }
+
+    let mut map = HashMap::new();
+    for file in files {
+        let prefix = match file.package.as_deref() {
+            Some(p) if !p.is_empty() => format!(".{p}."),
+            _ => ".".to_string(),
+        };
+        for e in &file.enum_type {
+            record(&mut map, &prefix, e);
+        }
+        for msg in &file.message_type {
+            walk_msg(&mut map, &prefix, msg);
+        }
+    }
+    map
+}
+
+/// The proto names of each enum's values whose generated item is
+/// `#[deprecated]`, keyed by dotted FQN (same key form as
+/// [`collect_enum_first_values`]). Consulted only to decide whether a
+/// generated item that spells out an enum value — a `[default = V]`
+/// expression — needs `#[allow(deprecated)]`.
+fn collect_deprecated_enum_values(
+    files: &[FileDescriptorProto],
+) -> HashMap<String, HashSet<String>> {
+    fn record(map: &mut HashMap<String, HashSet<String>>, prefix: &str, e: &EnumDescriptorProto) {
+        let Some(name) = e.name.as_deref() else {
+            return;
+        };
+        let fqn = format!("{prefix}{name}");
+        let deprecated = crate::enumeration::deprecated_items(e);
+        for (v, _) in e.value.iter().zip(deprecated).filter(|(_, d)| *d) {
+            if let Some(value_name) = v.name.as_deref() {
+                map.entry(fqn.clone())
+                    .or_default()
+                    .insert(value_name.to_string());
+            }
+        }
+    }
+    fn walk_msg(map: &mut HashMap<String, HashSet<String>>, prefix: &str, msg: &DescriptorProto) {
         let Some(name) = msg.name.as_deref() else {
             return;
         };
@@ -2599,6 +2738,32 @@ mod tests {
             )],
         );
         assert_eq!(result, Some("::pbjson_types::Timestamp".into()));
+    }
+
+    #[test]
+    fn test_resolve_extern_type_escapes_a_prefix_mapped_type_name() {
+        // The crate that owns the package declares `bool` as `bool_`.
+        let prefix = [(".other.v1".to_string(), "::other::v1".to_string())];
+        assert_eq!(
+            resolve_extern_type(".other.v1.bool", &prefix),
+            Some("::other::v1::bool_".into())
+        );
+        assert_eq!(
+            resolve_extern_type(".other.v1.type", &prefix),
+            Some("::other::v1::type_".into())
+        );
+        assert_eq!(
+            resolve_extern_type(".other.v1.Outer.Self", &prefix),
+            Some("::other::v1::outer::Self_".into())
+        );
+        // An exact entry is the caller's own path, used as written.
+        assert_eq!(
+            resolve_extern_type(
+                ".other.v1.bool",
+                &[(".other.v1.bool".into(), "::other::Flag".into())]
+            ),
+            Some("::other::Flag".into())
+        );
     }
 
     #[test]

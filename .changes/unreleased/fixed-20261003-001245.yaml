@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+  **A member named `self`, `super`, `crate` or `Self` next to a member that has the escaped name (`self_`) generates code that compiles** (#521). Both members were generated as `self_`, which rustc rejects. The keyword member is now `self__`, with more underscores while that name is taken too; its setter, view field and `OwnedView` accessor follow (`with_self__`, `view.self__`). The member whose proto name is `self_` keeps its name. The two members are a field and a oneof in either order, in any syntax, or two fields, which protoc accepts in proto2 or with `features.json_format = LEGACY_BEST_EFFORT`.
+  Code generation records the new `CodeGenWarning::KeywordEscapedNamesAdjusted` for each affected message. A field is matched by its name and number, and a oneof by its name, across the files that the run generates, so another generated message that declares the same member gets the same Rust name and the warning.
+time: 2026-10-03T00:12:45.348962+02:00

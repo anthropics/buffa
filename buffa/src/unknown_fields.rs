@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 /// When a message is decoded with a schema that doesn't include all fields
 /// present on the wire, the unknown fields are stored here so they can be
 /// re-encoded without data loss.
-#[derive(Clone, Debug, Default, PartialEq, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct UnknownFields {
     fields: Vec<UnknownField>,
 }
@@ -121,8 +121,22 @@ impl IntoIterator for UnknownFields {
     }
 }
 
+impl Extend<UnknownField> for UnknownFields {
+    fn extend<T: IntoIterator<Item = UnknownField>>(&mut self, iter: T) {
+        self.fields.extend(iter);
+    }
+}
+
+impl FromIterator<UnknownField> for UnknownFields {
+    fn from_iter<T: IntoIterator<Item = UnknownField>>(iter: T) -> Self {
+        Self {
+            fields: iter.into_iter().collect(),
+        }
+    }
+}
+
 /// A single unknown field (field number + wire data).
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct UnknownField {
     pub number: u32,
     pub data: UnknownFieldData,
@@ -159,7 +173,7 @@ impl UnknownField {
 }
 
 /// The wire data for an unknown field.
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum UnknownFieldData {
     Varint(u64),
     Fixed64(u64),
@@ -207,6 +221,21 @@ impl<'a> arbitrary::Arbitrary<'a> for UnknownFields {
 mod tests {
     use super::*;
     use crate::encoding::MAX_FIELD_NUMBER;
+
+    /// A message that preserves unknown fields holds an `UnknownFields`, so it
+    /// can be a `HashSet` or `HashMap` key only if this type is `Eq + Hash`.
+    #[test]
+    fn unknown_fields_are_usable_in_a_hashed_key() {
+        let mut fields = UnknownFields::default();
+        fields.push(UnknownField {
+            number: 1,
+            data: UnknownFieldData::Group(UnknownFields::default()),
+        });
+        let mut set = std::collections::HashSet::new();
+        assert!(set.insert(fields.clone()));
+        assert!(!set.insert(fields));
+        assert!(set.insert(UnknownFields::default()));
+    }
 
     fn varint_field(number: u32, value: u64) -> UnknownField {
         UnknownField {
@@ -316,6 +345,41 @@ mod tests {
             count += 1;
         }
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_from_iterator_preserves_order_and_duplicates() {
+        let expected = vec![
+            varint_field(1, 0),
+            fixed64_field(2, u64::MAX),
+            fixed32_field(3, u32::MAX),
+            ld_field(4, vec![1, 2]),
+            group_field(5, UnknownFields::new()),
+            varint_field(1, 42),
+        ];
+
+        let fields: UnknownFields = expected.clone().into_iter().collect();
+        assert_eq!(fields.into_iter().collect::<Vec<_>>(), expected);
+
+        let empty: UnknownFields = core::iter::empty().collect();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_extend_appends_fields() {
+        let mut fields = UnknownFields::new();
+        fields.push(varint_field(7, 1));
+        fields.extend([fixed32_field(2, 3), ld_field(2, vec![]), varint_field(7, 4)]);
+
+        assert_eq!(
+            fields.into_iter().collect::<Vec<_>>(),
+            vec![
+                varint_field(7, 1),
+                fixed32_field(2, 3),
+                ld_field(2, vec![]),
+                varint_field(7, 4),
+            ]
+        );
     }
 
     // ── encoded_len vs write_to consistency ──────────────────────────────

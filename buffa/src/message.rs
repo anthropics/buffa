@@ -215,6 +215,22 @@ impl<'a> DecodeContext<'a> {
         self.element_memory_remaining.map(core::cell::Cell::get)
     }
 
+    /// Spend what is left of the element-memory budget, so that every later
+    /// nonzero charge on this context fails.
+    ///
+    /// A caller that drops a value after
+    /// [`ElementMemoryLimitExceeded`](DecodeError::ElementMemoryLimitExceeded)
+    /// and keeps decoding with the same context uses this to make the first
+    /// value that does not fit the last one it reads: a failed charge leaves
+    /// the budget unchanged, so a smaller value after it could otherwise
+    /// still be charged. The bound on the total does not depend on this
+    /// call; it comes from never refunding a charge.
+    pub(crate) fn exhaust_element_memory(&self) {
+        if let Some(cell) = self.element_memory_remaining {
+            cell.set(0);
+        }
+    }
+
     /// Charge `bytes` against the shared element-memory budget.
     ///
     /// Call **before** materializing an element of a repeated
@@ -1501,16 +1517,18 @@ impl DecodeOptions {
     /// Decode a zero-copy view from a byte slice.
     ///
     /// Enforces `max_message_size` on the input, and passes the recursion
-    /// limit and unknown-field limit to the view decoder (views charge the
-    /// unknown-field limit per field, including fields nested in unknown
-    /// groups — see
+    /// limit, unknown-field limit, and element-memory budget to the view
+    /// decoder (views charge the unknown-field limit per field, including
+    /// fields nested in unknown groups — see
     /// [`with_unknown_field_limit`](Self::with_unknown_field_limit)).
     ///
     /// # Errors
     ///
     /// Returns [`DecodeError::MessageTooLarge`] for oversized input, or any
-    /// error from the view decoder (malformed wire data, recursion limit,
-    /// unknown-field limit).
+    /// error from the view decoder (malformed wire data,
+    /// [`DecodeError::RecursionLimitExceeded`],
+    /// [`DecodeError::UnknownFieldLimitExceeded`], or
+    /// [`DecodeError::ElementMemoryLimitExceeded`]).
     pub fn decode_view<'a, V: crate::view::MessageView<'a>>(
         &self,
         buf: &'a [u8],

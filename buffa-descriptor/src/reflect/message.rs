@@ -144,8 +144,10 @@ pub trait ReflectMessage {
 
     /// Get a field's value.
     ///
-    /// For absent singular fields, returns the type's default value. For
-    /// absent repeated/map fields, returns an empty container.
+    /// An absent singular field reads as its type's default value. An absent
+    /// enum field reads as the enum's first declared value, which is nonzero
+    /// for some proto2 enums. An absent repeated or map field reads as an
+    /// empty container.
     ///
     /// # Panics
     ///
@@ -158,8 +160,9 @@ pub trait ReflectMessage {
     ///
     /// For explicit-presence fields (proto2 `optional`/`required`, proto3
     /// `optional`, message-typed fields), this is "was a value written".
-    /// For implicit-presence fields, this is "is non-default". For
-    /// repeated/map fields, this is "non-empty".
+    /// For implicit-presence fields, this is "is non-default". A `float` or
+    /// `double` is at its default only when it is `+0.0`, so `-0.0` and NaN
+    /// are present. For repeated/map fields, this is "non-empty".
     fn has(&self, field: &FieldDescriptor) -> bool;
 
     /// Visit every set field.

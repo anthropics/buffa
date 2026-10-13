@@ -407,6 +407,7 @@ pub fn generate_message_impl(
     table_impl: Option<TokenStream>,
 ) -> Result<TokenStream, CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
+    let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, proto_fqn);
 
     let fields = classify_fields_ordered(msg, oneof_idents)?;
     // The lazy predicate applies to the lazy view family only; owned is eager.
@@ -681,6 +682,7 @@ pub fn generate_message_impl(
 
     let message_impl = table_impl.unwrap_or_else(|| {
         quote! {
+            #deprecated_field_allow
             impl ::buffa::Message for #name_ident {
                 /// Returns the total encoded size in bytes.
                 ///
@@ -1055,7 +1057,7 @@ pub(crate) fn field_bytes_repr(
 /// The "replace" decode expression for a `bytes` field of the given
 /// representation: reads a length-delimited value and produces a fresh owned
 /// value (no in-place buffer reuse). `Vec<u8>` allocates, `bytes::Bytes`
-/// decodes zero-copy, and a custom type is constructed via `From<Vec<u8>>`.
+/// decodes zero-copy, and a custom type is constructed by its `from_wire`.
 fn bytes_decode_expr(repr: &crate::BytesRepr) -> TokenStream {
     match repr {
         crate::BytesRepr::Vec => quote! { ::buffa::types::decode_bytes(buf)? },
@@ -1204,6 +1206,7 @@ fn scalar_clear_stmt(
         features,
         nesting,
         field_string_repr(ctx, proto_fqn, field_name),
+        &bytes_repr,
     )? {
         return Ok(quote! { self.#ident = #default_expr; });
     }

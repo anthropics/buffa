@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **A `null` element in a `repeated` closed-enum field, or a `null` value in a closed-enum map, is a JSON parse error** (#594). For a closed enum (proto2, or `enum_type = CLOSED` in editions), `{"tiers": [null]}` parsed as a list that held the enum's default value. It is now an error with `ignore_unknown_enum_values` on or off, so a sender that puts `null` inside such a list or map gets a parse error. A `null` in place of the whole list or map still reads as empty, and an `optional` field set to `null` is still unset. Open-enum lists and maps are unchanged: a `null` element there still reads as the value 0.
+time: 2026-10-07T10:06:14.02399+02:00

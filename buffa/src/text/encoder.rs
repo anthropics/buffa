@@ -19,11 +19,16 @@ use crate::unknown_fields::{UnknownFieldData, UnknownFields};
 
 /// Depth cap for heuristically parsing length-delimited unknown fields as
 /// nested messages. Matches C++ `kUnknownFieldRecursionLimit`
-/// (text_format.cc:2306). Independent of the parse-time [`RECURSION_LIMIT`]
+/// (text_format.cc:2494). Independent of the parse-time [`RECURSION_LIMIT`]
 /// — this bounds an encode-time *printing* heuristic, not wire decode.
 ///
 /// [`RECURSION_LIMIT`]: crate::RECURSION_LIMIT
 const UNKNOWN_LD_RECURSE_BUDGET: u32 = 10;
+
+/// Maximum group nesting the unknown-field printer will traverse. Decoded
+/// groups already respect this limit; public `UnknownFields::push` can also
+/// construct deeper trees directly.
+const UNKNOWN_GROUP_RECURSE_BUDGET: u32 = crate::RECURSION_LIMIT;
 
 /// What the encoder last emitted — drives separator logic in
 /// [`prepare`](TextEncoder::prepare).
@@ -55,6 +60,14 @@ pub struct TextEncoder<'a> {
     pretty: bool,
     emit_unknown: bool,
     last: Last,
+    /// The extension name that
+    /// [`write_extension_fields`](Self::write_extension_fields) wrote. It is
+    /// set only while that entry's `text_encode` runs and the name is still
+    /// the last thing written: the next write clears it, and so does the
+    /// return of `text_encode`.
+    /// [`write_repeated_extension`](Self::write_repeated_extension) writes it
+    /// again before each element after the first.
+    ext_name: Option<&'static str>,
 }
 
 impl<'a> TextEncoder<'a> {
@@ -67,6 +80,7 @@ impl<'a> TextEncoder<'a> {
             pretty: false,
             emit_unknown: false,
             last: Last::Open,
+            ext_name: None,
         }
     }
 
@@ -80,6 +94,7 @@ impl<'a> TextEncoder<'a> {
             pretty: true,
             emit_unknown: false,
             last: Last::Open,
+            ext_name: None,
         }
     }
 
@@ -102,6 +117,7 @@ impl<'a> TextEncoder<'a> {
     fn prepare(&mut self, next: Last) -> core::fmt::Result {
         let prev = self.last;
         self.last = next;
+        self.ext_name = None;
         if !self.pretty {
             // Single line: space between end-of-field and start of next name.
             if prev == Last::Value && next == Last::Name {
@@ -203,7 +219,52 @@ impl<'a> TextEncoder<'a> {
     ) -> core::fmt::Result {
         // No `:` before a message value — just a space before `{`.
         self.prepare(Last::Value)?;
-        self.w.write_str(" {")?;
+        self.w.write_char(' ')?;
+        self.write_message_body(f)
+    }
+
+    /// Write the elements of a repeated message or group extension, after
+    /// the caller has written the extension's bracketed name once.
+    ///
+    /// The two forms are documented on
+    /// [`repeated_message_encode_text`](crate::type_registry::repeated_message_encode_text).
+    /// The per-element form is preferred because a parser reads it without
+    /// support for message lists.
+    pub(crate) fn write_repeated_extension<M: super::TextFormat>(
+        &mut self,
+        messages: &[M],
+    ) -> core::fmt::Result {
+        debug_assert!(self.ext_name.is_none() || self.last == Last::Name);
+        match (self.ext_name, messages) {
+            (Some(name), [first, rest @ ..]) => {
+                self.write_message(first)?;
+                for message in rest {
+                    self.write_extension_name(name)?;
+                    self.write_message(message)?;
+                }
+                Ok(())
+            }
+            (None, _) | (Some(_), []) => self.write_message_list(messages),
+        }
+    }
+
+    fn write_message_list<M: super::TextFormat>(&mut self, messages: &[M]) -> core::fmt::Result {
+        self.prepare(Last::Value)?;
+        self.w.write_str(": [")?;
+        for (index, message) in messages.iter().enumerate() {
+            if index > 0 {
+                self.w.write_str(", ")?;
+            }
+            self.write_message_body(|enc| message.encode_text(enc))?;
+        }
+        self.w.write_char(']')
+    }
+
+    fn write_message_body(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> core::fmt::Result,
+    ) -> core::fmt::Result {
+        self.w.write_char('{')?;
         self.depth += 1;
         let outer_last = self.last;
         self.last = Last::Open;
@@ -267,7 +328,9 @@ impl<'a> TextEncoder<'a> {
     }
 
     /// Write registered extensions from `fields` as `[full_name] { ... }`
-    /// entries. Unregistered field numbers are left for the caller's
+    /// entries: one entry per extension, or one per element for a repeated
+    /// message or group extension.
+    /// Unregistered field numbers are left for the caller's
     /// [`write_unknown_fields`](Self::write_unknown_fields) (debug-only,
     /// default off).
     ///
@@ -289,9 +352,9 @@ impl<'a> TextEncoder<'a> {
         if fields.is_empty() {
             return Ok(());
         }
-        // One emit per field number — the entry's text_encode reads all
-        // records at that number (merge semantics). Mirrors JSON's
-        // serialize_extensions dedup loop.
+        // One `text_encode` call per field number: the entry reads every
+        // record at that number. Mirrors JSON's `serialize_extensions` dedup
+        // loop.
         let mut seen = alloc::collections::BTreeSet::new();
         for uf in fields.iter() {
             if !seen.insert(uf.number) {
@@ -302,7 +365,9 @@ impl<'a> TextEncoder<'a> {
                 continue;
             };
             self.write_extension_name(entry.full_name)?;
+            self.ext_name = Some(entry.full_name);
             (entry.text_encode)(uf.number, fields, self)?;
+            self.ext_name = None;
         }
         Ok(())
     }
@@ -323,10 +388,14 @@ impl<'a> TextEncoder<'a> {
     /// | group | nested `{ ... }` (recursive) | `1004 { 1: 0 }` |
     ///
     /// Length-delimited bytes are speculatively parsed as wire-format records
-    /// (same heuristic as C++ text_format.cc:2926 / Java TextFormat.java:87):
+    /// (same heuristic as C++ text_format.cc:3121 / Java TextFormat.java:87):
     /// if the parse succeeds, print nested; otherwise print as escaped bytes.
-    /// Capped at 10 levels deep. False positives are possible — a string that
-    /// happens to look like valid wire format will be printed as `{ }`.
+    /// Capped at 10 levels deep. Group nesting is capped at
+    /// [`RECURSION_LIMIT`](crate::RECURSION_LIMIT). A group nested past that
+    /// depth is written with an empty body, so the text can omit a subtree,
+    /// and such a group reads the same as an empty one. False positives are
+    /// possible — a string that happens to look like valid wire format will be
+    /// printed as `{ }`.
     ///
     /// This is debug output: the parser can't round-trip it because wire type
     /// doesn't determine proto type (a varint could be int32, sint64, bool, an
@@ -339,10 +408,19 @@ impl<'a> TextEncoder<'a> {
         if !self.emit_unknown {
             return Ok(());
         }
-        self.write_unknown_inner(fields, UNKNOWN_LD_RECURSE_BUDGET)
+        self.write_unknown_inner(
+            fields,
+            UNKNOWN_LD_RECURSE_BUDGET,
+            UNKNOWN_GROUP_RECURSE_BUDGET,
+        )
     }
 
-    fn write_unknown_inner(&mut self, fields: &UnknownFields, budget: u32) -> core::fmt::Result {
+    fn write_unknown_inner(
+        &mut self,
+        fields: &UnknownFields,
+        ld_budget: u32,
+        group_budget: u32,
+    ) -> core::fmt::Result {
         for f in fields.iter() {
             self.prepare(Last::Name)?;
             write!(self.w, "{}", f.number)?;
@@ -363,12 +441,12 @@ impl<'a> TextEncoder<'a> {
                     // Heuristic: try to parse the bytes as wire-format records.
                     // If it parses, it's probably a sub-message — print nested.
                     // If not (or we're out of budget), print as escaped bytes.
-                    // Matches C++ text_format.cc:2926-2966 and Java
+                    // Matches C++ text_format.cc:3121-3160 and Java
                     // TextFormat.java:87-102.
-                    if budget > 0 && !bytes.is_empty() {
+                    if ld_budget > 0 && !bytes.is_empty() {
                         if let Ok(inner) = UnknownFields::decode_from_slice(bytes) {
                             self.write_map_entry(|enc| {
-                                enc.write_unknown_inner(&inner, budget - 1)
+                                enc.write_unknown_inner(&inner, ld_budget - 1, group_budget)
                             })?;
                             continue;
                         }
@@ -378,9 +456,15 @@ impl<'a> TextEncoder<'a> {
                     escape_bytes(bytes, self.w)?;
                 }
                 UnknownFieldData::Group(inner) => {
-                    // Groups don't consume budget — they were already
-                    // validated at decode time (C++ text_format.cc:3009).
-                    self.write_map_entry(|enc| enc.write_unknown_inner(inner, budget))?;
+                    // Limit public, manually constructed groups as well as
+                    // groups that came through the bounded decoder.
+                    self.write_map_entry(|enc| {
+                        if group_budget == 0 {
+                            Ok(())
+                        } else {
+                            enc.write_unknown_inner(inner, ld_budget, group_budget - 1)
+                        }
+                    })?;
                 }
             }
         }
@@ -839,6 +923,58 @@ mod tests {
         assert_eq!(
             s,
             r#"1001: 42 1002: 0x3f800000 1003: 0xdeadbeef 1004: "\001\377" 1005 {1: 7}"#
+        );
+    }
+
+    #[test]
+    fn unknown_group_depth_is_bounded() {
+        use crate::unknown_fields::UnknownField;
+
+        fn group_chain(depth: u32) -> UnknownFields {
+            let mut nested = UnknownFields::new();
+            nested.push(UnknownField {
+                number: 2,
+                data: UnknownFieldData::Varint(7),
+            });
+            for _ in 0..depth {
+                let mut parent = UnknownFields::new();
+                parent.push(UnknownField {
+                    number: 1,
+                    data: UnknownFieldData::Group(nested),
+                });
+                nested = parent;
+            }
+            nested
+        }
+
+        fn render(fields: &UnknownFields) -> String {
+            let mut s = String::new();
+            TextEncoder::new(&mut s)
+                .emit_unknown(true)
+                .write_unknown_fields(fields)
+                .unwrap();
+            s
+        }
+
+        let at_limit = render(&group_chain(crate::RECURSION_LIMIT));
+        assert_eq!(
+            at_limit.matches('{').count(),
+            crate::RECURSION_LIMIT as usize
+        );
+        assert!(
+            at_limit.contains(": 7"),
+            "the limit-depth body was not printed"
+        );
+
+        let too_deep = render(&group_chain(crate::RECURSION_LIMIT + 25));
+        assert_eq!(
+            too_deep.matches('{').count(),
+            crate::RECURSION_LIMIT as usize + 1,
+            "over-depth groups should stop at the recursion limit: {too_deep}"
+        );
+        assert!(
+            !too_deep.contains(": 7"),
+            "the over-depth group body was printed"
         );
     }
 

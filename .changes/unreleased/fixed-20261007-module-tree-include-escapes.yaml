@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **`generate_module_tree` writes each `include!` path as an escaped string literal** (#653).
+    A file name or `IncludeMode::Relative` prefix that contains a quote, a backslash or a control character produced a module tree that was not valid Rust. `buffa-build` and the plugins pass package-derived file names, so their output is unchanged; the fix affects direct callers of `generate_module_tree`.
+time: 2026-10-07T16:30:00+02:00

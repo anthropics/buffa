@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a file with an unrecognized `syntax`, and an `editions` file without an `edition`** (#529). The pool linked a file whose `syntax` was any string other than `proto2`, `proto3` or `editions` with proto2 semantics, and an `editions` file whose `edition` was unset or `EDITION_UNKNOWN` with the edition 2023 defaults. Field presence, enum openness and packing could then differ from the schema the descriptor came from. The first is now `PoolError::UnrecognizedSyntax` and the second `PoolError::MissingEdition`; protoc and protobuf-go reject both. An absent or empty `syntax` still means proto2, and an edition number that this version of buffa does not define still links with the edition 2023 defaults. Descriptor sets written by protoc or `buf build` are unaffected.
+time: 2026-10-03T21:34:26.89645+02:00

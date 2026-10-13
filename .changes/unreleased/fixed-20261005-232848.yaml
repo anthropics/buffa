@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a `default_value` on a repeated field** (#566). A repeated field, a map field or a repeated extension with `default_value` set linked, and the value was ignored. It is now `PoolError::RepeatedFieldWithDefault`, as protoc and protobuf-go reject it.
+time: 2026-10-05T23:28:48.727755+02:00

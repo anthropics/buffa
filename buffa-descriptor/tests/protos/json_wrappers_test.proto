@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package reflect.json;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/wrappers.proto";
+
+message Wrappers {
+  google.protobuf.Int32Value optional_value = 1;
+  repeated google.protobuf.Int32Value repeated_values = 2;
+  map<string, google.protobuf.Int32Value> map_values = 3;
+  oneof selection {
+    google.protobuf.Int32Value choice = 4;
+  }
+  google.protobuf.Any payload = 5;
+}

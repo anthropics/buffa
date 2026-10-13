@@ -242,6 +242,103 @@ fn codegen_wkt_auto_mapping() {
 }
 
 #[test]
+fn gen_wkt_types_derives_eq_and_hash_only_for_selected_owned_messages() {
+    let expected = [
+        "Any",
+        "Api",
+        "BoolValue",
+        "BytesValue",
+        "Duration",
+        "Empty",
+        "Enum",
+        "EnumValue",
+        "Field",
+        "FieldMask",
+        "Int32Value",
+        "Int64Value",
+        "Method",
+        "Mixin",
+        "Option",
+        "SourceContext",
+        "StringValue",
+        "Timestamp",
+        "Type",
+        "UInt32Value",
+        "UInt64Value",
+    ];
+    let excluded = ["DoubleValue", "FloatValue", "ListValue", "Struct", "Value"];
+    let protos_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../buffa-types/protos");
+    let fds = compile_protos(
+        &[
+            "google/protobuf/any.proto",
+            "google/protobuf/api.proto",
+            "google/protobuf/duration.proto",
+            "google/protobuf/empty.proto",
+            "google/protobuf/field_mask.proto",
+            "google/protobuf/source_context.proto",
+            "google/protobuf/struct.proto",
+            "google/protobuf/timestamp.proto",
+            "google/protobuf/type.proto",
+            "google/protobuf/wrappers.proto",
+        ],
+        &[protos_dir],
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let descriptor_path = dir.path().join("wkt.pb");
+    let output_dir = dir.path().join("generated");
+    std::fs::write(&descriptor_path, fds.encode_to_vec()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_gen_wkt_types"))
+        .arg(&descriptor_path)
+        .arg(&output_dir)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "gen_wkt_types failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut actual = Vec::new();
+    let mut actual_excluded = Vec::new();
+    for entry in std::fs::read_dir(output_dir).unwrap() {
+        let content = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+        for item in syn::parse_file(&content).unwrap().items {
+            let syn::Item::Struct(message) = item else {
+                continue;
+            };
+            let name = message.ident.to_string();
+            let mut derives = Vec::new();
+            for attr in &message.attrs {
+                if attr.path().is_ident("derive") {
+                    derives.extend(
+                        attr.parse_args_with(
+                            syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
+                        )
+                        .unwrap(),
+                    );
+                }
+            }
+            let has_trait = |trait_name: &str| derives.iter().any(|path| path.is_ident(trait_name));
+            let selected = expected.contains(&name.as_str());
+            assert_eq!(has_trait("Eq"), selected, "Eq derive for {name}");
+            assert_eq!(has_trait("Hash"), selected, "Hash derive for {name}");
+            if !name.ends_with("View") {
+                assert!(has_trait("PartialEq"), "PartialEq derive for {name}");
+            }
+            if selected {
+                actual.push(name);
+            } else if excluded.contains(&name.as_str()) {
+                actual_excluded.push(name);
+            }
+        }
+    }
+    actual.sort();
+    assert_eq!(actual, expected);
+    actual_excluded.sort();
+    assert_eq!(actual_excluded, excluded);
+}
+
+#[test]
 fn codegen_wkt_api_auto_mapping() {
     // #382: googleapis WKTs must resolve through buffa-types, including views.
     let files = generate_for("wkt_api.proto", &CodeGenConfig::default());
@@ -279,6 +376,43 @@ fn codegen_name_collisions() {
     assert!(content.contains("pub struct String"));
     assert!(content.contains("pub struct Option"));
     assert!(content.contains("::core::option::Option"));
+}
+
+#[test]
+fn codegen_renames_keyword_members_that_collide_after_escaping() {
+    let proto = r#"
+        syntax = "proto2";
+        package test;
+
+        message FieldCollision {
+            optional int32 self = 1;
+            optional int32 self_ = 2;
+            optional int32 crate = 3;
+            optional int32 crate_ = 4;
+        }
+
+        message OneofCollision {
+            optional int32 self_ = 1;
+            oneof self {
+                string choice = 2;
+            }
+        }
+    "#;
+
+    for idiomatic_field_names in [false, true] {
+        let mut config = CodeGenConfig::default();
+        config.idiomatic_field_names = idiomatic_field_names;
+        let content = generate_proto(proto, &config);
+        let field_body = struct_body(&content, "FieldCollision");
+        assert!(field_body.contains("pub self__:"), "{field_body}");
+        assert!(field_body.contains("pub self_:"), "{field_body}");
+        assert!(field_body.contains("pub crate__:"), "{field_body}");
+        assert!(field_body.contains("pub crate_:"), "{field_body}");
+
+        let oneof_body = struct_body(&content, "OneofCollision");
+        assert!(oneof_body.contains("pub self_:"), "{oneof_body}");
+        assert!(oneof_body.contains("pub self__:"), "{oneof_body}");
+    }
 }
 
 #[test]
@@ -612,14 +746,14 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
     // Only ONE From impl (for T, which appears once), not two for Placeholder.
     assert_eq!(
         content
-            .matches("impl From<super::super::super::Placeholder> for Kind")
+            .matches("impl ::core::convert::From<super::super::super::Placeholder> for Kind")
             .count(),
         0,
         "duplicate-type From impls must be skipped: {content}"
     );
     assert_eq!(
         content
-            .matches("impl From<super::super::super::T> for Kind")
+            .matches("impl ::core::convert::From<super::super::super::T> for Kind")
             .count(),
         1,
         "unique-type From impl must still be generated: {content}"
@@ -1725,7 +1859,7 @@ fn with_setters_emitted_for_explicit_presence_fields() {
 
     // String setter uses impl Into<...> for &str ergonomics.
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "string setter should use impl Into: {content}"
     );
 
@@ -1782,7 +1916,7 @@ fn with_setters_bytes_type_uses_into() {
         "with_data missing: {content}"
     );
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "bytes::Bytes setter should use impl Into: {content}"
     );
 }
@@ -1804,7 +1938,7 @@ fn with_setters_vec_u8_uses_into() {
         "with_data missing: {content}"
     );
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "Vec<u8> setter should use impl Into: {content}"
     );
 }
@@ -1827,7 +1961,7 @@ fn with_setters_enum_uses_into() {
         "with_color missing: {content}"
     );
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "enum setter should use impl Into: {content}"
     );
 }

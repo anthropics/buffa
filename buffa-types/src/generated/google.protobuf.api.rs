@@ -17,6 +17,7 @@
 /// make use of FileDescriptorSet which preserves the necessary information.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Api {
     /// The fully qualified name of this interface, including package name
     /// followed by the interface's simple name.
@@ -574,6 +575,7 @@ pub const __API_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_r
 /// make use of FileDescriptorSet which preserves the necessary information.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Method {
     /// The simple name of this method.
     ///
@@ -605,6 +607,7 @@ pub struct Method {
     /// Api. This is similar to Field and EnumValue.
     ///
     /// Field 7: `syntax`
+    #[deprecated]
     pub syntax: ::buffa::EnumValue<Syntax>,
     /// The source edition string, only valid when syntax is SYNTAX_EDITIONS.
     ///
@@ -612,10 +615,12 @@ pub struct Method {
     /// Api. This is similar to Field and EnumValue.
     ///
     /// Field 8: `edition`
+    #[deprecated]
     pub edition: ::buffa::alloc::string::String,
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
 }
+#[allow(deprecated)]
 impl ::core::fmt::Debug for Method {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("Method")
@@ -640,6 +645,7 @@ impl Method {
 ::buffa::impl_default_instance!(Method);
 #[cfg(feature = "reflect")]
 const _: () = {
+    #[allow(deprecated)]
     impl ::buffa_descriptor::reflect::ReflectMessage for Method {
         fn message_descriptor(&self) -> &::buffa_descriptor::MessageDescriptor {
             __buffa::reflect::descriptor_pool()
@@ -769,6 +775,7 @@ impl ::buffa::MessageName for Method {
     const FULL_NAME: &'static str = "google.protobuf.Method";
     const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Method";
 }
+#[allow(deprecated)]
 impl ::buffa::Message for Method {
     /// Returns the total encoded size in bytes.
     ///
@@ -964,6 +971,7 @@ impl ::buffa::ExtensionSet for Method {
         &mut self.__buffa_unknown_fields
     }
 }
+#[allow(deprecated)]
 impl ::buffa::text::TextFormat for Method {
     fn encode_text(
         &self,
@@ -1144,6 +1152,7 @@ pub const __METHOD_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::typ
 /// ```
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Mixin {
     /// The fully qualified name of the interface which is included.
     ///

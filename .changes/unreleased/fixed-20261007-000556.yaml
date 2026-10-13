@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`buffa-build` names a `.proto` file as protoc does when a path has `.` components or the includes overlap** (#580). The descriptor name was computed by stripping the raw include prefix, so `files(["./proto/a.proto"])` with `includes(["proto"])` or an include written `./proto` gave a name protoc never emits, and generation failed with `FileNotFound` after protoc had succeeded. Paths are now normalized lexically, as protoc's are: `.` components are dropped, `..` is kept, and symlinks are left unresolved. An include of `.` contains every relative path, so listed first it names `proto/a.proto` in full. An include that would leave `..` in the name is skipped in favour of the next one.
+time: 2026-10-07T00:05:56.467789+02:00

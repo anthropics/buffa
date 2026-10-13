@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a proto3 message that sets `message_set_wire_format`** (#602). A message in a proto3 file with the option set and no extension range linked, although proto3 has no MessageSet and protoc reports "MessageSet is not supported in proto3." The rejection is the new `PoolError::MessageSetInProto3` variant; a proto3 message that also declares an extension range is still `PoolError::ExtensionRangeInProto3`. The rule applies to proto3 files only, as in protoc. Only hand-built or synthesized descriptor sets can reach this, because protoc rejects the file.
+time: 2026-10-07T12:04:39.241378+02:00

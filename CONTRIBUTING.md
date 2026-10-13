@@ -30,7 +30,7 @@ At release time, `task changelog-batch -- <version>` rolls the fragments into `.
 
 A new workspace crate is published to crates.io unless its `Cargo.toml` sets `publish = false`. If it should be released, add it to `.github/publish-order.txt` **after the crates it depends on** — that file is the single source of truth for what the release publishes and in what order.
 
-`task check-publish-coverage` verifies the list matches the workspace, and CI runs the same check on every pull request, so a missing entry fails the PR that introduces the crate rather than silently skipping it at release time. (buffa 0.9.0 shipped with `buffa-remote-derive` announced in the changelog but absent from crates.io, because nothing compared the list to the workspace.)
+`task check-publish-coverage` verifies that the list matches the workspace and that each crate is listed after the workspace crates it depends on. CI runs the same check on every pull request, so the PR that introduces the problem fails: a missing entry would otherwise be skipped silently at release time, and a misplaced one would fail the publish part-way through. (buffa 0.9.0 shipped with `buffa-remote-derive` announced in the changelog but absent from crates.io, because nothing compared the list to the workspace.)
 
 Note that the first publish of any new crate cannot use Trusted Publishing — crates.io cannot configure it for a crate that does not exist yet — so it needs a one-time API token, after which trusted publishing is configured and later releases run over OIDC.
 
@@ -82,22 +82,22 @@ needed — the runner just has to be built from protobuf source once:
 ```bash
 task conformance-tools-local   # one-time: cmake-builds the runner into .local/bin,
                                # populates conformance/protos/ (~10-20 min)
-task conformance-local         # seven runs, same failure lists as the Docker path
+task conformance-local         # eight runs, same failure lists as the Docker path
 ```
 
 Requires cmake, a C++ toolchain, and protoc v30+ on PATH or `$PROTOC`
 (`task install-protoc`). Set `CONFORMANCE_OUT=<dir>` to tee per-run logs.
 
-**Understanding the output**: The conformance runner executes seven runs
-(std, no_std, via-view, via-lazy, view-json, via-reflect, via-vtable), each
+**Understanding the output**: The conformance runner executes eight runs
+(std, no_std, via-view, via-lazy, view-json, via-reflect, via-vtable, via-table), each
 producing two suites:
 
-1. Binary + JSON suite — expects thousands of successes (~5500 std, ~5500 no_std). The via-view and via-lazy runs only handle binary→binary (~2800); the view-json, via-reflect, and via-vtable runs handle binary→JSON (and via-reflect also binary→binary).
-2. Text format suite — 883 successes for std and no_std (the full suite); via-view, via-lazy, view-json, via-reflect, and via-vtable show `0 successes, 883 skipped` (those modes have no `TextFormat` path).
+1. Binary + JSON suite — expects thousands of successes (~5500 std and no_std; 5,549 table). The via-view and via-lazy runs only handle binary→binary (~2800); the view-json, via-reflect, and via-vtable runs handle binary→JSON (and via-reflect also binary→binary).
+2. Text format suite — 883 successes for std, no_std and table (the full suite); via-view, via-lazy, view-json, via-reflect, and via-vtable show `0 successes, 883 skipped` (those modes have no `TextFormat` path).
 
-So a healthy run shows **14 `CONFORMANCE SUITE PASSED` lines**.
+So a healthy run shows **16 `CONFORMANCE SUITE PASSED` lines**.
 
-The Dockerfile builds **two binaries**: one with default features (std) and one with `--no-default-features` (no_std). The std binary is reused for the view/reflect runs by setting an env var:
+The Dockerfile builds **three binaries**: one with default features (std), one with `--no-default-features` (no_std) and one with `--features table` (table). The std binary is reused for the view/reflect runs by setting an env var:
 
 - **via-view** (`BUFFA_VIA_VIEW=1`) — binary input through `decode_view → to_owned_message → encode`, verifying owned/view decoder parity.
 - **via-lazy** (`BUFFA_VIA_LAZY=1`) — binary input through `decode_lazy → to_owned_message → encode` on the lazy view family (`lazy_views(true)`), verifying the lazy decoder (record arms, fragment merge, budget capture) against the corpus.
@@ -105,13 +105,15 @@ The Dockerfile builds **two binaries**: one with default features (std) and one 
 - **via-reflect** (`BUFFA_VIA_REFLECT=1`) — binary/JSON I/O through `DynamicMessage`'s descriptor-driven codec and reflective serde, verifying the runtime reflection codec independently of any generated type.
 - **via-vtable** (`BUFFA_VIA_VTABLE=1`) — binary→JSON: decode the view, walk its vtable `ReflectMessage` surface to rebuild a `DynamicMessage`, then serialize to JSON. Verifies the generated `impl ReflectMessage for FooView`. It reuses `DynamicMessage`'s JSON serializer (which passes the corpus cleanly under via-reflect), so any failure isolates a bug in the vtable `get`/`has`/`for_each_set` surface. Requires the conformance crate's `reflect` feature, so it is absent from the no_std binary.
 
-**Expected failures** are listed in `conformance/known_failures.txt` (std binary+JSON), `conformance/known_failures_nostd.txt` (no_std binary+JSON), `conformance/known_failures_view.txt` (via-view), `conformance/known_failures_lazy.txt` (via-lazy), `conformance/known_failures_view_json.txt` (view-json), `conformance/known_failures_reflect.txt` (via-reflect), `conformance/known_failures_view_vtable.txt` (via-vtable), and `conformance/known_failures_text.txt` (text format — shared between std and no_std; currently empty). The text list is passed via `--text_format_failure_list` since the runner validates each suite's list independently. When a previously-failing test starts passing, remove it from the relevant file; when a new test is expected to fail, add it.
+**via-table** is a separate binary, built with `--features table` (no env var), that runs the whole std run — binary, JSON and text — against test messages generated with `CodecStrategy::Table`. It exercises the table codec's decode, size and encode paths, oneofs, maps and the bridge to well-known-type children on the proto3, editions and nested proto2 messages. The messages the table cannot handle run through the unrolled codec instead: messages with extension ranges under JSON, `MessageSet` messages, group types and the messages that hold them. That includes the top-level `TestAllTypesProto2`, which via-table therefore does not exercise on the table. `buffa-build` prints a `cargo:warning` naming the messages that fell back, and a compile-time check in `conformance/src/main.rs` fails the build if the messages that must use the table stop doing so. The `table` feature needs Rust 1.77; `conformance/Cargo.toml` says why.
+
+**Expected failures** are listed in `conformance/known_failures.txt` (std binary+JSON), `conformance/known_failures_nostd.txt` (no_std binary+JSON), `conformance/known_failures_view.txt` (via-view), `conformance/known_failures_lazy.txt` (via-lazy), `conformance/known_failures_view_json.txt` (view-json), `conformance/known_failures_reflect.txt` (via-reflect), `conformance/known_failures_view_vtable.txt` (via-vtable), `conformance/known_failures_table.txt` (via-table; currently empty), and `conformance/known_failures_text.txt` (text format — shared between std, no_std and table; currently empty). The text list is passed via `--text_format_failure_list` since the runner validates each suite's list independently. When a previously-failing test starts passing, remove it from the relevant file; when a new test is expected to fail, add it.
 
 **Capturing output**: To save per-run logs for analysis, mount a directory and set `CONFORMANCE_OUT`:
 
 ```bash
 docker run --rm -v /tmp/conf:/out -e CONFORMANCE_OUT=/out buffa-conformance
-# logs: /tmp/conf/conformance-{std,nostd,view,lazy,view-json,reflect,vtable}.log
+# logs: /tmp/conf/conformance-{std,nostd,view,lazy,view-json,reflect,vtable,table}.log
 ```
 
 **Upgrading the protobuf version**: bump `TOOLS_IMAGE` in `Taskfile.yml` and `PROTOC_VERSION` in `.github/workflows/ci.yml`, then:
@@ -155,7 +157,7 @@ For the 32-bit tasks, run `task install-targets` first to install the additional
 
 GitHub Actions CI (`.github/workflows/ci.yml`) runs on every push to `main` and on all pull requests. Jobs:
 
-- **lint-and-test** — clippy + strict rustdoc (`task doc` locally) + `cargo test --workspace` on stable
+- **lint-and-test** — clippy, `cargo test --workspace`, clippy and tests for `buffa-test` with its `arbitrary` feature (`task test-arbitrary` locally), and strict rustdoc (`task doc` locally), on the pinned toolchain
 - **lint-markdown** — markdownlint over all `*.md` (config: `.markdownlint.json`)
 - **msrv-check** — `cargo check --workspace` on Rust 1.75 (the declared `rust-version`), then the table codec's tests on Rust 1.77, the oldest compiler that builds it
 - **check-nostd** — no_std (host + bare-metal ARM) and 32-bit compilation checks

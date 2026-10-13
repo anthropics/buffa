@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **`protoc-gen-buffa` and `buffa-build` reject a malformed `extern_path` proto name** (#677).
+    A name with an empty segment (`.my..common`) or with a segment that is not a protobuf identifier (`.my.common-name`) was accepted and matched no type, so the mapping was silently unused. The plugin reports it as an option error and `buffa_build::Config::compile` returns an error; both quote the name as given, and say either that it has an empty segment or which segment is not an identifier. One trailing dot is ignored, so `.my.common.` maps the package `my.common`, and surrounding whitespace is trimmed. In `buffa-build`, `extern_path("", ...)` used to gain a leading dot and become the `.` catch-all; it is an error, so write `"."` for the catch-all. Both front ends call the new `buffa_codegen::normalize_extern_path_proto_name`.
+time: 2026-10-07T23:56:24+02:00

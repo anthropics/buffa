@@ -254,7 +254,7 @@ const _: () = {
         }
         fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
             match field.number() {
-                1u32 => self.value != 0.0,
+                1u32 => self.value.to_bits() != 0,
                 _ => false,
             }
         }
@@ -576,7 +576,7 @@ const _: () = {
         }
         fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
             match field.number() {
-                1u32 => self.value != 0.0,
+                1u32 => self.value.to_bits() != 0,
                 _ => false,
             }
         }

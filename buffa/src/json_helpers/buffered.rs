@@ -26,8 +26,8 @@
 //!
 //! `buffa` buffers through them where a proto3 JSON shape cannot be decoded in
 //! one pass. A `google.protobuf.Any` names its type in `@type`, which can
-//! follow the fields that it describes. An element of an enum list is
-//! dropped, not rejected, when
+//! follow the fields that it describes. An element of a repeated enum field
+//! that is an unknown enum name is dropped, not rejected, when
 //! [`ignore_unknown_enum_values`](crate::json::JsonParseOptions::ignore_unknown_enum_values)
 //! is set.
 //!

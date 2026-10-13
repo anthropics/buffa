@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects map entries with nested declarations**. A message with the `map_entry` option could contain nested messages, enums, extension ranges, or extension declarations and still link as a map. These entries now return `PoolError::MalformedMapEntry`, matching protoc.
+time: 2026-10-07T08:26:46+00:00

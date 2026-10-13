@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`DynamicMessage::from_json_with_element_memory_limit`** (#506) parses reflective JSON under a limit other than the 32 MiB default that `from_json` applies: `from_json_with_element_memory_limit(pool, index, json, n)`, with `usize::MAX` for no limit. It is `DynamicMessageSeed::new(pool, index).with_element_memory_limit(n).parse_json(json)` in one call. Use the seed to combine a limit with `ignore_unknown_fields`.
+time: 2026-10-02T02:18:15+00:00

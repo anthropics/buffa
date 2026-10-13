@@ -22,6 +22,8 @@ import "google/protobuf/wrappers.proto";
 //                               value uses the scalar ProtoJSON path.
 //   sbytes string→bytes  : proto_str_key_map — custom key + `bytes::Bytes`
 //                          value (base64).
+//   si32/su32 string→32-bit integer : proto_str_key_map — numeric string,
+//                                    decimal, and exponent parsing.
 //
 // Compiling the crate exercises the owned codegen surface (the `ProtoStringMap`
 // codec for both key and value, view→owned `Into` conversion, vtable reflect,
@@ -39,6 +41,8 @@ message Maps {
   map<string, Color> senum = 6;
   map<string, google.protobuf.UInt32Value> wrapped = 7;
   map<string, bytes> sbytes = 8;
+  map<string, int32> si32 = 9;
+  map<string, uint32> su32 = 10;
 }
 
 message Inner {

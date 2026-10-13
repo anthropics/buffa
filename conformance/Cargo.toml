@@ -31,6 +31,10 @@ default = ["buffa-std"]
 # whose generated code therefore omits the reflect impls.
 buffa-std = ["buffa/std", "buffa-types/std", "reflect"]
 reflect = ["buffa-types/reflect"]
+# Generates the test messages with `CodecStrategy::Table`, for the via-table
+# run. Needs Rust 1.77 (`offset_of!`); buffa-build refuses older compilers, so
+# the default build stays at the 1.75 MSRV.
+table = []
 
 [dependencies]
 buffa = { path = "../buffa", default-features = false, features = ["json", "text"] }

@@ -55,7 +55,8 @@ jobs:
 
       # .github/publish-order.txt is the single source of truth for what ships
       # and in what order; scripts/check-publish-coverage.sh diffs it against
-      # the publishable workspace members. The same check runs on every pull
+      # the publishable workspace members and fails when a crate is listed
+      # before a workspace crate it depends on. The same check runs on every pull
       # request (ci.yml), so a new crate is caught when it is introduced rather
       # than at release time — buffa-remote-derive shipped announced in the
       # 0.9.0 changelog but absent from crates.io because nothing compared the

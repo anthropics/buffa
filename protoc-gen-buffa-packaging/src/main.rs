@@ -260,45 +260,55 @@ fn generate(request: &CodeGeneratorRequest) -> Result<CodeGeneratorResponse, Str
 fn parse_options(params: &str) -> Result<Selection, String> {
     let mut selection = Selection::default();
     for opt in params.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        if let Some(value) = opt.strip_prefix("filter=") {
-            selection.filter = match value.trim() {
-                "services" => Filter::Services,
-                other => {
-                    return Err(format!("unknown filter {other:?}. Supported: services"));
-                }
-            };
-        } else if let Some(value) = opt.strip_prefix("shared_descriptor_pool=") {
-            selection.shared_pool = match value.trim() {
-                "true" => true,
-                "false" => false,
-                other => {
-                    return Err(format!(
-                        "invalid shared_descriptor_pool value {other:?}, expected true or false"
-                    ));
-                }
-            };
-        } else if let Some(value) = opt.strip_prefix("exclude_package=") {
-            // Shares protoc-gen-buffa's normalization (one helper in
-            // buffa-codegen), so both plugins drop the same packages and the
-            // mod.rs never references a skipped stitcher. The option key
-            // itself must also stay spelled `exclude_package` in both
-            // plugins — renaming or aliasing it in one without the other
-            // recreates the mismatch the shared helper exists to prevent.
-            selection
-                .exclude
-                .push(buffa_codegen::normalize_exclude_package(value)?);
-        } else if opt
-            .split_once('=')
-            .is_some_and(|(k, _)| k.trim() == buffa_codegen::ELEMENT_MEMORY_LIMIT_OPT)
-        {
-            // Consumed before the request was decoded (it governs that
-            // decode); see `buffa_codegen::peek_request_parameter`.
-        } else {
+        let Some((key, value)) = opt.split_once('=') else {
             return Err(format!(
                 "unknown plugin option {opt:?}. \
                  Supported: filter=services, exclude_package=<pkg>, \
                  element_memory_limit=<bytes>, shared_descriptor_pool=<bool>"
             ));
+        };
+        match key.trim() {
+            "filter" => {
+                selection.filter = match value.trim() {
+                    "services" => Filter::Services,
+                    other => {
+                        return Err(format!("unknown filter {other:?}. Supported: services"));
+                    }
+                }
+            }
+            "shared_descriptor_pool" => {
+                selection.shared_pool = match value.trim() {
+                    "true" => true,
+                    "false" => false,
+                    other => {
+                        return Err(format!(
+                        "invalid shared_descriptor_pool value {other:?}, expected true or false"
+                    ));
+                    }
+                }
+            }
+            "exclude_package" => {
+                // Shares protoc-gen-buffa's normalization (one helper in
+                // buffa-codegen), so both plugins drop the same packages and the
+                // mod.rs never references a skipped stitcher. The option key
+                // itself must also stay spelled `exclude_package` in both
+                // plugins — renaming or aliasing it in one without the other
+                // recreates the mismatch the shared helper exists to prevent.
+                selection
+                    .exclude
+                    .push(buffa_codegen::normalize_exclude_package(value)?);
+            }
+            key if key == buffa_codegen::ELEMENT_MEMORY_LIMIT_OPT => {
+                // Consumed before the request was decoded (it governs that
+                // decode); see `buffa_codegen::peek_request_parameter`.
+            }
+            _ => {
+                return Err(format!(
+                    "unknown plugin option {opt:?}. \
+                     Supported: filter=services, exclude_package=<pkg>, \
+                     element_memory_limit=<bytes>, shared_descriptor_pool=<bool>"
+                ));
+            }
         }
     }
     Ok(selection)
@@ -388,6 +398,17 @@ mod tests {
         let content = resp.file[0].content.as_deref().unwrap();
         assert!(content.contains("foo.v1.mod.rs"));
         assert!(!content.contains("bar.v1.mod.rs"));
+    }
+
+    #[test]
+    fn trims_option_key_whitespace() {
+        let selection = parse_options(
+            " filter = services , shared_descriptor_pool = true , exclude_package = .secret ",
+        )
+        .unwrap();
+        assert!(matches!(selection.filter, Filter::Services));
+        assert!(selection.shared_pool);
+        assert_eq!(selection.exclude, ["secret"]);
     }
 
     #[test]

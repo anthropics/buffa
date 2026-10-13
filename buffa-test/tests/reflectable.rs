@@ -108,6 +108,36 @@ fn for_each_set_visits_set_fields() {
 }
 
 #[test]
+fn owned_vtable_implicit_float_presence_is_by_bit_pattern() {
+    use buffa_test::basic::AllScalars;
+
+    // Fields 11 (float) and 12 (double) of AllScalars have implicit presence.
+    let negative = AllScalars {
+        f_float: -0.0,
+        f_double: -0.0,
+        ..Default::default()
+    };
+    let r = negative.reflect();
+    let md = r.message_descriptor();
+    assert!(r.has(md.field(11).unwrap()));
+    assert!(r.has(md.field(12).unwrap()));
+    let mut numbers = Vec::new();
+    r.for_each_set(&mut |fd, _| numbers.push(fd.number()));
+    numbers.sort_unstable();
+    assert_eq!(numbers, vec![11u32, 12u32]);
+
+    let positive = AllScalars {
+        f_float: 0.0,
+        f_double: 0.0,
+        ..Default::default()
+    };
+    let r = positive.reflect();
+    assert!(!r.has(md.field(11).unwrap()));
+    assert!(!r.has(md.field(12).unwrap()));
+    r.for_each_set(&mut |fd, _| panic!("field {} reported as set", fd.number()));
+}
+
+#[test]
 fn owned_vtable_matches_bridge_for_every_field() {
     use buffa_descriptor::reflect::DynamicMessage;
     use buffa_test::basic::{person, Inventory, Status};

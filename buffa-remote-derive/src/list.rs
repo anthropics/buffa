@@ -41,8 +41,8 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         "extend",
     );
 
-    let ctor_from_iter = remote.construct(quote! { #from_iter(iter) });
-    let ctor_from_vec = remote.construct(quote! { #from_vec(v) });
+    let ctor_from_iter = remote.construct(quote! { #from_iter(__buffa_iter) });
+    let ctor_from_vec = remote.construct(quote! { #from_vec(__buffa_vec) });
 
     // The `ProtoList` impl needs bounds beyond the struct's own (the element
     // bounds, `Extend`, `Default`), so it can't reuse `#where_clause` like
@@ -73,6 +73,8 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         &[],
     );
 
+    let serde_impl = forwarders::serde(&remote, forwarders::SerdeForm::Wrapped);
+
     Ok(quote! {
         impl #impl_generics ::core::ops::Deref for #ident #ty_generics #where_clause {
             type Target = [#element_ty];
@@ -85,7 +87,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         impl #impl_generics ::core::iter::FromIterator<#element_ty> for #ident #ty_generics #where_clause {
             #[inline]
             fn from_iter<__BuffaIter: ::core::iter::IntoIterator<Item = #element_ty>>(
-                iter: __BuffaIter,
+                __buffa_iter: __BuffaIter,
             ) -> Self {
                 #ctor_from_iter
             }
@@ -93,7 +95,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
 
         impl #impl_generics ::core::convert::From<::buffa::alloc::vec::Vec<#element_ty>> for #ident #ty_generics #where_clause {
             #[inline]
-            fn from(v: ::buffa::alloc::vec::Vec<#element_ty>) -> Self {
+            fn from(__buffa_vec: ::buffa::alloc::vec::Vec<#element_ty>) -> Self {
                 #ctor_from_vec
             }
         }
@@ -102,8 +104,8 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         #list_where_clause
         {
             #[inline]
-            fn push(&mut self, value: #element_ty) {
-                #extend(&mut #accessor, ::core::iter::once(value));
+            fn push(&mut self, __buffa_value: #element_ty) {
+                #extend(&mut #accessor, ::core::iter::once(__buffa_value));
             }
 
             // Reinitializes via `Default` rather than forwarding to a native
@@ -119,5 +121,6 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         }
 
         #arbitrary_impl
+        #serde_impl
     })
 }
