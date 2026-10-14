@@ -27,8 +27,8 @@ impl FieldMask {
     ///
     /// Comparison is exact (case-sensitive, no wildcard expansion), so a mask
     /// of `user` does not contain `user.name`. [`covers`](Self::covers) also
-    /// returns `true` for a path whose ancestor is in the mask, and
-    /// [`overlaps`](Self::overlaps) for an ancestor or a descendant.
+    /// returns `true` when the mask holds an ancestor of `path`, and
+    /// [`overlaps`](Self::overlaps) when it holds an ancestor or a descendant.
     /// Runs in O(n) time where n is the number of paths.
     pub fn contains(&self, path: &str) -> bool {
         self.paths.iter().any(|p| p == path)
@@ -43,15 +43,16 @@ impl FieldMask {
     /// The mask is read as a plain list of paths:
     ///
     /// - Coverage runs from ancestor to descendant only. A mask that contains
-    ///   `settings.theme` does not cover `settings`. A handler that updates
-    ///   `settings` as a unit can ask whether the mask selects `settings` or
-    ///   anything under it with [`overlaps`](Self::overlaps).
+    ///   `settings.theme` does not cover `settings`. A handler that needs to
+    ///   know whether the mask selects `settings` or anything under it calls
+    ///   [`overlaps`](Self::overlaps).
     /// - An empty mask does not cover any path, and an unset mask field reads
     ///   as an empty mask. `google.protobuf.FieldMask` defines an absent
     ///   update mask as every field. A handler that follows that rule must
     ///   check [`is_empty`](Self::is_empty) before it calls `covers`.
     /// - `*` is an ordinary path: a mask that contains `*` does not cover
-    ///   `user`.
+    ///   `user`. So is the empty path `""`: it covers `""` and `.user`, and
+    ///   does not cover `user`.
     /// - Paths are compared byte for byte and are not validated against a
     ///   message descriptor. A mask deserialized from JSON contains proto
     ///   field names (`user.display_name`), not JSON names
@@ -86,11 +87,11 @@ impl FieldMask {
     /// Where [`covers`](Self::covers) asks whether the mask selects `path`
     /// whole, `overlaps` asks whether it selects `path` or anything under it.
     /// A mask that contains `settings.theme` overlaps `settings` but does not
-    /// cover it. Paths follow the rules `covers` documents: dots are component
-    /// boundaries, so `user` does not overlap `username`, `*` is literal, and
-    /// the empty path `""` is an ordinary path, not a root that every path is
-    /// under. Runs in O(n) path comparisons where n is the number of mask
-    /// paths.
+    /// cover it: it selects only part of `settings`. Paths follow the rules
+    /// `covers` documents: dots are component boundaries, so `user` does not
+    /// overlap `username`, `*` is literal, and the empty path `""` is an
+    /// ordinary path, not a root that every path is under. Runs in O(n) path
+    /// comparisons where n is the number of mask paths.
     ///
     /// An empty mask overlaps nothing, and an unset mask field reads as an
     /// empty mask. `google.protobuf.FieldMask` defines an absent update mask
@@ -108,12 +109,12 @@ impl FieldMask {
     /// assert!(mask.overlaps("settings.theme.color"));
     /// assert!(!mask.overlaps("settings.locale"));
     ///
-    /// // An update handler that writes `settings` as a unit, treating an
-    /// // absent mask as every field:
-    /// let writes_settings = |mask: &FieldMask| mask.is_empty() || mask.overlaps("settings");
-    /// assert!(writes_settings(&mask));
-    /// assert!(writes_settings(&FieldMask::default()));
-    /// assert!(!writes_settings(&FieldMask::from_paths(["user"])));
+    /// // Whether an update touches `settings` at all, treating an absent mask
+    /// // as every field:
+    /// let touches_settings = |mask: &FieldMask| mask.is_empty() || mask.overlaps("settings");
+    /// assert!(touches_settings(&mask));
+    /// assert!(touches_settings(&FieldMask::default()));
+    /// assert!(!touches_settings(&FieldMask::from_paths(["user"])));
     /// ```
     pub fn overlaps(&self, path: &str) -> bool {
         self.paths
