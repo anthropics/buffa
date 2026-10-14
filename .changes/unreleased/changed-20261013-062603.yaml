@@ -1,4 +1,0 @@
-kind: Changed
-body: |-
-    **Documentation: an unquoted JSON `float` with a fraction or exponent can decode one `f32` ulp away from the same number quoted** (#647). No behaviour change. serde_json parses the unquoted number to `f64` and buffa narrows that to `f32`, while a quoted decimal is parsed straight to `f32`, so a decimal very close to the midpoint between two `f32` values can round differently: `1.0000000596046448` decodes to `1.0` unquoted and `1.0000001` quoted. This matches protobuf C++; protobuf-go rounds once. The `json_helpers::float` rustdoc, the `FloatValue` `Deserialize` impl, `DynamicMessage::from_json` and the JSON section of the guide now describe it.
-time: 2026-10-13T06:26:03+08:00
