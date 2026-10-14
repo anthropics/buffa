@@ -256,13 +256,34 @@ impl<V: Into<Value>> Extend<V> for ListValue {
     }
 }
 
-impl FromIterator<Value> for ListValue {
-    /// Collect [`Value`] items into a [`ListValue`].
-    fn from_iter<T: IntoIterator<Item = Value>>(iter: T) -> Self {
-        Self {
-            values: iter.into_iter().collect(),
-            ..Default::default()
-        }
+impl<V: Into<Value>> FromIterator<V> for ListValue {
+    /// Collects items convertible to [`Value`] into a [`ListValue`], in
+    /// iteration order, as [`from_values`](ListValue::from_values) does.
+    ///
+    /// The item type has to be known: `.map(Into::into).collect::<ListValue>()`
+    /// does not compile, because the conversion has many possible targets.
+    /// Collect the items as they are, or name the target with
+    /// `.map(Value::from)`. Borrowed values need a clone:
+    /// `list.iter().cloned().collect::<ListValue>()`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::google::protobuf::ListValue;
+    ///
+    /// let list: ListValue = [1.0, 2.5].into_iter().collect();
+    /// assert_eq!(list.len(), 2);
+    /// ```
+    ///
+    /// A conversion with no named target does not compile:
+    ///
+    /// ```compile_fail,E0283
+    /// use buffa_types::google::protobuf::ListValue;
+    ///
+    /// let list: ListValue = [1.0, 2.5].into_iter().map(Into::into).collect();
+    /// ```
+    fn from_iter<T: IntoIterator<Item = V>>(iter: T) -> Self {
+        Self::from_values(iter)
     }
 }
 
@@ -491,9 +512,28 @@ impl<K: Into<String>, V: Into<Value>> Extend<(K, V)> for Struct {
     }
 }
 
-impl FromIterator<(String, Value)> for Struct {
-    /// Collect key-value pairs into a [`Struct`].
-    fn from_iter<T: IntoIterator<Item = (String, Value)>>(iter: T) -> Self {
+impl<K: Into<String>, V: Into<Value>> FromIterator<(K, V)> for Struct {
+    /// Collects key-value pairs into a [`Struct`], as
+    /// [`from_fields`](Struct::from_fields) does: of two pairs with the same
+    /// key, the later one is kept.
+    ///
+    /// The types of the pair have to be known: mapping to
+    /// `(k.into(), v.into())` before `.collect::<Struct>()` does not compile,
+    /// because each conversion has many possible targets. Collect the pairs
+    /// as they are, or name both targets, as in
+    /// `(k.to_string(), Value::from(v))`. Pairs with borrowed values, such as
+    /// those [`Struct::iter`] yields, need the value cloned:
+    /// `.map(|(k, v)| (k, v.clone()))`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::google::protobuf::Struct;
+    ///
+    /// let s: Struct = [("x", 1.0), ("y", 2.0)].into_iter().collect();
+    /// assert_eq!(s.len(), 2);
+    /// ```
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
         Self::from_fields(iter)
     }
 }
@@ -812,6 +852,39 @@ mod tests {
         let s: Struct = pairs.into_iter().collect();
         assert_eq!(s.get("x").and_then(|v| v.as_str()), Some("hello"));
         assert_eq!(s.get("y").and_then(|v| v.as_bool()), Some(true));
+    }
+
+    #[test]
+    fn struct_from_iter_converts_keys_and_values() {
+        let s: Struct = [("a", 1.0), ("b", 2.0)].into_iter().collect();
+        assert_eq!(s.get("a").and_then(Value::as_number), Some(1.0));
+        assert_eq!(s.get("b").and_then(Value::as_number), Some(2.0));
+
+        // Of two pairs with one key the later is kept, as `from_fields` does.
+        let s: Struct = [("k", "first"), ("k", "second")].into_iter().collect();
+        assert_eq!(s.len(), 1);
+        assert_eq!(s.get("k").and_then(Value::as_str), Some("second"));
+
+        // A struct collects from the pairs another struct yields.
+        let copy: Struct = s.iter().map(|(k, v)| (k, v.clone())).collect();
+        assert_eq!(copy, s);
+    }
+
+    #[test]
+    fn list_value_from_iter_converts_items() {
+        let l: ListValue = ["a", "b"].into_iter().collect();
+        assert_eq!(l, ListValue::from_values(["a", "b"]));
+
+        let l: ListValue = vec![Value::from(true), Value::null()].into_iter().collect();
+        assert_eq!(l.len(), 2);
+        assert_eq!(l.values[0].as_bool(), Some(true));
+
+        // `&Value` items are cloned first.
+        let copy: ListValue = l.iter().cloned().collect();
+        assert_eq!(copy, l);
+
+        let empty: ListValue = core::iter::empty::<f64>().collect();
+        assert!(empty.is_empty());
     }
 
     #[test]

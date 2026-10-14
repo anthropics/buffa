@@ -52,9 +52,11 @@
 //! - `Value` constructors: [`Value::null`](google::protobuf::Value::null), `From<f64>`, `From<String>`, `From<bool>`, etc.
 //! - Collection impls: [`Struct`], [`ListValue`] and [`FieldMask`] each have
 //!   `len`, `is_empty`, `iter`, `IntoIterator`, `FromIterator` and `Extend`.
-//!   `Extend` accepts anything `Into` the element type, while `FromIterator`
-//!   on [`Struct`] and [`ListValue`] takes `(String, Value)` and [`Value`]
-//!   items. [`Struct`] iterates through [`StructIter`], [`StructIterMut`] and
+//!   `FromIterator` and `Extend` take items that convert into the element:
+//!   `Into<Value>` for [`ListValue`], `Into<String>` for [`FieldMask`], and
+//!   `(K, V)` pairs with `K: Into<String>` and `V: Into<Value>` for
+//!   [`Struct`].
+//!   [`Struct`] iterates through [`StructIter`], [`StructIterMut`] and
 //!   [`StructIntoIter`], in unspecified order.
 //! - Wrapper type `From`/`Into` impls
 //!
