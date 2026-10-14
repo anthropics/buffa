@@ -354,12 +354,11 @@ pub trait MapCodec: MapValueDecode {
     /// Write the payload (no tag) to `buf`.
     fn encode(value: &Self::Value, buf: &mut impl EncodeSink);
 
-    /// Whether `value` is the type's default, which the `*_omitting_defaults`
-    /// encoders leave out of an entry: zero, `false`, empty, or an enum's zero
-    /// number. It must hold only for the value a missing field decodes to;
-    /// for enums that is 0, which protoc requires a map's enum value type to
-    /// declare first. Compared with `==`, as prost does, so `-0.0` counts as a
-    /// float's default and decodes back as `0.0`.
+    /// Whether `value` is what a missing key or value field decodes to, which
+    /// the `*_omitting_defaults` encoders leave out of an entry: zero, `false`,
+    /// empty, an open enum's 0, or a closed enum's default (its first value).
+    /// Compared with `==`, as prost does, so `-0.0` counts as a float's default
+    /// and decodes back as `0.0`.
     fn is_default(value: &Self::Value) -> bool;
 }
 
@@ -698,7 +697,7 @@ impl<E: Enumeration + Default> MapCodec for ClosedEnum<E> {
 
     #[inline]
     fn is_default(value: &Self::Value) -> bool {
-        value.to_i32() == 0
+        *value == E::default()
     }
 }
 
@@ -1185,6 +1184,35 @@ mod tests {
         map
     }
 
+    /// A closed enum whose default, its first value `A`, is not 0, as protoc
+    /// rejects in a map but buf accepts.
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+    #[repr(i32)]
+    enum FirstIsOne {
+        #[default]
+        A = 1,
+        B = 0,
+    }
+
+    impl Enumeration for FirstIsOne {
+        fn from_i32(value: i32) -> Option<Self> {
+            match value {
+                1 => Some(Self::A),
+                0 => Some(Self::B),
+                _ => None,
+            }
+        }
+        fn to_i32(&self) -> i32 {
+            *self as i32
+        }
+        fn proto_name(&self) -> &'static str {
+            match self {
+                Self::A => "A",
+                Self::B => "B",
+            }
+        }
+    }
+
     #[test]
     fn string_int32_round_trip() {
         let mut map: Map<String, i32> = Map::default();
@@ -1274,11 +1302,35 @@ mod tests {
         assert_eq!(buf, [0x12, 0x02, 0x08, 0x01]);
     }
 
+    /// A closed enum value is left out when it is the enum's default, which
+    /// need not be 0, as prost leaves it out.
+    #[test]
+    fn omitting_defaults_compares_a_closed_enum_with_its_default() {
+        type Codec = ClosedEnum<FirstIsOne>;
+        let encode = |value: FirstIsOne| {
+            let mut map: Map<u32, FirstIsOne> = Map::default();
+            map.insert(1, value);
+            let len = field_len_omitting_defaults::<Uint32, Codec, _>(&map, 1);
+            let mut buf = Vec::new();
+            write_field_omitting_defaults::<Uint32, Codec, _>(&map, 2, &mut buf);
+            assert_eq!(buf.len() as u64, len, "the size matches the written bytes");
+            assert_eq!(decode_field::<Uint32, Codec>(&buf), map);
+            buf
+        };
+        // key 1, the default `A` left out
+        assert_eq!(encode(FirstIsOne::A), [0x12, 0x02, 0x08, 0x01]);
+        // key 1, `B` written although it is 0
+        assert_eq!(encode(FirstIsOne::B), [0x12, 0x04, 0x08, 0x01, 0x10, 0x00]);
+    }
+
     /// `is_default` holds for exactly the value a missing entry field decodes
     /// to, for every codec.
     #[test]
     fn is_default_is_the_decoded_default() {
         fn check<C: MapCodec>(default: C::Value, others: &[C::Value]) {
+            // An entry with neither field: key 0, the value's default.
+            let decoded = decode_field::<Int32, C>(&[0x0a, 0x00]);
+            assert!(C::is_default(&decoded[&0]));
             assert!(C::is_default(&default));
             for other in others {
                 assert!(!C::is_default(other));
@@ -1337,6 +1389,9 @@ mod tests {
             &[EnumValue::from(1), EnumValue::Unknown(7)],
         );
         check::<ClosedEnum<E>>(E::A, &[E::B]);
+        // A missing closed enum decodes as its first value, an open one as 0.
+        check::<ClosedEnum<FirstIsOne>>(FirstIsOne::A, &[FirstIsOne::B]);
+        check::<OpenEnum<FirstIsOne>>(EnumValue::from(0), &[EnumValue::from(1)]);
     }
 
     #[test]

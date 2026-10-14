@@ -3212,9 +3212,13 @@ fn map_element_encode_stmt(ty: Type, tag_num: u32, var: &Ident) -> TokenStream {
 /// Whether a view's map entry element bound to `var` is written, that is not
 /// its type's default, which `map_entries_omit_defaults` leaves out of the
 /// entry, as `MapCodec::is_default` decides for owned messages.
-fn map_element_is_written_expr(ty: Type, var: &Ident) -> TokenStream {
+fn map_element_is_written_expr(ty: Type, closed_enum: bool, var: &Ident) -> TokenStream {
     match ty {
         Type::TYPE_STRING | Type::TYPE_BYTES => quote! { !#var.is_empty() },
+        // A closed enum's default is its first value, which need not be 0.
+        Type::TYPE_ENUM if closed_enum => quote! {
+            !<::buffa::map_codec::ClosedEnum<_> as ::buffa::map_codec::MapCodec>::is_default(#var)
+        },
         Type::TYPE_ENUM => quote! { #var.to_i32() != 0 },
         Type::TYPE_BOOL => quote! { *#var },
         Type::TYPE_FLOAT | Type::TYPE_DOUBLE => quote! { *#var != 0.0 },
@@ -3241,6 +3245,8 @@ fn map_view_compute_size_stmt(
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
     let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
+    let val_closed_enum = val_ty == Type::TYPE_ENUM
+        && is_closed_enum(&crate::features::resolve_field(ctx, val_fd, features));
     let key_tag_len = tag_encoded_len(1, wire_type_byte(key_ty));
     let val_tag_len = tag_encoded_len(2, wire_type_byte(val_ty));
     let k = format_ident!("k");
@@ -3248,14 +3254,14 @@ fn map_view_compute_size_stmt(
     let key_size = map_element_size_expr(key_ty, &k);
     let omit_defaults = ctx.config.map_entries_omit_defaults;
     let key_part = if omit_defaults {
-        let written = map_element_is_written_expr(key_ty, &k);
+        let written = map_element_is_written_expr(key_ty, false, &k);
         quote! { (if #written { #key_tag_len + #key_size } else { 0 }) }
     } else {
         quote! { #key_tag_len + #key_size }
     };
     let val_part = if val_ty == Type::TYPE_MESSAGE && omit_defaults {
-        // A message value that encodes to nothing reserved no slots of its
-        // own, so leaving it out keeps the slots in step.
+        // Both passes visit every value, so the slots stay in step when an
+        // empty one is left out.
         quote! {
             {
                 let __slot = __cache.reserve();
@@ -3282,7 +3288,7 @@ fn map_view_compute_size_stmt(
     } else {
         let val_size = map_element_size_expr(val_ty, &v);
         if omit_defaults {
-            let written = map_element_is_written_expr(val_ty, &v);
+            let written = map_element_is_written_expr(val_ty, val_closed_enum, &v);
             quote! { (if #written { #val_tag_len + #val_size } else { 0 }) }
         } else {
             quote! { #val_tag_len + #val_size }
@@ -3341,6 +3347,8 @@ fn map_view_write_to_stmt(
     let (key_fd, val_fd) = find_map_entry_fields(msg, field)?;
     let key_ty = effective_type_in_map_entry(ctx, key_fd, features);
     let val_ty = effective_type_in_map_entry(ctx, val_fd, features);
+    let val_closed_enum = val_ty == Type::TYPE_ENUM
+        && is_closed_enum(&crate::features::resolve_field(ctx, val_fd, features));
     let key_tag_len = tag_encoded_len(1, wire_type_byte(key_ty));
     let val_tag_len = tag_encoded_len(2, wire_type_byte(val_ty));
     let k = format_ident!("k");
@@ -3359,7 +3367,7 @@ fn map_view_write_to_stmt(
     let mut key_part = quote! { #key_tag_len + #key_size };
     let mut val_part = quote! { #val_tag_len + #val_size };
     if ctx.config.map_entries_omit_defaults {
-        let key_written = map_element_is_written_expr(key_ty, &k);
+        let key_written = map_element_is_written_expr(key_ty, false, &k);
         key_part = quote! { (if #key_written { #key_part } else { 0 }) };
         encode_key = quote! { if #key_written { #encode_key } };
         if val_ty == Type::TYPE_MESSAGE {
@@ -3379,7 +3387,7 @@ fn map_view_write_to_stmt(
                 #v.write_to(__cache, buf);
             };
         } else {
-            let val_written = map_element_is_written_expr(val_ty, &v);
+            let val_written = map_element_is_written_expr(val_ty, val_closed_enum, &v);
             val_part = quote! { (if #val_written { #val_part } else { 0 }) };
             encode_val = quote! { if #val_written { #encode_val } };
         }
