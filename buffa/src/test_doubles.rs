@@ -5,6 +5,13 @@ use bytes::{Buf, BufMut};
 use crate::error::DecodeError;
 use crate::message_field::DefaultInstance;
 
+/// Serializes the tests that install or read the process-wide registries.
+/// `set_type_registry` replaces the `Any` and extension registries of both
+/// formats together, so the `any_registry`, `extension_registry` and
+/// `type_registry` tests share this one lock.
+#[cfg(any(feature = "json", feature = "text"))]
+pub(crate) static REGISTRY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Test double whose `compute_size` reports a caller-chosen value and whose
 /// `write_to` writes nothing — lets over-limit encode paths be exercised
 /// without materializing gigabytes. (buffa-types carries its own copy in

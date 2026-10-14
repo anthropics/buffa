@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **A JSON `Duration` with a decimal point and no fraction digits, such as `"1.s"`, is an error** (#665). `"1.s"` parsed as one second, because an empty fraction was read as zero nanoseconds. A decimal point must be followed by 1 to 9 digits, as in `"1.0s"`, in the generated and the reflective parser alike, so a sender of `"1.s"` gets a parse error. The protobuf C++ JSON parser rejects the form as well; protobuf-go accepts it.
+time: 2026-10-07T20:13:17Z

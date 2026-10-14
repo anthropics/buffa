@@ -26,20 +26,12 @@ fn scalar(name: &str, number: i32, ty: Type) -> FieldDescriptorProto {
 /// Package `t` with:
 ///
 /// - `Plain`, `Leaf`, and `HasLeaf` (holds a `Leaf`), which can use the table;
-/// - `Oneofy` (has a oneof) and `HasOneofy` (holds an `Oneofy`), which cannot;
+/// - `CustomStr` (has a string with a custom type, which the table does not
+///   support), which cannot, and `HoldsCustomStr` (holds a `CustomStr`), which
+///   can, because a table message may hold a message that has no table;
 /// - `Outer` with a nested `Inner`, both plain.
 fn schema() -> FileDescriptorProto {
-    let mut oneofy = message(
-        "Oneofy",
-        vec![FieldDescriptorProto {
-            oneof_index: Some(0),
-            ..scalar("a", 1, Type::TYPE_INT32)
-        }],
-    );
-    oneofy.oneof_decl = vec![OneofDescriptorProto {
-        name: Some("choice".to_string()),
-        ..Default::default()
-    }];
+    let custom_str = message("CustomStr", vec![scalar("a", 1, Type::TYPE_STRING)]);
     let mut outer = message("Outer", vec![scalar("x", 1, Type::TYPE_INT32)]);
     outer.nested_type = vec![message("Inner", vec![scalar("y", 1, Type::TYPE_STRING)])];
     FileDescriptorProto {
@@ -54,19 +46,39 @@ fn schema() -> FileDescriptorProto {
             ),
             message("Leaf", vec![scalar("x", 1, Type::TYPE_INT32)]),
             message("HasLeaf", vec![message_field("leaf", 1, ".t.Leaf")]),
-            oneofy,
-            message("HasOneofy", vec![message_field("o", 1, ".t.Oneofy")]),
+            custom_str,
+            message(
+                "HoldsCustomStr",
+                vec![message_field("o", 1, ".t.CustomStr")],
+            ),
             outer,
         ],
         ..proto3_file("t.proto")
     }
 }
 
+/// `.t.CustomStr.a` has a custom string type, which the table cannot use.
+/// [`run`] applies it to every config it is given.
+fn with_custom_string(config: &CodeGenConfig) -> CodeGenConfig {
+    let mut config = config.clone();
+    config.string_fields.push((
+        ".t.CustomStr.a".to_string(),
+        StringRepr::Custom("crate::Str".to_string()),
+    ));
+    config
+}
+
 fn run(config: &CodeGenConfig) -> Result<(String, Vec<CodeGenWarning>), CodeGenError> {
-    let (files, warnings) =
-        generate_with_diagnostics(&[schema()], &["t.proto".to_string()], config)?;
+    let (files, warnings) = generate_with_diagnostics(
+        &[schema()],
+        &["t.proto".to_string()],
+        &with_custom_string(config),
+    )?;
     Ok((joined(&files), warnings))
 }
+
+/// The reason `CustomStr` cannot use the table.
+const CUSTOM: &str = "has a field with a custom string, bytes or collection type";
 
 fn table_config(strategy: CodecStrategy) -> CodeGenConfig {
     CodeGenConfig {
@@ -144,20 +156,23 @@ fn the_global_setting_gives_a_table_to_every_message_that_can_use_one() {
     let (code, warnings) = run(&table_config(CodecStrategy::Table)).unwrap();
     assert_eq!(
         tables(&code),
-        ["Plain", "Leaf", "HasLeaf", "Outer", "Inner"]
+        [
+            "Plain",
+            "Leaf",
+            "HasLeaf",
+            "HoldsCustomStr",
+            "Outer",
+            "Inner"
+        ]
     );
-    // The other two fall back, and one warning covers the run.
+    // The one with a custom string falls back, and one warning covers the run.
     let (counts, reasons) = summary(&warnings);
-    assert_eq!(counts, (2, 7));
-    assert_eq!(
-        reasons,
-        [("has a oneof", 1), ("holds a message that has a oneof", 1),]
-    );
+    assert_eq!(counts, (1, 7));
+    assert_eq!(reasons, [(CUSTOM, 1)]);
     let text = table_warnings(&warnings)[0].to_string();
-    assert!(text.starts_with("2 of 7 messages selected for the table codec"));
-    assert!(text.contains("has a oneof (1: .t.Oneofy)"), "{text}");
+    assert!(text.starts_with("1 of 7 messages selected for the table codec"));
     assert!(
-        text.contains("holds a message that has a oneof (1: .t.HasOneofy)"),
+        text.contains(&format!("{CUSTOM} (1: .t.CustomStr)")),
         "{text}"
     );
     assert!(text.contains("codec_strategy_in=<path>=unrolled"), "{text}");
@@ -191,6 +206,100 @@ fn a_child_message_is_referenced_through_its_own_table() {
 }
 
 #[test]
+fn a_child_without_a_table_is_reached_through_its_message_impl() {
+    let (code, _) = run(&table_config(CodecStrategy::Table)).unwrap();
+    let code = squashed(&code);
+    // `HoldsCustomStr` is a table message that holds `CustomStr`, which is unrolled.
+    let holder = code
+        .split("static__BUFFA_TABLE_HoldsCustomStr")
+        .nth(1)
+        .unwrap();
+    let holder = holder
+        .split("impl::buffa::MessageforHoldsCustomStr")
+        .next()
+        .unwrap();
+    assert!(
+        holder.contains("Aux::Msg(&::buffa::table::MsgVt::new_via_message::<::buffa::MessageField<CustomStr,::buffa::Inline<CustomStr>>>())"),
+        "{holder}"
+    );
+    assert!(!holder.contains("__BUFFA_TABLE_CustomStr"), "{holder}");
+}
+
+#[test]
+fn a_repeated_child_without_a_table_is_reached_through_its_message_impl() {
+    let mut file = schema();
+    file.message_type[4].field[0].label = Some(Label::LABEL_REPEATED);
+    let (files, _) = generate_with_diagnostics(
+        &[file],
+        &["t.proto".to_string()],
+        &with_custom_string(&table_config(CodecStrategy::Table)),
+    )
+    .unwrap();
+    let code = squashed(&joined(&files));
+    let holder = code
+        .split("static__BUFFA_TABLE_HoldsCustomStr")
+        .nth(1)
+        .unwrap();
+    let holder = holder
+        .split("impl::buffa::MessageforHoldsCustomStr")
+        .next()
+        .unwrap();
+    assert!(
+        holder.contains("Aux::Rep(&::buffa::table::RepVt::new_via_message::<CustomStr>())"),
+        "{holder}"
+    );
+    assert!(holder.contains("Vec<CustomStr>"), "{holder}");
+}
+
+#[test]
+fn a_child_in_another_package_is_reached_through_the_path_idiomatic_imports_shortens() {
+    let other = FileDescriptorProto {
+        package: Some("a".to_string()),
+        message_type: vec![message("Cold", vec![scalar("c", 1, Type::TYPE_INT32)])],
+        ..proto3_file("a.proto")
+    };
+    let holder = FileDescriptorProto {
+        package: Some("b".to_string()),
+        dependency: vec!["a.proto".to_string()],
+        message_type: vec![message(
+            "Holder",
+            vec![
+                message_field("cold", 1, ".a.Cold"),
+                repeated_message_field("colds", 2, ".a.Cold"),
+            ],
+        )],
+        ..proto3_file("b.proto")
+    };
+    let config = CodeGenConfig {
+        codec_strategy_in: vec![(".a.Cold".to_string(), CodecStrategy::Unrolled)],
+        idiomatic_imports: true,
+        file_per_package: true,
+        ..table_config(CodecStrategy::Table)
+    };
+    let (files, warnings) = generate_with_diagnostics(
+        &[other, holder],
+        &["a.proto".to_string(), "b.proto".to_string()],
+        &config,
+    )
+    .unwrap();
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    let code = squashed(&joined(&files));
+    let holder = code.split("static__BUFFA_TABLE_Holder").nth(1).unwrap();
+    let holder = holder
+        .split("impl::buffa::MessageforHolder")
+        .next()
+        .unwrap();
+    assert!(
+        holder.contains("MsgVt::new_via_message::<MessageField<Cold,::buffa::Inline<Cold>>>()"),
+        "{holder}"
+    );
+    assert!(
+        holder.contains("RepVt::new_via_message::<Cold>()"),
+        "{holder}"
+    );
+}
+
+#[test]
 fn a_rule_selects_messages_when_the_global_setting_is_unrolled() {
     let config = CodeGenConfig {
         codec_strategy_in: vec![(".t.Plain".to_string(), CodecStrategy::Table)],
@@ -214,11 +323,14 @@ fn the_last_matching_rule_wins() {
     };
     let (code, _) = run(&config).unwrap();
     // `Outer` is unrolled, though its nested message is a table.
-    assert_eq!(tables(&code), ["Leaf", "HasLeaf", "Inner"]);
+    assert_eq!(
+        tables(&code),
+        ["Leaf", "HasLeaf", "HoldsCustomStr", "Inner"]
+    );
 }
 
 #[test]
-fn an_exact_path_rule_for_a_message_that_holds_an_unrolled_child_is_an_error() {
+fn a_message_can_have_a_table_when_it_holds_a_message_set_to_unrolled() {
     let config = CodeGenConfig {
         codec_strategy_in: vec![
             (".t.HasLeaf".to_string(), CodecStrategy::Table),
@@ -226,33 +338,29 @@ fn an_exact_path_rule_for_a_message_that_holds_an_unrolled_child_is_an_error() {
         ],
         ..Default::default()
     };
-    // The exact-path rule for `HasLeaf` cannot be honoured: its `Leaf` has no
-    // table, so this is an error and not a warning.
-    let err = run(&config).unwrap_err().to_string();
-    assert!(
-        err.contains("codec_strategy_in rule '.t.HasLeaf'")
-            && err.contains("`.t.Leaf`, which is set to the unrolled codec")
-            && err.contains("codec_strategy_in=.t.HasLeaf=unrolled"),
-        "{err}"
-    );
+    let (code, warnings) = run(&config).unwrap();
+    assert_eq!(tables(&code), ["HasLeaf"]);
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    assert!(squashed(&code).contains("MsgVt::new_via_message::<"));
 }
 
 #[test]
-fn an_exact_path_rule_does_not_select_the_messages_the_message_holds() {
-    // The global setting stays unrolled, so `Leaf` has not been selected.
+fn a_rule_for_a_message_does_not_select_the_messages_it_holds() {
+    // The global setting stays unrolled, so `Leaf` is not selected, and
+    // `HasLeaf` reaches it through its `Message` impl.
     let config = CodeGenConfig {
         codec_strategy_in: vec![(".t.HasLeaf".to_string(), CodecStrategy::Table)],
         ..Default::default()
     };
-    let err = run(&config).unwrap_err().to_string();
-    assert!(
-        err.contains("`.t.Leaf`, which is not selected for the table codec")
-            && err.contains("codec_strategy_in(CodecStrategy::Table, &[\".t.Leaf\"])")
-            && !err.contains("set to the unrolled"),
-        "{err}"
-    );
+    let (code, warnings) = run(&config).unwrap();
+    assert_eq!(tables(&code), ["HasLeaf"]);
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    let code = squashed(&code);
+    assert!(code.contains("MsgVt::new_via_message::<"), "{code}");
+    assert!(!code.contains("(&__BUFFA_TABLE_Leaf)"), "{code}");
 
-    // A rule for the child as well gives both a table.
+    // A rule for the child as well gives both a table, and the parent then
+    // uses the child's.
     let config = CodeGenConfig {
         codec_strategy_in: vec![
             (".t.HasLeaf".to_string(), CodecStrategy::Table),
@@ -263,20 +371,38 @@ fn an_exact_path_rule_does_not_select_the_messages_the_message_holds() {
     let (code, warnings) = run(&config).unwrap();
     assert_eq!(tables(&code), ["Leaf", "HasLeaf"]);
     assert!(table_warnings(&warnings).is_empty());
+    let code = squashed(&code);
+    assert!(code.contains("(&__BUFFA_TABLE_Leaf)"), "{code}");
+    assert!(!code.contains("new_via_message"), "{code}");
 }
 
 #[test]
 fn every_exact_path_rule_that_cannot_be_honoured_is_reported_at_once() {
+    let mut file = schema();
+    let mut second = file.message_type[3].clone();
+    second.name = Some("CustomStr2".to_string());
+    file.message_type.push(second);
     let config = CodeGenConfig {
         codec_strategy_in: vec![
-            (".t.Oneofy".to_string(), CodecStrategy::Table),
-            (".t.HasOneofy".to_string(), CodecStrategy::Table),
+            (".t.CustomStr".to_string(), CodecStrategy::Table),
+            (".t.CustomStr2".to_string(), CodecStrategy::Table),
+            (".t.HoldsCustomStr".to_string(), CodecStrategy::Table),
         ],
         ..Default::default()
     };
-    let err = run(&config).unwrap_err().to_string();
+    let mut config = with_custom_string(&config);
+    config.string_fields.push((
+        ".t.CustomStr2.a".to_string(),
+        StringRepr::Custom("crate::Str".to_string()),
+    ));
+    let err = generate_with_diagnostics(&[file], &["t.proto".to_string()], &config)
+        .unwrap_err()
+        .to_string();
+    // `HoldsCustomStr` can use the table, so it is not among them.
     assert!(
-        err.contains("rule '.t.Oneofy'") && err.contains("rule '.t.HasOneofy'"),
+        err.contains("rule '.t.CustomStr'")
+            && err.contains("rule '.t.CustomStr2'")
+            && !err.contains("rule '.t.HoldsCustomStr'"),
         "{err}"
     );
 }
@@ -284,12 +410,15 @@ fn every_exact_path_rule_that_cannot_be_honoured_is_reported_at_once() {
 #[test]
 fn an_exact_path_rule_for_a_message_that_cannot_use_the_table_is_an_error() {
     let config = CodeGenConfig {
-        codec_strategy_in: vec![(".t.Oneofy".to_string(), CodecStrategy::Table)],
+        codec_strategy_in: vec![(".t.CustomStr".to_string(), CodecStrategy::Table)],
         ..Default::default()
     };
     let err = run(&config).unwrap_err().to_string();
     assert!(err.contains("cannot use it"), "{err}");
-    assert!(err.contains("field `a` is in a oneof"), "{err}");
+    assert!(
+        err.contains("field `a` has a custom string, bytes or collection type"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -301,34 +430,40 @@ fn a_broad_rule_that_covers_such_a_message_only_warns() {
     let (code, warnings) = run(&config).unwrap();
     assert_eq!(
         tables(&code),
-        ["Plain", "Leaf", "HasLeaf", "Outer", "Inner"]
+        [
+            "Plain",
+            "Leaf",
+            "HasLeaf",
+            "HoldsCustomStr",
+            "Outer",
+            "Inner"
+        ]
     );
     // Messages a rule selects are counted like the ones the global setting does.
-    assert_eq!(summary(&warnings).0, (2, 7));
+    assert_eq!(summary(&warnings).0, (1, 7));
 }
 
 #[test]
-fn setting_a_message_to_unrolled_keeps_the_messages_that_hold_it_unrolled_quietly() {
+fn setting_a_message_to_unrolled_does_not_affect_the_messages_that_hold_it() {
     let config = CodeGenConfig {
         codec_strategy_in: vec![(".t.Leaf".to_string(), CodecStrategy::Unrolled)],
         ..table_config(CodecStrategy::Table)
     };
     let (code, warnings) = run(&config).unwrap();
-    // `HasLeaf` holds the `Leaf` the user set to unrolled: not a table, and
-    // not in the warning either, which is left with the two that cannot.
-    assert_eq!(tables(&code), ["Plain", "Outer", "Inner"]);
-    let (counts, reasons) = summary(&warnings);
-    assert_eq!(counts, (2, 5));
-    assert!(
-        reasons.iter().all(|(r, _)| !r.contains("set to")),
-        "{reasons:?}"
+    // `HasLeaf` holds the `Leaf` the user set to unrolled and has a table
+    // anyway. The warning counts the messages selected, which leaves out `Leaf`.
+    assert_eq!(
+        tables(&code),
+        ["Plain", "HasLeaf", "HoldsCustomStr", "Outer", "Inner"]
     );
+    assert_eq!(summary(&warnings).0, (1, 6));
 
-    // With the two that cannot set to unrolled as well, nothing is left to say.
+    // Once the message that cannot use the table is set to unrolled too, no
+    // fallback is left to report.
     let config = CodeGenConfig {
         codec_strategy_in: vec![
             (".t.Leaf".to_string(), CodecStrategy::Unrolled),
-            (".t.Oneofy".to_string(), CodecStrategy::Unrolled),
+            (".t.CustomStr".to_string(), CodecStrategy::Unrolled),
         ],
         ..table_config(CodecStrategy::Table)
     };
@@ -360,7 +495,7 @@ fn a_rule_that_matches_no_message_warns() {
 }
 
 #[test]
-fn a_message_type_from_another_crate_is_not_a_table() {
+fn a_message_type_from_another_crate_is_reached_through_its_message_impl() {
     // `HasLeaf.leaf` now names a type mapped to another crate.
     let mut file = schema();
     file.message_type[2].field[0].type_name = Some(".other.Foreign".to_string());
@@ -373,21 +508,26 @@ fn a_message_type_from_another_crate_is_not_a_table() {
         extern_paths: vec![(".other".to_string(), "::other_crate".to_string())],
         ..table_config(CodecStrategy::Table)
     };
-    let (files, warnings) =
-        generate_with_diagnostics(&[file, other], &["t.proto".to_string()], &config).unwrap();
+    let (files, warnings) = generate_with_diagnostics(
+        &[file, other],
+        &["t.proto".to_string()],
+        &with_custom_string(&config),
+    )
+    .unwrap();
     let code = joined(&files);
-    assert!(!tables(&code).contains(&"HasLeaf".to_string()), "{code}");
+    assert!(tables(&code).contains(&"HasLeaf".to_string()), "{code}");
     assert!(tables(&code).contains(&"Leaf".to_string()));
-    let text = table_warnings(&warnings)[0].to_string();
-    assert!(text.contains(".t.HasLeaf"), "{text}");
+    assert_eq!(table_warnings(&warnings).len(), 1, "{warnings:?}");
+    let code = squashed(&code);
+    let holder = code.split("static__BUFFA_TABLE_HasLeaf").nth(1).unwrap();
     assert!(
-        text.contains("holds a message that another crate or run generates"),
-        "{text}"
+        holder.contains("MsgVt::new_via_message::<::buffa::MessageField<::other_crate::Foreign"),
+        "{holder}"
     );
 }
 
 #[test]
-fn a_child_mapped_to_another_crate_falls_back_though_this_run_generates_it_too() {
+fn a_child_mapped_to_another_crate_is_not_a_table_though_this_run_generates_it_too() {
     let mut file = schema();
     file.message_type[2].field[0].type_name = Some(".other.Foreign".to_string());
     let other = FileDescriptorProto {
@@ -400,19 +540,18 @@ fn a_child_mapped_to_another_crate_falls_back_though_this_run_generates_it_too()
         ..table_config(CodecStrategy::Table)
     };
     // Both files are generated, but `HasLeaf` names `::other_crate::Foreign`,
-    // which has no table here, so this must be a fallback and not an error.
-    let (files, warnings) = generate_with_diagnostics(
+    // which has no table here, so it is reached through its `Message` impl and
+    // its table is not looked up, which would not build.
+    let (files, _) = generate_with_diagnostics(
         &[file, other],
         &["t.proto".to_string(), "other.proto".to_string()],
         &config,
     )
     .unwrap();
     let code = joined(&files);
-    assert!(!tables(&code).contains(&"HasLeaf".to_string()), "{code}");
+    assert!(tables(&code).contains(&"HasLeaf".to_string()), "{code}");
     assert!(!tables(&code).contains(&"Foreign".to_string()));
-    assert!(table_warnings(&warnings)[0]
-        .to_string()
-        .contains(".t.HasLeaf"));
+    assert!(!code.contains("__BUFFA_TABLE_Foreign"), "{code}");
 }
 
 #[test]
@@ -479,6 +618,46 @@ fn field_numbers_index_the_dense_array_and_missing_ones_are_zero() {
 }
 
 #[test]
+fn wide_messages_keep_dense_lookup_for_low_field_numbers() {
+    let mut file = schema();
+    file.message_type[0].field = (1..=300)
+        .map(|n| scalar(&format!("f{n}"), n, Type::TYPE_INT32))
+        .collect();
+    let (files, _) = generate_with_diagnostics(
+        &[file],
+        &["t.proto".to_string()],
+        &table_config(CodecStrategy::Table),
+    )
+    .unwrap();
+    let code = squashed(&joined(&files));
+    let plain = code.split("static__BUFFA_TABLE_Plain").nth(1).unwrap();
+    let table = plain.split("impl::buffa::Message").next().unwrap();
+    assert!(table.contains("dense=&[0u8,1u8,2u8,3u8"), "{table}");
+    assert!(table.contains(",63u8]"), "{table}");
+}
+
+#[test]
+fn a_dense_index_that_does_not_fit_in_a_byte_is_an_error() {
+    // Only repeated field numbers put a field numbered below 64 past the
+    // 255th entry.
+    let mut file = schema();
+    file.message_type[0].field = (1..=256)
+        .map(|n| scalar(&format!("f{n}"), 7, Type::TYPE_INT32))
+        .collect();
+    let err = generate_with_diagnostics(
+        &[file],
+        &["t.proto".to_string()],
+        &table_config(CodecStrategy::Table),
+    )
+    .unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "codegen error: table codec: .t.Plain has more than 255 fields numbered 7 or \
+         lower, so its field numbers are not distinct"
+    );
+}
+
+#[test]
 fn the_warning_texts_say_what_to_do() {
     let rule = CodeGenWarning::CodecStrategyRuleMatchedNothing {
         rule: ".x".to_string(),
@@ -490,7 +669,7 @@ fn the_warning_texts_say_what_to_do() {
          message names"
     );
     let reason = TableCodecFallbackReason {
-        reason: "has a oneof".to_string(),
+        reason: "has a group field".to_string(),
         messages: [".t.A", ".t.B", ".t.C", ".t.D", ".t.E"]
             .map(String::from)
             .to_vec(),
@@ -503,7 +682,7 @@ fn the_warning_texts_say_what_to_do() {
     let text = summary.to_string();
     // Three messages are named, and the rest are counted.
     assert!(
-        text.contains("has a oneof (5: .t.A, .t.B, .t.C, and 2 more)"),
+        text.contains("has a group field (5: .t.A, .t.B, .t.C, and 2 more)"),
         "{text}"
     );
 }
@@ -555,29 +734,6 @@ fn the_plan_judges_fields_under_the_same_features_as_the_generator() {
 }
 
 #[test]
-fn a_child_the_user_did_not_choose_does_not_hide_one_that_cannot_use_the_table() {
-    // `Both` holds `Leaf`, which the user sets to unrolled, and then
-    // `HasOneofy`, which cannot use the table. The first child alone would
-    // make the fallback silent, but `Both` falls back for the second too.
-    let mut file = schema();
-    file.message_type.push(message(
-        "Both",
-        vec![
-            message_field("leaf", 1, ".t.Leaf"),
-            message_field("o", 2, ".t.HasOneofy"),
-        ],
-    ));
-    let config = CodeGenConfig {
-        codec_strategy_in: vec![(".t.Leaf".to_string(), CodecStrategy::Unrolled)],
-        ..table_config(CodecStrategy::Table)
-    };
-    let (_, warnings) =
-        generate_with_diagnostics(&[file], &["t.proto".to_string()], &config).unwrap();
-    let text = table_warnings(&warnings)[0].to_string();
-    assert!(text.contains(".t.Both"), "{text}");
-}
-
-#[test]
 fn the_generated_abi_is_a_literal_that_matches_the_runtime() {
     // The runtime refuses a table generated for another ABI, so the generator
     // must emit its own number: passing `buffa::table::ABI` would compare the
@@ -590,4 +746,910 @@ fn the_generated_abi_is_a_literal_that_matches_the_runtime() {
         "the table must carry the literal ABI: {code}"
     );
     assert!(!code.contains("abi=::buffa::table::ABI"), "{code}");
+}
+
+// ---------------------------------------------------------------------------
+// Messages that hold a message stored with a non-default bytes type
+// ---------------------------------------------------------------------------
+
+const HOLDS_BYTES: &str = "holds a message with bytes fields of a non-default type";
+const CUSTOM_FIELD: &str = "has a field with a custom string, bytes or collection type";
+
+fn bytes_field(name: &str, number: i32) -> FieldDescriptorProto {
+    scalar(name, number, Type::TYPE_BYTES)
+}
+
+fn repeated_message_field(name: &str, number: i32, type_name: &str) -> FieldDescriptorProto {
+    FieldDescriptorProto {
+        label: Some(Label::LABEL_REPEATED),
+        ..message_field(name, number, type_name)
+    }
+}
+
+/// Package `b` with:
+///
+/// - `Blob` (a bytes field, which the rules below give the type `Bytes`) and
+///   `PlainBytes` (a bytes field that keeps `Vec<u8>`);
+/// - `HasBlob`, `HasBlobs` (repeated) and `HoldsHasBlob`, which hold a `Blob`
+///   directly, in a list and through `HasBlob`;
+/// - `OneofBlob`, which has a oneof member of type `Blob`, and `HoldsOneofBlob`
+///   (holds `OneofBlob`);
+/// - `MapBlob`, which has a map with `Blob` values, and `HoldsMapBlob`;
+/// - `HoldsPlain` (holds `PlainBytes`), `Leaf` and `HoldsLeaf`, which are
+///   unaffected.
+fn bytes_schema() -> FileDescriptorProto {
+    let mut oneof_blob = message(
+        "OneofBlob",
+        vec![FieldDescriptorProto {
+            oneof_index: Some(0),
+            ..message_field("blob", 1, ".b.Blob")
+        }],
+    );
+    oneof_blob.oneof_decl = vec![OneofDescriptorProto {
+        name: Some("choice".to_string()),
+        ..Default::default()
+    }];
+    let mut map_blob = message(
+        "MapBlob",
+        vec![repeated_message_field("blobs", 1, ".b.MapBlob.BlobsEntry")],
+    );
+    map_blob.nested_type = vec![DescriptorProto {
+        name: Some("BlobsEntry".to_string()),
+        field: vec![
+            scalar("key", 1, Type::TYPE_STRING),
+            message_field("value", 2, ".b.Blob"),
+        ],
+        options: (MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        })
+        .into(),
+        ..Default::default()
+    }];
+    FileDescriptorProto {
+        package: Some("b".to_string()),
+        message_type: vec![
+            message("Blob", vec![bytes_field("data", 1)]),
+            message("PlainBytes", vec![bytes_field("data", 1)]),
+            message("HasBlob", vec![message_field("blob", 1, ".b.Blob")]),
+            message(
+                "HasBlobs",
+                vec![repeated_message_field("blobs", 1, ".b.Blob")],
+            ),
+            message("HoldsHasBlob", vec![message_field("has", 1, ".b.HasBlob")]),
+            oneof_blob,
+            message(
+                "HoldsOneofBlob",
+                vec![message_field("o", 1, ".b.OneofBlob")],
+            ),
+            map_blob,
+            message("HoldsMapBlob", vec![message_field("m", 1, ".b.MapBlob")]),
+            message("HoldsPlain", vec![message_field("p", 1, ".b.PlainBytes")]),
+            message("Leaf", vec![scalar("x", 1, Type::TYPE_INT32)]),
+            message("HoldsLeaf", vec![message_field("leaf", 1, ".b.Leaf")]),
+        ],
+        ..proto3_file("b.proto")
+    }
+}
+
+fn run_bytes(config: &CodeGenConfig) -> Result<(String, Vec<CodeGenWarning>), CodeGenError> {
+    let (files, warnings) =
+        generate_with_diagnostics(&[bytes_schema()], &["b.proto".to_string()], config)?;
+    Ok((joined(&files), warnings))
+}
+
+/// The table strategy, with `Blob.data` stored as `Bytes`.
+fn blob_config() -> CodeGenConfig {
+    CodeGenConfig {
+        bytes_fields: vec![(".b.Blob.data".to_string(), BytesRepr::Bytes)],
+        ..table_config(CodecStrategy::Table)
+    }
+}
+
+#[test]
+fn a_message_that_holds_a_message_with_a_bytes_type_stays_unrolled() {
+    let (code, warnings) = run_bytes(&blob_config()).unwrap();
+    // The holders of `Blob` fall back, directly, in a list, transitively, and
+    // through a oneof member and a map value.
+    assert_eq!(
+        tables(&code),
+        ["PlainBytes", "HoldsPlain", "Leaf", "HoldsLeaf"]
+    );
+    let (counts, reasons) = summary(&warnings);
+    assert_eq!(counts, (8, 12));
+    assert_eq!(reasons, [(HOLDS_BYTES, 7), (CUSTOM_FIELD, 1)]);
+    let text = table_warnings(&warnings)[0].to_string();
+    assert!(text.contains(HOLDS_BYTES), "{text}");
+    assert!(text.contains(".b.HasBlob"), "{text}");
+}
+
+#[test]
+fn a_message_with_a_plain_bytes_field_is_unaffected() {
+    let (code, _) = run_bytes(&blob_config()).unwrap();
+    let plain = squashed(&code);
+    assert!(tables(&code).contains(&"PlainBytes".to_string()));
+    // `HoldsPlain` reaches `PlainBytes` through its table.
+    let holder = plain
+        .split("static__BUFFA_TABLE_HoldsPlain")
+        .nth(1)
+        .unwrap();
+    assert!(holder.contains("(&__BUFFA_TABLE_PlainBytes)"), "{holder}");
+}
+
+#[test]
+fn a_holder_of_a_child_set_to_unrolled_without_bytes_is_a_table() {
+    let config = CodeGenConfig {
+        codec_strategy_in: vec![(".b.Leaf".to_string(), CodecStrategy::Unrolled)],
+        ..blob_config()
+    };
+    let (code, _) = run_bytes(&config).unwrap();
+    assert!(tables(&code).contains(&"HoldsLeaf".to_string()), "{code}");
+    assert!(!tables(&code).contains(&"Leaf".to_string()));
+    assert!(squashed(&code).contains("MsgVt::new_via_message::<"));
+}
+
+#[test]
+fn a_child_set_to_unrolled_that_has_a_bytes_type_keeps_its_holder_unrolled() {
+    // The rule does not decide it: `Blob` is stored as `Bytes` either way.
+    let config = CodeGenConfig {
+        codec_strategy_in: vec![(".b.Blob".to_string(), CodecStrategy::Unrolled)],
+        ..blob_config()
+    };
+    let (code, warnings) = run_bytes(&config).unwrap();
+    assert!(!tables(&code).contains(&"HasBlob".to_string()), "{code}");
+    assert!(summary(&warnings).1.contains(&(HOLDS_BYTES, 7)));
+}
+
+#[test]
+fn a_bytes_type_for_every_field_keeps_the_holders_of_every_bytes_message_unrolled() {
+    let config = CodeGenConfig {
+        bytes_fields: vec![(".".to_string(), BytesRepr::Bytes)],
+        ..table_config(CodecStrategy::Table)
+    };
+    let (code, _) = run_bytes(&config).unwrap();
+    // With this rule `PlainBytes` has a `Bytes` field, so it stays unrolled and
+    // so does every message that holds it.
+    assert_eq!(tables(&code), ["Leaf", "HoldsLeaf"]);
+}
+
+#[test]
+fn a_bytes_type_on_another_message_does_not_affect_a_holder() {
+    let config = CodeGenConfig {
+        bytes_fields: vec![(".b.PlainBytes.data".to_string(), BytesRepr::Bytes)],
+        ..table_config(CodecStrategy::Table)
+    };
+    let (code, _) = run_bytes(&config).unwrap();
+    assert!(tables(&code).contains(&"HasBlob".to_string()), "{code}");
+    assert!(!tables(&code).contains(&"HoldsPlain".to_string()));
+}
+
+#[test]
+fn an_exact_path_rule_for_a_holder_of_a_bytes_typed_message_is_an_error() {
+    let config = CodeGenConfig {
+        codec_strategy_in: vec![(".b.HasBlob".to_string(), CodecStrategy::Table)],
+        ..blob_config()
+    };
+    let err = run_bytes(&config).unwrap_err().to_string();
+    assert!(err.contains("cannot use it"), "{err}");
+    assert!(err.contains("it holds `.b.Blob`"), "{err}");
+}
+
+// ---------------------------------------------------------------------------
+// How far the bytes rule reaches
+// ---------------------------------------------------------------------------
+
+fn repeated_bytes_field(name: &str, number: i32) -> FieldDescriptorProto {
+    FieldDescriptorProto {
+        label: Some(Label::LABEL_REPEATED),
+        ..bytes_field(name, number)
+    }
+}
+
+/// A message with the one map field `m` whose entries have a key and a value
+/// of the given types.
+fn message_with_map(name: &str, key: Type, value: Type) -> DescriptorProto {
+    let mut msg = message(
+        name,
+        vec![repeated_message_field("m", 1, &format!(".c.{name}.MEntry"))],
+    );
+    msg.nested_type = vec![DescriptorProto {
+        name: Some("MEntry".to_string()),
+        field: vec![scalar("key", 1, key), scalar("value", 2, value)],
+        options: (MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        })
+        .into(),
+        ..Default::default()
+    }];
+    msg
+}
+
+/// Package `c` with:
+///
+/// - `ChainA` holds `ChainB` holds `ChainC` holds `Blob`, declared holder
+///   first, so a holder is judged before the message it holds;
+/// - `CycleP` and `CycleQ` hold each other, and `CycleQ` has a bytes field, and
+///   `CycleX` and `CycleY` hold each other and have none;
+/// - `RepBytes` (a repeated bytes field), `MapBytes` (a `map<string, bytes>`)
+///   and `Outer.Inner` (a nested message), each with a holder;
+/// - `BytesKeyMap`, a `map<bytes, bytes>`, whose values keep `Vec<u8>` whatever
+///   the rule says, and its holder. Protoc rejects a bytes key, so only a
+///   hand-built descriptor can have one.
+fn taint_schema() -> FileDescriptorProto {
+    let mut outer = message("Outer", vec![]);
+    outer.nested_type = vec![message("Inner", vec![bytes_field("data", 1)])];
+    FileDescriptorProto {
+        package: Some("c".to_string()),
+        message_type: vec![
+            message("ChainA", vec![message_field("b", 1, ".c.ChainB")]),
+            message("ChainB", vec![message_field("c", 1, ".c.ChainC")]),
+            message("ChainC", vec![message_field("blob", 1, ".c.Blob")]),
+            message("Blob", vec![bytes_field("data", 1)]),
+            message("CycleP", vec![message_field("q", 1, ".c.CycleQ")]),
+            message(
+                "CycleQ",
+                vec![message_field("p", 1, ".c.CycleP"), bytes_field("data", 2)],
+            ),
+            message("CycleX", vec![message_field("y", 1, ".c.CycleY")]),
+            message("CycleY", vec![message_field("x", 1, ".c.CycleX")]),
+            message("RepBytes", vec![repeated_bytes_field("chunks", 1)]),
+            message("HoldsRepBytes", vec![message_field("r", 1, ".c.RepBytes")]),
+            message_with_map("MapBytes", Type::TYPE_STRING, Type::TYPE_BYTES),
+            message("HoldsMapBytes", vec![message_field("m", 1, ".c.MapBytes")]),
+            message_with_map("BytesKeyMap", Type::TYPE_BYTES, Type::TYPE_BYTES),
+            message(
+                "HoldsBytesKeyMap",
+                vec![message_field("m", 1, ".c.BytesKeyMap")],
+            ),
+            outer,
+            message("HoldsInner", vec![message_field("i", 1, ".c.Outer.Inner")]),
+        ],
+        ..proto3_file("c.proto")
+    }
+}
+
+/// What the plan made of `taint_schema`.
+struct Taint {
+    tables: Vec<String>,
+    /// The messages that fell back and the messages selected.
+    counts: (usize, usize),
+    /// The messages that fell back for holding a message with a bytes type.
+    holders: usize,
+}
+
+/// The table strategy with every bytes field of `taint_schema` stored as
+/// `Bytes`.
+fn run_taint() -> Taint {
+    let config = CodeGenConfig {
+        bytes_fields: [
+            ".c.Blob.data",
+            ".c.CycleQ.data",
+            ".c.RepBytes.chunks",
+            ".c.MapBytes.m",
+            ".c.BytesKeyMap.m",
+            ".c.Outer.Inner.data",
+        ]
+        .map(|path| (path.to_string(), BytesRepr::Bytes))
+        .to_vec(),
+        ..table_config(CodecStrategy::Table)
+    };
+    let (files, warnings) =
+        generate_with_diagnostics(&[taint_schema()], &["c.proto".to_string()], &config).unwrap();
+    let (counts, reasons) = summary(&warnings);
+    let holders = reasons
+        .iter()
+        .find_map(|&(reason, n)| (reason == HOLDS_BYTES).then_some(n))
+        .unwrap_or(0);
+    Taint {
+        tables: tables(&joined(&files)),
+        counts,
+        holders,
+    }
+}
+
+#[test]
+fn a_chain_of_holders_declared_holder_first_is_unrolled_all_the_way() {
+    let tables = run_taint().tables;
+    for name in ["ChainA", "ChainB", "ChainC", "Blob"] {
+        assert!(!tables.contains(&name.to_string()), "{name}: {tables:?}");
+    }
+}
+
+#[test]
+fn a_cycle_that_reaches_a_bytes_message_is_unrolled_and_one_that_does_not_is_not() {
+    let tables = run_taint().tables;
+    for name in ["CycleP", "CycleQ"] {
+        assert!(!tables.contains(&name.to_string()), "{name}: {tables:?}");
+    }
+    for name in ["CycleX", "CycleY"] {
+        assert!(tables.contains(&name.to_string()), "{name}: {tables:?}");
+    }
+}
+
+#[test]
+fn a_message_holding_repeated_map_or_nested_bytes_is_unrolled() {
+    let plan = run_taint();
+    for name in ["HoldsRepBytes", "HoldsMapBytes", "HoldsInner"] {
+        assert!(
+            !plan.tables.contains(&name.to_string()),
+            "{name}: {:?}",
+            plan.tables
+        );
+    }
+    // A message with a plain nested declaration is unaffected.
+    assert!(
+        plan.tables.contains(&"Outer".to_string()),
+        "{:?}",
+        plan.tables
+    );
+    // The holders counted under the one reason are the three above, the chain
+    // and the cycle.
+    assert_eq!(plan.holders, 7);
+    assert_eq!(plan.counts, (12, 17));
+}
+
+#[test]
+fn a_map_with_a_bytes_key_keeps_vec_values_so_its_holder_uses_the_table() {
+    let tables = run_taint().tables;
+    for name in ["BytesKeyMap", "HoldsBytesKeyMap"] {
+        assert!(tables.contains(&name.to_string()), "{name}: {tables:?}");
+    }
+}
+
+/// Package `o` with `WithOneof { oneof choice { int32 a = 1; string b = 2; Leaf leaf = 5; }; int32 c = 3; }`.
+fn oneof_schema() -> FileDescriptorProto {
+    let member = |name, number, ty| FieldDescriptorProto {
+        oneof_index: Some(0),
+        ..scalar(name, number, ty)
+    };
+    let mut with_oneof = message(
+        "WithOneof",
+        vec![
+            member("a", 1, Type::TYPE_INT32),
+            member("b", 2, Type::TYPE_STRING),
+            FieldDescriptorProto {
+                oneof_index: Some(0),
+                ..message_field("leaf", 5, ".o.Leaf")
+            },
+            scalar("c", 3, Type::TYPE_INT32),
+        ],
+    );
+    with_oneof.oneof_decl = vec![OneofDescriptorProto {
+        name: Some("choice".to_string()),
+        ..Default::default()
+    }];
+    FileDescriptorProto {
+        package: Some("o".to_string()),
+        message_type: vec![
+            message("Leaf", vec![scalar("x", 1, Type::TYPE_INT32)]),
+            with_oneof,
+        ],
+        ..proto3_file("o.proto")
+    }
+}
+
+fn run_oneof(config: &CodeGenConfig) -> (String, Vec<CodeGenWarning>) {
+    let (files, warnings) =
+        generate_with_diagnostics(&[oneof_schema()], &["o.proto".to_string()], config).unwrap();
+    (joined(&files), warnings)
+}
+
+#[test]
+fn a_message_with_a_oneof_gets_a_table_with_one_entry_per_member() {
+    let (code, warnings) = run_oneof(&table_config(CodecStrategy::Table));
+    assert_eq!(tables(&code), ["Leaf", "WithOneof"]);
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    let code = squashed(&code);
+    let table = code.split("static__BUFFA_TABLE_WithOneof").nth(1).unwrap();
+    let table = table.split("impl::buffa::Message").next().unwrap();
+    // The members carry their payload kinds, in field-number order with `c`
+    // (3) between them, and all name the field that holds the oneof. Only
+    // the lowest leads.
+    for entry in [
+        "(WithOneof,choice,oneof(Int32Required,true),1u32,",
+        "(WithOneof,choice,oneof(StrRequired,false),2u32,",
+        "(WithOneof,c,Int32Implicit,3u32)",
+        "(WithOneof,choice,oneof(MsgSingular,false),5u32,",
+    ] {
+        assert!(table.contains(entry), "{entry} in {table}");
+    }
+    // One descriptor for the oneof, at the lowest member number, and a member
+    // item for each of the three.
+    assert_eq!(table.matches("Aux::Group(").count(), 1, "{table}");
+    assert!(table.contains("OneofVt::with_messages::<"), "{table}");
+    assert!(
+        table.contains("offset_of!(WithOneof,choice),1u32"),
+        "{table}"
+    );
+    assert_eq!(table.matches("Member::new(0u16,").count(), 3, "{table}");
+    // The message member's child is reached through its own table.
+    assert!(
+        table.contains("MsgVt::direct::<Leaf>(&__BUFFA_TABLE_Leaf)"),
+        "{table}"
+    );
+}
+
+#[test]
+fn oneof_members_of_one_type_share_a_descriptor() {
+    // `x` and `y` are `Leaf`, `p` and `q` are `Color`, and `z` is a `Leaf` in
+    // a second oneof, which shares the descriptor of the first's.
+    let mut file = oneof_schema();
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Color".to_string()),
+        value: vec![EnumValueDescriptorProto {
+            name: Some("RED".to_string()),
+            number: Some(0),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let with_oneof = &mut file.message_type[1];
+    let member = |field: FieldDescriptorProto, oneof| FieldDescriptorProto {
+        oneof_index: Some(oneof),
+        ..field
+    };
+    with_oneof.field.extend([
+        member(message_field("x", 6, ".o.Leaf"), 0),
+        member(message_field("y", 7, ".o.Leaf"), 0),
+        member(
+            FieldDescriptorProto {
+                type_name: Some(".o.Color".to_string()),
+                ..scalar("p", 8, Type::TYPE_ENUM)
+            },
+            0,
+        ),
+        member(
+            FieldDescriptorProto {
+                type_name: Some(".o.Color".to_string()),
+                ..scalar("q", 9, Type::TYPE_ENUM)
+            },
+            0,
+        ),
+        member(message_field("z", 10, ".o.Leaf"), 1),
+    ]);
+    with_oneof.oneof_decl.push(OneofDescriptorProto {
+        name: Some("other".to_string()),
+        ..Default::default()
+    });
+    let (files, _) = generate_with_diagnostics(
+        &[file],
+        &["o.proto".to_string()],
+        &table_config(CodecStrategy::Table),
+    )
+    .unwrap();
+    let code = squashed(&joined(&files));
+    let table = code.split("static__BUFFA_TABLE_WithOneof").nth(1).unwrap();
+    let table = table.split("impl::buffa::Message").next().unwrap();
+    // Four members are a `Leaf` and two a `Color`, with one descriptor each.
+    assert_eq!(table.matches("Aux::Msg(").count(), 1, "{table}");
+    assert_eq!(table.matches("Aux::Enum(").count(), 1, "{table}");
+    assert_eq!(table.matches("Aux::Member(").count(), 8, "{table}");
+    assert_eq!(table.matches("Aux::Group(").count(), 2, "{table}");
+    assert_eq!(
+        table.matches("OneofVt::with_messages::<").count(),
+        2,
+        "{table}"
+    );
+}
+
+#[test]
+fn only_a_oneof_with_a_message_member_is_built_to_decode_messages_in_place() {
+    // `choice` has a message member; `plain` has only an int32 and a string.
+    let mut file = oneof_schema();
+    let with_oneof = &mut file.message_type[1];
+    with_oneof.field.extend([
+        FieldDescriptorProto {
+            oneof_index: Some(1),
+            ..scalar("p", 6, Type::TYPE_INT32)
+        },
+        FieldDescriptorProto {
+            oneof_index: Some(1),
+            ..scalar("q", 7, Type::TYPE_STRING)
+        },
+    ]);
+    with_oneof.oneof_decl.push(OneofDescriptorProto {
+        name: Some("plain".to_string()),
+        ..Default::default()
+    });
+    let (files, _) = generate_with_diagnostics(
+        &[file],
+        &["o.proto".to_string()],
+        &table_config(CodecStrategy::Table),
+    )
+    .unwrap();
+    let code = squashed(&joined(&files));
+    let table = code.split("static__BUFFA_TABLE_WithOneof").nth(1).unwrap();
+    let table = table.split("impl::buffa::Message").next().unwrap();
+    assert_eq!(
+        table.matches("OneofVt::with_messages::<").count(),
+        1,
+        "{table}"
+    );
+    assert_eq!(table.matches("OneofVt::new::<").count(), 1, "{table}");
+    assert!(
+        table.contains("OneofVt::new::<__buffa::oneof::with_oneof::Plain>"),
+        "{table}"
+    );
+}
+
+#[test]
+fn a_oneof_member_whose_child_has_no_table_is_reached_through_its_message_impl() {
+    // `Leaf` is set to unrolled, so `WithOneof` reaches it through its
+    // `Message` impl, and stays a table message.
+    let config = CodeGenConfig {
+        codec_strategy_in: vec![(".o.Leaf".to_string(), CodecStrategy::Unrolled)],
+        ..table_config(CodecStrategy::Table)
+    };
+    let (code, warnings) = run_oneof(&config);
+    assert_eq!(tables(&code), ["WithOneof"]);
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    let code = squashed(&code);
+    let table = code.split("static__BUFFA_TABLE_WithOneof").nth(1).unwrap();
+    let table = table.split("impl::buffa::Message").next().unwrap();
+    assert!(
+        table.contains("MsgVt::direct_via_message::<Leaf>()"),
+        "{table}"
+    );
+    assert!(!table.contains("MsgVt::direct::<"), "{table}");
+}
+
+#[test]
+fn a_oneof_member_from_another_crate_is_reached_through_its_message_impl() {
+    let mut file = oneof_schema();
+    file.message_type[1].field[2].type_name = Some(".other.Foreign".to_string());
+    let other = FileDescriptorProto {
+        package: Some("other".to_string()),
+        message_type: vec![message("Foreign", vec![scalar("x", 1, Type::TYPE_INT32)])],
+        ..proto3_file("other.proto")
+    };
+    let config = CodeGenConfig {
+        extern_paths: vec![(".other".to_string(), "::other_crate".to_string())],
+        ..table_config(CodecStrategy::Table)
+    };
+    let (files, warnings) =
+        generate_with_diagnostics(&[file, other], &["o.proto".to_string()], &config).unwrap();
+    let code = joined(&files);
+    assert!(tables(&code).contains(&"WithOneof".to_string()), "{code}");
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    assert!(
+        squashed(&code).contains("MsgVt::direct_via_message::<::other_crate::Foreign>()"),
+        "{code}"
+    );
+}
+
+#[test]
+fn the_oneof_enum_implements_the_accessors_the_table_reads_it_through() {
+    let (code, _) = run_oneof(&table_config(CodecStrategy::Table));
+    let code = squashed(&code);
+    let imp = code
+        .split("impl::buffa::table::OneofEnumfor__buffa::oneof::with_oneof::Choice{")
+        .nth(1)
+        .and_then(|rest| rest.split("impl::buffa::ExtensionSet").next())
+        .unwrap();
+    assert!(imp.contains("Self::A(_)=>1u32"), "{imp}");
+    assert!(imp.contains("Self::B(_)=>2u32"), "{imp}");
+    assert!(imp.contains("Self::Leaf(_)=>5u32"), "{imp}");
+    // A boxed message is reached through its box (by deref coercion), and a
+    // new one starts empty.
+    assert!(
+        imp.contains("Self::Leaf(v)=>{letvalue:&Leaf=v;letptr:*constLeaf=value;ptr.cast::<u8>()}"),
+        "{imp}"
+    );
+    assert!(
+        imp.contains("Self::Leaf(v)=>{letvalue:&mutLeaf=v;letptr:*mutLeaf=value;ptr.cast::<u8>()}"),
+        "{imp}"
+    );
+    // Neither is a cast of the reference, which `trivial_casts` flags.
+    assert!(!imp.contains("valueas"), "{imp}");
+    assert!(
+        imp.contains(
+            "5u32=>{::core::option::Option::Some(Self::Leaf(::buffa::alloc::boxed::Box::default()"
+        ),
+        "{imp}"
+    );
+    assert!(imp.contains("_=>::core::option::Option::None"), "{imp}");
+    // None of it is unsafe: the generated crate may forbid unsafe code.
+    assert!(!imp.contains("unsafe"), "{imp}");
+}
+
+#[test]
+fn an_unrolled_message_with_a_oneof_has_no_oneof_enum_impl() {
+    let (code, warnings) = run_oneof(&CodeGenConfig::default());
+    assert!(tables(&code).is_empty());
+    assert!(!code.contains("OneofEnum"));
+    assert!(table_warnings(&warnings).is_empty());
+}
+
+#[test]
+fn a_oneof_member_with_a_custom_type_keeps_the_message_unrolled() {
+    let config = CodeGenConfig {
+        string_fields: vec![(
+            ".o.WithOneof.b".to_string(),
+            StringRepr::Custom("crate::Str".to_string()),
+        )],
+        ..table_config(CodecStrategy::Table)
+    };
+    let (code, warnings) = run_oneof(&config);
+    assert_eq!(tables(&code), ["Leaf"]);
+    assert!(
+        table_warnings(&warnings)[0]
+            .to_string()
+            .contains(".o.WithOneof"),
+        "{warnings:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Map fields
+// ---------------------------------------------------------------------------
+
+/// A `map<key, value>` field `name` of message `owner`, and its entry message.
+/// `value` is a scalar type, or a message or enum (with `type_name`).
+fn map_field(
+    owner: &str,
+    name: &str,
+    number: i32,
+    key: Type,
+    value: Type,
+    type_name: Option<&str>,
+) -> (FieldDescriptorProto, DescriptorProto) {
+    let entry_name = format!("{}Entry", name.replace('_', ""));
+    let mut value_field = make_field("value", 2, Label::LABEL_OPTIONAL, value);
+    value_field.type_name = type_name.map(String::from);
+    let entry = DescriptorProto {
+        name: Some(entry_name.clone()),
+        field: vec![
+            make_field("key", 1, Label::LABEL_OPTIONAL, key),
+            value_field,
+        ],
+        options: MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    };
+    let field = message_field(name, number, &format!(".t.{owner}.{entry_name}"));
+    (
+        FieldDescriptorProto {
+            label: Some(Label::LABEL_REPEATED),
+            ..field
+        },
+        entry,
+    )
+}
+
+/// `schema()` with `Maps` added, holding one map per shape a table handles.
+fn map_schema() -> FileDescriptorProto {
+    let mut file = schema();
+    let maps = [
+        map_field(
+            "Maps",
+            "counts",
+            1,
+            Type::TYPE_STRING,
+            Type::TYPE_INT32,
+            None,
+        ),
+        map_field("Maps", "blobs", 2, Type::TYPE_INT64, Type::TYPE_BYTES, None),
+        map_field(
+            "Maps",
+            "leaves",
+            3,
+            Type::TYPE_INT32,
+            Type::TYPE_MESSAGE,
+            Some(".t.Leaf"),
+        ),
+        map_field(
+            "Maps",
+            "shades",
+            4,
+            Type::TYPE_STRING,
+            Type::TYPE_ENUM,
+            Some(".t.Shade"),
+        ),
+        map_field(
+            "Maps",
+            "names",
+            5,
+            Type::TYPE_INT32,
+            Type::TYPE_STRING,
+            None,
+        ),
+    ];
+    let mut holder = message("Maps", maps.iter().map(|(f, _)| f.clone()).collect());
+    holder.nested_type = maps.into_iter().map(|(_, e)| e).collect();
+    file.message_type.push(holder);
+    file.enum_type.push(EnumDescriptorProto {
+        name: Some("Shade".to_string()),
+        value: vec![enum_value("NONE", 0), enum_value("DARK", 1)],
+        ..Default::default()
+    });
+    file
+}
+
+fn run_maps(config: &CodeGenConfig) -> (String, Vec<CodeGenWarning>) {
+    let (files, warnings) =
+        generate_with_diagnostics(&[map_schema()], &["t.proto".to_string()], config).unwrap();
+    (joined(&files), warnings)
+}
+
+#[test]
+fn a_message_with_maps_gets_a_table_and_a_map_descriptor_per_field() {
+    let (code, warnings) = run_maps(&table_config(CodecStrategy::Table));
+    assert!(tables(&code).contains(&"Maps".to_string()), "{code}");
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    let code = squashed(&code);
+    for descriptor in [
+        // Scalar and string values name the key and value kinds.
+        "Aux::Map(&::buffa::table::MapVt::new::<::buffa::__private::HashMap<::buffa::alloc::string::String,i32>,\
+         ::buffa::table::kinds::StrRequired,::buffa::table::kinds::Int32Required>())",
+        "::buffa::table::kinds::Int64Required,::buffa::table::kinds::BytesRequired",
+        // A message value names the value's table, and an enum its openness.
+        "MapVt::with_msg::<::buffa::__private::HashMap<i32,Leaf>,::buffa::table::kinds::Int32Required,Leaf>(\
+         &::buffa::table::DirectMsgVt::new(&__BUFFA_TABLE_Leaf))",
+        "MapVt::with_enum::<::buffa::__private::HashMap<::buffa::alloc::string::String,\
+         ::buffa::EnumValue<Shade>>,::buffa::table::kinds::StrRequired,\
+         ::buffa::table::ImplicitOpen<Shade>>()",
+    ] {
+        assert!(code.contains(descriptor), "missing {descriptor} in {code}");
+    }
+    assert!(
+        code.contains("__table_entry!(Maps,counts,Map,1u32,aux=0u16,slot="),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_map_uses_the_collection_the_field_is_configured_with() {
+    let config = CodeGenConfig {
+        map_fields: vec![(".".to_string(), MapRepr::BTreeMap)],
+        ..table_config(CodecStrategy::Table)
+    };
+    let (code, warnings) = run_maps(&config);
+    assert!(tables(&code).contains(&"Maps".to_string()));
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    assert!(
+        squashed(&code)
+            .contains("MapVt::new::<::buffa::alloc::collections::BTreeMap<::buffa::alloc::string::String,i32>,"),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_map_with_a_custom_collection_or_element_type_falls_back() {
+    for (config, reason) in [
+        (
+            CodeGenConfig {
+                map_fields: vec![(
+                    ".t.Maps.counts".to_string(),
+                    MapRepr::Custom("crate::MyMap".to_string()),
+                )],
+                ..table_config(CodecStrategy::Table)
+            },
+            crate::table_plan::CUSTOM_TYPE_REASON,
+        ),
+        (
+            CodeGenConfig {
+                string_fields: vec![(
+                    ".t.Maps.counts".to_string(),
+                    StringRepr::Custom("crate::S".to_string()),
+                )],
+                ..table_config(CodecStrategy::Table)
+            },
+            crate::table_plan::CUSTOM_TYPE_REASON,
+        ),
+        // A string value under an integer key.
+        (
+            CodeGenConfig {
+                string_fields: vec![(
+                    ".t.Maps.names".to_string(),
+                    StringRepr::Custom("crate::S".to_string()),
+                )],
+                ..table_config(CodecStrategy::Table)
+            },
+            crate::table_plan::CUSTOM_TYPE_REASON,
+        ),
+        (
+            CodeGenConfig {
+                bytes_fields: vec![(".t.Maps.blobs".to_string(), BytesRepr::Bytes)],
+                ..table_config(CodecStrategy::Table)
+            },
+            crate::table_plan::CUSTOM_TYPE_REASON,
+        ),
+    ] {
+        let (code, warnings) = run_maps(&config);
+        assert!(!tables(&code).contains(&"Maps".to_string()), "{reason}");
+        let (_, reasons) = summary(&warnings);
+        assert!(reasons.contains(&(reason, 1)), "{reason}: {reasons:?}");
+    }
+}
+
+#[test]
+fn a_map_of_messages_without_a_table_is_reached_through_the_message_impl() {
+    // `Leaf` is unrolled by a rule, so the map's values have no table here.
+    let config = CodeGenConfig {
+        codec_strategy_in: vec![(".t.Leaf".to_string(), CodecStrategy::Unrolled)],
+        ..table_config(CodecStrategy::Table)
+    };
+    let (code, warnings) = run_maps(&config);
+    assert!(tables(&code).contains(&"Maps".to_string()), "{code}");
+    assert!(!tables(&code).contains(&"Leaf".to_string()));
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    assert!(
+        squashed(&code).contains(
+            "MapVt::with_msg::<::buffa::__private::HashMap<i32,Leaf>,\
+             ::buffa::table::kinds::Int32Required,Leaf>(\
+             &::buffa::table::DirectMsgVt::<Leaf>::via_message())"
+        ),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_map_of_messages_from_another_crate_is_reached_through_the_message_impl() {
+    let mut file = map_schema();
+    let (field, entry) = map_field(
+        "Holds",
+        "os",
+        1,
+        Type::TYPE_STRING,
+        Type::TYPE_MESSAGE,
+        Some(".other.Foreign"),
+    );
+    let mut holds = message("Holds", vec![field]);
+    holds.nested_type = vec![entry];
+    file.message_type.push(holds);
+    let other = FileDescriptorProto {
+        package: Some("other".to_string()),
+        message_type: vec![message("Foreign", vec![])],
+        ..proto3_file("other.proto")
+    };
+    let config = CodeGenConfig {
+        extern_paths: vec![(".other".to_string(), "::other_crate".to_string())],
+        ..table_config(CodecStrategy::Table)
+    };
+    let (files, warnings) =
+        generate_with_diagnostics(&[file, other], &["t.proto".to_string()], &config).unwrap();
+    let code = joined(&files);
+    assert!(tables(&code).contains(&"Holds".to_string()), "{code}");
+    assert!(table_warnings(&warnings).is_empty(), "{warnings:?}");
+    assert!(
+        squashed(&code)
+            .contains("::buffa::table::DirectMsgVt::<::other_crate::Foreign>::via_message()"),
+        "{code}"
+    );
+}
+
+#[test]
+fn a_map_entry_is_not_a_message_of_its_own() {
+    let (code, _) = run_maps(&table_config(CodecStrategy::Table));
+    assert!(
+        !tables(&code).iter().any(|t| t.ends_with("Entry")),
+        "{:?}",
+        tables(&code)
+    );
+}
+
+#[test]
+fn custom_types_in_maps_and_in_other_fields_share_one_summary_line() {
+    let config = CodeGenConfig {
+        map_fields: vec![(
+            ".t.Maps.counts".to_string(),
+            MapRepr::Custom("crate::MyMap".to_string()),
+        )],
+        string_fields: vec![(
+            ".t.Plain.s".to_string(),
+            StringRepr::Custom("crate::S".to_string()),
+        )],
+        ..table_config(CodecStrategy::Table)
+    };
+    let (_, warnings) = run_maps(&config);
+    let (_, reasons) = summary(&warnings);
+    let custom: Vec<_> = reasons
+        .iter()
+        .filter(|(reason, _)| *reason == crate::table_plan::CUSTOM_TYPE_REASON)
+        .collect();
+    assert_eq!(custom, [&(crate::table_plan::CUSTOM_TYPE_REASON, 2)]);
 }

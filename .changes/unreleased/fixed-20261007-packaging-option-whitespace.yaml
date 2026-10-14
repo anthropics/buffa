@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **`protoc-gen-buffa-packaging` accepts whitespace around option keys** (#664).
+    An option written as `filter = services` was rejected as an unknown plugin option, while `protoc-gen-buffa` accepts the same spelling. The packaging plugin trims each key before matching it, so one `opt:` list works for both plugins.
+time: 2026-10-07T00:00:00+02:00

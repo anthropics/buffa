@@ -228,6 +228,37 @@ fn json_integer_parsing_matches_generated_messages() {
     }
 }
 
+#[test]
+fn json_quoted_integers_accept_large_rescaled_significands() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+    let zeros = "0".repeat(80);
+    let parsed = DynamicMessage::from_json(
+        Arc::clone(&p),
+        idx,
+        &format!(
+            r#"{{
+                "fInt32": "{}{zeros}e-80",
+                "fInt64": "{}{zeros}.000e-80",
+                "fUint32": "{}{zeros}E-80",
+                "fUint64": "{}{zeros}e-80"
+            }}"#,
+            i32::MIN,
+            i64::MIN,
+            u32::MAX,
+            u64::MAX
+        ),
+    )
+    .expect("large significands that rescale into range must parse exactly");
+    assert_eq!(parsed.field_by_number(3), Some(&Value::I32(i32::MIN)));
+    assert_eq!(parsed.field_by_number(4), Some(&Value::I64(i64::MIN)));
+    assert_eq!(parsed.field_by_number(5), Some(&Value::U32(u32::MAX)));
+    assert_eq!(parsed.field_by_number(6), Some(&Value::U64(u64::MAX)));
+    let canonical = parsed.to_json().unwrap();
+    let reparsed = DynamicMessage::from_json(p, idx, &canonical).unwrap();
+    assert_eq!(reparsed, parsed);
+}
+
 /// The quoted-string path covers the full range exactly and rejects the
 /// same inputs the generated decoders reject: overflow, negative values for
 /// unsigned fields, and non-integral forms.
@@ -358,6 +389,29 @@ fn json_containers_round_trip() {
 
     let parsed = DynamicMessage::from_json(Arc::clone(&p), containers_idx, &json).unwrap();
     assert_eq!(msg, parsed);
+}
+
+#[test]
+fn json_map_duplicate_keys_keep_last_value() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let msg = DynamicMessage::from_json(
+        p,
+        idx,
+        r#"{"tags":{"b":1,"a":2,"b":3,"a":4,"b":5,"a":6,"b":7}}"#,
+    )
+    .unwrap();
+    let Some(Value::Map(tags)) = msg.field_by_number(3) else {
+        panic!("tags must be a map");
+    };
+    assert_eq!(
+        tags.entries(),
+        &[
+            (MapKey::String("a".into()), Value::I32(6)),
+            (MapKey::String("b".into()), Value::I32(7)),
+        ]
+    );
+    assert_eq!(msg.to_json().unwrap(), r#"{"tags":{"a":6,"b":7}}"#);
 }
 
 #[test]
@@ -614,4 +668,26 @@ fn json_double_text_is_f64_precision() {
     // `f_double` is field 1.
     msg.set(md.field(1).unwrap(), Value::F64(0.1));
     assert_eq!(msg.to_json().unwrap(), r#"{"fDouble":0.1}"#);
+}
+
+#[test]
+fn json_unknown_enum_name_error_names_the_value() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let err = DynamicMessage::from_json(p, idx, r#"{"color": "PURPLE"}"#).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains(r#"invalid value: string "PURPLE", expected a known enum variant name"#),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn generated_enum_unknown_name_error_names_the_value() {
+    use buffa_descriptor::generated::descriptor::Edition;
+    let err = serde_json::from_str::<Edition>(r#""PURPLE""#).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        r#"invalid value: string "PURPLE", expected a known enum variant name at line 1 column 8"#
+    );
 }

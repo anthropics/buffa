@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **Extension constants carry their proto source comments** (#666).
+    A comment on a file-level or message-nested `extend` field was dropped from the generated code. The generated `Extension` const has the proto comment as its doc comment, followed by the generated summary line.
+time: 2026-10-07T22:22:16.326675+02:00

@@ -100,6 +100,7 @@
 /// ```
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Any {
     /// A URL/resource name that uniquely identifies the type of the serialized
     /// protocol buffer message. This string must contain at least

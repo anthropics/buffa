@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **Code generation rejects two inputs that map to one output file, with `CodeGenError::OutputFileNameConflict`** (#676).
+    A content file is named after its `.proto` path with `/` replaced by `.`, so `foo/bar.proto` and `foo.bar.proto` both produced `foo.bar.rs`, and `foo/mod.proto` in package `foo` produced the same `foo.mod.rs` as the package's module file; `buffa-build` wrote one over the other. `generate` returns an error that names the output path and both inputs. Output under `file_per_package` has no per-proto files and is unaffected. A file listed twice in `files_to_generate` is generated once.
+time: 2026-10-07T23:51:45.002188+02:00

@@ -149,9 +149,17 @@ pub trait MessageView<'a>: Sized {
     /// [`RECURSION_LIMIT`](crate::RECURSION_LIMIT),
     /// [`DEFAULT_UNKNOWN_FIELD_LIMIT`](crate::DEFAULT_UNKNOWN_FIELD_LIMIT), and
     /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](crate::DEFAULT_ELEMENT_MEMORY_LIMIT).
-    /// A view of a repeated field costs element memory just as the owned decode
-    /// does — each element occupies a `size_of::<FooView>()` slot in a `Vec`
-    /// even though its string and bytes contents stay borrowed.
+    /// Repeated message, group, string, and bytes elements are charged by the
+    /// size of the view element stored in the `Vec`; map entries are charged by
+    /// their key and value slot sizes. Borrowed string and bytes contents are
+    /// not charged. Repeated numeric and enum elements are not charged, whether
+    /// packed or unpacked. Since a view element can have a different size from
+    /// its owned type (`&str` versus `String`), a payload near the limit can
+    /// have a different result in owned and view decoding.
+    ///
+    /// This method does not enforce a maximum input size; use
+    /// [`DecodeOptions::decode_view`](crate::DecodeOptions::decode_view) when
+    /// an input-size cap is required.
     fn decode_view(buf: &'a [u8]) -> Result<Self, DecodeError>;
 
     /// Decode a view under custom decode limits.
@@ -215,7 +223,7 @@ pub trait MessageView<'a>: Sized {
     ///
     /// Returns a [`DecodeError`] on malformed input, a wire-type mismatch, or
     /// when a configured decode limit (recursion depth, unknown-field
-    /// allowance) is exceeded.
+    /// allowance, or element-memory budget) is exceeded.
     fn decode_view_ctx(buf: &'a [u8], ctx: crate::DecodeContext<'_>) -> Result<Self, DecodeError>
     where
         Self: Default,
@@ -239,7 +247,7 @@ pub trait MessageView<'a>: Sized {
     ///
     /// Returns a [`DecodeError`] on malformed input, a wire-type mismatch, or
     /// when a configured decode limit (recursion depth, unknown-field
-    /// allowance) is exceeded.
+    /// allowance, or element-memory budget) is exceeded.
     fn merge_into_view(
         &mut self,
         buf: &'a [u8],
@@ -318,8 +326,8 @@ pub trait MessageView<'a>: Sized {
     ///
     /// # Errors
     ///
-    /// Returns a [`DecodeError`] on malformed payloads or wire-type
-    /// mismatches.
+    /// Returns a [`DecodeError`] on malformed payloads, wire-type mismatches,
+    /// or when a configured decode limit is exceeded.
     fn merge_view_field(
         &mut self,
         tag: crate::encoding::Tag,
@@ -728,7 +736,8 @@ pub trait HasMessageView: crate::Message + Sized {
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data.
+    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data or
+    /// exceeds a default recursion, unknown-field, or element-memory limit.
     #[inline]
     fn decode_view(buf: &[u8]) -> Result<Self::View<'_>, DecodeError> {
         <Self::View<'_> as MessageView<'_>>::decode_view(buf)
@@ -736,7 +745,7 @@ pub trait HasMessageView: crate::Message + Sized {
 
     /// Decode a borrowed [`View`](Self::View) under custom
     /// [`DecodeOptions`](crate::DecodeOptions) (recursion limit, max message
-    /// size, unknown-field limit).
+    /// size, unknown-field limit, and element-memory limit).
     ///
     /// Convenience for generic code; equivalent to
     /// [`DecodeOptions::decode_view::<M::View<'_>>`](crate::DecodeOptions::decode_view).
@@ -758,10 +767,15 @@ pub trait HasMessageView: crate::Message + Sized {
     /// Convenience for generic code; equivalent to decoding an
     /// [`OwnedView<Self::View<'static>>`](OwnedView) and converting it with
     /// `From`.
+    /// Like [`decode_view`](Self::decode_view), this does not enforce
+    /// `max_message_size`; use
+    /// [`decode_view_handle_with_options`](Self::decode_view_handle_with_options)
+    /// for that.
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data.
+    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data or
+    /// exceeds a default recursion, unknown-field, or element-memory limit.
     fn decode_view_handle(bytes: Bytes) -> Result<Self::ViewHandle, DecodeError>
     where
         Self::View<'static>: ViewLifetimeParametric,
@@ -773,7 +787,7 @@ pub trait HasMessageView: crate::Message + Sized {
 
     /// Decode a [`ViewHandle`](Self::ViewHandle) with custom
     /// [`DecodeOptions`](crate::DecodeOptions) (recursion limit, max message
-    /// size).
+    /// size, unknown-field limit, and element-memory limit).
     ///
     /// # Errors
     ///
@@ -1431,30 +1445,38 @@ impl<V: DefaultViewInstance> core::ops::Deref for MessageFieldView<V> {
     }
 }
 
-/// Wire-equivalent equality: `Unset` equals `Set(v)` when `v` equals the
-/// default instance.
+/// Presence-aware equality, matching [`MessageField`](crate::MessageField):
+/// two unset fields are equal, two set fields are equal when their views are,
+/// and an unset field never equals a set one, not even one set to the default,
+/// since only the set field is on the wire. Compare `*a == *b` (needs
+/// [`DefaultViewInstance`]) to ignore presence.
 ///
-/// This matches [`MessageField::eq`](crate::MessageField) on the owned side,
-/// so `view_a == view_b` agrees with
+/// `view_a == view_b` agrees with
 /// `view_a.to_owned_message() == view_b.to_owned_message()`.
-///
-/// The comparison against the default routes through the
-/// [`Deref`](core::ops::Deref) impl.
-impl<V: PartialEq + DefaultViewInstance> PartialEq for MessageFieldView<V> {
+impl<V: PartialEq> PartialEq for MessageFieldView<V> {
     fn eq(&self, other: &Self) -> bool {
+        // Presence is part of the value, as for `MessageField`: an unset field
+        // differs from one set to its default.
         match (&self.inner, &other.inner) {
-            // Short-circuit: two unset fields are equal regardless of whether
-            // V::PartialEq is reflexive (e.g. a view containing an f64 NaN).
+            // Two unset fields are equal regardless of whether V::PartialEq is
+            // reflexive (e.g. a view containing an f64 NaN).
             (None, None) => true,
-            // At least one side is set. Deref handles None → default.
-            _ => {
-                <Self as core::ops::Deref>::deref(self) == <Self as core::ops::Deref>::deref(other)
-            }
+            (Some(a), Some(b)) => a == b,
+            _ => false,
         }
     }
 }
 
-impl<V: Eq + DefaultViewInstance> Eq for MessageFieldView<V> {}
+impl<V: Eq> Eq for MessageFieldView<V> {}
+
+/// Hashes presence and the view, as `Option<&V>` does, so that it agrees with
+/// `==`, like [`MessageField`](crate::MessageField)'s `Hash`.
+impl<V: core::hash::Hash> core::hash::Hash for MessageFieldView<V> {
+    #[inline]
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.as_option().hash(state);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Lazy views (generated under the `lazy_views` codegen option)
@@ -1931,7 +1953,12 @@ impl<'s, 'a, V: LazyMessageView<'a>> IntoIterator for &'s LazyRepeatedView<'a, V
     }
 }
 
-/// Iterator over a [`LazyRepeatedView`], decoding each element on `next`.
+/// Iterator over a [`LazyRepeatedView`], decoding each element on access.
+///
+/// [`nth`](Iterator::nth), [`nth_back`](DoubleEndedIterator::nth_back),
+/// [`count`](Iterator::count) and [`last`](Iterator::last) skip elements
+/// without decoding them, so a skipped element is not validated: a malformed
+/// element is reported only when it is yielded.
 #[derive(Clone, Debug)]
 pub struct LazyRepeatedIter<'s, 'a, V> {
     inner: core::slice::Iter<'s, &'a [u8]>,
@@ -1952,6 +1979,23 @@ impl<'a, V: LazyMessageView<'a>> Iterator for LazyRepeatedIter<'_, 'a, V> {
     }
 
     #[inline]
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner
+            .nth(n)
+            .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
+    }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
     }
@@ -1962,6 +2006,13 @@ impl<'a, V: LazyMessageView<'a>> DoubleEndedIterator for LazyRepeatedIter<'_, 'a
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner
             .next_back()
+            .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
+    }
+
+    #[inline]
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner
+            .nth_back(n)
             .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
     }
 }
@@ -2846,10 +2897,13 @@ where
     /// The view borrows directly from the buffer's data. Because [`Bytes`] is
     /// reference-counted and its data pointer is stable across moves, the
     /// view's borrows remain valid for the lifetime of this `OwnedView`.
+    /// This method does not enforce an input-size cap; use
+    /// [`decode_with_options`](Self::decode_with_options) when one is required.
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data.
+    /// Returns [`DecodeError`] if the buffer contains invalid protobuf data or
+    /// exceeds a default recursion, unknown-field, or element-memory limit.
     pub fn decode(bytes: Bytes) -> Result<Self, DecodeError>
     where
         V: ViewLifetimeParametric,
@@ -2871,7 +2925,8 @@ where
     }
 
     /// Decode a view with custom [`DecodeOptions`](crate::DecodeOptions)
-    /// (recursion limit, max message size).
+    /// (recursion limit, max message size, unknown-field limit, and
+    /// element-memory limit).
     ///
     /// # Errors
     ///
@@ -3297,7 +3352,7 @@ mod tests {
         assert_eq!(len, 0);
     }
 
-    // ── MessageFieldView PartialEq (wire-equivalent) ───────────────────
+    // ── MessageFieldView PartialEq (presence-aware) ────────────────────
 
     #[test]
     fn message_field_view_equality() {
@@ -3312,11 +3367,11 @@ mod tests {
 
         #[rustfmt::skip]
         let cases: &[(Option<&str>, Option<&str>, bool)] = &[
-            // Wire-equivalent semantics: Unset == Set(default), matching
-            // MessageField::PartialEq on the owned side.
+            // Presence is part of the value, matching MessageField::PartialEq
+            // on the owned side: Set(default) is on the wire, Unset is not.
             (None,      None,        true ),  // Unset == Unset
-            (None,      Some(""),    true ),  // Unset == Set(default)
-            (Some(""),  None,        true ),  // Set(default) == Unset (symmetric)
+            (None,      Some(""),    false),  // Unset != Set(default)
+            (Some(""),  None,        false),  // Set(default) != Unset (symmetric)
             (Some(""),  Some(""),    true ),  // Set(default) == Set(default)
             (None,      Some("x"),   false),  // Unset != Set(nondefault)
             (Some("x"), None,        false),  // Set(nondefault) != Unset (symmetric)
@@ -3331,6 +3386,24 @@ mod tests {
                 "({l:?} == {r:?}) should be {expect}"
             );
         }
+
+        // `==` needs no `DefaultViewInstance`.
+        assert!(MessageFieldView::set(1i32) == MessageFieldView::set(1));
+        assert!(MessageFieldView::set(1i32) != MessageFieldView::unset());
+    }
+
+    #[test]
+    fn message_field_view_hash_agrees_with_equality() {
+        fn hash_of<H: core::hash::Hash>(value: &H) -> u64 {
+            use core::hash::Hasher;
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            value.hash(&mut hasher);
+            hasher.finish()
+        }
+        let unset: MessageFieldView<i32> = MessageFieldView::unset();
+        assert_eq!(hash_of(&unset), hash_of(&None::<&i32>));
+        assert_eq!(hash_of(&MessageFieldView::set(7i32)), hash_of(&Some(&7i32)));
+        assert_ne!(hash_of(&unset), hash_of(&MessageFieldView::set(0i32)));
     }
 
     // ── RepeatedView ─────────────────────────────────────────────────────
@@ -4870,6 +4943,210 @@ mod tests {
         assert!(results[1].is_err());
         let cloned = rep.clone();
         assert_eq!(cloned.len(), 2);
+    }
+
+    #[cfg(feature = "std")]
+    mod lazy_repeated_iter_tests {
+        use super::*;
+        use core::cell::Cell;
+
+        std::thread_local! {
+            static DECODE_CALLS: Cell<usize> = const { Cell::new(0) };
+        }
+
+        #[derive(Clone, Debug)]
+        struct CountingLazyView<'a>(SimpleLazyView<'a>);
+
+        impl<'a> LazyMessageView<'a> for CountingLazyView<'a> {
+            type Owned = SimpleMessage;
+
+            fn decode_lazy(buf: &'a [u8]) -> Result<Self, DecodeError> {
+                DECODE_CALLS.with(|calls| calls.set(calls.get() + 1));
+                SimpleLazyView::decode_lazy(buf).map(Self)
+            }
+
+            fn decode_lazy_with_ctx(
+                buf: &'a [u8],
+                ctx: crate::DecodeContext<'_>,
+            ) -> Result<Self, DecodeError> {
+                DECODE_CALLS.with(|calls| calls.set(calls.get() + 1));
+                SimpleLazyView::decode_lazy_with_ctx(buf, ctx).map(Self)
+            }
+
+            fn merge_lazy(
+                &mut self,
+                buf: &'a [u8],
+                ctx: crate::DecodeContext<'_>,
+            ) -> Result<(), DecodeError> {
+                self.0.merge_lazy(buf, ctx)
+            }
+
+            fn to_owned_message(&self) -> Result<SimpleMessage, DecodeError> {
+                self.0.to_owned_message()
+            }
+        }
+
+        fn repeated(
+            elements: &[&'static [u8]],
+        ) -> LazyRepeatedView<'static, CountingLazyView<'static>> {
+            DECODE_CALLS.with(|calls| calls.set(0));
+            let cell = Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+            let mut rep = LazyRepeatedView::new();
+            for &element in elements {
+                rep.push_bytes(element, full_budget_ctx(&cell));
+            }
+            rep
+        }
+
+        fn decode_calls() -> usize {
+            DECODE_CALLS.with(Cell::get)
+        }
+
+        #[test]
+        fn nth_decodes_only_selected_elements() {
+            let rep = repeated(&[b"\x08\x01", b"\x08\x02", b"\x08\x03", b"\x08\x04"]);
+            let mut iter = rep.iter();
+            assert_eq!(iter.nth(2).unwrap().unwrap().0.id, 3);
+            assert_eq!(decode_calls(), 1);
+            assert_eq!(iter.len(), 1);
+            assert_eq!(iter.next().unwrap().unwrap().0.id, 4);
+            assert_eq!(decode_calls(), 2);
+            assert!(iter.next().is_none());
+            assert_eq!(decode_calls(), 2);
+        }
+
+        #[test]
+        fn count_and_last_decode_at_most_one_element() {
+            let rep = repeated(&[b"\x08\x01", b"\x08\x02", b"\x08\x03"]);
+            assert_eq!(rep.iter().count(), 3);
+            assert_eq!(decode_calls(), 0);
+            assert_eq!(rep.iter().last().unwrap().unwrap().0.id, 3);
+            assert_eq!(decode_calls(), 1);
+            assert!(repeated(&[]).iter().last().is_none());
+            assert_eq!(decode_calls(), 0);
+        }
+
+        #[test]
+        fn count_and_last_do_not_validate_skipped_elements() {
+            let rep = repeated(&[b"\xff", b"\x08\x02"]);
+            assert_eq!(rep.iter().count(), 2);
+            assert_eq!(rep.iter().last().unwrap().unwrap().0.id, 2);
+            assert_eq!(decode_calls(), 1);
+        }
+
+        #[test]
+        fn nth_back_decodes_only_selected_elements() {
+            let rep = repeated(&[b"\x08\x01", b"\x08\x02", b"\x08\x03", b"\x08\x04"]);
+            let mut iter = rep.iter();
+            assert_eq!(iter.nth_back(2).unwrap().unwrap().0.id, 2);
+            assert_eq!(decode_calls(), 1);
+            assert_eq!(iter.len(), 1);
+            assert_eq!(iter.next_back().unwrap().unwrap().0.id, 1);
+            assert_eq!(decode_calls(), 2);
+            assert!(iter.next_back().is_none());
+            assert_eq!(decode_calls(), 2);
+        }
+
+        #[test]
+        fn out_of_range_skips_exhaust_without_decoding() {
+            for elements in [
+                &[][..],
+                &[&b"\x08\x01"[..]][..],
+                &[&b"\x08\x01"[..], &b"\x08\x02"[..]][..],
+            ] {
+                for n in [elements.len(), elements.len() + 1, usize::MAX] {
+                    for from_back in [false, true] {
+                        let rep = repeated(elements);
+                        let mut iter = rep.iter();
+                        let result = if from_back {
+                            iter.nth_back(n)
+                        } else {
+                            iter.nth(n)
+                        };
+                        assert!(result.is_none());
+                        assert_eq!(iter.len(), 0);
+                        assert_eq!(iter.size_hint(), (0, Some(0)));
+                        assert!(iter.next().is_none());
+                        assert!(iter.next_back().is_none());
+                        assert_eq!(decode_calls(), 0, "n={n}, from_back={from_back}");
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn skips_preserve_element_errors_and_remaining_items() {
+            for from_back in [false, true] {
+                let rep = repeated(&[b"\x08\x01", b"\xff", b"\x08\x03"]);
+                let mut iter = rep.iter();
+                let result = if from_back {
+                    iter.nth_back(1)
+                } else {
+                    iter.nth(1)
+                };
+                assert_eq!(result.unwrap().unwrap_err(), DecodeError::UnexpectedEof);
+                assert_eq!(decode_calls(), 1);
+                assert_eq!(iter.len(), 1);
+                let remaining = if from_back {
+                    iter.next_back()
+                } else {
+                    iter.next()
+                };
+                assert_eq!(
+                    remaining.unwrap().unwrap().0.id,
+                    if from_back { 1 } else { 3 }
+                );
+                assert_eq!(decode_calls(), 2);
+            }
+
+            let rep = repeated(&[b"\xff", b"\x08\x02", b"\xff"]);
+            assert_eq!(rep.iter().nth(1).unwrap().unwrap().0.id, 2);
+            assert_eq!(rep.iter().nth_back(1).unwrap().unwrap().0.id, 2);
+            assert_eq!(decode_calls(), 2);
+        }
+
+        #[test]
+        #[allow(clippy::iter_nth_zero)]
+        fn skips_mix_with_both_ends_and_clone() {
+            let rep = repeated(&[
+                b"\x08\x01",
+                b"\x08\x02",
+                b"\x08\x03",
+                b"\x08\x04",
+                b"\x08\x05",
+                b"\x08\x06",
+            ]);
+            let mut iter = rep.iter();
+            assert_eq!(iter.nth(1).unwrap().unwrap().0.id, 2);
+            assert_eq!(iter.nth_back(1).unwrap().unwrap().0.id, 5);
+            assert_eq!(iter.size_hint(), (2, Some(2)));
+            assert_eq!(decode_calls(), 2);
+            let mut cloned = iter.clone();
+            assert_eq!(iter.nth(0).unwrap().unwrap().0.id, 3);
+            assert_eq!(iter.nth_back(0).unwrap().unwrap().0.id, 4);
+            assert!(iter.nth(0).is_none());
+            assert_eq!(cloned.nth_back(0).unwrap().unwrap().0.id, 4);
+            assert_eq!(cloned.nth(0).unwrap().unwrap().0.id, 3);
+            assert!(cloned.nth_back(0).is_none());
+            assert_eq!(decode_calls(), 6);
+        }
+
+        #[test]
+        fn skip_adapter_next_decodes_only_yielded_elements() {
+            let rep = repeated(&[b"\xff", b"\xff", b"\x08\x03", b"\x08\x04"]);
+            let mut iter = rep.iter().skip(2);
+            assert_eq!(iter.next().unwrap().unwrap().0.id, 3);
+            assert_eq!(iter.next().unwrap().unwrap().0.id, 4);
+            assert!(iter.next().is_none());
+            assert_eq!(decode_calls(), 2);
+
+            let rep = repeated(&[b"\x08\x01", b"\x08\x02", b"\xff", b"\xff"]);
+            let mut iter = rep.iter().rev().skip(2);
+            assert_eq!(iter.next().unwrap().unwrap().0.id, 2);
+            assert_eq!(iter.next().unwrap().unwrap().0.id, 1);
+            assert!(iter.next().is_none());
+            assert_eq!(decode_calls(), 2);
+        }
     }
 
     // ── Encode-side 2 GiB guard tests ──────────────────────────────────

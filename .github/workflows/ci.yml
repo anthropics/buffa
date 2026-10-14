@@ -26,7 +26,8 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     # 15 rather than 10: documenting the workspace (buffa-test's generated
-    # modules are large) adds a few minutes on top of a cold-cache build.
+    # modules are large) and building buffa-test a second time with its
+    # `arbitrary` feature each add a few minutes on top of a cold-cache build.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (sha-pinned)
@@ -65,6 +66,20 @@ jobs:
       # is sufficient to catch compile breaks without doubling the test time.
       - name: Check all features
         run: cargo check --workspace --all-features
+
+      # "Check all features" builds lib and bin targets and does not deny
+      # warnings, so these two are the only steps that lint
+      # `generate_arbitrary` output and run the tests behind buffa-test's
+      # `arbitrary` feature. They catch generated code that warns only under
+      # the feature, as `derive(Arbitrary)` does on an enum with a
+      # `#[deprecated]` variant (#564). Clippy also lints the workspace crates
+      # buffa-test depends on (buffa, buffa-types) with the feature on. Local
+      # equivalent: `task test-arbitrary`.
+      - name: Clippy (buffa-test, arbitrary)
+        run: cargo clippy -p buffa-test --all-targets --features arbitrary -- -D warnings
+
+      - name: Tests (buffa-test, arbitrary)
+        run: cargo test -p buffa-test --features arbitrary --lib --tests
 
       # Rustdoc warnings are errors, in generated docs too: buffa-test's
       # build include!s codegen output (views, lazy views, json, reflect), so
@@ -149,8 +164,9 @@ jobs:
   # Adding a publishable crate to the workspace without adding it to
   # .github/publish-order.txt means the release silently skips it. That is how
   # buffa-remote-derive was announced in the 0.9.0 changelog and never reached
-  # crates.io. The publish workflow checks this too, but only on a v* tag —
-  # running it here fails the PR that introduces the crate instead.
+  # crates.io. The same check fails a list that puts a crate before one of its
+  # workspace dependencies. The publish workflow checks this too, but only on a
+  # v* tag — running it here fails the PR that introduces the crate instead.
   check-publish-list:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -163,6 +179,12 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: stable
         run: ./scripts/check-publish-coverage.sh
+      # The checker also runs in the release workflow, so its own behaviour
+      # (what it accepts and what it rejects) is tested here on every change.
+      - name: Test the publish list checker
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: ./scripts/test-publish-order.sh
 
   # ── Changelog check ──────────────────────────────────────────────────────
   # CHANGELOG.md is generated from .changes/ via changie. Fail if it has been
@@ -305,7 +327,10 @@ jobs:
       # provenance, alignment and initialisation on the kinds and field
       # shapes the module's tests build, including message fields stored
       # inline, boxed and in a `Vec`, whose child pointers point into the
-      # parent or the heap.
+      # parent or the heap, and oneofs, through hand-written enums with
+      # inline and boxed message members. The `OneofEnum` code that codegen
+      # emits runs natively only, in the differential tests of `buffa-test`,
+      # not under Miri.
       - name: Miri (table interpreter soundness)
         run: cargo +${{ env.MIRI_TOOLCHAIN }} miri test -p buffa --lib -- 'table::'
 
@@ -367,6 +392,15 @@ jobs:
       - name: Check buffa-descriptor no_std + json/reflect/text/views
         run: cargo check -p buffa-descriptor --no-default-features --features json,reflect,text,views
 
+      - name: Test buffa-descriptor no_std reflective JSON
+        run: cargo test -p buffa-descriptor --no-default-features --features json,reflect --test '*'
+
+      - name: Check buffa-proto-options no_std
+        run: cargo check -p buffa-proto-options --no-default-features
+
+      - name: Check buffa-proto-options no_std + json/text/views
+        run: cargo check -p buffa-proto-options --no-default-features --features json,text,views
+
       - name: Check workspace 32-bit
         run: cargo check --workspace --target i686-unknown-linux-gnu
 
@@ -415,10 +449,15 @@ jobs:
       - name: Regenerate WKT types
         run: cargo run -p buffa-codegen --bin gen_wkt_types -- /tmp/wkt.pb buffa-types/src/generated
 
+      - name: Regenerate buffa-proto-options option types
+        # descriptor.proto comes from buffa-descriptor/protos/ (pinned), so
+        # this is independent of the installed protoc's bundled includes.
+        run: scripts/gen-option-types.sh
+
       - name: Check for differences
         run: |
-          if ! git diff --exit-code buffa-descriptor/src/generated/ buffa-types/src/generated/; then
-            echo "::error::Checked-in generated code is stale. Run 'task gen-wkt-types' and/or regenerate bootstrap types, then commit."
+          if ! git diff --exit-code buffa-descriptor/src/generated/ buffa-types/src/generated/ buffa-proto-options/src/generated/; then
+            echo "::error::Checked-in generated code is stale. Run 'task gen-wkt-types', 'task gen-option-types' and/or regenerate bootstrap types, then commit."
             exit 1
           fi
 
@@ -468,9 +507,11 @@ jobs:
           docker rm "$CID"
           chmod +x /usr/local/bin/conformance_test_runner /usr/local/bin/protoc
 
-      # Both builds use the same target dir so build-script artifacts
-      # (buffa-codegen, buffa-build, syn, etc.) are compiled only once.
-      # The std binary is copied out before the no_std build overwrites it.
+      # All three builds use the same target dir so build-script artifacts
+      # (buffa-codegen, buffa-build, syn, etc.) are compiled only once. The std
+      # and table binaries are copied out before the next build overwrites
+      # them; the no_std build stays last because its run uses the artifact in
+      # place.
       - name: Determine host target
         id: host
         run: echo "triple=$(rustc -vV | grep '^host:' | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
@@ -482,6 +523,14 @@ jobs:
 
       - name: Save std binary
         run: cp conformance/target/${{ steps.host.outputs.triple }}/release/conformance /tmp/buffa-conformance-std
+
+      - name: Build conformance binary (table)
+        run: >-
+          cargo build --release --manifest-path conformance/Cargo.toml
+          --features table --target ${{ steps.host.outputs.triple }}
+
+      - name: Save table binary
+        run: cp conformance/target/${{ steps.host.outputs.triple }}/release/conformance /tmp/buffa-conformance-table
 
       - name: Build conformance binary (no_std)
         run: >-
@@ -546,3 +595,10 @@ jobs:
           --failure_list conformance/known_failures_view_vtable.txt
           --maximum_edition 2024
           /tmp/buffa-conformance-std
+
+      - name: Run conformance tests (via-table)
+        run: >-
+          conformance_test_runner
+          --failure_list conformance/known_failures_table.txt
+          --maximum_edition 2024
+          /tmp/buffa-conformance-table

@@ -10,12 +10,13 @@ If a change to `buffa-codegen` (notably `message.rs`, `impl_message.rs`, `view.r
 
 ```bash
 task gen-wkt-types          # buffa-types/src/generated/ — WKTs for consumer use
+task gen-option-types          # buffa-proto-options/src/generated/ — buffa's custom option types
 task gen-bootstrap-types    # buffa-descriptor/src/generated/ — only if the change affects descriptor types
 ```
 
-Most codegen changes don't touch descriptor-specific paths, so `gen-wkt-types` is usually sufficient.
+Most codegen changes don't touch descriptor-specific paths, so `gen-wkt-types` and `gen-option-types` are usually sufficient.
 
-A quick check: `git status` after `task lint` — if `buffa-types/src/generated/` shows as modified, you forgot to commit the regen.
+A quick check: `git status` after `task lint` — if `buffa-types/src/generated/` or `buffa-proto-options/src/generated/` shows as modified, you forgot to commit the regen.
 
 ## Pre-Commit Code Review
 

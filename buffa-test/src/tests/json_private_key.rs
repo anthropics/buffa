@@ -61,22 +61,16 @@ fn a_closed_enum_is_not_read_from_the_private_key() {
 }
 
 #[test]
-fn ignoring_unknown_enum_values_drops_the_private_key_as_an_unknown_value() {
+fn ignoring_unknown_enum_values_rejects_the_private_key_as_a_wrong_typed_value() {
     let lenient = JsonParseOptions::new().ignore_unknown_enum_values(true);
     with_json_parse_options(&lenient, || {
-        let json = format!(r#"{{"colors": ["GREEN", {}]}}"#, hidden(r#""RED""#));
-        let open: WithEnum = serde_json::from_str(&json).unwrap();
-        let plain: WithEnum = serde_json::from_str(r#"{"colors": ["GREEN"]}"#).unwrap();
-        assert_eq!(open.colors, plain.colors);
-
-        let json = format!(
-            r#"{{"tiers": [{}], "byName": {{"k": {}}}}}"#,
-            hidden("1"),
-            hidden(r#""PRO""#)
-        );
-        let closed: ClosedEnumJson = serde_json::from_str(&json).unwrap();
-        assert!(closed.tiers.is_empty(), "{:?}", closed.tiers);
-        assert!(closed.by_name.is_empty(), "{:?}", closed.by_name);
+        assert_key_is_data::<WithEnum>(r#"{"colors": ["GREEN", @]}"#, r#""RED""#);
+        assert_key_is_data::<OptionalScalars>(r#"{"oColor": @}"#, r#""RED""#);
+        assert_key_is_data::<ClosedEnumJson>(r#"{"tiers": [@]}"#, "1");
+        assert_key_is_data::<ClosedEnumJson>(r#"{"byName": {"k": @}}"#, r#""PRO""#);
+        // Control: the same options still drop an unknown name.
+        let open: WithEnum = serde_json::from_str(r#"{"colors": ["GREEN", "NOPE"]}"#).unwrap();
+        assert_eq!(open.colors.len(), 1);
     });
 }
 

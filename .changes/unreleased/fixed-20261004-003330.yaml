@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`buffa-build` names a `.proto` file by the first include directory that contains it, as protoc does** (#536). It used the longest matching include, so with `includes(["proto", "proto/vendor"])` the file `proto/vendor/ext.proto` was looked up as `ext.proto` while protoc's descriptor set names it `vendor/ext.proto`, and generation failed with `FileNotFound`. On Windows the name now uses `/` separators, as protoc's does.
+time: 2026-10-04T00:33:30.391118+02:00

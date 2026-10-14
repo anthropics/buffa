@@ -1,0 +1,5 @@
+kind: Added
+body: |-
+  **`ProtoBytes::PREFERS_OWNED_PAYLOAD`: a custom `bytes` type can decode without a copy** (#509). The const defaults to `false`. A type that sets it to `true` receives every field as an owned `WirePayload`, so a `from_wire` that keeps `WirePayload::into_bytes()` shares a `Bytes` input where it copied before. `Bytes` sets it, so a direct call to `decode_bytes_to::<Bytes>` now shares the input too; generated `bytes::Bytes` fields already did.
+  A value that shares the input keeps the whole input buffer allocated until the value and every clone of it are dropped. `#[derive(ProtoBytes)]` from `buffa-remote-derive` leaves the const at `false`.
+time: 2026-10-02T11:07:28.665514+02:00

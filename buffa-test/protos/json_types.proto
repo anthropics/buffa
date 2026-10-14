@@ -61,6 +61,21 @@ message WithMap {
   map<string, int32> counts = 2;
 }
 
+message IntegerCollections {
+  repeated int32 int32_values = 1;
+  repeated sint32 sint32_values = 2;
+  repeated sfixed32 sfixed32_values = 3;
+  repeated uint32 uint32_values = 4;
+  repeated fixed32 fixed32_values = 5;
+  map<string, int32> int32_map = 6;
+  map<string, sint32> sint32_map = 7;
+  map<string, sfixed32> sfixed32_map = 8;
+  map<string, uint32> uint32_map = 9;
+  map<string, fixed32> fixed32_map = 10;
+  map<int32, int32> int32_key_map = 11;
+  map<uint32, uint32> uint32_key_map = 12;
+}
+
 message WithTimestamp {
   google.protobuf.Timestamp created = 1;
 }
@@ -102,6 +117,7 @@ message MixedOneofAndFields {
   google.protobuf.Value dynamic = 5;
   // Field with json_name override (json_name != proto name).
   int32 snake_case_field = 6 [json_name = "snakeCaseField"];
+  repeated int32 numbers = 7;
   // The oneof that triggers custom Deserialize generation.
   oneof choice {
     string text = 10;

@@ -18,9 +18,16 @@ buffa = { workspace = true, features = ["std", "json", "text"] }
 # descriptors that need it.
 buffa-descriptor = { workspace = true, features = ["reflect", "json", "std"] }
 buffa-types = { workspace = true, features = ["json", "chrono", "jiff", "reflect"] }
+# The `buffa.ext` option types, for reading the options that
+# `protos/ext_options.proto` sets (`src/tests/ext_options.rs`).
+buffa-proto-options = { workspace = true }
 # The SmolStr preset crate, used by the string_type fixtures and as the template
 # for the crate-local newtypes in `reprs`.
 buffa-smolstr = { workspace = true, features = ["serde"] }
+# Derives the `ProtoString` impl, and with its `serde` key the JSON impls, of
+# the crate-local string newtypes in the `vtable_string_repr` and `string_map`
+# fixtures.
+buffa-remote-derive = { path = "../buffa-remote-derive" }
 bytes = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

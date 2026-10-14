@@ -30,7 +30,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let into_inner_call =
         remote_field::overridable_call(&overrides, "into_inner", field_ty, "into_inner");
 
-    let ctor_new = remote.construct(quote! { #new_call(value) });
+    let ctor_new = remote.construct(quote! { #new_call(__buffa_value) });
 
     let arbitrary_impl = forwarders::arbitrary(
         &remote,
@@ -39,6 +39,8 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         forwarders::TakeRest::TraitDefault,
         &[],
     );
+
+    let serde_impl = forwarders::serde(&remote, forwarders::SerdeForm::Wrapped);
 
     Ok(quote! {
         impl #impl_generics ::core::ops::Deref for #ident #ty_generics #where_clause {
@@ -58,7 +60,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
 
         impl #impl_generics ::buffa::ProtoBox<#element_ty> for #ident #ty_generics #where_clause {
             #[inline]
-            fn new(value: #element_ty) -> Self {
+            fn new(__buffa_value: #element_ty) -> Self {
                 #ctor_new
             }
 
@@ -69,5 +71,6 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         }
 
         #arbitrary_impl
+        #serde_impl
     })
 }

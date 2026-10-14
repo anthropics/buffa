@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **The well-known types that hold no floating-point value implement `Eq` and `Hash`** (#685, closes #651). `Timestamp`, `Duration`, `FieldMask`, `Empty`, `Any`, `SourceContext`, the integer, bool, string and bytes wrappers, and the `type.proto` and `api.proto` messages (`Type`, `Field`, `Enum`, `EnumValue`, `google.protobuf.Option`, `Api`, `Method`, `Mixin`) can be `HashMap` and `HashSet` keys, and a message that holds them can derive `Eq` and `Hash` when its other fields allow it. Equality and hashing include unknown fields. `DoubleValue`, `FloatValue`, `Value`, `Struct` and `ListValue` stay `PartialEq` only. The view types derive only `Clone`, `Debug` and `Default`; convert a view with `to_owned_message` to compare or hash it.
+time: 2026-10-08T00:00:00Z

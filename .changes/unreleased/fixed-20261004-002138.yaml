@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a oneof member that is `required` or `repeated`** (#533). A field with a `oneof_index` and a label other than `optional` linked, and reflection then described a repeated or required field as a member of the oneof. It is now `PoolError::InvalidOneofCardinality`, as protoc and protobuf-go reject it. An extension's `oneof_index` is ignored, as before.
+time: 2026-10-04T00:21:38.997016+02:00

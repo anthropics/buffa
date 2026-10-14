@@ -19,6 +19,508 @@ use buffa_descriptor::{DescriptorPool, FieldKind, PoolError, ScalarType, Singula
 
 const FDS_BYTES: &[u8] = include_bytes!("protos/reflect_test.fds");
 
+mod packed_options {
+    use super::{assert_set_rejected_without_mutating_pool, enum_value, scalar_field};
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::feature_set::RepeatedFieldEncoding;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, EnumDescriptorProto, FeatureSet, FieldDescriptorProto,
+        FieldOptions, FileDescriptorProto, FileDescriptorSet, FileOptions, MessageOptions,
+    };
+    use buffa_descriptor::{DescriptorPool, FieldKind, PoolError};
+
+    const PACKABLE_TYPES: &[Type] = &[
+        Type::TYPE_DOUBLE,
+        Type::TYPE_FLOAT,
+        Type::TYPE_INT64,
+        Type::TYPE_UINT64,
+        Type::TYPE_INT32,
+        Type::TYPE_FIXED64,
+        Type::TYPE_FIXED32,
+        Type::TYPE_BOOL,
+        Type::TYPE_UINT32,
+        Type::TYPE_ENUM,
+        Type::TYPE_SFIXED32,
+        Type::TYPE_SFIXED64,
+        Type::TYPE_SINT32,
+        Type::TYPE_SINT64,
+    ];
+    const NON_PACKABLE_TYPES: &[Type] = &[
+        Type::TYPE_STRING,
+        Type::TYPE_BYTES,
+        Type::TYPE_MESSAGE,
+        Type::TYPE_GROUP,
+    ];
+
+    fn field(ty: Type, label: Label, packed: Option<bool>) -> FieldDescriptorProto {
+        let mut field = scalar_field("value", 1, ty);
+        field.label = Some(label);
+        field.type_name = match ty {
+            Type::TYPE_ENUM => Some(".packed.test.Kind".into()),
+            Type::TYPE_MESSAGE => Some(".packed.test.Child".into()),
+            Type::TYPE_GROUP => Some(".packed.test.Sample.Child".into()),
+            _ => None,
+        };
+        if ty == Type::TYPE_GROUP {
+            field.name = Some("child".into());
+        }
+        if packed.is_some() {
+            field.options = FieldOptions {
+                packed,
+                ..Default::default()
+            }
+            .into();
+        }
+        field
+    }
+
+    fn set(syntax: Option<&str>, field: FieldDescriptorProto) -> FileDescriptorSet {
+        FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("packed-options.proto".into()),
+                package: Some("packed.test".into()),
+                syntax: syntax.map(Into::into),
+                message_type: vec![
+                    DescriptorProto {
+                        name: Some("Sample".into()),
+                        field: vec![field],
+                        nested_type: vec![DescriptorProto {
+                            name: Some("Child".into()),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                    DescriptorProto {
+                        name: Some("Child".into()),
+                        ..Default::default()
+                    },
+                ],
+                enum_type: vec![EnumDescriptorProto {
+                    name: Some("Kind".into()),
+                    value: vec![enum_value("ZERO", 0), enum_value("ONE", 1)],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    /// `field` with `features.repeated_field_encoding` set on the field itself.
+    fn with_encoding(
+        mut field: FieldDescriptorProto,
+        encoding: RepeatedFieldEncoding,
+    ) -> FieldDescriptorProto {
+        field.options = FieldOptions {
+            features: FeatureSet {
+                repeated_field_encoding: Some(encoding),
+                ..Default::default()
+            }
+            .into(),
+            ..Default::default()
+        }
+        .into();
+        field
+    }
+
+    fn editions_set(field: FieldDescriptorProto) -> FileDescriptorSet {
+        let mut set = set(Some("editions"), field);
+        set.file[0].edition = Some(Edition::EDITION_2023);
+        set
+    }
+
+    #[test]
+    fn repeated_field_encoding_feature_is_rejected_where_it_cannot_apply() {
+        let mut cases = Vec::new();
+        // `PACKED` on a repeated field whose elements cannot be packed.
+        for ty in [Type::TYPE_STRING, Type::TYPE_BYTES, Type::TYPE_MESSAGE] {
+            cases.push((ty, Label::LABEL_REPEATED, RepeatedFieldEncoding::PACKED));
+        }
+        // Either value on a field that is not repeated.
+        for ty in [Type::TYPE_INT32, Type::TYPE_STRING] {
+            for encoding in [
+                RepeatedFieldEncoding::PACKED,
+                RepeatedFieldEncoding::EXPANDED,
+            ] {
+                cases.push((ty, Label::LABEL_OPTIONAL, encoding));
+            }
+        }
+        for (ty, label, encoding) in cases {
+            assert_set_rejected_without_mutating_pool(
+                "packed-options.proto",
+                "packed.test.Sample",
+                editions_set(with_encoding(field(ty, label, None), encoding)),
+                |err| {
+                    assert!(
+                        matches!(
+                            err,
+                            PoolError::InvalidRepeatedFieldEncoding { field }
+                                if field == "packed.test.Sample.value"
+                        ),
+                        "type {ty:?}, label {label:?}, encoding {encoding:?}: {err}"
+                    );
+                    assert_eq!(
+                        err.to_string(),
+                        "field packed.test.Sample.value sets features.repeated_field_encoding, \
+                         but the field is not repeated or its elements cannot be packed"
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn repeated_field_encoding_feature_is_rejected_on_a_singular_extension() {
+        let mut ext = with_encoding(
+            field(Type::TYPE_INT32, Label::LABEL_OPTIONAL, None),
+            RepeatedFieldEncoding::PACKED,
+        );
+        ext.number = Some(100);
+        ext.extendee = Some(".packed.test.Sample".into());
+        let mut set = editions_set(ext.clone());
+        set.file[0].message_type[0].field.clear();
+        set.file[0].message_type[0]
+            .extension_range
+            .push(ExtensionRange {
+                start: Some(100),
+                end: Some(101),
+                ..Default::default()
+            });
+        set.file[0].extension.push(ext);
+        assert_set_rejected_without_mutating_pool(
+            "packed-options.proto",
+            "packed.test.value",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidRepeatedFieldEncoding { field } if field == "packed.test.value"
+                ));
+            },
+        );
+    }
+
+    #[test]
+    fn repeated_field_encoding_feature_is_accepted_where_it_applies() {
+        for (ty, encoding, packed) in [
+            (Type::TYPE_INT32, RepeatedFieldEncoding::PACKED, true),
+            (Type::TYPE_INT32, RepeatedFieldEncoding::EXPANDED, false),
+            (Type::TYPE_ENUM, RepeatedFieldEncoding::EXPANDED, false),
+            (Type::TYPE_STRING, RepeatedFieldEncoding::EXPANDED, false),
+            (Type::TYPE_MESSAGE, RepeatedFieldEncoding::EXPANDED, false),
+        ] {
+            let field = with_encoding(field(ty, Label::LABEL_REPEATED, None), encoding);
+            let p = DescriptorPool::new(editions_set(field)).unwrap();
+            assert_eq!(
+                p.message_by_name("packed.test.Sample")
+                    .unwrap()
+                    .field(1)
+                    .unwrap()
+                    .is_packed(),
+                packed,
+                "type {ty:?}, encoding {encoding:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn inherited_repeated_field_encoding_applies_only_to_the_fields_it_fits() {
+        // A file-level `PACKED` reaches every field; the ones it does not
+        // fit ignore it.
+        for (ty, label, packed) in [
+            (Type::TYPE_INT32, Label::LABEL_REPEATED, true),
+            (Type::TYPE_STRING, Label::LABEL_REPEATED, false),
+            (Type::TYPE_INT32, Label::LABEL_OPTIONAL, false),
+        ] {
+            let mut set = editions_set(field(ty, label, None));
+            set.file[0].options = FileOptions {
+                features: FeatureSet {
+                    repeated_field_encoding: Some(RepeatedFieldEncoding::PACKED),
+                    ..Default::default()
+                }
+                .into(),
+                ..Default::default()
+            }
+            .into();
+            let p = DescriptorPool::new(set).unwrap();
+            assert_eq!(
+                p.message_by_name("packed.test.Sample")
+                    .unwrap()
+                    .field(1)
+                    .unwrap()
+                    .is_packed(),
+                packed,
+                "type {ty:?}, label {label:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn map_entry_fields_may_carry_the_map_field_repeated_field_encoding() {
+        // protoc copies a map field's features onto its entry's key and value.
+        let mut map_field = field(Type::TYPE_MESSAGE, Label::LABEL_REPEATED, None);
+        map_field.type_name = Some(".packed.test.Sample.ValueEntry".into());
+        let map_field = with_encoding(map_field, RepeatedFieldEncoding::EXPANDED);
+        let mut set = editions_set(map_field);
+        let entry_field = |name: &str, number: i32, ty: Type| {
+            let mut f = scalar_field(name, number, ty);
+            f.label = Some(Label::LABEL_OPTIONAL);
+            with_encoding(f, RepeatedFieldEncoding::EXPANDED)
+        };
+        set.file[0].message_type[0]
+            .nested_type
+            .push(DescriptorProto {
+                name: Some("ValueEntry".into()),
+                field: vec![
+                    entry_field("key", 1, Type::TYPE_STRING),
+                    entry_field("value", 2, Type::TYPE_INT32),
+                ],
+                options: MessageOptions {
+                    map_entry: Some(true),
+                    ..Default::default()
+                }
+                .into(),
+                ..Default::default()
+            });
+        let p = DescriptorPool::new(set).unwrap();
+        assert!(matches!(
+            p.message_by_name("packed.test.Sample")
+                .unwrap()
+                .field(1)
+                .unwrap()
+                .kind(),
+            FieldKind::Map { .. }
+        ));
+    }
+
+    #[test]
+    fn packed_true_is_rejected_for_non_packable_fields() {
+        for syntax in [None, Some("proto2"), Some("proto3")] {
+            for &ty in PACKABLE_TYPES.iter().chain(NON_PACKABLE_TYPES) {
+                if ty == Type::TYPE_GROUP && syntax == Some("proto3") {
+                    continue;
+                }
+                for label in [
+                    Label::LABEL_OPTIONAL,
+                    Label::LABEL_REQUIRED,
+                    Label::LABEL_REPEATED,
+                ] {
+                    if (label == Label::LABEL_REPEATED && PACKABLE_TYPES.contains(&ty))
+                        || (label == Label::LABEL_REQUIRED && syntax == Some("proto3"))
+                    {
+                        continue;
+                    }
+                    let field = field(ty, label, Some(true));
+                    let full_name =
+                        format!("packed.test.Sample.{}", field.name.as_deref().unwrap());
+                    assert_set_rejected_without_mutating_pool(
+                        "packed-options.proto",
+                        "packed.test.Sample",
+                        set(syntax, field),
+                        |err| {
+                            assert!(
+                                matches!(err, PoolError::InvalidPackedOption { field } if field == &full_name)
+                            );
+                            assert_eq!(
+                                err.to_string(),
+                                format!("field {full_name} sets packed = true but is not a repeated numeric, bool, or enum field"),
+                                "syntax {syntax:?}, type {ty:?}, label {label:?}",
+                            );
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn packed_false_and_absent_options_are_accepted_for_non_packable_fields() {
+        for syntax in [None, Some("proto2"), Some("proto3")] {
+            for &ty in PACKABLE_TYPES.iter().chain(NON_PACKABLE_TYPES) {
+                if ty == Type::TYPE_GROUP && syntax == Some("proto3") {
+                    continue;
+                }
+                for label in [
+                    Label::LABEL_OPTIONAL,
+                    Label::LABEL_REQUIRED,
+                    Label::LABEL_REPEATED,
+                ] {
+                    if (label == Label::LABEL_REPEATED && PACKABLE_TYPES.contains(&ty))
+                        || (label == Label::LABEL_REQUIRED && syntax == Some("proto3"))
+                    {
+                        continue;
+                    }
+                    for packed in [None, Some(false)] {
+                        let p = DescriptorPool::new(set(syntax, field(ty, label, packed))).unwrap();
+                        assert!(!p
+                            .message_by_name("packed.test.Sample")
+                            .unwrap()
+                            .field(1)
+                            .unwrap()
+                            .is_packed());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn repeated_packable_fields_honor_the_packed_option() {
+        for syntax in [None, Some("proto2"), Some("proto3")] {
+            for &ty in PACKABLE_TYPES {
+                for packed in [None, Some(false), Some(true)] {
+                    let p =
+                        DescriptorPool::new(set(syntax, field(ty, Label::LABEL_REPEATED, packed)))
+                            .unwrap();
+                    let field = p
+                        .message_by_name("packed.test.Sample")
+                        .unwrap()
+                        .field(1)
+                        .unwrap();
+                    assert_eq!(
+                        field.is_packed(),
+                        packed.unwrap_or(syntax == Some("proto3"))
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn packed_options_use_the_resolved_field_type() {
+        for syntax in [None, Some("proto2"), Some("proto3")] {
+            for ty in [Type::TYPE_ENUM, Type::TYPE_MESSAGE] {
+                let mut field = field(ty, Label::LABEL_REPEATED, Some(true));
+                field.r#type = None;
+                let set = set(syntax, field);
+                if ty == Type::TYPE_ENUM {
+                    let p = DescriptorPool::new(set).unwrap();
+                    assert!(p
+                        .message_by_name("packed.test.Sample")
+                        .unwrap()
+                        .field(1)
+                        .unwrap()
+                        .is_packed());
+                } else {
+                    assert_set_rejected_without_mutating_pool(
+                        "packed-options.proto",
+                        "packed.test.Sample",
+                        set,
+                        |err| {
+                            assert!(matches!(
+                                err,
+                                PoolError::InvalidPackedOption { field }
+                                    if field == "packed.test.Sample.value"
+                            ));
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn map_fields_reject_packed_true() {
+        for syntax in [None, Some("proto2"), Some("proto3")] {
+            for packed in [None, Some(false), Some(true)] {
+                let mut map_field = field(Type::TYPE_MESSAGE, Label::LABEL_REPEATED, packed);
+                map_field.name = Some("values".into());
+                map_field.type_name = Some(".packed.test.Sample.ValuesEntry".into());
+                let mut set = set(syntax, map_field);
+                set.file[0].message_type[0]
+                    .nested_type
+                    .push(DescriptorProto {
+                        name: Some("ValuesEntry".into()),
+                        options: MessageOptions {
+                            map_entry: Some(true),
+                            ..Default::default()
+                        }
+                        .into(),
+                        field: vec![
+                            scalar_field("key", 1, Type::TYPE_STRING),
+                            scalar_field("value", 2, Type::TYPE_INT32),
+                        ],
+                        ..Default::default()
+                    });
+                if packed == Some(true) {
+                    assert_set_rejected_without_mutating_pool(
+                        "packed-options.proto",
+                        "packed.test.Sample",
+                        set,
+                        |err| {
+                            assert!(
+                                matches!(err, PoolError::InvalidPackedOption { field } if field == "packed.test.Sample.values")
+                            );
+                            assert_eq!(err.to_string(), "field packed.test.Sample.values sets packed = true but is not a repeated numeric, bool, or enum field");
+                        },
+                    );
+                } else {
+                    let p = DescriptorPool::new(set).unwrap();
+                    let field = p
+                        .message_by_name("packed.test.Sample")
+                        .unwrap()
+                        .field(1)
+                        .unwrap();
+                    assert!(matches!(field.kind(), FieldKind::Map { .. }));
+                    assert!(!field.is_packed());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn packed_extension_options_are_validated_transactionally() {
+        for nested in [false, true] {
+            for (ty, label, valid) in [
+                (Type::TYPE_INT32, Label::LABEL_OPTIONAL, false),
+                (Type::TYPE_ENUM, Label::LABEL_OPTIONAL, false),
+                (Type::TYPE_STRING, Label::LABEL_REPEATED, false),
+                (Type::TYPE_BYTES, Label::LABEL_REPEATED, false),
+                (Type::TYPE_MESSAGE, Label::LABEL_REPEATED, false),
+                (Type::TYPE_INT32, Label::LABEL_REPEATED, true),
+                (Type::TYPE_ENUM, Label::LABEL_REPEATED, true),
+            ] {
+                let mut ext = field(ty, label, Some(true));
+                ext.number = Some(100);
+                ext.extendee = Some(".packed.test.Sample".into());
+                let mut set = set(Some("proto2"), ext.clone());
+                set.file[0].message_type[0].field.clear();
+                set.file[0].message_type[0]
+                    .extension_range
+                    .push(ExtensionRange {
+                        start: Some(100),
+                        end: Some(101),
+                        ..Default::default()
+                    });
+                let full_name = if nested {
+                    set.file[0].message_type[1].extension.push(ext);
+                    "packed.test.Child.value"
+                } else {
+                    set.file[0].extension.push(ext);
+                    "packed.test.value"
+                };
+                if valid {
+                    let p = DescriptorPool::new(set).unwrap();
+                    assert!(p.extension_by_name(full_name).unwrap().field().is_packed());
+                } else {
+                    assert_set_rejected_without_mutating_pool(
+                        "packed-options.proto",
+                        full_name,
+                        set,
+                        |err| {
+                            assert!(
+                                matches!(err, PoolError::InvalidPackedOption { field } if field == full_name)
+                            );
+                            assert_eq!(err.to_string(), format!("field {full_name} sets packed = true but is not a repeated numeric, bool, or enum field"));
+                        },
+                    );
+                }
+            }
+        }
+    }
+}
+
 fn pool() -> Arc<DescriptorPool> {
     Arc::new(DescriptorPool::decode(FDS_BYTES).expect("pool builds from protoc FDS"))
 }
@@ -135,6 +637,188 @@ fn assert_set_rejected_without_mutating_pool(
             .name(),
         baseline_field_name
     );
+}
+
+#[test]
+fn unrecognized_file_syntax_is_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for syntax in ["prot3", "proto4", "PROTO3", " proto3", "proto3 "] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("invalid-syntax.proto".into()),
+                package: Some("invalid.test".into()),
+                syntax: Some(syntax.into()),
+                message_type: vec![DescriptorProto {
+                    name: Some("InvalidSyntax".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_set_rejected_without_mutating_pool(
+            "invalid-syntax.proto",
+            "invalid.test.InvalidSyntax",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::UnrecognizedSyntax { file, syntax: found }
+                        if file == "invalid-syntax.proto" && found == syntax
+                ));
+                assert_eq!(
+                    err.to_string(),
+                    format!("file invalid-syntax.proto has unrecognized syntax {syntax:?}")
+                );
+            },
+        );
+    }
+}
+
+#[test]
+fn editions_file_without_edition_is_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for edition in [None, Some(Edition::EDITION_UNKNOWN)] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("no-edition.proto".into()),
+                package: Some("invalid.test".into()),
+                syntax: Some("editions".into()),
+                edition,
+                message_type: vec![DescriptorProto {
+                    name: Some("NoEdition".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_set_rejected_without_mutating_pool(
+            "no-edition.proto",
+            "invalid.test.NoEdition",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::MissingEdition { file } if file == "no-edition.proto"
+                ));
+                assert_eq!(
+                    err.to_string(),
+                    "file no-edition.proto has syntax \"editions\" but its edition is unset \
+                     or EDITION_UNKNOWN"
+                );
+            },
+        );
+    }
+}
+
+#[test]
+fn editions_file_with_an_undefined_edition_number_links_with_2023_defaults() {
+    use buffa::Message;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    // An edition number that `Edition` does not define.
+    const UNDEFINED_EDITION: i32 = 5000;
+    assert_eq!(
+        <Edition as buffa::Enumeration>::from_i32(UNDEFINED_EDITION),
+        None
+    );
+
+    let mut file = FileDescriptorProto {
+        name: Some("future-edition.proto".into()),
+        syntax: Some("editions".into()),
+        message_type: vec![DescriptorProto {
+            name: Some("FutureEdition".into()),
+            field: vec![scalar_field("value", 1, Type::TYPE_INT32)],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    file.__buffa_unknown_fields.push(buffa::UnknownField {
+        number: 14,
+        data: buffa::UnknownFieldData::Varint(UNDEFINED_EDITION as u64),
+    });
+    let bytes = FileDescriptorSet {
+        file: vec![file],
+        ..Default::default()
+    }
+    .encode_to_vec();
+
+    // The wire form carries the number, and decoding keeps it as an unknown
+    // field with `edition` unset.
+    let p = DescriptorPool::decode(&bytes).unwrap();
+    assert_eq!(
+        p.message_by_name("FutureEdition")
+            .unwrap()
+            .field(1)
+            .unwrap()
+            .presence(),
+        FieldPresence::Explicit
+    );
+}
+
+#[test]
+fn recognized_file_syntax_keeps_its_field_presence() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for (syntax, edition, presence) in [
+        (None, None, FieldPresence::Explicit),
+        (Some(""), None, FieldPresence::Explicit),
+        (Some("proto2"), None, FieldPresence::Explicit),
+        (Some("proto3"), None, FieldPresence::Implicit),
+        (
+            Some("editions"),
+            Some(Edition::EDITION_2023),
+            FieldPresence::Explicit,
+        ),
+        (
+            Some("editions"),
+            Some(Edition::EDITION_2024),
+            FieldPresence::Explicit,
+        ),
+    ] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("valid-syntax.proto".into()),
+                syntax: syntax.map(Into::into),
+                edition,
+                message_type: vec![DescriptorProto {
+                    name: Some("ValidSyntax".into()),
+                    field: vec![scalar_field("value", 1, Type::TYPE_INT32)],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut p = DescriptorPool::new(set.clone()).unwrap();
+        assert_eq!(
+            p.message_by_name("ValidSyntax")
+                .unwrap()
+                .field(1)
+                .unwrap()
+                .presence(),
+            presence,
+            "syntax {syntax:?}, edition {edition:?}"
+        );
+
+        let mut readded = set;
+        readded.file[0].syntax = Some("prot3".into());
+        p.add_file_descriptor_set(readded).unwrap();
+        assert_eq!(p.files().len(), 1);
+    }
 }
 
 #[test]
@@ -505,6 +1189,200 @@ fn empty_enums_are_rejected_transactionally() {
             ));
         },
     );
+}
+
+mod map_enum_defaults {
+    use super::{assert_set_rejected_without_mutating_pool, enum_value, scalar_field};
+    use buffa::Message;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, EnumDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        MessageOptions,
+    };
+    use buffa_descriptor::{DescriptorPool, PoolError};
+
+    /// The `(nested, enum_first)` arguments of [`set`] that give distinct
+    /// descriptor sets: `enum_first` moves a file-level enum into an imported
+    /// file and does nothing for a nested enum.
+    const SHAPES: [(bool, bool); 3] = [(false, false), (false, true), (true, false)];
+
+    fn set(first: i32, nested: bool, enum_first: bool) -> FileDescriptorSet {
+        let enum_name = if nested {
+            ".map.test.M.E"
+        } else {
+            ".map.test.E"
+        };
+        let enumeration = EnumDescriptorProto {
+            name: Some("E".into()),
+            value: vec![
+                enum_value("FIRST", first),
+                enum_value("OTHER", i32::from(first == 0)),
+            ],
+            ..Default::default()
+        };
+        let mut message = DescriptorProto {
+            name: Some("M".into()),
+            field: vec![
+                buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+                    label: Some(Label::LABEL_REPEATED),
+                    type_name: Some(".map.test.M.ValuesEntry".into()),
+                    ..scalar_field("values", 1, Type::TYPE_MESSAGE)
+                },
+            ],
+            nested_type: vec![DescriptorProto {
+                name: Some("ValuesEntry".into()),
+                options: buffa::MessageField::some(MessageOptions {
+                    map_entry: Some(true),
+                    ..Default::default()
+                }),
+                field: vec![
+                    scalar_field("key", 1, Type::TYPE_STRING),
+                    buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+                        type_name: Some(enum_name.into()),
+                        ..scalar_field("value", 2, Type::TYPE_ENUM)
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut file = FileDescriptorProto {
+            name: Some("map.proto".into()),
+            package: Some("map.test".into()),
+            syntax: Some("proto2".into()),
+            ..Default::default()
+        };
+        if nested {
+            message.enum_type.push(enumeration);
+        } else {
+            file.enum_type.push(enumeration);
+        }
+        file.message_type.push(message);
+        if enum_first && !nested {
+            let imported = FileDescriptorProto {
+                name: Some("enum.proto".into()),
+                package: file.package.clone(),
+                syntax: file.syntax.clone(),
+                enum_type: core::mem::take(&mut file.enum_type),
+                ..Default::default()
+            };
+            file.dependency.push("enum.proto".into());
+            FileDescriptorSet {
+                file: vec![imported, file],
+                ..Default::default()
+            }
+        } else {
+            FileDescriptorSet {
+                file: vec![file],
+                ..Default::default()
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_nonzero_first_map_enum_values_transactionally() {
+        for first in [-1, 1, i32::MIN, i32::MAX] {
+            for (nested, enum_first) in SHAPES {
+                let set = set(first, nested, enum_first);
+                let expected_enum = if nested { "map.test.M.E" } else { "map.test.E" };
+                assert!(DescriptorPool::new(set.clone()).is_err());
+                assert!(DescriptorPool::decode(&set.encode_to_vec()).is_err());
+                assert_set_rejected_without_mutating_pool("map.proto", "map.test.M", set, |err| {
+                    assert!(
+                        matches!(err, PoolError::MapEnumFirstValueNotZero { field, enum_name, number } if field == "map.test.M.values" && enum_name == expected_enum && *number == first)
+                    );
+                    assert!(err.to_string().contains("must be zero"));
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn checks_imported_enums_in_either_file_order() {
+        for first in [0, 7] {
+            for reverse in [false, true] {
+                let mut set = set(first, false, true);
+                if reverse {
+                    set.file.reverse();
+                }
+                assert_eq!(DescriptorPool::new(set).is_ok(), first == 0);
+            }
+        }
+    }
+
+    #[test]
+    fn checks_enums_already_in_the_pool() {
+        for first in [0, 7] {
+            let mut set = set(first, false, true);
+            let enumeration = set.file.remove(0);
+            let mut pool = DescriptorPool::new(FileDescriptorSet {
+                file: vec![enumeration],
+                ..Default::default()
+            })
+            .unwrap();
+            assert_eq!(pool.add_file_descriptor_set(set).is_ok(), first == 0);
+            assert_eq!(pool.messages().len(), if first == 0 { 2 } else { 0 });
+            assert_eq!(pool.enums().len(), 1);
+        }
+    }
+
+    #[test]
+    fn accepts_zero_first_map_enum_values() {
+        for (nested, enum_first) in SHAPES {
+            DescriptorPool::new(set(0, nested, enum_first)).unwrap();
+        }
+    }
+
+    /// The rule does not read the syntax. In an editions file it is
+    /// reachable for a closed enum only, because an open enum with a nonzero
+    /// first value fails its own rule first.
+    #[test]
+    fn editions_map_enum_values_must_start_at_zero() {
+        use buffa_descriptor::generated::descriptor::feature_set::EnumType;
+        use buffa_descriptor::generated::descriptor::{Edition, EnumOptions, FeatureSet};
+
+        let mut closed = set(7, false, false);
+        closed.file[0].syntax = Some("editions".into());
+        closed.file[0].edition = Some(Edition::EDITION_2023);
+        let mut open = closed.clone();
+        closed.file[0].enum_type[0].options = EnumOptions {
+            features: buffa::MessageField::some(FeatureSet {
+                enum_type: Some(EnumType::CLOSED),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+        .into();
+
+        let err = DescriptorPool::new(closed.clone()).unwrap_err();
+        assert!(
+            matches!(&err, PoolError::MapEnumFirstValueNotZero { field, enum_name, number } if field == "map.test.M.values" && enum_name == "map.test.E" && *number == 7),
+            "{err:?}"
+        );
+        let err = DescriptorPool::new(open.clone()).unwrap_err();
+        assert!(
+            matches!(&err, PoolError::OpenEnumFirstValueNotZero { enum_name, .. } if enum_name == "map.test.E"),
+            "{err:?}"
+        );
+
+        for set in [&mut closed, &mut open] {
+            set.file[0].enum_type[0].value.swap(0, 1);
+            DescriptorPool::new(set.clone()).unwrap();
+        }
+    }
+
+    #[test]
+    fn ordinary_proto2_enum_fields_may_start_nonzero() {
+        let mut set = set(7, false, false);
+        set.file[0].message_type[0].field = vec![
+            buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+                type_name: Some(".map.test.E".into()),
+                ..scalar_field("value", 1, Type::TYPE_ENUM)
+            },
+        ];
+        set.file[0].message_type[0].nested_type.clear();
+        DescriptorPool::new(set).unwrap();
+    }
 }
 
 #[test]
@@ -1079,9 +1957,182 @@ fn duplicate_oneof_names_are_rejected_transactionally() {
 }
 
 #[test]
-fn distinct_oneof_names_are_accepted() {
+fn field_oneof_name_collisions_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
     use buffa_descriptor::generated::descriptor::{
-        DescriptorProto, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+        DescriptorProto, Edition, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
+    };
+
+    for (syntax, edition) in [
+        ("proto2", None),
+        ("proto3", None),
+        ("editions", Some(Edition::EDITION_2023)),
+        ("editions", Some(Edition::EDITION_2024)),
+    ] {
+        for member in [false, true] {
+            for nested in [false, true] {
+                let mut fields = vec![FieldDescriptorProto {
+                    oneof_index: member.then_some(0),
+                    ..scalar_field("choice", 1, Type::TYPE_INT32)
+                }];
+                if !member {
+                    fields.push(FieldDescriptorProto {
+                        oneof_index: Some(0),
+                        ..scalar_field("value", 2, Type::TYPE_INT32)
+                    });
+                }
+                let message = DescriptorProto {
+                    name: Some("Collision".into()),
+                    field: fields,
+                    oneof_decl: vec![OneofDescriptorProto {
+                        name: Some("choice".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                };
+                let (message, symbol) = if nested {
+                    (
+                        DescriptorProto {
+                            name: Some("Outer".into()),
+                            nested_type: vec![message],
+                            ..Default::default()
+                        },
+                        "invalid.test.Outer.Collision.choice",
+                    )
+                } else {
+                    (message, "invalid.test.Collision.choice")
+                };
+                assert_set_rejected_without_mutating_pool(
+                    "field-oneof-collision.proto",
+                    symbol,
+                    FileDescriptorSet {
+                        file: vec![FileDescriptorProto {
+                            name: Some("field-oneof-collision.proto".into()),
+                            package: Some("invalid.test".into()),
+                            syntax: Some(syntax.into()),
+                            edition,
+                            message_type: vec![message],
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                    |err| {
+                        assert!(matches!(err, PoolError::DuplicateName(name) if name == symbol));
+                        assert_eq!(err.to_string(), format!("duplicate symbol name {symbol:?}"));
+                    },
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn synthetic_oneof_name_collisions_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, OneofDescriptorProto,
+    };
+
+    assert_rejected_without_mutating_pool(
+        "synthetic-oneof-name-collision.proto",
+        "invalid.test.Collision",
+        DescriptorProto {
+            name: Some("Collision".into()),
+            field: vec![
+                FieldDescriptorProto {
+                    oneof_index: Some(0),
+                    proto3_optional: Some(true),
+                    ..scalar_field("value", 1, Type::TYPE_INT32)
+                },
+                scalar_field("_value", 2, Type::TYPE_INT32),
+            ],
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("_value".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::DuplicateName(name) if name == "invalid.test.Collision._value"
+            ));
+        },
+    );
+}
+
+#[test]
+fn oneof_names_do_not_conflict_with_json_names_or_other_message_scopes() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
+    };
+
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    p.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("valid-oneof-name-overlap.proto".into()),
+            package: Some("valid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("WithOneof".into()),
+                    field: vec![
+                        FieldDescriptorProto {
+                            oneof_index: Some(0),
+                            json_name: Some("choice".into()),
+                            ..scalar_field("value", 1, Type::TYPE_INT32)
+                        },
+                        scalar_field("choice_suffix", 2, Type::TYPE_INT32),
+                        scalar_field("Choice", 3, Type::TYPE_INT32),
+                    ],
+                    oneof_decl: vec![OneofDescriptorProto {
+                        name: Some("choice".into()),
+                        ..Default::default()
+                    }],
+                    nested_type: vec![DescriptorProto {
+                        name: Some("Inner".into()),
+                        field: vec![scalar_field("choice", 1, Type::TYPE_INT32)],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Sibling".into()),
+                    field: vec![scalar_field("choice", 1, Type::TYPE_INT32)],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .unwrap();
+
+    let message = p.message_by_name("valid.test.WithOneof").unwrap();
+    assert_eq!(message.oneofs()[0].name(), "choice");
+    assert_eq!(message.field_by_name("choice").unwrap().name(), "value");
+    assert_eq!(message.fields().len(), 3);
+    for name in ["valid.test.WithOneof.Inner", "valid.test.Sibling"] {
+        assert_eq!(
+            p.message_by_name(name)
+                .unwrap()
+                .field_by_name("choice")
+                .unwrap()
+                .name(),
+            "choice"
+        );
+    }
+}
+
+#[test]
+fn distinct_oneof_names_are_accepted() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
     };
 
     let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
@@ -1092,6 +2143,16 @@ fn distinct_oneof_names_are_accepted() {
             syntax: Some("proto3".into()),
             message_type: vec![DescriptorProto {
                 name: Some("DistinctOneofs".into()),
+                field: vec![
+                    FieldDescriptorProto {
+                        oneof_index: Some(0),
+                        ..scalar_field("a", 1, Type::TYPE_INT32)
+                    },
+                    FieldDescriptorProto {
+                        oneof_index: Some(1),
+                        ..scalar_field("b", 2, Type::TYPE_STRING)
+                    },
+                ],
                 oneof_decl: vec![
                     OneofDescriptorProto {
                         name: Some("first".into()),
@@ -1119,6 +2180,8 @@ fn distinct_oneof_names_are_accepted() {
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
+    assert_eq!(message.oneofs()[0].field_indices(), [0]);
+    assert_eq!(message.oneofs()[1].field_indices(), [1]);
 }
 
 #[test]
@@ -1979,6 +3042,141 @@ fn disjoint_extension_ranges_are_accepted_in_declaration_order() {
 }
 
 #[test]
+fn proto3_messagesets_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet, MessageOptions,
+    };
+
+    for nested in [false, true] {
+        let message = DescriptorProto {
+            name: Some("MessageSet".into()),
+            options: MessageOptions {
+                message_set_wire_format: Some(true),
+                ..Default::default()
+            }
+            .into(),
+            ..Default::default()
+        };
+        let full_name = if nested {
+            "invalid.test.Parent.MessageSet"
+        } else {
+            "invalid.test.MessageSet"
+        };
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("proto3-messageset.proto".into()),
+                package: Some("invalid.test".into()),
+                syntax: Some("proto3".into()),
+                message_type: vec![if nested {
+                    DescriptorProto {
+                        name: Some("Parent".into()),
+                        nested_type: vec![message],
+                        ..Default::default()
+                    }
+                } else {
+                    message
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_set_rejected_without_mutating_pool(
+            "proto3-messageset.proto",
+            full_name,
+            set,
+            |err| {
+                assert!(
+                    matches!(err, PoolError::MessageSetInProto3 { message } if message == full_name),
+                    "{err:?}"
+                );
+                assert_eq!(
+                    err.to_string(),
+                    format!("message {full_name} uses MessageSet wire format in proto3")
+                )
+            },
+        );
+    }
+}
+
+/// protoc reports the extension range before the option. A proto3 message
+/// with both keeps the error it had before `MessageSetInProto3` existed.
+#[test]
+fn proto3_messagesets_with_extension_ranges_report_the_range() {
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet, MessageOptions,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("proto3-messageset-range.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("MessageSet".into()),
+                extension_range: vec![ExtensionRange {
+                    start: Some(100),
+                    end: Some(200),
+                    ..Default::default()
+                }],
+                options: MessageOptions {
+                    message_set_wire_format: Some(true),
+                    ..Default::default()
+                }
+                .into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let err = DescriptorPool::new(set).unwrap_err();
+    assert!(
+        matches!(&err, PoolError::ExtensionRangeInProto3 { message } if message == "invalid.test.MessageSet"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn messageset_options_remain_valid_outside_proto3() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet, MessageOptions,
+    };
+
+    for (syntax, edition) in [
+        (None, None),
+        (Some("proto2"), None),
+        (Some("proto3"), None),
+        (Some("editions"), Some(Edition::EDITION_2023)),
+    ] {
+        for enabled in [None, Some(false), Some(true)] {
+            if syntax == Some("proto3") && enabled == Some(true) {
+                continue;
+            }
+            let set = FileDescriptorSet {
+                file: vec![FileDescriptorProto {
+                    name: Some("messageset-option.proto".into()),
+                    syntax: syntax.map(str::to_owned),
+                    edition,
+                    message_type: vec![DescriptorProto {
+                        name: Some("MessageSet".into()),
+                        options: MessageOptions {
+                            message_set_wire_format: enabled,
+                            ..Default::default()
+                        }
+                        .into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            };
+            DescriptorPool::new(set).unwrap();
+        }
+    }
+}
+
+#[test]
 fn duplicate_proto_field_names_are_rejected_without_mutating_pool() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
     use buffa_descriptor::generated::descriptor::DescriptorProto;
@@ -2119,6 +3317,168 @@ fn negative_oneof_indices_are_rejected_without_mutating_pool() {
             ));
         },
     );
+}
+
+fn oneof_cardinality_set(
+    syntax: Option<&str>,
+    label: Option<buffa_descriptor::generated::descriptor::field_descriptor_proto::Label>,
+) -> buffa_descriptor::generated::descriptor::FileDescriptorSet {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+    };
+
+    let mut member = scalar_field("member", 1, Type::TYPE_INT32);
+    member.label = label;
+    member.oneof_index = Some(0);
+    let mut other = scalar_field("other", 2, Type::TYPE_STRING);
+    other.oneof_index = Some(0);
+    FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("oneof-cardinality.proto".into()),
+            package: Some("cardinality.test".into()),
+            syntax: syntax.map(Into::into),
+            edition: (syntax == Some("editions")).then_some(Edition::EDITION_2023),
+            message_type: vec![DescriptorProto {
+                name: Some("Choice".into()),
+                field: vec![member, other],
+                oneof_decl: vec![OneofDescriptorProto {
+                    name: Some("choice".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn non_optional_oneof_fields_are_rejected_without_mutating_pool() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+
+    for syntax in [None, Some("proto2"), Some("proto3"), Some("editions")] {
+        for label in [Label::LABEL_REQUIRED, Label::LABEL_REPEATED] {
+            assert_set_rejected_without_mutating_pool(
+                "oneof-cardinality.proto",
+                "cardinality.test.Choice",
+                oneof_cardinality_set(syntax, Some(label)),
+                |err| {
+                    assert!(matches!(
+                        err,
+                        PoolError::InvalidOneofCardinality { field }
+                            if field == "cardinality.test.Choice.member"
+                    ));
+                    assert_eq!(
+                        err.to_string(),
+                        "field cardinality.test.Choice.member is a oneof member but is not optional"
+                    );
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn non_optional_nested_message_oneof_fields_are_rejected() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    for label in [Label::LABEL_REQUIRED, Label::LABEL_REPEATED] {
+        let mut set = oneof_cardinality_set(Some("proto2"), Some(label));
+        let message = &mut set.file[0].message_type[0];
+        message.field[0].r#type = Some(Type::TYPE_MESSAGE);
+        message.field[0].type_name = Some(".cardinality.test.Outer.Child".into());
+        let choice = set.file[0].message_type.remove(0);
+        set.file[0].message_type.push(DescriptorProto {
+            name: Some("Outer".into()),
+            nested_type: vec![
+                DescriptorProto {
+                    name: Some("Child".into()),
+                    ..Default::default()
+                },
+                choice,
+            ],
+            ..Default::default()
+        });
+        assert_set_rejected_without_mutating_pool(
+            "oneof-cardinality.proto",
+            "cardinality.test.Outer",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidOneofCardinality { field }
+                        if field == "cardinality.test.Outer.Choice.member"
+                ));
+            },
+        );
+    }
+}
+
+#[test]
+fn invalid_proto3_optional_oneof_labels_keep_the_specific_error() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+
+    for label in [Label::LABEL_REQUIRED, Label::LABEL_REPEATED] {
+        let mut set = oneof_cardinality_set(Some("proto3"), Some(label));
+        set.file[0].message_type[0].field[0].proto3_optional = Some(true);
+        assert_set_rejected_without_mutating_pool(
+            "oneof-cardinality.proto",
+            "cardinality.test.Choice",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidProto3OptionalCardinality { field }
+                        if field == "cardinality.test.Choice.member"
+                ));
+            },
+        );
+    }
+}
+
+#[test]
+fn optional_and_unset_oneof_labels_link_with_explicit_presence() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+
+    for syntax in [None, Some("proto2"), Some("proto3"), Some("editions")] {
+        for label in [None, Some(Label::LABEL_OPTIONAL)] {
+            let p = DescriptorPool::new(oneof_cardinality_set(syntax, label)).unwrap();
+            let message = p.message_by_name("cardinality.test.Choice").unwrap();
+            for field in message.fields() {
+                assert!(matches!(field.kind(), FieldKind::Singular(_)));
+                assert_eq!(field.presence(), FieldPresence::Explicit);
+                assert_eq!(field.oneof_index(), Some(0));
+            }
+        }
+    }
+}
+
+#[test]
+fn required_and_repeated_fields_outside_oneofs_still_link() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+
+    for label in [Label::LABEL_REQUIRED, Label::LABEL_REPEATED] {
+        let mut set = oneof_cardinality_set(Some("proto2"), Some(label));
+        let message = &mut set.file[0].message_type[0];
+        message.field[0].oneof_index = None;
+        let p = DescriptorPool::new(set).unwrap();
+        let field = p
+            .message_by_name("cardinality.test.Choice")
+            .unwrap()
+            .field(1)
+            .unwrap();
+        assert_eq!(field.oneof_index(), None);
+        if label == Label::LABEL_REPEATED {
+            assert!(matches!(field.kind(), FieldKind::List(_)));
+            assert_eq!(field.presence(), FieldPresence::Implicit);
+        } else {
+            assert!(matches!(field.kind(), FieldKind::Singular(_)));
+            assert_eq!(field.presence(), FieldPresence::LegacyRequired);
+        }
+    }
 }
 
 #[test]
@@ -2375,6 +3735,230 @@ fn proto3_optional_fields_require_optional_cardinality() {
                 );
             },
         );
+    }
+}
+
+mod repeated_field_defaults {
+    use super::*;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        descriptor_proto::ExtensionRange, DescriptorProto, Edition, FieldDescriptorProto,
+        FileDescriptorProto, FileDescriptorSet,
+    };
+
+    fn file(syntax: Option<&str>, edition: Option<Edition>) -> FileDescriptorProto {
+        FileDescriptorProto {
+            name: Some("repeated-default.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: syntax.map(str::to_owned),
+            edition,
+            message_type: vec![DescriptorProto {
+                name: Some("Defaults".into()),
+                field: vec![FieldDescriptorProto {
+                    label: Some(Label::LABEL_REPEATED),
+                    ..scalar_field("values", 1, Type::TYPE_INT32)
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn syntaxes() -> [(Option<&'static str>, Option<Edition>); 5] {
+        [
+            (None, None),
+            (Some("proto2"), None),
+            (Some("proto3"), None),
+            (Some("editions"), Some(Edition::EDITION_2023)),
+            (Some("editions"), Some(Edition::EDITION_2024)),
+        ]
+    }
+
+    fn assert_default_error(err: &PoolError, expected_field: &str) {
+        assert!(
+            matches!(err, PoolError::RepeatedFieldWithDefault { field } if field == expected_field),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            format!("repeated field {expected_field} declares a default value")
+        );
+    }
+
+    #[test]
+    fn repeated_scalar_defaults_are_rejected_transactionally() {
+        for (syntax, edition) in syntaxes() {
+            for (ty, default) in [
+                (Type::TYPE_INT32, "0"),
+                (Type::TYPE_DOUBLE, "1.5"),
+                (Type::TYPE_BOOL, "false"),
+                (Type::TYPE_STRING, ""),
+                (Type::TYPE_STRING, "text"),
+                (Type::TYPE_BYTES, ""),
+            ] {
+                let mut file = file(syntax, edition);
+                let field = &mut file.message_type[0].field[0];
+                field.r#type = Some(ty);
+                field.default_value = Some(default.into());
+                assert_set_rejected_without_mutating_pool(
+                    "repeated-default.proto",
+                    "invalid.test.Defaults",
+                    FileDescriptorSet {
+                        file: vec![file],
+                        ..Default::default()
+                    },
+                    |err| assert_default_error(err, "invalid.test.Defaults.values"),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn nested_repeated_defaults_are_rejected_transactionally() {
+        let mut file = file(Some("proto2"), None);
+        file.message_type[0].field[0].default_value = Some("0".into());
+        file.message_type = vec![DescriptorProto {
+            name: Some("Outer".into()),
+            nested_type: file.message_type,
+            ..Default::default()
+        }];
+        assert_set_rejected_without_mutating_pool(
+            "repeated-default.proto",
+            "invalid.test.Outer.Defaults",
+            FileDescriptorSet {
+                file: vec![file],
+                ..Default::default()
+            },
+            |err| assert_default_error(err, "invalid.test.Outer.Defaults.values"),
+        );
+    }
+
+    #[test]
+    fn repeated_extension_defaults_are_rejected_transactionally() {
+        for message_scoped in [false, true] {
+            for (ty, default) in [(Type::TYPE_INT32, "0"), (Type::TYPE_STRING, "")] {
+                let mut file = file(Some("proto2"), None);
+                file.message_type[0].field.clear();
+                file.message_type[0].extension_range = vec![ExtensionRange {
+                    start: Some(100),
+                    end: Some(101),
+                    ..Default::default()
+                }];
+                let extension = FieldDescriptorProto {
+                    label: Some(Label::LABEL_REPEATED),
+                    extendee: Some(".invalid.test.Defaults".into()),
+                    default_value: Some(default.into()),
+                    ..scalar_field("values", 100, ty)
+                };
+                let symbol = if message_scoped {
+                    file.message_type.push(DescriptorProto {
+                        name: Some("Scope".into()),
+                        extension: vec![extension],
+                        ..Default::default()
+                    });
+                    "invalid.test.Scope.values"
+                } else {
+                    file.extension.push(extension);
+                    "invalid.test.values"
+                };
+                assert_set_rejected_without_mutating_pool(
+                    "repeated-default.proto",
+                    symbol,
+                    FileDescriptorSet {
+                        file: vec![file],
+                        ..Default::default()
+                    },
+                    |err| assert_default_error(err, symbol),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn repeated_fields_without_defaults_link_in_every_syntax() {
+        for (syntax, edition) in syntaxes() {
+            let pool = DescriptorPool::new(FileDescriptorSet {
+                file: vec![file(syntax, edition)],
+                ..Default::default()
+            })
+            .unwrap();
+            let field = pool
+                .message_by_name("invalid.test.Defaults")
+                .unwrap()
+                .field(1)
+                .unwrap();
+            assert!(matches!(field.kind(), FieldKind::List(_)));
+        }
+    }
+
+    #[test]
+    fn singular_proto2_defaults_are_accepted() {
+        for label in [
+            None,
+            Some(Label::LABEL_OPTIONAL),
+            Some(Label::LABEL_REQUIRED),
+        ] {
+            let mut file = file(Some("proto2"), None);
+            file.message_type[0].field = vec![FieldDescriptorProto {
+                label,
+                default_value: Some("".into()),
+                ..scalar_field("value", 1, Type::TYPE_STRING)
+            }];
+            let pool = DescriptorPool::new(FileDescriptorSet {
+                file: vec![file],
+                ..Default::default()
+            })
+            .unwrap();
+            assert_eq!(
+                pool.file_by_name("repeated-default.proto")
+                    .unwrap()
+                    .message_type[0]
+                    .field[0]
+                    .default_value
+                    .as_deref(),
+                Some("")
+            );
+        }
+    }
+
+    #[test]
+    fn singular_extension_defaults_are_accepted() {
+        let mut file = file(Some("proto2"), None);
+        file.message_type[0].field.clear();
+        file.message_type[0].extension_range = vec![ExtensionRange {
+            start: Some(100),
+            end: Some(101),
+            ..Default::default()
+        }];
+        file.extension = vec![FieldDescriptorProto {
+            extendee: Some(".invalid.test.Defaults".into()),
+            default_value: Some("".into()),
+            ..scalar_field("value", 100, Type::TYPE_STRING)
+        }];
+        let pool = DescriptorPool::new(FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(pool.extension_by_name("invalid.test.value").is_some());
+    }
+
+    #[test]
+    fn decode_rejects_repeated_defaults() {
+        use buffa::Message;
+
+        for (ty, default) in [(Type::TYPE_INT32, "0"), (Type::TYPE_STRING, "")] {
+            let mut file = file(Some("proto2"), None);
+            file.message_type[0].field[0].r#type = Some(ty);
+            file.message_type[0].field[0].default_value = Some(default.into());
+            let bytes = FileDescriptorSet {
+                file: vec![file],
+                ..Default::default()
+            }
+            .encode_to_vec();
+            let err = DescriptorPool::decode(&bytes).unwrap_err();
+            assert_default_error(&err, "invalid.test.Defaults.values");
+        }
     }
 }
 
@@ -3336,6 +4920,241 @@ fn extensions_link() {
     assert_eq!(p.extensions_of(inner).count(), 0);
 }
 
+mod extension_field_names {
+    use super::{scalar_field, DescriptorPool, FieldKind, PoolError, ScalarType, SingularKind};
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FieldOptions, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    const SCOPES: &[(Option<&str>, bool, &str)] = &[
+        (None, false, "flag"),
+        (Some(""), false, "flag"),
+        (Some("test"), false, "test.flag"),
+        (None, true, "Outer.Inner.flag"),
+        (Some("test"), true, "test.Outer.Inner.flag"),
+    ];
+
+    fn extension() -> FieldDescriptorProto {
+        FieldDescriptorProto {
+            extendee: Some(".host.Host".into()),
+            ..scalar_field("flag", 100, Type::TYPE_BOOL)
+        }
+    }
+
+    fn set(
+        package: Option<&str>,
+        nested: bool,
+        extension: FieldDescriptorProto,
+    ) -> FileDescriptorSet {
+        let mut file = FileDescriptorProto {
+            name: Some("extension-field-names.proto".into()),
+            package: package.map(str::to_owned),
+            syntax: Some("proto2".into()),
+            dependency: vec!["host.proto".into()],
+            ..Default::default()
+        };
+        if nested {
+            file.message_type.push(DescriptorProto {
+                name: Some("Outer".into()),
+                nested_type: vec![DescriptorProto {
+                    name: Some("Inner".into()),
+                    extension: vec![extension],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            });
+        } else {
+            file.extension.push(extension);
+        }
+        FileDescriptorSet {
+            file: vec![
+                FileDescriptorProto {
+                    name: Some("host.proto".into()),
+                    package: Some("host".into()),
+                    syntax: Some("proto2".into()),
+                    message_type: vec![DescriptorProto {
+                        name: Some("Host".into()),
+                        extension_range: vec![ExtensionRange {
+                            start: Some(100),
+                            end: Some(200),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                file,
+            ],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn required_extension_errors_use_declaration_scope() {
+        for &(package, nested, expected_field) in SCOPES {
+            let extension = FieldDescriptorProto {
+                label: Some(Label::LABEL_REQUIRED),
+                ..extension()
+            };
+            let err = DescriptorPool::new(set(package, nested, extension)).unwrap_err();
+            assert!(
+                matches!(&err, PoolError::RequiredExtension { field } if field == expected_field),
+                "unexpected error: {err}"
+            );
+            assert_eq!(
+                err.to_string(),
+                format!("extension {expected_field} must not be required")
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_extension_numbers_use_bare_names() {
+        // 0 fails in link_field; 99 fails the extendee range check in link_extension.
+        for number in [0, 99, 19000] {
+            let extension = FieldDescriptorProto {
+                number: Some(number),
+                ..extension()
+            };
+            let err = DescriptorPool::new(set(None, false, extension)).unwrap_err();
+            if number == 19000 {
+                assert!(matches!(
+                    err,
+                    PoolError::ReservedFieldNumber { field, number: 19000 } if field == "flag"
+                ));
+            } else {
+                assert!(matches!(
+                    err,
+                    PoolError::InvalidFieldNumber { field, number: got }
+                        if field == "flag" && got == number
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_extension_options_use_bare_names() {
+        let packed = FieldDescriptorProto {
+            options: FieldOptions {
+                packed: Some(true),
+                ..Default::default()
+            }
+            .into(),
+            ..extension()
+        };
+        let err = DescriptorPool::new(set(None, false, packed)).unwrap_err();
+        assert!(matches!(err, PoolError::InvalidPackedOption { field } if field == "flag"));
+
+        let json_name = FieldDescriptorProto {
+            json_name: Some("bad\0name".into()),
+            ..extension()
+        };
+        let err = DescriptorPool::new(set(None, false, json_name)).unwrap_err();
+        assert!(matches!(
+            err,
+            PoolError::InvalidJsonName { field, name } if field == "flag" && name == "bad\0name"
+        ));
+    }
+
+    #[test]
+    fn extension_type_resolution_errors_use_bare_names() {
+        for (ty, type_name) in [
+            (Type::TYPE_MESSAGE, ".Missing"),
+            (Type::TYPE_ENUM, ".host.Host"),
+        ] {
+            let extension = FieldDescriptorProto {
+                r#type: Some(ty),
+                type_name: Some(type_name.into()),
+                ..extension()
+            };
+            let err = DescriptorPool::new(set(None, false, extension)).unwrap_err();
+            if ty == Type::TYPE_MESSAGE {
+                assert!(matches!(
+                    err,
+                    PoolError::UnresolvedTypeName { field, type_name: got }
+                        if field == "flag" && got == type_name
+                ));
+            } else {
+                assert!(matches!(
+                    err,
+                    PoolError::WrongTypeKind { field, type_name: got }
+                        if field == "flag" && got == type_name
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn extension_type_import_errors_use_bare_names() {
+        let extension = FieldDescriptorProto {
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(".Payload".into()),
+            ..extension()
+        };
+        let mut set = set(None, false, extension);
+        set.file.push(FileDescriptorProto {
+            name: Some("payload.proto".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Payload".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+        let err = DescriptorPool::new(set).unwrap_err();
+        assert!(matches!(
+            err,
+            PoolError::TypeNotImported { field, type_name, defined_in, .. }
+                if field == "flag" && type_name == ".Payload" && defined_in == "payload.proto"
+        ));
+    }
+
+    #[test]
+    fn nested_message_field_errors_preserve_declaration_scope() {
+        for (package, expected_field) in [
+            (None, "Outer.Inner.flag"),
+            (Some("test"), "test.Outer.Inner.flag"),
+        ] {
+            let mut set = set(package, true, extension());
+            let inner = &mut set.file[1].message_type[0].nested_type[0];
+            let mut field = inner.extension.pop().unwrap();
+            field.extendee = None;
+            field.number = Some(0);
+            inner.field.push(field);
+            let err = DescriptorPool::new(set).unwrap_err();
+            assert!(matches!(
+                err,
+                PoolError::InvalidFieldNumber { field, number: 0 } if field == expected_field
+            ));
+        }
+    }
+
+    #[test]
+    fn valid_extensions_preserve_registration_and_lookup() {
+        for &(package, nested, expected_name) in SCOPES {
+            let pool = DescriptorPool::new(set(package, nested, extension())).unwrap();
+            let ext = pool.extension_by_name(expected_name).unwrap();
+            assert_eq!(ext.full_name(), expected_name);
+            assert_eq!(ext.json_key(), format!("[{expected_name}]"));
+            assert_eq!(ext.field().name(), "flag");
+            assert_eq!(ext.field().number(), 100);
+            assert_eq!(
+                ext.field().kind(),
+                FieldKind::Singular(SingularKind::Scalar(ScalarType::Bool))
+            );
+            assert!(std::ptr::eq(
+                pool.extension_by_name(&format!(".{expected_name}"))
+                    .unwrap(),
+                ext
+            ));
+            let host = pool.message_index("host.Host").unwrap();
+            assert_eq!(ext.extendee(), host);
+            assert!(std::ptr::eq(pool.extension_for(host, 100).unwrap(), ext));
+        }
+    }
+}
+
 /// Build a one-message file with the given syntax and add it to a fresh pool.
 fn add_message_with_syntax(
     syntax: &str,
@@ -3384,6 +5203,9 @@ fn proto2_json_name_conflicts_are_accepted_as_protoc_emits_them() {
 /// `deprecated_legacy_json_field_conflicts` is protoc's own opt-out: it
 /// downgrades the conflict to a warning and emits the set. Honour it rather
 /// than reject a descriptor set the author explicitly asked protoc to produce.
+// The option is `[deprecated = true]` in descriptor.proto, so setting it here
+// warns by design — this test is about honoring the deprecated knob.
+#[allow(deprecated)]
 #[test]
 fn deprecated_legacy_json_field_conflicts_opts_a_proto3_message_out() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
@@ -4038,6 +5860,262 @@ fn extension_index_ordinals_match_slice_positions() {
     }
 }
 
+mod messageset_extensions {
+    use super::assert_set_rejected_without_mutating_pool;
+    use buffa::Message;
+    use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
+    use buffa_descriptor::generated::descriptor::feature_set::MessageEncoding;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, EnumDescriptorProto, EnumValueDescriptorProto, FeatureSet,
+        FieldDescriptorProto, FieldOptions, FileDescriptorProto, FileDescriptorSet, FileOptions,
+        MessageOptions,
+    };
+    use buffa_descriptor::{DescriptorPool, PoolError};
+
+    fn descriptor(
+        ty: Type,
+        label: Option<Label>,
+        nested: bool,
+        messageset: Option<bool>,
+    ) -> FileDescriptorSet {
+        let extension = FieldDescriptorProto {
+            name: Some("item".into()),
+            number: Some(100),
+            extendee: Some(".messageset.test.Set".into()),
+            label,
+            r#type: Some(ty),
+            type_name: match ty {
+                Type::TYPE_MESSAGE | Type::TYPE_GROUP => Some(".messageset.test.Payload".into()),
+                Type::TYPE_ENUM => Some(".messageset.test.Kind".into()),
+                _ => None,
+            },
+            ..Default::default()
+        };
+        let mut file = FileDescriptorProto {
+            name: Some("messageset-extension.proto".into()),
+            package: Some("messageset.test".into()),
+            syntax: Some("proto2".into()),
+            message_type: vec![
+                DescriptorProto {
+                    name: Some("Set".into()),
+                    extension_range: vec![ExtensionRange {
+                        start: Some(100),
+                        end: Some(200),
+                        ..Default::default()
+                    }],
+                    options: MessageOptions {
+                        message_set_wire_format: messageset,
+                        ..Default::default()
+                    }
+                    .into(),
+                    ..Default::default()
+                },
+                DescriptorProto {
+                    name: Some("Payload".into()),
+                    ..Default::default()
+                },
+            ],
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Kind".into()),
+                value: vec![EnumValueDescriptorProto {
+                    name: Some("ZERO".into()),
+                    number: Some(0),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        if nested {
+            file.message_type.push(DescriptorProto {
+                name: Some("Scope".into()),
+                extension: vec![extension],
+                ..Default::default()
+            });
+        } else {
+            file.extension.push(extension);
+        }
+        FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn invalid_messageset_extensions_are_rejected_without_mutating_pool() {
+        for ty in [
+            Type::TYPE_DOUBLE,
+            Type::TYPE_FLOAT,
+            Type::TYPE_INT64,
+            Type::TYPE_UINT64,
+            Type::TYPE_INT32,
+            Type::TYPE_FIXED64,
+            Type::TYPE_FIXED32,
+            Type::TYPE_BOOL,
+            Type::TYPE_STRING,
+            Type::TYPE_GROUP,
+            Type::TYPE_MESSAGE,
+            Type::TYPE_BYTES,
+            Type::TYPE_UINT32,
+            Type::TYPE_ENUM,
+            Type::TYPE_SFIXED32,
+            Type::TYPE_SFIXED64,
+            Type::TYPE_SINT32,
+            Type::TYPE_SINT64,
+        ] {
+            for label in [Some(Label::LABEL_OPTIONAL), Some(Label::LABEL_REPEATED)] {
+                if ty == Type::TYPE_MESSAGE && label == Some(Label::LABEL_OPTIONAL) {
+                    continue;
+                }
+                for nested in [false, true] {
+                    let set = descriptor(ty, label, nested, Some(true));
+                    assert!(
+                        DescriptorPool::decode(&set.encode_to_vec()).is_err(),
+                        "accepted {ty:?} {label:?}"
+                    );
+                    let name = if nested {
+                        "messageset.test.Scope.item"
+                    } else {
+                        "messageset.test.item"
+                    };
+                    assert_set_rejected_without_mutating_pool(
+                        "messageset-extension.proto",
+                        name,
+                        set,
+                        |err| {
+                            assert!(
+                                matches!(err, PoolError::InvalidMessageSetExtension { field } if field == name),
+                                "{err}"
+                            );
+                            assert_eq!(
+                                err.to_string(),
+                                format!("MessageSet extension {name} must be an optional, length-prefixed message")
+                            );
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn optional_messageset_extensions_and_normal_extensions_remain_valid() {
+        for nested in [false, true] {
+            for label in [None, Some(Label::LABEL_OPTIONAL)] {
+                let mut set = descriptor(Type::TYPE_MESSAGE, label, nested, Some(true));
+                if label.is_none() {
+                    let file = &mut set.file[0];
+                    let extension = if nested {
+                        &mut file.message_type[2].extension[0]
+                    } else {
+                        &mut file.extension[0]
+                    };
+                    extension.r#type = None;
+                }
+                assert_eq!(
+                    DescriptorPool::new(set.clone()).unwrap().extensions().len(),
+                    1
+                );
+                assert_eq!(
+                    DescriptorPool::decode(&set.encode_to_vec())
+                        .unwrap()
+                        .extensions()
+                        .len(),
+                    1
+                );
+            }
+            for messageset in [None, Some(false)] {
+                for ty in [
+                    Type::TYPE_INT32,
+                    Type::TYPE_GROUP,
+                    Type::TYPE_MESSAGE,
+                    Type::TYPE_ENUM,
+                ] {
+                    for label in [Some(Label::LABEL_OPTIONAL), Some(Label::LABEL_REPEATED)] {
+                        assert!(
+                            DescriptorPool::new(descriptor(ty, label, nested, messageset)).is_ok()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// The MessageSet fixture as an edition 2023 file whose optional message
+    /// extension gets `features.message_encoding` from the extension itself
+    /// or from the file. The declared type stays `TYPE_MESSAGE`.
+    fn editions_descriptor(
+        nested: bool,
+        on_extension: bool,
+        encoding: MessageEncoding,
+    ) -> FileDescriptorSet {
+        let mut set = descriptor(
+            Type::TYPE_MESSAGE,
+            Some(Label::LABEL_OPTIONAL),
+            nested,
+            Some(true),
+        );
+        let file = &mut set.file[0];
+        file.syntax = Some("editions".into());
+        file.edition = Some(Edition::EDITION_2023);
+        let features = buffa::MessageField::some(FeatureSet {
+            message_encoding: Some(encoding),
+            ..Default::default()
+        });
+        if on_extension {
+            let extension = if nested {
+                &mut file.message_type[2].extension[0]
+            } else {
+                &mut file.extension[0]
+            };
+            extension.options = FieldOptions {
+                features,
+                ..Default::default()
+            }
+            .into();
+        } else {
+            file.options = FileOptions {
+                features,
+                ..Default::default()
+            }
+            .into();
+        }
+        set
+    }
+
+    #[test]
+    fn delimited_editions_messageset_extensions_are_rejected() {
+        for nested in [false, true] {
+            let name = if nested {
+                "messageset.test.Scope.item"
+            } else {
+                "messageset.test.item"
+            };
+            for on_extension in [false, true] {
+                assert_set_rejected_without_mutating_pool(
+                    "messageset-extension.proto",
+                    name,
+                    editions_descriptor(nested, on_extension, MessageEncoding::DELIMITED),
+                    |err| {
+                        assert!(
+                            matches!(err, PoolError::InvalidMessageSetExtension { field } if field == name),
+                            "nested={nested} on_extension={on_extension}: {err}"
+                        );
+                    },
+                );
+                let pool = DescriptorPool::new(editions_descriptor(
+                    nested,
+                    on_extension,
+                    MessageEncoding::LENGTH_PREFIXED,
+                ))
+                .unwrap();
+                assert_eq!(pool.extensions().len(), 1);
+            }
+        }
+    }
+}
+
 /// `ServiceIndex::index` is the descriptor's position in `pool.services()`.
 #[test]
 fn service_index_ordinals_match_slice_positions() {
@@ -4141,4 +6219,749 @@ fn index_ordinals_survive_adding_a_file() {
     let late = pool.message_index("ordinal.append.Late").expect("added");
     assert_eq!(late.index(), before.len());
     assert_eq!(pool.messages().len(), before.len() + 1);
+}
+
+#[test]
+fn empty_oneofs_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{DescriptorProto, OneofDescriptorProto};
+
+    assert_rejected_without_mutating_pool(
+        "empty-oneof.proto",
+        "invalid.test.EmptyOneof",
+        DescriptorProto {
+            name: Some("EmptyOneof".into()),
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("choice".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::EmptyOneof { oneof }
+                    if oneof == "invalid.test.EmptyOneof.choice"
+            ));
+            assert_eq!(
+                err.to_string(),
+                "oneof invalid.test.EmptyOneof.choice has no fields"
+            );
+        },
+    );
+}
+
+#[test]
+fn nonconsecutive_oneof_fields_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
+    };
+
+    for (syntax, edition) in [
+        ("proto2", None),
+        ("proto3", None),
+        ("editions", Some(Edition::EDITION_2023)),
+    ] {
+        for separator_oneof in [None, Some(1)] {
+            for nested in [false, true] {
+                let mut message = DescriptorProto {
+                    name: Some("Split".into()),
+                    field: [Some(0), separator_oneof, Some(0)]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, oneof_index)| FieldDescriptorProto {
+                            oneof_index,
+                            ..scalar_field(&format!("field_{i}"), i as i32 + 1, Type::TYPE_INT32)
+                        })
+                        .collect(),
+                    oneof_decl: vec![OneofDescriptorProto {
+                        name: Some("choice".into()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                };
+                if separator_oneof.is_some() {
+                    message.oneof_decl.push(OneofDescriptorProto {
+                        name: Some("other".into()),
+                        ..Default::default()
+                    });
+                }
+                let name = if nested {
+                    "invalid.test.Outer.Split"
+                } else {
+                    "invalid.test.Split"
+                };
+                if nested {
+                    message = DescriptorProto {
+                        name: Some("Outer".into()),
+                        nested_type: vec![message],
+                        ..Default::default()
+                    };
+                }
+                let set = FileDescriptorSet {
+                    file: vec![FileDescriptorProto {
+                        name: Some("split-oneof.proto".into()),
+                        package: Some("invalid.test".into()),
+                        syntax: Some(syntax.into()),
+                        edition,
+                        message_type: vec![message],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                };
+                assert!(matches!(DescriptorPool::new(set.clone()),
+                    Err(PoolError::NonconsecutiveOneofFields { oneof })
+                        if oneof == format!("{name}.choice")));
+                assert_set_rejected_without_mutating_pool("split-oneof.proto", name, set, |err| {
+                    assert!(matches!(err, PoolError::NonconsecutiveOneofFields { oneof }
+                            if oneof == &format!("{name}.choice")));
+                    assert_eq!(
+                        err.to_string(),
+                            format!("oneof {name}.choice has member fields that are not declared consecutively")
+                    );
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn consecutive_oneof_fields_allow_unsorted_field_numbers() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, OneofDescriptorProto,
+    };
+
+    let message = DescriptorProto {
+        name: Some("Consecutive".into()),
+        field: [
+            (None, 10),
+            (Some(0), 7),
+            (Some(0), 2),
+            (Some(1), 4),
+            (None, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (oneof_index, number))| FieldDescriptorProto {
+            oneof_index,
+            ..scalar_field(&format!("field_{i}"), number, Type::TYPE_INT32)
+        })
+        .collect(),
+        oneof_decl: ["choice", "single"]
+            .into_iter()
+            .map(|name| OneofDescriptorProto {
+                name: Some(name.into()),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    };
+    let set = buffa_descriptor::generated::descriptor::FileDescriptorSet {
+        file: vec![
+            buffa_descriptor::generated::descriptor::FileDescriptorProto {
+                name: Some("consecutive.proto".into()),
+                syntax: Some("proto3".into()),
+                message_type: vec![message],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    DescriptorPool::new(set).expect("contiguity depends on declaration order, not field numbers");
+}
+
+#[test]
+fn empty_oneof_validation_covers_syntax_nesting_and_declaration_order() {
+    use buffa::Message;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+    };
+
+    for (syntax, edition) in [
+        (None, None),
+        (Some("proto2"), None),
+        (Some("proto3"), None),
+        (Some("editions"), Some(Edition::EDITION_2023)),
+        (Some("editions"), Some(Edition::EDITION_2024)),
+    ] {
+        for nested in [false, true] {
+            for empty_index in 0..3 {
+                let field = |name: &str, number: i32, oneof_index: i32| {
+                    buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+                        oneof_index: Some(oneof_index),
+                        ..scalar_field(name, number, Type::TYPE_INT32)
+                    }
+                };
+                let mut message = DescriptorProto {
+                    name: Some("EmptyOneof".into()),
+                    field: vec![scalar_field("ordinary", 1, Type::TYPE_STRING)],
+                    oneof_decl: vec![],
+                    ..Default::default()
+                };
+                for index in 0..3 {
+                    let name = if index == empty_index {
+                        "empty".to_owned()
+                    } else {
+                        format!("choice_{index}")
+                    };
+                    message.oneof_decl.push(OneofDescriptorProto {
+                        name: Some(name),
+                        ..Default::default()
+                    });
+                    if index != empty_index {
+                        message
+                            .field
+                            .push(field(&format!("value_{index}"), index + 2, index));
+                    }
+                }
+                let message_name = if nested {
+                    "invalid.test.Outer.EmptyOneof"
+                } else {
+                    "invalid.test.EmptyOneof"
+                };
+                if nested {
+                    message = DescriptorProto {
+                        name: Some("Outer".into()),
+                        nested_type: vec![message],
+                        ..Default::default()
+                    };
+                }
+                let set = FileDescriptorSet {
+                    file: vec![FileDescriptorProto {
+                        name: Some("empty-oneof-syntax.proto".into()),
+                        package: Some("invalid.test".into()),
+                        syntax: syntax.map(Into::into),
+                        edition,
+                        message_type: vec![message],
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                };
+                let expected_oneof = format!("{message_name}.empty");
+                for err in [
+                    DescriptorPool::new(set.clone()).unwrap_err(),
+                    DescriptorPool::decode(&set.encode_to_vec()).unwrap_err(),
+                ] {
+                    assert!(
+                        matches!(err, PoolError::EmptyOneof { ref oneof }
+                            if oneof == &expected_oneof),
+                        "syntax {syntax:?}, nested {nested}, index {empty_index}: {err}"
+                    );
+                }
+                assert_set_rejected_without_mutating_pool(
+                    "empty-oneof-syntax.proto",
+                    message_name,
+                    set.clone(),
+                    |err| {
+                        assert!(
+                            matches!(err, PoolError::EmptyOneof { oneof }
+                                if oneof == &format!("{message_name}.empty")),
+                            "syntax {syntax:?}, nested {nested}, index {empty_index}: {err}"
+                        );
+                    },
+                );
+
+                let mut valid_set = set;
+                let message = &mut valid_set.file[0].message_type[0];
+                let message = if nested {
+                    &mut message.nested_type[0]
+                } else {
+                    message
+                };
+                message.oneof_decl.remove(empty_index as usize);
+                for field in &mut message.field {
+                    if let Some(index) = &mut field.oneof_index {
+                        if *index > empty_index {
+                            *index -= 1;
+                        }
+                    }
+                }
+                let valid_pool = DescriptorPool::new(valid_set).unwrap();
+                let message = valid_pool.message_by_name(message_name).unwrap();
+                assert_eq!(message.oneofs().len(), 2);
+                assert!(message
+                    .oneofs()
+                    .iter()
+                    .all(|oneof| oneof.field_indices().len() == 1));
+            }
+        }
+    }
+}
+
+#[test]
+fn empty_oneof_rejection_allows_retry_with_a_member() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
+    };
+
+    let mut set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("retry-oneof.proto".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Retry".into()),
+                oneof_decl: vec![OneofDescriptorProto {
+                    name: Some("choice".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    assert!(matches!(
+        p.add_file_descriptor_set(set.clone()),
+        Err(PoolError::EmptyOneof { oneof }) if oneof == "Retry.choice"
+    ));
+    set.file[0].message_type[0]
+        .field
+        .push(FieldDescriptorProto {
+            oneof_index: Some(0),
+            ..scalar_field("value", 1, Type::TYPE_INT32)
+        });
+    p.add_file_descriptor_set(set).unwrap();
+    let message = p.message_by_name("Retry").unwrap();
+    assert_eq!(message.oneofs()[0].field_indices(), [0]);
+    assert_eq!(message.field(1).unwrap().oneof_index(), Some(0));
+}
+
+mod message_field_defaults {
+    use super::*;
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        descriptor_proto::ExtensionRange, DescriptorProto, Edition, EnumDescriptorProto,
+        FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet, OneofDescriptorProto,
+    };
+
+    fn file(syntax: Option<&str>, edition: Option<Edition>) -> FileDescriptorProto {
+        FileDescriptorProto {
+            name: Some("message-default.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: syntax.map(str::to_owned),
+            edition,
+            message_type: vec![DescriptorProto {
+                name: Some("Defaults".into()),
+                field: vec![FieldDescriptorProto {
+                    type_name: Some(".invalid.test.Defaults.Payload".into()),
+                    ..scalar_field("payload", 1, Type::TYPE_MESSAGE)
+                }],
+                nested_type: vec![DescriptorProto {
+                    name: Some("Payload".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn syntaxes() -> [(Option<&'static str>, Option<Edition>); 5] {
+        [
+            (None, None),
+            (Some("proto2"), None),
+            (Some("proto3"), None),
+            (Some("editions"), Some(Edition::EDITION_2023)),
+            (Some("editions"), Some(Edition::EDITION_2024)),
+        ]
+    }
+
+    fn extension_file(nested: bool, mut extension: FieldDescriptorProto) -> FileDescriptorProto {
+        let mut file = file(Some("proto2"), None);
+        let message = &mut file.message_type[0];
+        message.field.clear();
+        message.extension_range = vec![ExtensionRange {
+            start: Some(100),
+            end: Some(101),
+            ..Default::default()
+        }];
+        extension.extendee = Some(".invalid.test.Defaults".into());
+        if nested {
+            message.extension.push(extension);
+        } else {
+            file.extension.push(extension);
+        }
+        file
+    }
+
+    fn assert_default_error(err: &PoolError, expected_field: &str) {
+        assert!(
+            matches!(err, PoolError::MessageFieldWithDefault { field } if field == expected_field),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            format!("message field {expected_field} declares a default value")
+        );
+    }
+
+    #[test]
+    fn message_defaults_are_rejected_transactionally() {
+        for (syntax, edition) in syntaxes() {
+            for ty in [Some(Type::TYPE_MESSAGE), None] {
+                for default in ["", "payload"] {
+                    let mut file = file(syntax, edition);
+                    let field = &mut file.message_type[0].field[0];
+                    field.r#type = ty;
+                    field.default_value = Some(default.into());
+                    assert_set_rejected_without_mutating_pool(
+                        "message-default.proto",
+                        "invalid.test.Defaults",
+                        FileDescriptorSet {
+                            file: vec![file],
+                            ..Default::default()
+                        },
+                        |err| assert_default_error(err, "invalid.test.Defaults.payload"),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn group_defaults_are_rejected() {
+        for default in ["", "payload"] {
+            let mut file = file(Some("proto2"), None);
+            file.message_type[0].field[0].r#type = Some(Type::TYPE_GROUP);
+            file.message_type[0].field[0].default_value = Some(default.into());
+            let err = DescriptorPool::new(FileDescriptorSet {
+                file: vec![file],
+                ..Default::default()
+            })
+            .unwrap_err();
+            assert_default_error(&err, "invalid.test.Defaults.payload");
+        }
+    }
+
+    #[test]
+    fn message_extension_defaults_are_rejected() {
+        for nested in [false, true] {
+            for ty in [Some(Type::TYPE_MESSAGE), Some(Type::TYPE_GROUP), None] {
+                for default in ["", "payload"] {
+                    let file = extension_file(
+                        nested,
+                        FieldDescriptorProto {
+                            type_name: Some(".invalid.test.Defaults.Payload".into()),
+                            r#type: ty,
+                            default_value: Some(default.into()),
+                            ..scalar_field("payload", 100, Type::TYPE_MESSAGE)
+                        },
+                    );
+                    let expected_field = if nested {
+                        "invalid.test.Defaults.payload"
+                    } else {
+                        "invalid.test.payload"
+                    };
+                    assert_set_rejected_without_mutating_pool(
+                        "message-default.proto",
+                        expected_field,
+                        FileDescriptorSet {
+                            file: vec![file],
+                            ..Default::default()
+                        },
+                        |err| assert_default_error(err, expected_field),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn valid_extensions_are_accepted() {
+        for nested in [false, true] {
+            for ty in [Some(Type::TYPE_MESSAGE), Some(Type::TYPE_GROUP), None] {
+                let pool = DescriptorPool::new(FileDescriptorSet {
+                    file: vec![extension_file(
+                        nested,
+                        FieldDescriptorProto {
+                            r#type: ty,
+                            type_name: Some(".invalid.test.Defaults.Payload".into()),
+                            ..scalar_field("payload", 100, Type::TYPE_MESSAGE)
+                        },
+                    )],
+                    ..Default::default()
+                })
+                .unwrap();
+                let expected_field = if nested {
+                    "invalid.test.Defaults.payload"
+                } else {
+                    "invalid.test.payload"
+                };
+                assert!(pool.extension_by_name(expected_field).is_some());
+            }
+            let pool = DescriptorPool::new(FileDescriptorSet {
+                file: vec![extension_file(
+                    nested,
+                    FieldDescriptorProto {
+                        default_value: Some("".into()),
+                        ..scalar_field("payload", 100, Type::TYPE_STRING)
+                    },
+                )],
+                ..Default::default()
+            })
+            .unwrap();
+            let expected_field = if nested {
+                "invalid.test.Defaults.payload"
+            } else {
+                "invalid.test.payload"
+            };
+            assert!(pool.extension_by_name(expected_field).is_some());
+        }
+    }
+
+    #[test]
+    fn oneof_message_defaults_are_rejected() {
+        let mut file = file(Some("proto2"), None);
+        let message = &mut file.message_type[0];
+        message.oneof_decl = vec![OneofDescriptorProto {
+            name: Some("choice".into()),
+            ..Default::default()
+        }];
+        message.field[0].oneof_index = Some(0);
+        message.field[0].default_value = Some("".into());
+        let err = DescriptorPool::new(FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        })
+        .unwrap_err();
+        assert_default_error(&err, "invalid.test.Defaults.payload");
+    }
+
+    #[test]
+    fn decode_rejects_message_defaults() {
+        use buffa::Message;
+
+        for ty in [Some(Type::TYPE_MESSAGE), Some(Type::TYPE_GROUP), None] {
+            for default in ["", "payload"] {
+                let mut file = file(Some("proto2"), None);
+                file.message_type[0].field[0].r#type = ty;
+                file.message_type[0].field[0].default_value = Some(default.into());
+                let bytes = FileDescriptorSet {
+                    file: vec![file],
+                    ..Default::default()
+                }
+                .encode_to_vec();
+                let err = DescriptorPool::decode(&bytes).unwrap_err();
+                assert_default_error(&err, "invalid.test.Defaults.payload");
+            }
+        }
+    }
+
+    #[test]
+    fn message_fields_without_defaults_are_accepted() {
+        for (syntax, edition) in syntaxes() {
+            for ty in [Some(Type::TYPE_MESSAGE), None] {
+                let mut file = file(syntax, edition);
+                file.message_type[0].field[0].r#type = ty;
+                let pool = DescriptorPool::new(FileDescriptorSet {
+                    file: vec![file],
+                    ..Default::default()
+                })
+                .unwrap();
+                assert!(matches!(
+                    pool.message_by_name("invalid.test.Defaults")
+                        .unwrap()
+                        .field(1)
+                        .unwrap()
+                        .kind(),
+                    FieldKind::Singular(SingularKind::Message(_))
+                ));
+            }
+        }
+        let mut file = file(Some("proto2"), None);
+        file.message_type[0].field[0].r#type = Some(Type::TYPE_GROUP);
+        let pool = DescriptorPool::new(FileDescriptorSet {
+            file: vec![file],
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(pool
+            .message_by_name("invalid.test.Defaults")
+            .unwrap()
+            .field(1)
+            .unwrap()
+            .is_delimited());
+    }
+
+    #[test]
+    fn scalar_and_enum_defaults_are_accepted() {
+        for oneof in [false, true] {
+            for (ty, default) in [
+                (Type::TYPE_INT32, "0"),
+                (Type::TYPE_INT32, "7"),
+                (Type::TYPE_BOOL, "false"),
+                (Type::TYPE_STRING, ""),
+                (Type::TYPE_STRING, "text"),
+                (Type::TYPE_BYTES, ""),
+                (Type::TYPE_ENUM, "CHOICE_ZERO"),
+            ] {
+                let mut file = file(Some("proto2"), None);
+                let message = &mut file.message_type[0];
+                message.enum_type = vec![EnumDescriptorProto {
+                    name: Some("Choice".into()),
+                    value: vec![enum_value("CHOICE_ZERO", 0)],
+                    ..Default::default()
+                }];
+                message.field = vec![FieldDescriptorProto {
+                    type_name: (ty == Type::TYPE_ENUM)
+                        .then(|| ".invalid.test.Defaults.Choice".into()),
+                    default_value: Some(default.into()),
+                    ..scalar_field("value", 1, ty)
+                }];
+                if oneof {
+                    message.oneof_decl = vec![OneofDescriptorProto {
+                        name: Some("choice".into()),
+                        ..Default::default()
+                    }];
+                    message.field[0].oneof_index = Some(0);
+                } else {
+                    message.field[0].label = Some(Label::LABEL_REQUIRED);
+                }
+                let pool = DescriptorPool::new(FileDescriptorSet {
+                    file: vec![file],
+                    ..Default::default()
+                })
+                .unwrap();
+                assert_eq!(
+                    pool.file_by_name("message-default.proto")
+                        .unwrap()
+                        .message_type[0]
+                        .field[0]
+                        .default_value
+                        .as_deref(),
+                    Some(default)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn messageset_declared_fields_are_rejected_transactionally() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet, MessageOptions,
+    };
+    for nested in [false, true] {
+        let message = DescriptorProto {
+            name: Some("Container".into()),
+            options: MessageOptions {
+                message_set_wire_format: Some(true),
+                ..Default::default()
+            }
+            .into(),
+            field: vec![scalar_field(
+                "value",
+                1,
+                buffa_descriptor::generated::descriptor::field_descriptor_proto::Type::TYPE_INT32,
+            )],
+            ..Default::default()
+        };
+        let (message, name) = if nested {
+            (
+                DescriptorProto {
+                    name: Some("Outer".into()),
+                    nested_type: vec![message],
+                    ..Default::default()
+                },
+                "invalid.test.Outer.Container",
+            )
+        } else {
+            (message, "invalid.test.Container")
+        };
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("messageset-fields.proto".into()),
+                package: Some("invalid.test".into()),
+                syntax: Some("proto2".into()),
+                message_type: vec![message],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let bytes = buffa::Message::encode_to_vec(&set);
+        for err in [
+            DescriptorPool::new(set.clone()).unwrap_err(),
+            DescriptorPool::decode(&bytes).unwrap_err(),
+        ] {
+            assert!(matches!(err, PoolError::MessageSetWithFields { message } if message == name));
+        }
+        assert_set_rejected_without_mutating_pool("messageset-fields.proto", name, set, |err| {
+            assert!(matches!(err, PoolError::MessageSetWithFields { message } if message == name));
+            assert_eq!(
+                err.to_string(),
+                format!("MessageSet {name} declares fields instead of extensions")
+            );
+        });
+    }
+}
+
+#[test]
+fn messageset_field_validation_preserves_valid_messages() {
+    use buffa_descriptor::generated::descriptor::{
+        descriptor_proto::ExtensionRange, field_descriptor_proto::Type, DescriptorProto,
+        FileDescriptorProto, FileDescriptorSet, MessageOptions,
+    };
+    for option in [None, Some(false), Some(true)] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("messageset-valid.proto".into()),
+                package: Some("valid.test".into()),
+                syntax: Some("proto2".into()),
+                message_type: vec![
+                    DescriptorProto {
+                        name: Some("Container".into()),
+                        options: MessageOptions {
+                            message_set_wire_format: option,
+                            ..Default::default()
+                        }
+                        .into(),
+                        field: if option == Some(true) {
+                            vec![]
+                        } else {
+                            vec![scalar_field("value", 1, Type::TYPE_INT32)]
+                        },
+                        extension_range: vec![ExtensionRange {
+                            start: Some(100),
+                            end: Some(200),
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                    DescriptorProto {
+                        name: Some("Payload".into()),
+                        ..Default::default()
+                    },
+                ],
+                extension: vec![
+                    buffa_descriptor::generated::descriptor::FieldDescriptorProto {
+                        extendee: Some(".valid.test.Container".into()),
+                        type_name: Some(".valid.test.Payload".into()),
+                        ..scalar_field("payload", 100, Type::TYPE_MESSAGE)
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let bytes = buffa::Message::encode_to_vec(&set);
+        for pool in [
+            DescriptorPool::new(set).unwrap(),
+            DescriptorPool::decode(&bytes).unwrap(),
+        ] {
+            assert_eq!(
+                pool.message_by_name("valid.test.Container")
+                    .unwrap()
+                    .fields()
+                    .len(),
+                usize::from(option != Some(true))
+            );
+            assert_eq!(pool.extensions().len(), 1);
+        }
+    }
 }

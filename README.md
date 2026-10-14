@@ -30,7 +30,7 @@ The Rust ecosystem lacks an actively maintained, pure-Rust library that supports
 
 - **Runtime reflection.** `buffa-descriptor` (under the `reflect` feature) provides `DescriptorPool` and `DynamicMessage` for schema-driven encode, decode, and JSON without generated code — plus extensions, custom-option access, `Any` pack/unpack, and symbol→file lookup for gRPC server reflection. Generated types implement the same `ReflectMessage` trait directly (vtable mode), so `foo.reflect()` borrows in place and a CEL evaluator, transcoding gateway, or generic interceptor treats typed and dynamic messages uniformly — without a re-encode round-trip. See [Reflection](#reflection) for the cost relative to generated code.
 
-- **`no_std` + `alloc`.** The core runtime works without `std`, including JSON serialization via serde. Enabling `std` adds `std::io` integration, `std::time` conversions, and thread-local JSON parse options.
+- **`no_std` + `alloc`.** The core runtime works without `std`, including JSON serialization via serde. Enabling `std` adds `std::io` integration, `SystemTime` conversions, and thread-local JSON parse options. `Duration` conversions use `core::time::Duration` and work without `std`.
 
 ## Wire formats
 
@@ -165,6 +165,7 @@ let decoded: MyMessage = serde_json::from_str(&json).unwrap();
 | `buffa` | Core runtime: `Message` trait, wire format codec, `no_std` support |
 | `buffa-types` | Well-known types: Timestamp, Duration, Any, Struct, Api, Type, wrappers, etc. |
 | `buffa-descriptor` | Protobuf descriptor types (`FileDescriptorProto`, `DescriptorProto`, ...) |
+| `buffa-proto-options` | buffa's custom options (`buffa/ext/options.proto`) and their Rust types |
 | `buffa-codegen` | Code generation from protobuf descriptors |
 | `buffa-build` | `build.rs` helper for invoking codegen via `protoc` |
 | `buffa-remote-derive` | Derive macros implementing the pluggable owned-type traits for newtypes over foreign types |

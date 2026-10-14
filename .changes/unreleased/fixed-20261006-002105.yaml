@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **A `required bytes` field with a declared default compiles under `use_bytes_type()` and custom bytes types** (#570). For `required bytes token = 1 [default = "abc"]`, the generated `Default` impl and `clear()` built the default as a `Vec<u8>` whatever the field's Rust type, so the generated code failed with a type mismatch (E0308) when the field was `bytes::Bytes` or a `bytes_type` of your own. The default now converts through `From<Vec<u8>>`, which `ProtoBytes` requires. A `string` field that is generated as bytes gets the same conversion.
+time: 2026-10-06T00:21:05.167948+02:00

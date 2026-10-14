@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **descriptor: `FieldDescriptor::presence()` reports `Explicit` for a singular extension and `LegacyRequired` for an editions `LEGACY_REQUIRED` message field** (#632).
+    A singular scalar or enum extension in a proto3 file, or in an editions file whose features resolve to implicit presence, took the file's presence and reported `Implicit`, so `DynamicMessage` treated an extension set to its default value as absent and skipped it on encode. An editions message field with `features.field_presence = LEGACY_REQUIRED` hit the singular-message arm first and reported `Explicit` while the same feature on a scalar reported `LegacyRequired`. Every singular extension now has explicit presence, as in protoc, and the required check runs ahead of the message arm.
+time: 2026-10-10T04:46:31.572417+05:00

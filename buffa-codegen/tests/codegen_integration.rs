@@ -242,6 +242,103 @@ fn codegen_wkt_auto_mapping() {
 }
 
 #[test]
+fn gen_wkt_types_derives_eq_and_hash_only_for_selected_owned_messages() {
+    let expected = [
+        "Any",
+        "Api",
+        "BoolValue",
+        "BytesValue",
+        "Duration",
+        "Empty",
+        "Enum",
+        "EnumValue",
+        "Field",
+        "FieldMask",
+        "Int32Value",
+        "Int64Value",
+        "Method",
+        "Mixin",
+        "Option",
+        "SourceContext",
+        "StringValue",
+        "Timestamp",
+        "Type",
+        "UInt32Value",
+        "UInt64Value",
+    ];
+    let excluded = ["DoubleValue", "FloatValue", "ListValue", "Struct", "Value"];
+    let protos_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../buffa-types/protos");
+    let fds = compile_protos(
+        &[
+            "google/protobuf/any.proto",
+            "google/protobuf/api.proto",
+            "google/protobuf/duration.proto",
+            "google/protobuf/empty.proto",
+            "google/protobuf/field_mask.proto",
+            "google/protobuf/source_context.proto",
+            "google/protobuf/struct.proto",
+            "google/protobuf/timestamp.proto",
+            "google/protobuf/type.proto",
+            "google/protobuf/wrappers.proto",
+        ],
+        &[protos_dir],
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let descriptor_path = dir.path().join("wkt.pb");
+    let output_dir = dir.path().join("generated");
+    std::fs::write(&descriptor_path, fds.encode_to_vec()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_gen_wkt_types"))
+        .arg(&descriptor_path)
+        .arg(&output_dir)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "gen_wkt_types failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut actual = Vec::new();
+    let mut actual_excluded = Vec::new();
+    for entry in std::fs::read_dir(output_dir).unwrap() {
+        let content = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+        for item in syn::parse_file(&content).unwrap().items {
+            let syn::Item::Struct(message) = item else {
+                continue;
+            };
+            let name = message.ident.to_string();
+            let mut derives = Vec::new();
+            for attr in &message.attrs {
+                if attr.path().is_ident("derive") {
+                    derives.extend(
+                        attr.parse_args_with(
+                            syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
+                        )
+                        .unwrap(),
+                    );
+                }
+            }
+            let has_trait = |trait_name: &str| derives.iter().any(|path| path.is_ident(trait_name));
+            let selected = expected.contains(&name.as_str());
+            assert_eq!(has_trait("Eq"), selected, "Eq derive for {name}");
+            assert_eq!(has_trait("Hash"), selected, "Hash derive for {name}");
+            if !name.ends_with("View") {
+                assert!(has_trait("PartialEq"), "PartialEq derive for {name}");
+            }
+            if selected {
+                actual.push(name);
+            } else if excluded.contains(&name.as_str()) {
+                actual_excluded.push(name);
+            }
+        }
+    }
+    actual.sort();
+    assert_eq!(actual, expected);
+    actual_excluded.sort();
+    assert_eq!(actual_excluded, excluded);
+}
+
+#[test]
 fn codegen_wkt_api_auto_mapping() {
     // #382: googleapis WKTs must resolve through buffa-types, including views.
     let files = generate_for("wkt_api.proto", &CodeGenConfig::default());
@@ -279,6 +376,43 @@ fn codegen_name_collisions() {
     assert!(content.contains("pub struct String"));
     assert!(content.contains("pub struct Option"));
     assert!(content.contains("::core::option::Option"));
+}
+
+#[test]
+fn codegen_renames_keyword_members_that_collide_after_escaping() {
+    let proto = r#"
+        syntax = "proto2";
+        package test;
+
+        message FieldCollision {
+            optional int32 self = 1;
+            optional int32 self_ = 2;
+            optional int32 crate = 3;
+            optional int32 crate_ = 4;
+        }
+
+        message OneofCollision {
+            optional int32 self_ = 1;
+            oneof self {
+                string choice = 2;
+            }
+        }
+    "#;
+
+    for idiomatic_field_names in [false, true] {
+        let mut config = CodeGenConfig::default();
+        config.idiomatic_field_names = idiomatic_field_names;
+        let content = generate_proto(proto, &config);
+        let field_body = struct_body(&content, "FieldCollision");
+        assert!(field_body.contains("pub self__:"), "{field_body}");
+        assert!(field_body.contains("pub self_:"), "{field_body}");
+        assert!(field_body.contains("pub crate__:"), "{field_body}");
+        assert!(field_body.contains("pub crate_:"), "{field_body}");
+
+        let oneof_body = struct_body(&content, "OneofCollision");
+        assert!(oneof_body.contains("pub self_:"), "{oneof_body}");
+        assert!(oneof_body.contains("pub self__:"), "{oneof_body}");
+    }
 }
 
 #[test]
@@ -612,14 +746,14 @@ fn inline_oneof_duplicate_message_type_no_from_collision() {
     // Only ONE From impl (for T, which appears once), not two for Placeholder.
     assert_eq!(
         content
-            .matches("impl From<super::super::super::Placeholder> for Kind")
+            .matches("impl ::core::convert::From<super::super::super::Placeholder> for Kind")
             .count(),
         0,
         "duplicate-type From impls must be skipped: {content}"
     );
     assert_eq!(
         content
-            .matches("impl From<super::super::super::T> for Kind")
+            .matches("impl ::core::convert::From<super::super::super::T> for Kind")
             .count(),
         1,
         "unique-type From impl must still be generated: {content}"
@@ -1097,6 +1231,189 @@ fn module_no_collision_keeps_natural_module_name() {
     assert!(
         !content.contains("pub mod oof_") && !content.contains("oof_ ::"),
         "no spurious dedup: {content}"
+    );
+}
+
+#[test]
+fn module_of_a_lower_case_message_gets_a_suffix() {
+    // `message item` declares `struct item`, so its nested types, and its
+    // modules in the `__buffa` trees, are in `item_`.
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package foo;
+        message item {
+          message Inner { int32 x = 1; }
+          Inner inner = 1;
+          oneof pick { int32 a = 2; string b = 3; }
+        }
+        message User { item.Inner inner = 1; }
+        "#,
+        &CodeGenConfig::default(),
+    );
+    assert!(content.contains("pub struct item {"), "{content}");
+    assert!(!content.contains("pub mod item {"), "{content}");
+    // Once in the owned tree, and once each under `__buffa::view`,
+    // `__buffa::oneof` and `__buffa::view::oneof`.
+    assert_eq!(content.matches("pub mod item_ {").count(), 4, "{content}");
+    for path in [
+        "item_::Inner",
+        "__buffa::view::item_::InnerView",
+        "__buffa::oneof::item_::Pick",
+    ] {
+        assert!(content.contains(path), "missing `{path}`: {content}");
+    }
+    assert!(
+        content.contains("because `item` is not available in this scope"),
+        "the renamed module is documented: {content}"
+    );
+}
+
+#[test]
+fn module_named_after_a_path_keyword_gets_a_suffix() {
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package foo;
+        message Crate { message Inner { int32 x = 1; } Inner inner = 1; }
+        message Self { message Inner { int32 x = 1; } Inner inner = 1; }
+        message User { Crate.Inner a = 1; Self.Inner b = 2; }
+        "#,
+        &CodeGenConfig::default(),
+    );
+    for expected in [
+        "pub mod crate_ {",
+        "pub mod self_ {",
+        "pub struct Self_ {",
+        "crate_::Inner",
+        "self_::Inner",
+        "__buffa::view::crate_::InnerView",
+    ] {
+        assert!(
+            content.contains(expected),
+            "missing `{expected}`: {content}"
+        );
+    }
+    assert!(!content.contains("crate::Inner"), "{content}");
+}
+
+#[test]
+fn module_named_arbitrary_gets_a_suffix_whatever_the_config() {
+    let proto = r#"
+        syntax = "proto3";
+        package foo;
+        message Arbitrary { message Inner { int32 x = 1; } Inner inner = 1; }
+        "#;
+    let mut config = no_views();
+    for generate_arbitrary in [false, true] {
+        config.generate_arbitrary = generate_arbitrary;
+        let content = generate_proto(proto, &config);
+        assert!(content.contains("pub mod arbitrary_ {"), "{content}");
+        assert!(content.contains("arbitrary_::Inner"), "{content}");
+    }
+}
+
+#[test]
+fn module_named_oneof_gets_a_suffix_at_package_level() {
+    // `__buffa::view::oneof` is the root of the view-oneof tree.
+    let proto = r#"
+        syntax = "proto3";
+        package foo;
+        message Oneof {
+          message Inner { int32 x = 1; }
+          message Oneof { message Deep { int32 x = 1; } Deep deep = 1; }
+          Inner inner = 1;
+          oneof pick { int32 a = 2; string b = 3; }
+        }
+        "#;
+    for config in [CodeGenConfig::default(), no_views()] {
+        let content = generate_proto(proto, &config);
+        assert!(content.contains("pub mod oneof_ {"), "{content}");
+        assert!(content.contains("oneof_::Inner"), "{content}");
+        // The nested `Oneof` keeps `oneof`: only the package level is taken.
+        assert!(content.contains("oneof_::oneof::Deep"), "{content}");
+    }
+    let content = generate_proto(proto, &CodeGenConfig::default());
+    assert!(
+        content.contains("__buffa::view::oneof_::InnerView"),
+        "{content}"
+    );
+    assert!(
+        content.contains("__buffa::view::oneof::oneof_::Pick"),
+        "{content}"
+    );
+}
+
+#[test]
+fn nested_module_avoids_a_sibling_type_name() {
+    // Inside `Outer`: `leaf` declares `struct leaf`, and the enum `mode`
+    // takes the module name of `Mode`.
+    let content = generate_proto(
+        r#"
+        syntax = "proto3";
+        package foo;
+        message Outer {
+          message leaf { message Deep { int32 n = 1; } Deep deep = 1; }
+          message Mode { message Detail { int32 n = 1; } Detail detail = 1; }
+          enum mode { MODE_UNSPECIFIED = 0; }
+          leaf l = 1;
+          Mode m = 2;
+          mode e = 3;
+        }
+        "#,
+        &no_views(),
+    );
+    for expected in [
+        "pub mod leaf_ {",
+        "pub mod mode_ {",
+        "leaf_::Deep",
+        "mode_::Detail",
+    ] {
+        assert!(
+            content.contains(expected),
+            "missing `{expected}`: {content}"
+        );
+    }
+    assert!(!content.contains("pub mod leaf {"), "{content}");
+}
+
+#[test]
+fn module_deconflicted_from_a_subpackage_is_renamed_in_the_view_tree() {
+    // `InnerView` takes the name of the natural re-export of `Inner`'s view.
+    let dir = tempfile::tempdir().expect("temp dir");
+    std::fs::write(
+        dir.path().join("foo.proto"),
+        "syntax = \"proto3\";\npackage foo;\n\
+         message Oof {\n\
+           message Inner { int32 x = 1; }\n\
+           message InnerView { int32 y = 1; }\n\
+           Inner inner = 1;\n\
+         }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("foo_oof.proto"),
+        "syntax = \"proto3\";\npackage foo.oof;\nmessage Thing { int32 y = 1; }\n",
+    )
+    .unwrap();
+    let fds = compile_protos(
+        &[
+            dir.path().join("foo.proto").to_str().unwrap(),
+            dir.path().join("foo_oof.proto").to_str().unwrap(),
+        ],
+        &[dir.path().to_str().unwrap()],
+    );
+    let content =
+        buffa_codegen::generate(&fds.file, &["foo.proto".into()], &CodeGenConfig::default())
+            .expect("codegen")
+            .into_iter()
+            .map(|f| f.content)
+            .collect::<Vec<_>>()
+            .join("\n");
+    assert!(!content.contains("pub mod oof {"), "{content}");
+    assert!(
+        content.contains("__buffa::view::oof_::InnerView"),
+        "{content}"
     );
 }
 
@@ -1725,7 +2042,7 @@ fn with_setters_emitted_for_explicit_presence_fields() {
 
     // String setter uses impl Into<...> for &str ergonomics.
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "string setter should use impl Into: {content}"
     );
 
@@ -1782,7 +2099,7 @@ fn with_setters_bytes_type_uses_into() {
         "with_data missing: {content}"
     );
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "bytes::Bytes setter should use impl Into: {content}"
     );
 }
@@ -1804,7 +2121,7 @@ fn with_setters_vec_u8_uses_into() {
         "with_data missing: {content}"
     );
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "Vec<u8> setter should use impl Into: {content}"
     );
 }
@@ -1827,7 +2144,7 @@ fn with_setters_enum_uses_into() {
         "with_color missing: {content}"
     );
     assert!(
-        content.contains("impl Into"),
+        content.contains("impl ::core::convert::Into"),
         "enum setter should use impl Into: {content}"
     );
 }

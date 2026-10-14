@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **FieldMask JSON path conversion builds each path in one `String`** (#545). Converting a path between `snake_case` and `lowerCamelCase` allocated a `String` for each dotted component, a `Vec` and the joined result; it now writes the whole path in one pass. The converted text is the same for every input.
+time: 2026-10-04T09:55:54.754069+02:00

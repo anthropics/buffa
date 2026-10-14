@@ -6,6 +6,28 @@ use super::round_trip;
 use buffa::Message;
 
 #[test]
+fn test_message_with_timestamp_derives_eq_and_hash() {
+    use crate::wkt::TimestampKey;
+    use buffa_types::google::protobuf::Timestamp;
+    use std::collections::HashSet;
+
+    let key = TimestampKey {
+        at: buffa::MessageField::some(Timestamp {
+            seconds: 42,
+            nanos: 999,
+            ..Default::default()
+        }),
+        id: "event-1".into(),
+        ..Default::default()
+    };
+    let decoded = round_trip(&key);
+    assert_eq!(key, decoded);
+    let mut set = HashSet::new();
+    assert!(set.insert(key));
+    assert!(!set.insert(decoded));
+}
+
+#[test]
 fn test_wkt_in_oneof_from_impls() {
     // Orphan-rule regression: From<T> for Option<Oneof> must only be generated
     // for local T. Extern-crate T (WKTs via ::buffa_types) would be E0117

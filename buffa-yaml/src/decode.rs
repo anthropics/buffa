@@ -1,3 +1,4 @@
+use crate::error::{CapturedIo, IoErrorCapture};
 use crate::Error;
 use buffa::Message;
 use std::io;
@@ -40,10 +41,14 @@ where
 ///
 /// Returns an [`Error`] if the stream cannot be read, the YAML is malformed,
 /// or a field value cannot be converted to its target type.
+/// When the stream cannot be read, [`Error::io_error_kind`] returns the
+/// failure's [`std::io::ErrorKind`].
 pub fn from_reader<R, M>(r: R) -> Result<M, Error>
 where
     R: io::Read,
     M: Message + serde::de::DeserializeOwned,
 {
-    serde_norway::from_reader(r).map_err(Error::from_carrier)
+    let capture = IoErrorCapture::default();
+    serde_norway::from_reader(CapturedIo::new(r, capture.clone()))
+        .map_err(|inner| Error::from_carrier_with_io_error_kind(inner, capture.error_kind()))
 }

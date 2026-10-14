@@ -310,6 +310,38 @@ mod tests {
         assert_eq!(round_trip(&msg).counts, msg.counts);
     }
 
+    #[test]
+    fn non_string_map_keys_round_trip_for_owned_messages_and_views() {
+        use buffa::{Message as _, MessageView as _};
+        use buffa_test::view_json::{WithMaps, WithMapsView};
+
+        let msg = WithMaps {
+            by_id: [(i32::MIN, "min".into()), (i32::MAX, "max".into())]
+                .into_iter()
+                .collect(),
+            by_i64: [(i64::MIN, "min".into()), (i64::MAX, "max".into())]
+                .into_iter()
+                .collect(),
+            by_u64: [(0, "zero".into()), (u64::MAX, "max".into())]
+                .into_iter()
+                .collect(),
+            by_bool: [(false, "off".into()), (true, "on".into())]
+                .into_iter()
+                .collect(),
+            ..Default::default()
+        };
+
+        let yaml = to_string(&msg).expect("to_string");
+        let decoded: WithMaps = from_str(&yaml).expect("from_str owned message");
+        assert_eq!(decoded, msg);
+
+        let bytes = msg.encode_to_vec();
+        let view = WithMapsView::decode_view(&bytes).expect("decode_view");
+        let view_yaml = to_string_view(&view).expect("to_string_view");
+        let decoded_from_view: WithMaps = from_str(&view_yaml).expect("from_str view");
+        assert_eq!(decoded_from_view, msg);
+    }
+
     // ── from_slice / to_writer ────────────────────────────────────────────────
 
     #[test]

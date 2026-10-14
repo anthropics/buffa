@@ -122,7 +122,7 @@ impl WktKind {
         pool: Arc<DescriptorPool>,
         midx: MessageIndex,
         d: D,
-        ignore_unknown: bool,
+        flags: ParseFlags,
         budget: &Cell<usize>,
     ) -> Result<DynamicMessage, D::Error> {
         // Two WKTs consult `ignore_unknown`: `Any` recurses into a
@@ -131,7 +131,7 @@ impl WktKind {
         // scalar (a type error, never an unknown field) or are open schemas
         // that accept any member by construction.
         match self {
-            Self::Any => deserialize_any(pool, midx, d, ignore_unknown, budget),
+            Self::Any => deserialize_any(pool, midx, d, flags, budget),
             Self::Timestamp => {
                 let s: String = String::deserialize(d)?;
                 let (secs, nanos) = parse_rfc3339(&s).map_err(de::Error::custom)?;
@@ -191,13 +191,17 @@ impl WktKind {
                         Ok(())
                     }
                 }
-                d.deserialize_map(EmptyVisitor { ignore_unknown })?;
+                d.deserialize_map(EmptyVisitor {
+                    ignore_unknown: flags.ignore_unknown,
+                })?;
                 Ok(DynamicMessage::new(pool, midx))
             }
             Self::Wrapper(sc) => {
-                let v = deserialize_scalar(sc, d)?;
+                let v = deserialize_optional_scalar(sc, d)?;
                 let mut m = DynamicMessage::new(pool, midx);
-                m.set_by_number(1, v);
+                if let Some(v) = v {
+                    m.set_by_number(1, v);
+                }
                 Ok(m)
             }
             Self::Struct => deserialize_struct(pool, midx, d, budget),
@@ -295,8 +299,9 @@ fn serialize_json_value<S: Serializer>(
     if let Some(Value::Message(inner)) = msg.field_by_number(6) {
         return Nested::charge(inner, depth)?.serialize(s);
     }
-    // Unset Value: spec is ambiguous; serialize as null.
-    s.serialize_none()
+    Err(serde::ser::Error::custom(
+        "google.protobuf.Value.kind must be set",
+    ))
 }
 
 fn deserialize_json_value<'de, D: Deserializer<'de>>(
@@ -396,14 +401,15 @@ impl<'de> Visitor<'de> for StructVisitor<'_> {
             .ok_or_else(|| de::Error::custom("Value not in pool"))?;
         let mut fields: Vec<(MapKey, Value)> = Vec::new();
         while let Some(key) = map.next_key::<String>()? {
-            // The Value seed deliberately doesn't carry `ignore_unknown`:
+            // The Value seed deliberately doesn't carry the parse flags:
             // `google.protobuf.Value` is a closed schema (null/bool/number/
             // string/Struct/ListValue) that cannot recurse into a
-            // user-defined message where unknown fields could appear.
+            // user-defined message where unknown fields could appear, or
+            // into an `Any`.
             let v = map.next_value_seed(NestedSeed {
                 pool: Arc::clone(&self.pool),
                 msg_idx: value_idx,
-                ignore_unknown: false,
+                flags: ParseFlags::default(),
                 budget: self.budget,
             })?;
             // `Struct.fields` is `map<string, Value>`.
@@ -446,11 +452,11 @@ impl<'de> Visitor<'de> for ListValueVisitor<'_> {
             .ok_or_else(|| de::Error::custom("Value not in pool"))?;
         let mut items = Vec::new();
         // See `StructVisitor::visit_map` for why the Value seed doesn't
-        // carry `ignore_unknown`.
+        // carry the parse flags.
         while let Some(v) = seq.next_element_seed(NestedSeed {
             pool: Arc::clone(&self.pool),
             msg_idx: value_idx,
-            ignore_unknown: false,
+            flags: ParseFlags::default(),
             budget: self.budget,
         })? {
             // `ListValue.values` is `repeated Value`.
@@ -551,12 +557,11 @@ fn serialize_any<S: Serializer>(
 /// The charge is returned once the payload has been decoded from the buffer.
 /// While it is held, the elements that decode builds are charged too, so the
 /// buffer and the message built from it fit the limit together.
-#[cfg(feature = "std")]
 fn deserialize_any<'de, D: Deserializer<'de>>(
     pool: Arc<DescriptorPool>,
     midx: MessageIndex,
     d: D,
-    ignore_unknown: bool,
+    flags: ParseFlags,
     budget: &Cell<usize>,
 ) -> Result<DynamicMessage, D::Error> {
     use buffa::json_helpers::buffered;
@@ -577,6 +582,11 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     let Some(serde_json::Value::String(type_url)) = obj.remove("@type") else {
         return Err(D::Error::custom("Any object missing string \"@type\""));
     };
+    if flags.strict_any_type_urls && !type_url.contains('/') {
+        return Err(D::Error::custom(format!(
+            "Any type_url {type_url:?} must contain a '/' (e.g. type.googleapis.com/pkg.Type)"
+        )));
+    }
     let Some(inner_idx) = resolve_any_type(&pool, &type_url) else {
         return Err(D::Error::custom(format!(
             "Any type_url {type_url:?} not registered in the descriptor pool"
@@ -593,7 +603,7 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
                     "Any with WKT type {type_url:?} requires a \"value\" key"
                 ))
             })?;
-            if !ignore_unknown {
+            if !flags.ignore_unknown {
                 if let Some(key) = obj.keys().next() {
                     return Err(D::Error::custom(format!(
                         "unknown field {key:?} in Any wrapper for {type_url:?}"
@@ -613,7 +623,7 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     let inner = NestedSeed {
         pool: Arc::clone(&pool),
         msg_idx: inner_idx,
-        ignore_unknown,
+        flags,
         budget,
     }
     .deserialize(inner_json)
@@ -637,21 +647,9 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     Ok(any)
 }
 
-#[cfg(not(feature = "std"))]
-fn deserialize_any<'de, D: Deserializer<'de>>(
-    _pool: Arc<DescriptorPool>,
-    _midx: MessageIndex,
-    _d: D,
-    _ignore_unknown: bool,
-    _budget: &Cell<usize>,
-) -> Result<DynamicMessage, D::Error> {
-    Err(de::Error::custom(
-        "Any JSON deserialization requires the `std` feature",
-    ))
-}
-
 /// Resolve a `type_url` to a [`MessageIndex`]. Accepts `type.googleapis.com/`
-/// and any other prefix; the type name is the segment after the last `/`.
+/// and any other prefix; the type name is the segment after the last `/`, or
+/// the whole string when it has no `/`.
 fn resolve_any_type(pool: &DescriptorPool, type_url: &str) -> Option<MessageIndex> {
     let name = type_url.rsplit('/').next()?;
     pool.message_index(name)

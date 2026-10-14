@@ -124,6 +124,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "buffa-proto-options"
+version = "0.9.2"
+dependencies = [
+ "arbitrary",
+ "buffa",
+ "buffa-descriptor",
+ "serde",
+]
+
+[[package]]
 name = "buffa-remote-derive"
 version = "0.9.2"
 dependencies = [
@@ -133,6 +143,8 @@ dependencies = [
  "indexmap",
  "proc-macro2",
  "quote",
+ "serde",
+ "serde_json",
  "smallbox",
  "smallvec",
  "syn",
@@ -155,6 +167,8 @@ dependencies = [
  "buffa",
  "buffa-build",
  "buffa-descriptor",
+ "buffa-proto-options",
+ "buffa-remote-derive",
  "buffa-smolstr",
  "buffa-types",
  "bytes",

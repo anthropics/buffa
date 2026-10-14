@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`ListValue::iter_mut` and `IntoIterator for &mut ListValue`** (#605) iterate over the values of a list by mutable reference, so `for value in &mut list` edits them in place. They complete the set that `ListValue::iter` and the two existing `IntoIterator` impls started; `list.values.iter_mut()` is the equivalent on the public field.
+time: 2026-10-07T12:25:26.951272+02:00

@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **The numeric and bool wrappers convert to their primitive from a reference** (#604): `From<&BoolValue> for bool`, and the same for `Int32Value`, `Int64Value`, `UInt32Value`, `UInt64Value`, `FloatValue` and `DoubleValue`. `i32::from(&wrapper)` copies the value and leaves the message in place, so `.map(i32::from)` works on an `Option<&Int32Value>`; `wrapper.value` is the equivalent on the public field. `StringValue` and `BytesValue` have no such conversion, since it would clone.
+time: 2026-10-07T12:18:41.973437+02:00

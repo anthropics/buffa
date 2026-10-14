@@ -7,7 +7,8 @@
 // `skip_serializing_if` predicate, and the custom-deserialize temporaries
 // all emit `::core::option::Option<...>`.
 //
-// Built with views and JSON enabled — compilation alone is the assertion.
+// Built with views, JSON and setters enabled — compilation alone is the
+// assertion.
 
 syntax = "proto3";
 
@@ -84,5 +85,67 @@ message Serde {
   oneof kind {
     uint64 int_value = 3;
     string str_value = 4;
+  }
+}
+
+// Messages named `From` and `Into`, and a oneof named `from`, shadow the
+// conversion traits. The oneof `From` impls and the `with_*` setters name
+// those traits, so both must spell `::core::convert::`. `Transfer.from`
+// generates an enum `From` in the oneof module, and its variants hold the
+// `From` and `Into` messages; `note` generates `with_note(impl Into<String>)`
+// beside the `Into` struct. Compilation is the assertion.
+message From {
+  optional string address = 1;
+}
+
+message Into {
+  optional string address = 1;
+}
+
+message Transfer {
+  oneof from {
+    From sender = 1;
+    Into relay = 2;
+    string raw = 3;
+  }
+  optional string note = 4;
+  optional bytes memo = 5;
+}
+
+// Types named `S`, `D`, `E` and `A`. A generic parameter named `E` shadows a
+// schema type `E` in that function's signature, body and nested items, so
+// the generated serde impls name their parameters `__S`, `__D`, `__E` and
+// `__A`. `Letters` has a oneof, which selects the custom `Deserialize` impl.
+// Compilation is the assertion.
+message S {
+  optional string v = 1;
+}
+
+message D {
+  optional string v = 1;
+}
+
+message A {
+  optional string v = 1;
+}
+
+enum E {
+  E_UNSPECIFIED = 0;
+  E_ONE = 1;
+}
+
+message Letters {
+  S s = 1;
+  D d = 2;
+  repeated D ds = 3;
+  map<string, A> as = 4;
+  E e = 5;
+  repeated E es = 6;
+  optional E maybe_e = 7;
+  oneof pick {
+    S pick_s = 8;
+    D pick_d = 9;
+    A pick_a = 10;
+    E pick_e = 11;
   }
 }

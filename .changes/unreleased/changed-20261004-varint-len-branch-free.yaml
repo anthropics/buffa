@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`encoding::varint_len` is branch-free** (#554). It now uses the formula of protobuf's `VarintSize64`, `((63 - (value | 1).leading_zeros()) * 9 + 73) / 64`, in place of a zero check and `div_ceil(7)`, and returns the same length for every input. The function runs for every length prefix and varint-typed scalar in every size pass. On a `c7i.metal-24xl`, with the isolated `task bench-iso` builds of `log_record`, `api_response` and `google_message1_proto3`, `compute_size` takes 44% to 51% less time and `encode` 5% to 14% less; the decode benchmarks of the same builds, which do not call it, moved by at most 2.2%.
+time: 2026-10-04T18:00:00.000000000+00:00

@@ -1,0 +1,5 @@
+kind: Changed
+body: |-
+    **`buffa-remote-derive` rejects an override key given twice with different paths** (#678).
+    With `#[buffa(remote = ..., new = A, new = B)]`, in one attribute or spread over several, the derive used the last path and ignored the first. The derive reports a compile error that points at both paths. A key repeated with the same path is accepted, because two `cfg_attr`s whose conditions both hold reach the derive in that form. Two `cfg_attr`s that select different paths, for example one per cargo feature, compiled with both features on (the last one won) and are an error in that configuration: make the conditions mutually exclusive, as in `cfg_attr(all(feature = "a", not(feature = "b")), ...)`.
+time: 2026-10-08T00:15:40+02:00

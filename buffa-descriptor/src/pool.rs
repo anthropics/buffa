@@ -37,8 +37,8 @@ use crate::desc::{
 use crate::features::{self, ResolvedFeatures};
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type as ProtoType};
 use crate::generated::descriptor::{
-    feature_set, DescriptorProto, EnumDescriptorProto, FieldDescriptorProto, FileDescriptorProto,
-    FileDescriptorSet, ServiceDescriptorProto,
+    feature_set, DescriptorProto, Edition, EnumDescriptorProto, FieldDescriptorProto,
+    FileDescriptorProto, FileDescriptorSet, ServiceDescriptorProto,
 };
 use buffa::editions::{
     EnumType, FieldPresence, JsonFormat, MessageEncoding, RepeatedFieldEncoding,
@@ -58,7 +58,8 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
 
 /// Maximum length of a fully-qualified symbol name, in bytes.
 ///
-/// Matches protoc's own cap. Two things depend on it, neither obvious.
+/// Field and oneof names are exempt. Two things depend on this limit,
+/// neither obvious.
 ///
 /// A name is built by concatenating its parent's, and every descendant
 /// stores its own full copy — four of them, across the symbol table, the
@@ -85,32 +86,57 @@ pub const MAX_SYMBOL_LEN: usize = 512;
 /// range count.
 struct ReservedRanges(Vec<(i64, i64)>);
 
+/// Two reserved ranges of one declaration that overlap, as positions in its
+/// `reserved_range` list.
+struct OverlappingPair {
+    later: usize,
+    earlier: usize,
+}
+
 impl ReservedRanges {
     /// Index a message's reserved ranges, validating each as protoc does: an
     /// unset bound reads as 0, and the half-open range must satisfy
-    /// `0 < start < end`.
+    /// `0 < start < end`. Ranges must not overlap; adjacent ranges are valid.
     fn for_message(
         message_fqn: &str,
         ranges: &[crate::generated::descriptor::descriptor_proto::ReservedRange],
     ) -> Result<Self, PoolError> {
-        let mut checked = Vec::with_capacity(ranges.len());
+        let mut checked: Vec<(u32, u32)> = Vec::with_capacity(ranges.len());
         for r in ranges {
-            let (start, end) = (r.start.unwrap_or(0), r.end.unwrap_or(0));
-            if start <= 0 || start >= end {
+            let bounds = match (
+                u32::try_from(r.start.unwrap_or(0)),
+                u32::try_from(r.end.unwrap_or(0)),
+            ) {
+                (Ok(start), Ok(end)) if start > 0 && start < end => Some((start, end)),
+                _ => None,
+            };
+            let Some(bounds) = bounds else {
                 return Err(PoolError::InvalidMessageReservedRange {
                     message: message_fqn.to_string(),
                     start: r.start,
                     end: r.end,
                 });
-            }
-            checked.push((i64::from(start), i64::from(end)));
+            };
+            checked.push(bounds);
         }
-        Ok(Self::from_half_open(checked.into_iter()))
+        let half_open = checked
+            .iter()
+            .map(|&(start, end)| (i64::from(start), i64::from(end)));
+        Self::from_disjoint(half_open).map_err(|OverlappingPair { later, earlier }| {
+            let ((start, end), (other_start, other_end)) = (checked[later], checked[earlier]);
+            PoolError::OverlappingMessageReservedRange {
+                message: message_fqn.to_string(),
+                start,
+                end,
+                other_start,
+                other_end,
+            }
+        })
     }
 
     /// Index an enum's reserved ranges, validating each as protoc does: an
     /// unset bound reads as 0, the range is inclusive, may be negative, and
-    /// must satisfy `start <= end`.
+    /// must satisfy `start <= end`. Ranges must not overlap.
     fn for_enum(
         enum_fqn: &str,
         ranges: &[crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange],
@@ -127,7 +153,42 @@ impl ReservedRanges {
             }
             checked.push((i64::from(start), i64::from(end) + 1));
         }
-        Ok(Self::from_half_open(checked.into_iter()))
+        Self::from_disjoint(checked.into_iter()).map_err(|OverlappingPair { later, earlier }| {
+            PoolError::OverlappingEnumReservedRange {
+                enum_name: enum_fqn.to_string(),
+                start: ranges[later].start.unwrap_or(0),
+                end: ranges[later].end.unwrap_or(0),
+                other_start: ranges[earlier].start.unwrap_or(0),
+                other_end: ranges[earlier].end.unwrap_or(0),
+            }
+        })
+    }
+
+    /// Index validated half-open ranges, given in declaration order, that
+    /// must not overlap. The check runs before coalescing hides an overlap:
+    /// once sorted by start, any overlap is visible between neighboring
+    /// ranges. The declaration index rides along so the error can tell the
+    /// later-declared range of the pair from the earlier one.
+    fn from_disjoint(ranges: impl Iterator<Item = (i64, i64)>) -> Result<Self, OverlappingPair> {
+        let mut by_start: Vec<(i64, i64, usize)> = ranges
+            .enumerate()
+            .map(|(i, (start, end))| (start, end, i))
+            .collect();
+        by_start.sort_unstable();
+        for pair in by_start.windows(2) {
+            let ((_, prev_end, i), (start, _, j)) = (pair[0], pair[1]);
+            if start < prev_end {
+                return Err(OverlappingPair {
+                    later: i.max(j),
+                    earlier: i.min(j),
+                });
+            }
+        }
+        let sorted = by_start
+            .into_iter()
+            .map(|(start, end, _)| (start, end))
+            .collect();
+        Ok(Self::from_sorted(sorted))
     }
 
     /// Sort and coalesce validated half-open ranges. Callers validate first;
@@ -135,6 +196,15 @@ impl ReservedRanges {
     fn from_half_open(ranges: impl Iterator<Item = (i64, i64)>) -> Self {
         let mut sorted: Vec<(i64, i64)> = ranges.filter(|&(start, end)| start < end).collect();
         sorted.sort_unstable();
+        Self::from_sorted(sorted)
+    }
+
+    /// Coalesce half-open ranges that are already sorted by start. Ranges
+    /// that touch merge into one. Every caller rejects overlapping ranges
+    /// first, so the merge of overlapping ranges is defensive: it keeps the
+    /// result sorted and disjoint, which the binary searches in `contains`
+    /// and `overlaps` rely on.
+    fn from_sorted(sorted: Vec<(i64, i64)>) -> Self {
         let mut merged: Vec<(i64, i64)> = Vec::with_capacity(sorted.len());
         for (start, end) in sorted {
             match merged.last_mut() {
@@ -170,6 +240,16 @@ pub enum PoolError {
     /// The `FileDescriptorSet` bytes did not decode. Carries the underlying
     /// wire-format error.
     Decode(buffa::DecodeError),
+    /// A file declares a syntax other than `proto2`, `proto3`, or `editions`.
+    /// An absent or empty syntax defaults to proto2.
+    UnrecognizedSyntax { file: String, syntax: String },
+    /// A file declares syntax `editions` and its `edition` is unset or
+    /// `EDITION_UNKNOWN`, so its feature defaults are undefined.
+    ///
+    /// An edition number that this version of buffa does not define is a
+    /// different case: decoding keeps it as an unknown field, and the file
+    /// links with the edition 2023 defaults.
+    MissingEdition { file: String },
     /// A file's `public_dependency` names an index outside its `dependency`
     /// list. The indices are positions in that list, so an out-of-range one
     /// names no import at all.
@@ -238,6 +318,13 @@ pub enum PoolError {
     DuplicateFieldNumber { message: String, number: u32 },
     /// Two fields in one message claim the same proto or JSON name.
     DuplicateFieldName { message: String, name: String },
+    /// A field's JSON name contains NUL, or the JSON name of a field that is
+    /// not an extension starts with `[` and ends with `]`. A JSON parser reads
+    /// such a key as the name of an extension.
+    ///
+    /// The bracket rule is off for a message that sets the
+    /// `deprecated_legacy_json_field_conflicts` option, as it is in protoc.
+    InvalidJsonName { field: String, name: String },
     /// A field refers to a oneof declaration that does not exist in its
     /// containing message.
     InvalidOneofIndex {
@@ -245,6 +332,55 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// A map's enum value type starts with a nonzero value. Only a closed
+    /// enum reaches this rule: an open enum with a nonzero first value fails
+    /// earlier with
+    /// [`OpenEnumFirstValueNotZero`](Self::OpenEnumFirstValueNotZero),
+    /// whether or not a map names it.
+    MapEnumFirstValueNotZero {
+        field: String,
+        enum_name: String,
+        number: i32,
+    },
+    /// A oneof member has required or repeated cardinality instead of optional.
+    InvalidOneofCardinality { field: String },
+    /// A repeated field declares an explicit default value.
+    RepeatedFieldWithDefault { field: String },
+    /// A singular message or group field declares an explicit default value. A
+    /// repeated one reports
+    /// [`RepeatedFieldWithDefault`](Self::RepeatedFieldWithDefault).
+    MessageFieldWithDefault { field: String },
+    /// A singular scalar or enum field declares an explicit default value in a
+    /// proto3 file. A repeated field reports
+    /// [`RepeatedFieldWithDefault`](Self::RepeatedFieldWithDefault), and a
+    /// message or group field reports
+    /// [`MessageFieldWithDefault`](Self::MessageFieldWithDefault), in every
+    /// syntax.
+    Proto3FieldWithDefault { field: String },
+    /// A singular field with implicit presence declares an explicit default
+    /// value. Every declared default is rejected, the type's zero value
+    /// included. A field has implicit presence in an editions file when
+    /// `features.field_presence` resolves to `IMPLICIT`. Such a field is not
+    /// encoded when it holds its zero value, so it cannot have another
+    /// default.
+    ///
+    /// An extension always has presence. A proto3 field reports
+    /// [`Proto3FieldWithDefault`](Self::Proto3FieldWithDefault) instead.
+    ImplicitPresenceFieldWithDefault { field: String },
+    /// A singular enum field has implicit presence but uses a closed enum.
+    /// Closed enum fields require presence to distinguish an unset field
+    /// from its default value.
+    ///
+    /// A map with a closed enum value type is rejected through the `value`
+    /// field of its entry message, which is the field this error names: in
+    /// a proto3 file, and in an editions file where the entry inherits
+    /// `features.field_presence = IMPLICIT`.
+    ///
+    /// In a proto3 file the rule covers a singular field without `optional`
+    /// and a map value. protoc rejects every enum field and extension of a
+    /// proto3 file whose enum is closed; the pool does not yet reject the
+    /// repeated, `optional`, oneof and extension cases.
+    ImplicitPresenceClosedEnum { field: String },
     /// A field marked `proto3_optional` is not declared in a proto3 file.
     Proto3OptionalOutsideProto3 { field: String },
     /// A field marked `proto3_optional` does not have optional cardinality.
@@ -261,21 +397,60 @@ pub enum PoolError {
     RealOneofAfterSyntheticOneof { message: String, oneof: String },
     /// Two oneof declarations in one message have the same name.
     DuplicateOneofName { message: String, name: String },
+    /// A oneof declaration has no member fields.
+    EmptyOneof { oneof: String },
+    /// Members of a oneof are not consecutive in declaration order.
+    /// Field numbers need not be consecutive or sorted.
+    NonconsecutiveOneofFields { oneof: String },
     /// A field number is outside the valid range
     /// `[1, MAX_FIELD_NUMBER]` (`(1 << 29) - 1`).
     InvalidFieldNumber { field: String, number: i32 },
+    /// A field in a proto3 or editions file has a `required` label. An
+    /// editions file states required presence with
+    /// `features.field_presence = LEGACY_REQUIRED`, and proto3 has no required
+    /// fields.
+    RequiredLabelOutsideProto2 { field: String },
+    /// An extension is required: it has a `required` label in a proto2 file,
+    /// or its `field_presence` feature resolves to `LEGACY_REQUIRED`. In a
+    /// proto3 or editions file, a `required` label reports
+    /// [`RequiredLabelOutsideProto2`](Self::RequiredLabelOutsideProto2)
+    /// instead.
+    RequiredExtension { field: String },
+    /// An extension of a MessageSet is not an optional message field. A
+    /// message field with delimited encoding is rejected too, whether it is
+    /// declared as a group or resolves `features.message_encoding` to
+    /// `DELIMITED` in an editions file.
+    InvalidMessageSetExtension { field: String },
     /// A field number, or a finite extension range, overlaps the field-number
     /// interval reserved for the protobuf implementation. The bounds are
     /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
     /// [`buffa::encoding::LAST_RESERVED_FIELD_NUMBER`].
     ReservedFieldNumber { field: String, number: i32 },
-    /// A map entry message did not have exactly fields 1 (key) and 2 (value),
-    /// or the key type is not a valid map key per the protobuf spec.
+    /// A field sets `packed = true` but is not a repeated numeric, bool, or
+    /// enum field. Strings, bytes, messages, and groups cannot be packed.
+    InvalidPackedOption { field: String },
+    /// A field sets `features.repeated_field_encoding` where it cannot apply:
+    /// the field is not repeated, or the value is `PACKED` and the field is
+    /// not a repeated numeric, bool, or enum field. The fields of a map entry
+    /// are exempt, because protoc copies the map field's features onto them.
+    InvalidRepeatedFieldEncoding { field: String },
+    /// A map field's entry message is malformed. The entry must have exactly
+    /// two fields, in this order: `key` with number 1, then `value` with
+    /// number 2. Each must be optional, and the key type must be an integer
+    /// type, `bool`, or `string` (see [`ScalarType::is_valid_map_key`]).
+    /// The entry must not contain extensions, extension ranges, nested
+    /// messages, or enums.
+    ///
+    /// `message` is the full name of the map field that uses the entry, and
+    /// the entry message is the field's type.
     MalformedMapEntry { message: String },
     /// Two extensions claim the same field number on the same message.
     /// protoc rejects this within one compilation unit, but it can arise
     /// when merging independently-compiled `FileDescriptorSet`s.
     DuplicateExtensionNumber { extendee: String, number: u32 },
+    /// A message using MessageSet wire format declares an ordinary field.
+    /// MessageSets may contain extensions only.
+    MessageSetWithFields { message: String },
     /// Two methods in one service have the same proto name.
     DuplicateMethodName { service: String, name: String },
     /// Two enum values in the same symbol scope have the same proto name.
@@ -308,12 +483,28 @@ pub enum PoolError {
         start: Option<i32>,
         end: Option<i32>,
     },
+    /// An extension range's exclusive end exceeds
+    /// [`buffa::encoding::MAX_FIELD_NUMBER`] + 1. Messages with
+    /// `message_set_wire_format` enabled may declare larger ranges because
+    /// their extension numbers are encoded as int32 values rather than tags.
+    ExtensionRangeEndTooLarge {
+        message: String,
+        start: u32,
+        end: u32,
+    },
+    /// A message in a proto3 file declares an extension range.
+    ExtensionRangeInProto3 { message: String },
+    /// A field or extension in a proto3 file has `TYPE_GROUP`. Proto2 uses
+    /// legacy groups; editions use `message_encoding = DELIMITED`.
+    GroupFieldInProto3 { field: String },
     /// Two extension ranges declared by the same message overlap. `end` is
     /// exclusive, as in `DescriptorProto.ExtensionRange`. Carries both ranges
     /// as declared: `start..end` is the later of the two in declaration
     /// order, `other_start..other_end` the earlier one it collides with.
-    /// Contrast [`PoolError::ReservedExtensionRange`], an overlap with a
-    /// *reserved* range.
+    /// Only one pair is reported. With three or more overlapping ranges it
+    /// is the first overlapping adjacent pair once the ranges are sorted by
+    /// `start`, then `end`. Contrast [`PoolError::ReservedExtensionRange`],
+    /// an overlap with a *reserved* range.
     OverlappingExtensionRange {
         message: String,
         start: u32,
@@ -328,6 +519,11 @@ pub enum PoolError {
         name: String,
         number: u32,
     },
+    /// A message in a proto3 file sets `message_set_wire_format`, which
+    /// proto3 does not support. A message that also declares an extension
+    /// range reports [`ExtensionRangeInProto3`](Self::ExtensionRangeInProto3)
+    /// instead.
+    MessageSetInProto3 { message: String },
     /// An open enum's first declared value has a non-zero number.
     OpenEnumFirstValueNotZero {
         enum_name: String,
@@ -359,6 +555,21 @@ pub enum PoolError {
         start: Option<i32>,
         end: Option<i32>,
     },
+    /// Two reserved ranges declared by the same message overlap. `end` is
+    /// exclusive, as in `DescriptorProto.ReservedRange` (`reserved 5 to 7;`
+    /// is `start: 5, end: 8`), so ranges that only touch are valid: `1..5`
+    /// and `5..7` do not overlap. Carries both ranges: `start..end` is the
+    /// later of the two in declaration order, `other_start..other_end` the
+    /// earlier one it collides with. Only one pair is reported. With three
+    /// or more overlapping ranges it is the first overlapping adjacent pair
+    /// once the ranges are sorted by `start`, then `end`.
+    OverlappingMessageReservedRange {
+        message: String,
+        start: u32,
+        end: u32,
+        other_start: u32,
+        other_end: u32,
+    },
     /// An enum reserved range has `start > end`. Both bounds are inclusive,
     /// as in `EnumDescriptorProto.EnumReservedRange`, may be negative, and an
     /// unset bound reads as 0. The bounds are carried as declared.
@@ -366,6 +577,22 @@ pub enum PoolError {
         enum_name: String,
         start: Option<i32>,
         end: Option<i32>,
+    },
+    /// Two reserved ranges declared by the same enum overlap. Both bounds are
+    /// inclusive, as in `EnumDescriptorProto.EnumReservedRange`, and may be
+    /// negative: `1 to 5` and `5 to 7` share 5 and overlap, while `1 to 5`
+    /// and `6 to 7` are valid. An unset bound is reported as 0, the value it
+    /// reads as. Carries both ranges: `start` to `end` is the later of the
+    /// two in declaration order, `other_start` to `other_end` the earlier
+    /// one it collides with. Only one pair is reported. With three or more
+    /// overlapping ranges it is the first overlapping adjacent pair once the
+    /// ranges are sorted by `start`, then `end`.
+    OverlappingEnumReservedRange {
+        enum_name: String,
+        start: i32,
+        end: i32,
+        other_start: i32,
+        other_end: i32,
     },
     /// An enum declares no values.
     EmptyEnum { enum_name: String },
@@ -388,6 +615,15 @@ impl core::fmt::Display for PoolError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Decode(e) => write!(f, "FileDescriptorSet decode failed: {e}"),
+            Self::UnrecognizedSyntax { file, syntax } => {
+                write!(f, "file {file} has unrecognized syntax {syntax:?}")
+            }
+            Self::MissingEdition { file } => {
+                write!(
+                    f,
+                    "file {file} has syntax \"editions\" but its edition is unset or EDITION_UNKNOWN"
+                )
+            }
             Self::InvalidPublicDependencyIndex {
                 file,
                 index,
@@ -409,6 +645,9 @@ impl core::fmt::Display for PoolError {
                     "file {file} weak_dependency index {index} is out of range \
                      ({dependency_count} dependencies declared)"
                 )
+            }
+            Self::MessageFieldWithDefault { field } => {
+                write!(f, "message field {field} declares a default value")
             }
             Self::MissingTypeName { field } => write!(f, "field {field} has no type_name"),
             Self::UnexpectedTypeName { field, type_name } => write!(
@@ -466,6 +705,19 @@ impl core::fmt::Display for PoolError {
                     "message {message} declares field name {name:?} more than once"
                 )
             }
+            Self::InvalidJsonName { field, name } => {
+                if name.contains('\0') {
+                    write!(f, "field {field} has JSON name {name:?} containing NUL")
+                } else {
+                    write!(
+                        f,
+                        "field {field} has JSON name {name:?}, which has the form of an extension key"
+                    )
+                }
+            }
+            Self::RepeatedFieldWithDefault { field } => {
+                write!(f, "repeated field {field} declares a default value")
+            }
             Self::InvalidOneofIndex {
                 message,
                 field,
@@ -473,6 +725,24 @@ impl core::fmt::Display for PoolError {
             } => write!(
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
+            ),
+            Self::MapEnumFirstValueNotZero { field, enum_name, number } => write!(
+                f,
+                "map field {field} uses enum {enum_name} whose first value is {number}, which must be zero"
+            ),
+            Self::InvalidOneofCardinality { field } => {
+                write!(f, "field {field} is a oneof member but is not optional")
+            }
+            Self::Proto3FieldWithDefault { field } => {
+                write!(f, "field {field} declares a default value in a proto3 file")
+            }
+            Self::ImplicitPresenceFieldWithDefault { field } => write!(
+                f,
+                "field {field} has implicit presence and declares a default value"
+            ),
+            Self::ImplicitPresenceClosedEnum { field } => write!(
+                f,
+                "field {field} has implicit presence and uses a closed enum"
             ),
             Self::Proto3OptionalOutsideProto3 { field } => write!(
                 f,
@@ -504,8 +774,22 @@ impl core::fmt::Display for PoolError {
                     "message {message} declares oneof name {name:?} more than once"
                 )
             }
+            Self::EmptyOneof { oneof } => write!(f, "oneof {oneof} has no fields"),
+            Self::NonconsecutiveOneofFields { oneof } => {
+                write!(f, "oneof {oneof} has member fields that are not declared consecutively")
+            }
             Self::InvalidFieldNumber { field, number } => {
                 write!(f, "field {field} has invalid field number {number}")
+            }
+            Self::RequiredLabelOutsideProto2 { field } => write!(
+                f,
+                "field {field} uses a required label outside a proto2 file"
+            ),
+            Self::RequiredExtension { field } => {
+                write!(f, "extension {field} must not be required")
+            }
+            Self::InvalidMessageSetExtension { field } => {
+                write!(f, "MessageSet extension {field} must be an optional, length-prefixed message")
             }
             Self::ReservedFieldNumber { field, number } => {
                 write!(
@@ -513,14 +797,29 @@ impl core::fmt::Display for PoolError {
                     "field {field} uses field number {number}, which is reserved for the protobuf implementation"
                 )
             }
-            Self::MalformedMapEntry { message } => {
-                write!(f, "malformed map entry message {message}")
-            }
+            Self::InvalidPackedOption { field } => write!(
+                f,
+                "field {field} sets packed = true but is not a repeated numeric, bool, or enum field"
+            ),
+            Self::InvalidRepeatedFieldEncoding { field } => write!(
+                f,
+                "field {field} sets features.repeated_field_encoding, but the field is not repeated or \
+                 its elements cannot be packed"
+            ),
+            Self::MalformedMapEntry { message } => write!(
+                f,
+                "map field {message} has a malformed entry message: it needs exactly the optional \
+                 fields key = 1 and value = 2, in that order, and a key of an integer type, bool, \
+                 or string; extensions, extension ranges, nested messages, and enums are not allowed"
+            ),
             Self::DuplicateExtensionNumber { extendee, number } => {
                 write!(
                     f,
                     "more than one extension claims field number {number} on {extendee}"
                 )
+            }
+            Self::MessageSetWithFields { message } => {
+                write!(f, "MessageSet {message} declares fields instead of extensions")
             }
             Self::DuplicateMethodName { service, name } => {
                 write!(
@@ -566,6 +865,21 @@ impl core::fmt::Display for PoolError {
                 Bound(*start),
                 Bound(*end),
             ),
+            Self::ExtensionRangeEndTooLarge {
+                message,
+                start,
+                end,
+            } => write!(
+                f,
+                "message {message} extension range {start}..{end} exceeds maximum end {}",
+                buffa::encoding::MAX_FIELD_NUMBER + 1,
+            ),
+            Self::ExtensionRangeInProto3 { message } => {
+                write!(f, "message {message} declares an extension range in proto3")
+            }
+            Self::GroupFieldInProto3 { field } => {
+                write!(f, "field {field} uses a group type in proto3")
+            }
             Self::OverlappingExtensionRange {
                 message,
                 start,
@@ -585,6 +899,9 @@ impl core::fmt::Display for PoolError {
                 f,
                 "message {message} field {name:?} uses number {number} inside an extension range"
             ),
+            Self::MessageSetInProto3 { message } => {
+                write!(f, "message {message} uses MessageSet wire format in proto3")
+            }
             Self::OpenEnumFirstValueNotZero {
                 enum_name,
                 name,
@@ -628,6 +945,17 @@ impl core::fmt::Display for PoolError {
                 Bound(*start),
                 Bound(*end),
             ),
+            Self::OverlappingMessageReservedRange {
+                message,
+                start,
+                end,
+                other_start,
+                other_end,
+            } => write!(
+                f,
+                "message {message} reserved range {start}..{end} overlaps reserved range \
+                 {other_start}..{other_end}"
+            ),
             Self::InvalidEnumReservedRange {
                 enum_name,
                 start,
@@ -637,6 +965,17 @@ impl core::fmt::Display for PoolError {
                 "enum {enum_name} reserved range {} to {} is invalid; start must not exceed end",
                 Bound(*start),
                 Bound(*end),
+            ),
+            Self::OverlappingEnumReservedRange {
+                enum_name,
+                start,
+                end,
+                other_start,
+                other_end,
+            } => write!(
+                f,
+                "enum {enum_name} reserved range {start} to {end} overlaps reserved range \
+                 {other_start} to {other_end}"
             ),
             Self::EmptyEnum { enum_name } => {
                 write!(f, "enum {enum_name} declares no values")
@@ -661,6 +1000,24 @@ impl std::error::Error for PoolError {
     }
 }
 
+/// Whether `file` carries an edition other than `EDITION_UNKNOWN`.
+///
+/// `Edition` is a closed enum, so decoding leaves a number that this crate
+/// does not define in the file's unknown fields with `edition` unset. Such a
+/// file has an edition, which [`features::for_file`] resolves to the edition
+/// 2023 defaults.
+fn has_edition(file: &FileDescriptorProto) -> bool {
+    /// Field number of `FileDescriptorProto.edition`.
+    const EDITION_FIELD_NUMBER: u32 = 14;
+    match file.edition {
+        Some(edition) => edition != Edition::EDITION_UNKNOWN,
+        None => file
+            .__buffa_unknown_fields
+            .iter()
+            .any(|field| field.number == EDITION_FIELD_NUMBER),
+    }
+}
+
 /// What a fully-qualified name resolves to within the pool.
 #[derive(Clone, Copy, Debug)]
 enum Definition {
@@ -672,6 +1029,8 @@ enum Definition {
 enum SymbolKind {
     Message,
     Enum,
+    Field,
+    Oneof,
     Service,
     Method,
     Extension,
@@ -766,9 +1125,28 @@ struct LinkScope<'a> {
     file: usize,
     /// Whether the referring file declares proto3 syntax.
     proto3: bool,
+    /// Whether the referring file's syntax permits legacy `required` labels.
+    allows_required_labels: bool,
     /// Itself, its direct and weak dependencies, and their transitive
     /// `public_dependency` closure; `None` when visibility is not enforced.
     visible: Option<&'a BTreeSet<usize>>,
+}
+
+impl<'a> LinkScope<'a> {
+    /// The scope for links made from `file`, which the pool stores at `index`.
+    fn for_file(
+        index: usize,
+        file: &FileDescriptorProto,
+        visible: Option<&'a BTreeSet<usize>>,
+    ) -> Self {
+        let syntax = file.syntax.as_deref();
+        Self {
+            file: index,
+            proto3: syntax == Some("proto3"),
+            allows_required_labels: !matches!(syntax, Some("proto3" | "editions")),
+            visible,
+        }
+    }
 }
 
 /// A pool of linked, feature-resolved protobuf descriptors.
@@ -846,16 +1224,12 @@ impl DescriptorPool {
     ///
     /// # Errors
     ///
-    /// Returns a [`PoolError`] if any type name fails to resolve or resolves
-    /// to a file the referring file does not import, a symbol or field
-    /// identity is declared twice, a field number is out of range or in
-    /// the implementation-reserved band (19000-19999), a field uses a name or
-    /// number its message reserved, an extension range overlaps a reserved
-    /// range, a message or enum declares a reserved name twice, an open enum's
-    /// first value is non-zero, an enum value reuses a reserved name or number
-    /// or a duplicate number without `allow_alias`, a oneof index is invalid,
-    /// a `proto3_optional` field is malformed, a message exceeds 65 535
-    /// fields, or a map entry is malformed.
+    /// Returns a [`PoolError`] if a type name does not resolve, or names a type
+    /// in a file the referring file does not import. Also returns one if a file
+    /// breaks a descriptor rule that the pool checks. The rules are protoc's,
+    /// apart from the pool's own field-count limit
+    /// ([`PoolError::TooManyFields`]). Each [`PoolError`] variant documents one
+    /// rule.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -872,14 +1246,8 @@ impl DescriptorPool {
     /// # Errors
     ///
     /// Returns [`PoolError::Decode`] if the bytes are not a well-formed
-    /// `FileDescriptorSet`, or any other [`PoolError`] on a structural
-    /// validation failure (dangling or unimported type names, out-of-range or
-    /// implementation-reserved field numbers, reserved message fields, an
-    /// overlapping extension range, duplicate symbols or field identities,
-    /// duplicate reserved names, an open enum whose first value is non-zero,
-    /// reserved enum values, duplicate enum numbers without `allow_alias`,
-    /// invalid oneof indices, malformed `proto3_optional` fields, or malformed
-    /// map entries).
+    /// `FileDescriptorSet`, and any other [`PoolError`] for the reasons
+    /// [`DescriptorPool::new`] gives.
     ///
     /// A large descriptor set can exceed the default element-memory bound —
     /// the descriptor types are wide structs, so the element footprint runs
@@ -999,6 +1367,22 @@ impl DescriptorPool {
                         });
                     }
                 }
+                match file.syntax.as_deref() {
+                    None | Some("" | "proto2" | "proto3") => {}
+                    Some("editions") => {
+                        if !has_edition(file) {
+                            return Err(PoolError::MissingEdition {
+                                file: file.name.clone().unwrap_or_default(),
+                            });
+                        }
+                    }
+                    Some(syntax) => {
+                        return Err(PoolError::UnrecognizedSyntax {
+                            file: file.name.clone().unwrap_or_default(),
+                            syntax: syntax.to_string(),
+                        });
+                    }
+                }
                 validate_dependency_indices(file)?;
             }
         }
@@ -1075,11 +1459,7 @@ impl DescriptorPool {
             let pkg = file.package.as_deref().unwrap_or("");
             let file_features = features::for_file(file);
             let visible = self.visible_files(base + i, file, base, &new_files);
-            let scope = LinkScope {
-                file: base + i,
-                proto3: file.syntax.as_deref() == Some("proto3"),
-                visible: visible.as_ref(),
-            };
+            let scope = LinkScope::for_file(base + i, file, visible.as_ref());
             for msg in &file.message_type {
                 linked = self.link_message(pkg, msg, &file_features, linked, scope)?;
             }
@@ -1099,11 +1479,7 @@ impl DescriptorPool {
             let pkg = file.package.as_deref().unwrap_or("");
             let file_features = features::for_file(file);
             let visible = self.visible_files(base + i, file, base, &new_files);
-            let scope = LinkScope {
-                file: base + i,
-                proto3: file.syntax.as_deref() == Some("proto3"),
-                visible: visible.as_ref(),
-            };
+            let scope = LinkScope::for_file(base + i, file, visible.as_ref());
             for svc in &file.service {
                 self.link_service(pkg, svc, scope)?;
             }
@@ -1119,6 +1495,7 @@ impl DescriptorPool {
             }
         }
         self.finalize_field_enum_types(first_new_message, first_new_extension);
+        self.check_linked_enum_fields(first_new_message)?;
 
         // Record the symbol → file index (for `FindFileContainingSymbol`).
         for (i, f) in new_files.iter().enumerate() {
@@ -1325,10 +1702,13 @@ impl DescriptorPool {
             format!("{scope}.{}", e.name.as_deref().unwrap_or(""))
         };
         for v in &e.value {
-            self.symbol_file.insert(
-                format!("{scope}.{}", v.name.as_deref().unwrap_or("")),
-                file_idx,
-            );
+            let name = v.name.as_deref().unwrap_or("");
+            let value_fqn = if scope.is_empty() {
+                name.to_string()
+            } else {
+                format!("{scope}.{name}")
+            };
+            self.symbol_file.insert(value_fqn, file_idx);
         }
         self.symbol_file.insert(fqn, file_idx);
     }
@@ -1522,10 +1902,10 @@ impl DescriptorPool {
     /// The `FileDescriptorProto` that declares a fully-qualified symbol, the
     /// way gRPC server reflection's `FindFileContainingSymbol` resolves it.
     ///
-    /// Resolves messages (including nested), enums (including nested),
-    /// services, methods (`pkg.Service.Method`), and extensions — every
-    /// symbol kind a reflection client queries. `O(log n)` over the symbol
-    /// index.
+    /// Resolves messages (including nested), fields, oneofs, enums (including
+    /// nested), enum values, services, methods (`pkg.Service.Method`), and
+    /// extensions — every symbol kind a reflection client queries. `O(log n)`
+    /// over the symbol index.
     #[must_use]
     pub fn file_containing_symbol(&self, full_name: &str) -> Option<&FileDescriptorProto> {
         let name = full_name.strip_prefix('.').unwrap_or(full_name);
@@ -1536,7 +1916,7 @@ impl DescriptorPool {
     // ── Pass 1: register names ──────────────────────────────────────────────
 
     fn register_symbol(&mut self, fqn: &str, kind: SymbolKind) -> Result<(), PoolError> {
-        if fqn.len() > MAX_SYMBOL_LEN {
+        if !matches!(kind, SymbolKind::Field | SymbolKind::Oneof) && fqn.len() > MAX_SYMBOL_LEN {
             return Err(PoolError::NameTooLong {
                 len: fqn.len(),
                 limit: MAX_SYMBOL_LEN,
@@ -1643,6 +2023,29 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        // protoc reports the extension range before the option, so a proto3
+        // message with both gets `ExtensionRangeInProto3` from the check
+        // below.
+        if scope.proto3
+            && msg.extension_range.is_empty()
+            && msg
+                .options
+                .as_option()
+                .is_some_and(|options| options.message_set_wire_format == Some(true))
+        {
+            return Err(PoolError::MessageSetInProto3 { message: fqn });
+        }
+        if scope.proto3 && !msg.extension_range.is_empty() {
+            return Err(PoolError::ExtensionRangeInProto3 { message: fqn });
+        }
+        if !msg.field.is_empty()
+            && msg
+                .options
+                .as_option()
+                .is_some_and(|options| options.message_set_wire_format == Some(true))
+        {
+            return Err(PoolError::MessageSetWithFields { message: fqn });
+        }
         let msg_features =
             features::resolve_child(parent_features, features::message_features(msg));
 
@@ -1666,6 +2069,7 @@ impl DescriptorPool {
                     name: oneof_name.to_string(),
                 });
             }
+            self.register_symbol(&format!("{fqn}.{oneof_name}"), SymbolKind::Oneof)?;
             oneofs.push(OneofDescriptor {
                 name: oneof_name.to_string(),
                 field_indices: Vec::new(),
@@ -1701,6 +2105,9 @@ impl DescriptorPool {
         // conflict this leaves through, so the check still catches ambiguity in
         // a hand-built or third-party set without ever refusing protoc's own
         // output.
+        // The option itself carries `[deprecated = true]` in descriptor.proto,
+        // which protoc still honours — reading it is the point, not a mistake.
+        #[allow(deprecated)]
         let enforce_json_names = msg_features.json_format == JsonFormat::Allow
             && !msg
                 .options
@@ -1745,6 +2152,7 @@ impl DescriptorPool {
                     name: fd.name.clone(),
                 });
             }
+            self.register_symbol(&format!("{fqn}.{}", fd.name), SymbolKind::Field)?;
             if enforce_json_names
                 && fd.json_name != fd.name
                 && field_names.insert(fd.json_name.clone(), i).is_some()
@@ -1775,6 +2183,23 @@ impl DescriptorPool {
         }
         field_by_number.sort_unstable_by_key(|&(n, _)| n);
         field_by_name.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+
+        for oneof in &oneofs {
+            if oneof.field_indices.is_empty() {
+                return Err(PoolError::EmptyOneof {
+                    oneof: format!("{fqn}.{}", oneof.name),
+                });
+            }
+            if oneof
+                .field_indices
+                .windows(2)
+                .any(|pair| pair[1] - pair[0] != 1)
+            {
+                return Err(PoolError::NonconsecutiveOneofFields {
+                    oneof: format!("{fqn}.{}", oneof.name),
+                });
+            }
+        }
 
         // Validate and mark synthetic oneofs (proto3 optional). Per protobuf
         // semantics, a proto3 optional field must be the only member of its
@@ -1831,6 +2256,15 @@ impl DescriptorPool {
                     end: r.end,
                 });
             };
+            if end > buffa::encoding::MAX_FIELD_NUMBER + 1
+                && !msg.options.message_set_wire_format.unwrap_or(false)
+            {
+                return Err(PoolError::ExtensionRangeEndTooLarge {
+                    message: fqn.clone(),
+                    start,
+                    end,
+                });
+            }
             if reserved_ranges.overlaps(start, end) {
                 return Err(PoolError::ReservedExtensionRange {
                     message: fqn.clone(),
@@ -2120,9 +2554,17 @@ impl DescriptorPool {
         // there is exactly one valid interpretation of an extension's oneof
         // membership, and it is "none".
         field.oneof_index = None;
+        let extendee_message = &self.messages[extendee.0 as usize];
+        if extendee_message
+            .options()
+            .is_some_and(|options| options.message_set_wire_format == Some(true))
+            && (field.delimited
+                || !matches!(field.kind, FieldKind::Singular(SingularKind::Message(_))))
+        {
+            return Err(PoolError::InvalidMessageSetExtension { field: fqn });
+        }
         // Validate the number falls inside one of the extendee's declared
         // extension ranges.
-        let extendee_message = &self.messages[extendee.0 as usize];
         if !extendee_message.in_extension_range(field.number) {
             return Err(PoolError::InvalidFieldNumber {
                 field: fqn,
@@ -2225,7 +2667,11 @@ impl DescriptorPool {
         scope: LinkScope<'_>,
     ) -> Result<FieldDescriptor, PoolError> {
         let name = f.name.clone().unwrap_or_default();
-        let field_fqn = format!("{msg_fqn}.{name}");
+        let field_fqn = if msg_fqn.is_empty() {
+            name.clone()
+        } else {
+            format!("{msg_fqn}.{name}")
+        };
         let resolved = features::resolve_child(parent_features, features::field_features(f));
 
         let label = f.label.unwrap_or_default();
@@ -2242,17 +2688,46 @@ impl DescriptorPool {
                 return Err(PoolError::Proto3OptionalWithoutOneof { field: field_fqn });
             }
         }
+        if containing_msg.is_some() && f.oneof_index.is_some() && label != Label::LABEL_OPTIONAL {
+            return Err(PoolError::InvalidOneofCardinality { field: field_fqn });
+        }
         let is_repeated = label == Label::LABEL_REPEATED;
+        if label == Label::LABEL_REQUIRED && !scope.allows_required_labels {
+            return Err(PoolError::RequiredLabelOutsideProto2 { field: field_fqn });
+        }
+        let is_extension = containing_msg.is_none();
+        if is_extension
+            && (label == Label::LABEL_REQUIRED
+                || resolved.field_presence == FieldPresence::LegacyRequired)
+        {
+            return Err(PoolError::RequiredExtension { field: field_fqn });
+        }
+        if is_repeated && f.default_value.is_some() {
+            return Err(PoolError::RepeatedFieldWithDefault { field: field_fqn });
+        }
 
         // Resolve the singular kind (element type).
         let element = self.resolve_singular(f.r#type, f.type_name.as_deref(), &field_fqn, scope)?;
+        if matches!(element, SingularKind::Message(_)) && f.default_value.is_some() {
+            return Err(PoolError::MessageFieldWithDefault { field: field_fqn });
+        }
+        // After the two rules above, so that a repeated or message field
+        // reports the rule that holds in every syntax.
+        if scope.proto3 && f.default_value.is_some() {
+            return Err(PoolError::Proto3FieldWithDefault { field: field_fqn });
+        }
+        if scope.proto3 && f.r#type == Some(ProtoType::TYPE_GROUP) {
+            return Err(PoolError::GroupFieldInProto3 { field: field_fqn });
+        }
 
         // Detect map fields: repeated + message type + the message is a
         // map_entry. `containing_msg` is `None` for extensions, which cannot
         // be map fields — the lookup is skipped entirely.
         let (kind, enum_type) = if is_repeated {
             if let SingularKind::Message(midx) = element {
-                if let Some(entry) = containing_msg.and_then(|m| self.find_map_entry(m, f)) {
+                if let Some(entry) =
+                    containing_msg.and_then(|m| self.find_map_entry(msg_fqn, m, f, midx))
+                {
                     let (key_ty, value_kind) = self.resolve_map_entry(entry, &field_fqn, scope)?;
                     let enum_type = entry
                         .field
@@ -2262,7 +2737,6 @@ impl DescriptorPool {
                     // Map entry messages are synthetic — they're not real
                     // pool members for reflection purposes, but we leave
                     // them registered (consumers can ignore them).
-                    let _ = midx;
                     (
                         FieldKind::Map {
                             key: key_ty,
@@ -2290,8 +2764,19 @@ impl DescriptorPool {
         let presence = if is_repeated {
             // Repeated/map fields have no presence.
             FieldPresence::Implicit
-        } else if label == Label::LABEL_REQUIRED {
+        } else if label == Label::LABEL_REQUIRED
+            || resolved.field_presence == FieldPresence::LegacyRequired
+        {
+            // A proto2 `required` label or an editions `LEGACY_REQUIRED`
+            // feature makes any singular field required, message fields
+            // included, so this arm runs before the message arm below.
             FieldPresence::LegacyRequired
+        } else if is_extension {
+            // A singular extension has presence whatever the file's
+            // features resolve to (protoc `FieldDescriptor::has_presence`),
+            // so a proto3 or implicit-presence editions file does not make
+            // its extensions implicit.
+            FieldPresence::Explicit
         } else if f.proto3_optional == Some(true) || f.oneof_index.is_some() {
             // proto3 `optional` and any oneof member always have explicit
             // presence regardless of edition features. A oneof field set
@@ -2307,6 +2792,9 @@ impl DescriptorPool {
         } else {
             resolved.field_presence
         };
+        if !is_repeated && presence == FieldPresence::Implicit && f.default_value.is_some() {
+            return Err(PoolError::ImplicitPresenceFieldWithDefault { field: field_fqn });
+        }
 
         // Resolve packed encoding.
         // Per the spec, only repeated scalar/enum fields are packable.
@@ -2314,9 +2802,29 @@ impl DescriptorPool {
             kind,
             FieldKind::List(SingularKind::Scalar(s)) if !matches!(s, ScalarType::String | ScalarType::Bytes)
         ) || matches!(kind, FieldKind::List(SingularKind::Enum(_)));
+        let packed_option = f.options.as_option().and_then(|o| o.packed);
+        if packed_option == Some(true) && !packable {
+            return Err(PoolError::InvalidPackedOption { field: field_fqn });
+        }
+        let in_map_entry = containing_msg
+            .and_then(|m| m.options.as_option())
+            .and_then(|o| o.map_entry)
+            == Some(true);
+        // The feature is the editions spelling of the option. Only the
+        // field's own setting counts: an inherited one applies to the fields
+        // it fits.
+        if let Some(encoding) =
+            features::field_features(f).and_then(|fs| fs.repeated_field_encoding)
+        {
+            let applies =
+                is_repeated && (packable || encoding != feature_set::RepeatedFieldEncoding::PACKED);
+            if !applies && !in_map_entry {
+                return Err(PoolError::InvalidRepeatedFieldEncoding { field: field_fqn });
+            }
+        }
         let packed = if packable {
             // An explicit [packed = ...] option wins over feature resolution.
-            match f.options.as_option().and_then(|o| o.packed) {
+            match packed_option {
                 Some(p) => p,
                 None => resolved.repeated_field_encoding == RepeatedFieldEncoding::Packed,
             }
@@ -2325,7 +2833,7 @@ impl DescriptorPool {
         };
 
         // Resolve delimited (group) encoding.
-        // proto2/proto3: TYPE_GROUP is delimited; TYPE_MESSAGE is length-prefixed.
+        // proto2: TYPE_GROUP is delimited; TYPE_MESSAGE is length-prefixed.
         // editions: message_encoding feature controls it.
         let delimited = if f.r#type == Some(ProtoType::TYPE_GROUP) {
             true
@@ -2341,6 +2849,23 @@ impl DescriptorPool {
             .json_name
             .clone()
             .unwrap_or_else(|| derive_json_name(&name));
+        // protoc applies the bracket rule with its JSON name conflict checks,
+        // which the message option turns off. The option is deprecated and
+        // protoc still honours it.
+        #[allow(deprecated)]
+        let checks_json_name_form = containing_msg.is_some_and(|m| {
+            !m.options
+                .deprecated_legacy_json_field_conflicts
+                .unwrap_or(false)
+        });
+        let looks_like_extension_key =
+            checks_json_name_form && json_name.starts_with('[') && json_name.ends_with(']');
+        if json_name.contains('\0') || looks_like_extension_key {
+            return Err(PoolError::InvalidJsonName {
+                field: field_fqn,
+                name: json_name,
+            });
+        }
 
         // Validate the field number. The wire format reserves 0, and the
         // upper bound is `(1 << 29) - 1`. Spec-compliant `protoc` never emits
@@ -2418,6 +2943,67 @@ impl DescriptorPool {
         }
     }
 
+    /// Checks the rules that relate a message field to the enum it names.
+    ///
+    /// The walk runs once every enum in the set is linked, because a field's
+    /// enum may be declared later in its file or in a later file of the set.
+    /// It visits the new messages in link order and each message's fields in
+    /// declaration order, and returns the first violation.
+    fn check_linked_enum_fields(&self, first_new_message: usize) -> Result<(), PoolError> {
+        for message in &self.messages[first_new_message..] {
+            for field in &message.fields {
+                self.check_map_enum_first_value(message, field)?;
+                Self::check_implicit_presence_enum(message, field)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// A map's enum value type must declare zero as its first value, in
+    /// every syntax.
+    fn check_map_enum_first_value(
+        &self,
+        message: &MessageDescriptor,
+        field: &FieldDescriptor,
+    ) -> Result<(), PoolError> {
+        let FieldKind::Map {
+            value: SingularKind::Enum(eidx),
+            ..
+        } = field.kind
+        else {
+            return Ok(());
+        };
+        let enumeration = &self.enums[eidx.0 as usize];
+        if let Some(first) = enumeration.values.first().filter(|value| value.number != 0) {
+            return Err(PoolError::MapEnumFirstValueNotZero {
+                field: format!("{}.{}", message.full_name, field.name),
+                enum_name: enumeration.full_name.clone(),
+                number: first.number,
+            });
+        }
+        Ok(())
+    }
+
+    /// A singular enum field with implicit presence must name an open enum.
+    /// A map entry's `value` field is such a field when its presence is
+    /// implicit, so the rule covers map values too. Repeated fields, oneof
+    /// members and proto3 `optional` fields do not have implicit presence
+    /// and pass, in proto3 files as well.
+    fn check_implicit_presence_enum(
+        message: &MessageDescriptor,
+        field: &FieldDescriptor,
+    ) -> Result<(), PoolError> {
+        if matches!(field.kind, FieldKind::Singular(SingularKind::Enum(_)))
+            && field.presence == FieldPresence::Implicit
+            && field.enum_type == Some(EnumType::Closed)
+        {
+            return Err(PoolError::ImplicitPresenceClosedEnum {
+                field: format!("{}.{}", message.full_name, field.name),
+            });
+        }
+        Ok(())
+    }
+
     fn resolve_singular(
         &self,
         ty: Option<ProtoType>,
@@ -2477,8 +3063,10 @@ impl DescriptorPool {
     /// Find the nested map-entry message for a repeated message field.
     fn find_map_entry<'a>(
         &self,
+        msg_fqn: &str,
         containing: &'a DescriptorProto,
         f: &FieldDescriptorProto,
+        element: MessageIndex,
     ) -> Option<&'a DescriptorProto> {
         if f.label.unwrap_or_default() != Label::LABEL_REPEATED {
             return None;
@@ -2488,11 +3076,14 @@ impl DescriptorPool {
         if f.r#type.is_some_and(|ty| ty != ProtoType::TYPE_MESSAGE) {
             return None;
         }
-        let tn = f.type_name.as_deref()?;
         // Map entry messages are nested inside the containing message and
-        // have name `<FieldName>Entry`. The type_name's last segment is the
-        // entry message name.
-        let entry_name = tn.rsplit('.').next()?;
+        // have name `<FieldName>Entry`. Match the resolved full name so an
+        // unrelated message with the same short name remains a list element.
+        let entry_name = self
+            .message(element)
+            .full_name()
+            .strip_prefix(msg_fqn)?
+            .strip_prefix('.')?;
         let entry = containing
             .nested_type
             .iter()
@@ -2510,13 +3101,34 @@ impl DescriptorPool {
         field_fqn: &str,
         scope: LinkScope<'_>,
     ) -> Result<(ScalarType, SingularKind), PoolError> {
-        let key_fd = entry.field.iter().find(|f| f.number == Some(1));
-        let val_fd = entry.field.iter().find(|f| f.number == Some(2));
-        let (Some(kf), Some(vf)) = (key_fd, val_fd) else {
+        if !entry.extension.is_empty()
+            || !entry.extension_range.is_empty()
+            || !entry.nested_type.is_empty()
+            || !entry.enum_type.is_empty()
+        {
+            return Err(PoolError::MalformedMapEntry {
+                message: field_fqn.to_string(),
+            });
+        }
+        // The key is the first field and the value the second, as protoc
+        // writes them and as it reads them back.
+        let [kf, vf] = entry.field.as_slice() else {
             return Err(PoolError::MalformedMapEntry {
                 message: field_fqn.to_string(),
             });
         };
+        if [("key", 1, kf), ("value", 2, vf)]
+            .into_iter()
+            .any(|(name, number, field)| {
+                field.name.as_deref() != Some(name)
+                    || field.number != Some(number)
+                    || field.label.unwrap_or_default() != Label::LABEL_OPTIONAL
+            })
+        {
+            return Err(PoolError::MalformedMapEntry {
+                message: field_fqn.to_string(),
+            });
+        }
         let key_ty = ScalarType::from_proto(kf.r#type.unwrap_or_default()).ok_or_else(|| {
             PoolError::MalformedMapEntry {
                 message: field_fqn.to_string(),
@@ -2685,14 +3297,54 @@ mod reserved_ranges_tests {
     #[test]
     fn coalesces_overlapping_and_adjacent_ranges_in_any_order() {
         // 9..12 and 12..15 are adjacent, 20..30 and 25..27 nest, 5..6 stands alone.
+        let r = ReservedRanges::from_half_open(
+            [(20, 30), (12, 15), (5, 6), (25, 27), (9, 12)].into_iter(),
+        );
+        assert_eq!(r.0, vec![(5, 6), (9, 15), (20, 30)]);
+    }
+
+    #[test]
+    fn message_ranges_declared_out_of_order_are_indexed_sorted() {
+        // Disjoint; 9..12 and 12..15 touch and coalesce.
         let r = ranges(&[
             (Some(20), Some(30)),
             (Some(12), Some(15)),
             (Some(5), Some(6)),
-            (Some(25), Some(27)),
             (Some(9), Some(12)),
         ]);
         assert_eq!(r.0, vec![(5, 6), (9, 15), (20, 30)]);
+        for reserved in [5, 9, 12, 14, 20, 29] {
+            assert!(r.contains(reserved), "{reserved}");
+        }
+        for free in [4, 6, 8, 15, 19, 30] {
+            assert!(!r.contains(free), "{free}");
+        }
+        assert!(r.overlaps(1, 6));
+        assert!(r.overlaps(14, 20));
+        assert!(!r.overlaps(6, 9));
+        assert!(!r.overlaps(15, 20));
+    }
+
+    #[test]
+    fn enum_ranges_declared_out_of_order_are_indexed_sorted() {
+        use crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
+        // Disjoint and inclusive; `9 to 11` and `12 to 14` touch and coalesce.
+        let raw: Vec<EnumReservedRange> = [(20, 29), (12, 14), (-5, -3), (9, 11)]
+            .into_iter()
+            .map(|(start, end)| EnumReservedRange {
+                start: Some(start),
+                end: Some(end),
+                ..Default::default()
+            })
+            .collect();
+        let r = ReservedRanges::for_enum("t.E", &raw).expect("valid enum reserved ranges");
+        assert_eq!(r.0, vec![(-5, -2), (9, 15), (20, 30)]);
+        for reserved in [-5, -3, 9, 11, 12, 14, 20, 29] {
+            assert!(r.contains(reserved), "{reserved}");
+        }
+        for free in [-6, -2, 8, 15, 19, 30] {
+            assert!(!r.contains(free), "{free}");
+        }
     }
 
     #[test]
@@ -2733,16 +3385,15 @@ mod reserved_ranges_tests {
             ..Default::default()
         };
         // `reserved 0 to 8`, `reserved -3 to 0`, and `reserved 0` respectively.
-        let r = ReservedRanges::for_enum(
-            "t.E",
-            &[
-                range(None, Some(8)),
-                range(Some(-3), None),
-                range(None, None),
-            ],
-        )
-        .expect("unset enum bounds read as 0 and are valid");
-        assert!(r.contains(-3) && r.contains(0) && r.contains(8) && !r.contains(9));
+        for (start, end, expected) in [
+            (None, Some(8), (0, 9)),
+            (Some(-3), None, (-3, 1)),
+            (None, None, (0, 1)),
+        ] {
+            let r = ReservedRanges::for_enum("t.E", &[range(start, end)])
+                .expect("unset enum bounds read as 0 and are valid");
+            assert_eq!(r.0, vec![expected]);
+        }
         assert!(matches!(
             ReservedRanges::for_enum("t.E", &[range(Some(5), Some(4))]),
             Err(PoolError::InvalidEnumReservedRange { .. })
@@ -2752,7 +3403,7 @@ mod reserved_ranges_tests {
     #[test]
     fn enum_ranges_are_inclusive_and_may_be_negative() {
         use crate::generated::descriptor::enum_descriptor_proto::EnumReservedRange;
-        let raw: Vec<EnumReservedRange> = [(-5, -3), (7, 9), (9, 9), (i32::MAX, i32::MAX)]
+        let raw: Vec<EnumReservedRange> = [(-5, -3), (7, 9), (12, 12), (i32::MAX, i32::MAX)]
             .into_iter()
             .map(|(start, end)| EnumReservedRange {
                 start: Some(start),
@@ -2766,6 +3417,7 @@ mod reserved_ranges_tests {
             vec![
                 (-5, -2),
                 (7, 10),
+                (12, 13),
                 (i64::from(i32::MAX), i64::from(i32::MAX) + 1)
             ]
         );
@@ -2774,6 +3426,8 @@ mod reserved_ranges_tests {
         assert!(!r.contains(-2));
         assert!(r.contains(9));
         assert!(!r.contains(10));
+        assert!(r.contains(12));
+        assert!(!r.contains(13));
         assert!(r.contains(i32::MAX));
     }
 

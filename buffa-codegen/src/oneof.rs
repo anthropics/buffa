@@ -361,7 +361,7 @@ fn collect_variant_info(
         })
         .collect();
 
-    fields
+    let variants: Vec<VariantInfo> = fields
         .iter()
         .map(|field| {
             let proto_name = field
@@ -446,7 +446,25 @@ fn collect_variant_info(
                 debug_redact: crate::message::is_debug_redacted(field),
             })
         })
-        .collect()
+        .collect::<Result<_, _>>()?;
+
+    // `oneof_variant_ident` is lossy (`foo` / `foo_`, `foo_bar` / `foo__bar`,
+    // `self` / `self_`), so two members can map to one variant. Every
+    // member's name was checked above, so `unwrap_or_default` never fires.
+    let mut seen = std::collections::HashMap::<String, &str>::new();
+    for (field, variant) in fields.iter().zip(&variants) {
+        let proto_name = field.name.as_deref().unwrap_or_default();
+        if let Some(first_field) = seen.insert(variant.variant_ident.to_string(), proto_name) {
+            return Err(CodeGenError::OneofVariantNameConflict {
+                message_name: proto_fqn.to_string(),
+                oneof_name: oneof_name.to_string(),
+                first_field: first_field.to_string(),
+                second_field: proto_name.to_string(),
+                rust_name: variant.variant_ident.to_string(),
+            });
+        }
+    }
+    Ok(variants)
 }
 
 /// Generate a Rust enum for a protobuf oneof.
@@ -568,7 +586,7 @@ pub fn generate_oneof_enum(
             };
             // From<T> for Oneof — always legal (Oneof is local in T0 position).
             let from_oneof = quote! {
-                impl From<#ty> for #rust_enum_ident {
+                impl ::core::convert::From<#ty> for #rust_enum_ident {
                     fn from(v: #ty) -> Self {
                         Self::#ident(#wrapped)
                     }
@@ -581,7 +599,7 @@ pub fn generate_oneof_enum(
                 quote! {}
             } else {
                 quote! {
-                    impl From<#ty> for ::core::option::Option<#rust_enum_ident> {
+                    impl ::core::convert::From<#ty> for ::core::option::Option<#rust_enum_ident> {
                         fn from(v: #ty) -> Self {
                             Self::Some(#rust_enum_ident::from(v))
                         }
@@ -785,7 +803,7 @@ fn generate_oneof_serialize(
 
     quote! {
         impl ::serde::Serialize for #enum_ident {
-            fn serialize<S: ::serde::Serializer>(&self, s: S) -> ::core::result::Result<S::Ok, S::Error> {
+            fn serialize<__S: ::serde::Serializer>(&self, s: __S) -> ::core::result::Result<__S::Ok, __S::Error> {
                 use ::serde::ser::SerializeMap;
                 let mut map = s.serialize_map(Some(1))?;
                 match self {
@@ -897,7 +915,7 @@ pub(crate) fn oneof_variant_deser_arm(
                 struct _DeserSeed;
                 impl<'de> ::serde::de::DeserializeSeed<'de> for _DeserSeed {
                     type Value = #variant_type;
-                    fn deserialize<D: ::serde::Deserializer<'de>>(self, d: D) -> ::core::result::Result<#variant_type, D::Error> {
+                    fn deserialize<__D: ::serde::Deserializer<'de>>(self, d: __D) -> ::core::result::Result<#variant_type, __D::Error> {
                         #helper::deserialize(d)
                     }
                 }
