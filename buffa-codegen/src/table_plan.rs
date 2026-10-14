@@ -263,6 +263,19 @@ pub(crate) fn table_fields<'a>(
         });
     }
     fields.sort_by_key(|f| f.number);
+    // protoc rejects a repeated number, but a descriptor built another way
+    // can have one, and `Table::new` panics at compile time on the entries.
+    if let Some([a, b]) = fields.windows(2).find(|w| w[0].number == w[1].number) {
+        return Err(ineligible(
+            "has two fields with the same number",
+            format!(
+                "fields `{}` and `{}` are both numbered {}",
+                a.field.name.as_deref().unwrap_or(""),
+                b.field.name.as_deref().unwrap_or(""),
+                a.number
+            ),
+        ));
+    }
     Ok(fields)
 }
 

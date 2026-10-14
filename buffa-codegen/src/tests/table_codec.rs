@@ -636,24 +636,66 @@ fn wide_messages_keep_dense_lookup_for_low_field_numbers() {
     assert!(table.contains(",63u8]"), "{table}");
 }
 
+/// `Plain` with `b` numbered 1 like `a`, which protoc would reject.
+fn with_repeated_number() -> FileDescriptorProto {
+    let mut file = schema();
+    file.message_type[0]
+        .field
+        .push(scalar("b", 1, Type::TYPE_INT32));
+    file
+}
+
 #[test]
-fn a_dense_index_that_does_not_fit_in_a_byte_is_an_error() {
-    // Only repeated field numbers put a field numbered below 64 past the
-    // 255th entry.
+fn a_message_with_a_repeated_field_number_falls_back() {
+    let (files, warnings) = generate_with_diagnostics(
+        &[with_repeated_number()],
+        &["t.proto".to_string()],
+        &table_config(CodecStrategy::Table),
+    )
+    .unwrap();
+    let code = joined(&files);
+    assert!(!tables(&code).contains(&"Plain".to_string()), "{code}");
+    let (_, reasons) = summary(&warnings);
+    assert!(
+        reasons.contains(&("has two fields with the same number", 1)),
+        "{reasons:?}"
+    );
+}
+
+#[test]
+fn an_exact_path_rule_for_a_message_with_a_repeated_field_number_names_both_fields() {
+    let config = CodeGenConfig {
+        codec_strategy_in: vec![(".t.Plain".to_string(), CodecStrategy::Table)],
+        ..Default::default()
+    };
+    let err =
+        generate_with_diagnostics(&[with_repeated_number()], &["t.proto".to_string()], &config)
+            .unwrap_err()
+            .to_string();
+    assert!(
+        err.contains("fields `a` and `b` are both numbered 1"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_message_with_many_repeated_field_numbers_falls_back_before_dense_lookup() {
+    // 256 fields numbered 7 would overflow the `u8` dense index.
     let mut file = schema();
     file.message_type[0].field = (1..=256)
         .map(|n| scalar(&format!("f{n}"), 7, Type::TYPE_INT32))
         .collect();
-    let err = generate_with_diagnostics(
+    let (files, warnings) = generate_with_diagnostics(
         &[file],
         &["t.proto".to_string()],
         &table_config(CodecStrategy::Table),
     )
-    .unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "codegen error: table codec: .t.Plain has more than 255 fields numbered 7 or \
-         lower, so its field numbers are not distinct"
+    .unwrap();
+    assert!(!tables(&joined(&files)).contains(&"Plain".to_string()));
+    let (_, reasons) = summary(&warnings);
+    assert!(
+        reasons.contains(&("has two fields with the same number", 1)),
+        "{reasons:?}"
     );
 }
 
