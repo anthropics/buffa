@@ -1,0 +1,19 @@
+syntax = "proto2";
+
+package map_omit_defaults_proto2;
+
+// Compiled as `map_omit_defaults.proto` is.
+message Maps {
+  // Closed. protoc requires a map value's enum to declare 0 first.
+  enum Size {
+    SIZE_SMALL = 0;
+    SIZE_LARGE = 1;
+  }
+
+  message Required {
+    required int32 n = 1;
+  }
+
+  map<int32, Size> sizes = 1;
+  map<int32, Required> required = 2;
+}

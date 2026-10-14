@@ -1496,12 +1496,24 @@ impl Config {
     /// dropped.
     ///
     /// For migrations from prost where stored or hashed encodings must not
-    /// change. A message value is left out when it encodes to nothing. Every
-    /// key and value decodes as before, except that a `-0.0` float value
-    /// decodes as `0.0`, as it does from prost. Applies to the owned and view
-    /// encoders of the messages generated in this run, not to buffa-types'
-    /// well-known types (`google.protobuf.Struct`), types from other crates or
-    /// `DynamicMessage`.
+    /// change. The default is what a missing field decodes to: zero, `false`,
+    /// empty, an open enum's 0 or a closed enum's first value. A message value
+    /// is left out when it encodes to nothing. As with prost, a `-0.0` float
+    /// value is left out and decodes as `0.0`. prost leaves out a message value
+    /// equal to its default, so one that still encodes a field, such as a
+    /// `required` field at its default or a float field holding `-0.0`, is
+    /// written here but not by prost.
+    ///
+    /// Applies to the owned, view and lazy view encoders of the messages
+    /// generated in this run. A lazy view writes its singular and repeated
+    /// message fields, which it keeps undecoded, as they were read, and every
+    /// encoder writes entries kept as unknown fields as they were read. A
+    /// value of an enum made open with `open_enums_in` is left out at 0,
+    /// which a missing open enum decodes to, where prost leaves out its first
+    /// value. Each crate's types encode as that crate was generated;
+    /// buffa-types' well-known types (`google.protobuf.Struct`) and
+    /// `DynamicMessage` write both fields. Under [`CodecStrategy::Table`],
+    /// messages with a map field keep the unrolled codec.
     ///
     /// This covers the entries' bytes only. For a map with more than one
     /// entry to encode identically, the entries must also come in the same

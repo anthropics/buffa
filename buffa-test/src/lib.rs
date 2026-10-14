@@ -390,6 +390,11 @@ pub mod map_omit_defaults {
     buffa::include_proto!("map_omit_defaults");
 }
 
+#[allow(clippy::derivable_impls)]
+pub mod map_omit_defaults_proto2 {
+    buffa::include_proto!("map_omit_defaults_proto2");
+}
+
 /// `string_map` fixture: a crate-local `MapStr` newtype (a `ProtoString` impl,
 /// selected with `.string_type_custom(...)`) is used for every `string` map key
 /// and value. `MapStr` is `Hash + Eq + Ord + serde`, so it satisfies the

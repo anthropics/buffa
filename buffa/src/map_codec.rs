@@ -102,7 +102,7 @@ pub type Map<K, V> = crate::__private::HashMap<K, V>;
 /// The default is the `__private::HashMap` alias above; `buffa_build`'s
 /// `map_type` knob can instead select the buffa-provided
 /// [`BTreeMap`](alloc::collections::BTreeMap) (deterministic iteration order,
-/// no extra dependency) or a custom map. The five runtime helpers in this
+/// no extra dependency) or a custom map. The runtime helpers in this
 /// module need only three operations from the container — count entries,
 /// borrow-iterate entries, and insert one entry — so this trait captures that
 /// minimal surface and lets the helpers stay generic over *which* map a field
@@ -828,12 +828,12 @@ const ENTRY_FIELD_TAG_LEN: u64 = 1;
 
 /// Which of an entry's fields the `_omitting_defaults` encoders leave out,
 /// decided once for the size and the write of the entry.
-struct Sparse {
+struct Omitted {
     key: bool,
     value: bool,
 }
 
-impl Sparse {
+impl Omitted {
     #[inline]
     fn of<KC: MapCodec, VC: MapCodec>(k: &KC::Value, v: &VC::Value) -> Self {
         Self {
@@ -886,7 +886,7 @@ where
 {
     let mut size = 0u64;
     for (k, v) in map.storage_iter() {
-        let entry = Sparse::of::<KC, VC>(k, v).entry_len::<KC, VC>(k, v);
+        let entry = Omitted::of::<KC, VC>(k, v).entry_len::<KC, VC>(k, v);
         size += outer_tag_len + varint_len(entry) as u64 + entry;
     }
     size
@@ -903,14 +903,14 @@ pub fn write_field_omitting_defaults<KC: MapCodec, VC: MapCodec, C>(
     C: MapStorage<Key = KC::Value, Value = VC::Value>,
 {
     for (k, v) in map.storage_iter() {
-        let sparse = Sparse::of::<KC, VC>(k, v);
+        let omitted = Omitted::of::<KC, VC>(k, v);
         Tag::new(field_number, WireType::LengthDelimited).encode(buf);
-        encode_varint(sparse.entry_len::<KC, VC>(k, v), buf);
-        if !sparse.key {
+        encode_varint(omitted.entry_len::<KC, VC>(k, v), buf);
+        if !omitted.key {
             Tag::new(1, KC::WIRE_TYPE).encode(buf);
             KC::encode(k, buf);
         }
-        if !sparse.value {
+        if !omitted.value {
             Tag::new(2, VC::WIRE_TYPE).encode(buf);
             VC::encode(v, buf);
         }
@@ -940,8 +940,8 @@ where
 }
 
 /// [`write_message_field`], leaving a default key or a message that encodes to
-/// nothing out of its entry. prost leaves out a message equal to its default,
-/// which encodes to nothing unless it holds unknown fields.
+/// nothing out of its entry. prost leaves out a message equal to its default
+/// instead, which can still encode a field, such as a `required` one.
 pub fn write_message_field_omitting_defaults<KC: MapCodec, M: Message, C>(
     map: &C,
     field_number: u32,

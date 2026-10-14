@@ -529,13 +529,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for map_type.proto");
 
-    // map_omit_defaults: entries encoded as prost writes them, by the owned
-    // and the view encoders; BTreeMap so the tests can pin the bytes.
+    // map_omit_defaults: entries encoded as prost writes them, by the owned,
+    // view and lazy view encoders; BTreeMap so the tests can pin the bytes.
     buffa_build::Config::new()
-        .files(&["protos/map_omit_defaults.proto"])
+        .files(&[
+            "protos/map_omit_defaults.proto",
+            "protos/map_omit_defaults_proto2.proto",
+        ])
         .includes(&["protos/"])
         .map_type(buffa_build::MapRepr::BTreeMap)
         .map_entries_omit_defaults(true)
+        .lazy_views(true)
         .compile()
         .expect("buffa_build failed for map_omit_defaults.proto");
 

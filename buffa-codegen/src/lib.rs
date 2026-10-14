@@ -1635,10 +1635,13 @@ pub struct CodeGenConfig {
     /// Defaults to `true`.
     pub generate_with_setters: bool,
     /// Encode map entries as prost does: leave an entry's key or value out
-    /// when it holds the default, and a message value when it encodes to
-    /// nothing. Off, every entry carries both fields, as the C++ and Java
-    /// runtimes write them. Decoding reads either, except that a `-0.0` float
-    /// value decodes as `0.0`. Applies to the owned and view encoders.
+    /// when it holds what a missing field decodes to, and a message value when
+    /// it encodes to nothing. Off, every entry carries both fields, as the C++
+    /// and Java runtimes write them. Decoding reads either; a `-0.0` float
+    /// value is left out and so decodes as `0.0`. Applies to the owned, view
+    /// and lazy view encoders of the generated messages. Under
+    /// [`CodecStrategy::Table`], messages with a map field keep the unrolled
+    /// codec. `buffa_build::Config::map_entries_omit_defaults` has the details.
     ///
     /// Defaults to `false`.
     pub map_entries_omit_defaults: bool,

@@ -183,6 +183,10 @@ For proto2 closed enums, Buffa follows closed-enum semantics by default and rout
 
 prost leaves a map entry's key or value out when it holds the default; buffa writes both, as the C++ and Java runtimes do. Both decode the same, but the bytes differ. If stored or hashed encodings must not change, turn on `.map_entries_omit_defaults(true)`, and keep the entry order with `.map_type(buffa_build::MapRepr::BTreeMap)` where prost used `btree_map`.
 
+The option leaves out what a missing field decodes to: zero, `false`, empty, an open enum's 0, a closed enum's first value, and a message value that encodes to nothing. As with prost, a `-0.0` float value is left out and decodes as `0.0`. prost leaves out a message value equal to its default, so a value that equals its default but still encodes a field, such as a `required` field at its default or a float field holding `-0.0`, is written by buffa and not by prost.
+
+It applies to the owned, view and lazy view encoders of the messages generated with it. A lazy view writes its singular and repeated message fields, which it keeps undecoded, as they were read, and every encoder writes entries kept as unknown fields as they were read. A value of an enum made open with `open_enums_in` is left out at 0, which a missing open enum decodes to, where prost leaves out its first value. Each crate's types encode as that crate was generated; the well-known types from `buffa-types` (`google.protobuf.Struct`) and `DynamicMessage` write both fields. `protoc-gen-buffa` has no `map_type` option, so through the plugin a map with several entries keeps `HashMap` order. With `CodecStrategy::Table`, messages with a map field keep the unrolled codec.
+
 ## 6. Decoding API
 
 ```diff

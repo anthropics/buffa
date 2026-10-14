@@ -22,3 +22,8 @@ message Maps {
   map<uint32, Leaf> leaves = 6;
   map<sint32, float> floats = 7;
 }
+
+// Holds `Maps` as a message field, which a lazy view keeps undecoded.
+message Holder {
+  Maps maps = 1;
+}
