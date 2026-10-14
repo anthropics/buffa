@@ -399,7 +399,7 @@ macro_rules! forward_iterator {
             }
 
             // The map's own `fold` walks the table a group at a time;
-            // `for_each`, `sum` and `collect` reach it through this.
+            // `for_each` and `sum` reach it through this.
             #[inline]
             fn fold<B, F: FnMut(B, Self::Item) -> B>(self, init: B, f: F) -> B {
                 self.0.fold(init, f)
@@ -481,8 +481,10 @@ impl IntoIterator for Struct {
 
 impl<K: Into<String>, V: Into<Value>> Extend<(K, V)> for Struct {
     /// Inserts each key-value pair, as [`insert`](Struct::insert) does: a key
-    /// that is already present has its value replaced. To merge one struct
-    /// into another, extend it with the other by value: `a.extend(b)`.
+    /// that is already present has its value replaced. `a.extend(b)` moves
+    /// the fields of another struct `b` into `a`, and
+    /// `a.extend(b.iter().map(|(k, v)| (k, v.clone())))` copies them. Neither
+    /// carries over the unknown fields of `b`.
     fn extend<T: IntoIterator<Item = (K, V)>>(&mut self, iter: T) {
         self.fields
             .extend(iter.into_iter().map(|(k, v)| (k.into(), v.into())));
