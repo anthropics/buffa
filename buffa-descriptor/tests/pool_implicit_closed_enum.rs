@@ -297,7 +297,8 @@ fn closed_enum_is_rejected_in_proto3_singular_fields_and_map_values() {
     ] {
         let err = DescriptorPool::new(into_proto3_with_proto2_enum(descriptors)).unwrap_err();
         assert!(
-            matches!(&err, PoolError::ImplicitPresenceClosedEnum { field } if field == expected),
+            matches!(&err, PoolError::Proto3ClosedEnumField { field, enum_name }
+            if field == expected && enum_name == "presence.test.Kind"),
             "{expected}: {err}"
         );
     }

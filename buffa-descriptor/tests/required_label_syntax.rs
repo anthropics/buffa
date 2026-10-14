@@ -3,14 +3,11 @@
 use buffa::editions::FieldPresence;
 use buffa::Message;
 use buffa_descriptor::generated::descriptor::descriptor_proto::ExtensionRange;
-use buffa_descriptor::generated::descriptor::feature_set::{
-    EnumType, FieldPresence as DescriptorPresence,
-};
+use buffa_descriptor::generated::descriptor::feature_set::FieldPresence as DescriptorPresence;
 use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
 use buffa_descriptor::generated::descriptor::{
-    DescriptorProto, Edition, EnumDescriptorProto, EnumOptions, EnumValueDescriptorProto,
-    FeatureSet, FieldDescriptorProto, FieldOptions, FileDescriptorProto, FileDescriptorSet,
-    FileOptions,
+    DescriptorProto, Edition, EnumDescriptorProto, EnumValueDescriptorProto, FeatureSet,
+    FieldDescriptorProto, FieldOptions, FileDescriptorProto, FileDescriptorSet, FileOptions,
 };
 use buffa_descriptor::{DescriptorPool, FieldKind, PoolError, ScalarType, SingularKind};
 
@@ -193,13 +190,13 @@ fn required_extension_labels_are_rejected_outside_proto2() {
     }
 }
 
-/// `file` importing the host proto(s), with its message's field replaced by an
+/// `file` importing its host file, with its message's field replaced by an
 /// extension, declared at file level or nested in the message.
 /// Returns the file and the extension's full name.
 ///
-/// A proto3 file may only extend an options message, so proto3 variants
-/// extend the `MethodOptions` stand-in and import its file; other syntaxes
-/// extend `Host` as before.
+/// A proto3 file may only extend an options message, so a proto3 `file`
+/// extends the `MethodOptions` stand-in and imports `options_host.proto`;
+/// the other syntaxes extend `Host`.
 fn with_extension(
     mut file: FileDescriptorProto,
     mut extension: FieldDescriptorProto,
@@ -500,15 +497,6 @@ fn singular_extensions_have_explicit_presence_in_implicit_presence_files() {
                         number: Some(0),
                         ..Default::default()
                     }],
-                    options: EnumOptions {
-                        features: FeatureSet {
-                            enum_type: Some(EnumType::OPEN),
-                            ..Default::default()
-                        }
-                        .into(),
-                        ..Default::default()
-                    }
-                    .into(),
                     ..Default::default()
                 });
                 let extension = FieldDescriptorProto {

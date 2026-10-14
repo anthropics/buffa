@@ -3511,7 +3511,7 @@ fn proto3_optional_fields_without_oneofs_are_rejected_transactionally() {
     );
 }
 
-/// A two-file set: `extendable.proto` declares `MethodOptions`, and a second file
+/// A two-file set: `options.proto` declares `MethodOptions`, and a second file
 /// with the given `syntax` declares a file-level and a message-nested
 /// extension of it, both marked `proto3_optional`.
 ///
@@ -3536,7 +3536,7 @@ fn proto3_optional_extension_set(
     FileDescriptorSet {
         file: vec![
             FileDescriptorProto {
-                name: Some("extendable.proto".into()),
+                name: Some("options.proto".into()),
                 package: Some("google.protobuf".into()),
                 syntax: Some("proto2".into()),
                 message_type: vec![DescriptorProto {
@@ -3553,7 +3553,7 @@ fn proto3_optional_extension_set(
             FileDescriptorProto {
                 name: Some("proto3-optional-extensions.proto".into()),
                 package: Some("valid.test".into()),
-                dependency: vec!["extendable.proto".into()],
+                dependency: vec!["options.proto".into()],
                 syntax: Some(syntax.into()),
                 message_type: vec![DescriptorProto {
                     name: Some("Scope".into()),
