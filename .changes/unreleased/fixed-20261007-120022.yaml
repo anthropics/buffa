@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects an extension of a MessageSet that is not an optional message** (#600). An extension of a message with `message_set_wire_format = true` linked whatever its type and label, although protoc reports "Extensions of MessageSets must be optional messages." A scalar, enum, group or repeated extension of a MessageSet is rejected, and so is a message extension in an editions file whose `features.message_encoding` resolves to `DELIMITED`. Only hand-built or synthesized descriptor sets can reach this, because protoc rejects the file. The rejection is the new `PoolError::InvalidMessageSetExtension` variant, which names the extension.
+time: 2026-10-07T12:00:22.826748+02:00

@@ -26,3 +26,4 @@ ecow = { workspace = true }
 smallvec = { version = "1", default-features = false }
 smallbox = { version = "0.8", default-features = false }
 indexmap = { version = "2", default-features = false, features = ["std", "serde"] }
+syn = { workspace = true, features = ["visit"] }

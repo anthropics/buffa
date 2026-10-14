@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DynamicMessage` parses a `google.protobuf.Any` from JSON without the `std` feature** (#696, closes #644). In a build of `buffa-descriptor` without `std`, the reflective JSON parser (`DynamicMessage::from_json` and its siblings) failed on any `Any` value with ``Any JSON deserialization requires the `std` feature``, although the parser needs only `alloc`. It now parses `Any` in that configuration as it does with `std`.
+time: 2026-10-12T19:32:22.000000000+00:00

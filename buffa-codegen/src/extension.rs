@@ -82,6 +82,12 @@ fn generate_one(
 
     let inner_codec = codec_for_type(ctx, field, ty, current_package, nesting)?;
 
+    let full_name = if scope_fqn.is_empty() {
+        proto_name.to_owned()
+    } else {
+        format!("{scope_fqn}.{proto_name}")
+    };
+
     let codec = if repeated {
         if crate::impl_message::is_field_packed(field, features) {
             quote! { ::buffa::extension::codecs::PackedRepeated<#inner_codec> }
@@ -143,6 +149,12 @@ fn generate_one(
             ));
         }
     }
+    let doc = crate::comments::doc_attrs_with_tag_resolved(
+        ctx.comment(&full_name),
+        &doc,
+        scope_fqn,
+        &ctx.type_map,
+    );
 
     // Registry entries are feature-split into two separate consts. JSON
     // entries cover every type except TYPE_GROUP (proto3 JSON form
@@ -150,12 +162,6 @@ fn generate_one(
     // cover message/group only (the conformance-exercised `[pkg.ext] { ... }`
     // form). The two consts are independent: a group gets a text entry but
     // no JSON entry; a scalar gets a JSON entry but no text entry.
-    let full_name = if scope_fqn.is_empty() {
-        proto_name.to_owned()
-    } else {
-        format!("{scope_fqn}.{proto_name}")
-    };
-
     let gates = ctx.config.feature_gates();
     let (json_const, json_ident) = if ctx.config.generate_json {
         match json_helper_tokens(ctx, field, ty, repeated, current_package, nesting)? {
@@ -250,7 +256,7 @@ fn generate_one(
     Ok(Some((
         quote! {
             #default_fn_def
-            #[doc = #doc]
+            #doc
             #ext_const
             #json_const
             #text_const

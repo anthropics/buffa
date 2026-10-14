@@ -1334,6 +1334,14 @@ pub struct CodeGenConfig {
     /// exact type-FQN entry wins over a covering package prefix; otherwise
     /// the longest matching prefix wins.
     ///
+    /// The proto side must be `"."` (every type) or a fully-qualified name:
+    /// a leading dot, then protobuf identifiers separated by single dots,
+    /// with no trailing dot. [`generate`] does not validate entries, and an
+    /// entry in another form matches no type; a caller that fills this field
+    /// directly should pass each name through
+    /// [`normalize_extern_path_proto_name`], as `protoc-gen-buffa` and
+    /// `buffa-build` do.
+    ///
     /// Well-known types (`google.protobuf.*`) are automatically mapped to
     /// `::buffa_types::google::protobuf::*` without needing an explicit
     /// entry here. To override with a custom implementation, add an
@@ -1892,9 +1900,10 @@ pub struct CodeGenConfig {
     /// and nested, plus their derived view/owned-view types). It does not
     /// apply to:
     ///
-    /// - module names (`message Outer` still nests under `pub mod outer` —
-    ///   modules are namespaced by the package tree and never collide with
-    ///   type names),
+    /// - module names (`message Outer` still nests under `pub mod outer`).
+    ///   A prefix can remove a module's trailing `_`: the nested types of
+    ///   `message item` are in `item_` beside `struct item`, and in `item`
+    ///   beside `struct Pbitem`,
     /// - oneof enums (structurally namespaced under `__buffa::oneof::`,
     ///   named after the oneof declaration, not the message),
     /// - types mapped away via [`extern_paths`](Self::extern_paths) or the
@@ -2818,7 +2827,8 @@ fn rule_paths<R>(rules: &[(String, R)]) -> Vec<&String> {
 /// `files_to_generate` is the set of file names that were explicitly requested
 /// (matching `CodeGeneratorRequest.file_to_generate`). Descriptors for
 /// dependencies may be present in `file_descriptors` but won't produce output
-/// files unless they appear in `files_to_generate`.
+/// files unless they appear in `files_to_generate`. A name listed twice is
+/// generated once.
 ///
 /// Each `.proto` emits up to five content files (kinds with no content
 /// are omitted); each distinct package emits one `<pkg>.mod.rs`
@@ -3267,6 +3277,8 @@ fn warn_excluded_refs_msg(
 /// generator — or match on it for programmatic handling. [`generate`] discards
 /// them.
 ///
+/// A name listed twice in `files_to_generate` is generated once.
+///
 /// Warnings are returned only on success. On error, any warnings already
 /// collected are dropped along with the partial output — the [`CodeGenError`]
 /// is the actionable signal.
@@ -3275,6 +3287,8 @@ fn warn_excluded_refs_msg(
 ///
 /// - [`CodeGenError::FileNotFound`] if a name in `files_to_generate` has no
 ///   matching descriptor.
+/// - [`CodeGenError::OutputFileNameConflict`] if two generated files would
+///   be written to the same output path.
 /// - [`CodeGenError::InvalidTypeNamePrefix`] if
 ///   [`CodeGenConfig::type_name_prefix`] is neither empty nor PascalCase.
 /// - [`CodeGenError::Other`] if `config` sets an option without the option
@@ -3291,6 +3305,7 @@ fn warn_excluded_refs_msg(
 ///   corpus or different rules than this call uses.
 /// - For a valid schema whose names collide in the generated Rust:
 ///   [`CodeGenError::OneofEnumNameConflict`],
+///   [`CodeGenError::OneofVariantNameConflict`],
 ///   [`CodeGenError::TypeNameConflict`],
 ///   [`CodeGenError::ModuleNameConflict`],
 ///   [`CodeGenError::ReservedFieldName`] or
@@ -3556,7 +3571,12 @@ pub fn generate_with_diagnostics(
     // Group requested files by package. BTreeMap → deterministic output order.
     let mut by_package: std::collections::BTreeMap<String, Vec<&FileDescriptorProto>> =
         std::collections::BTreeMap::new();
+    let mut grouped = std::collections::HashSet::new();
     for file_name in files_to_generate {
+        // A file listed twice is generated once.
+        if !grouped.insert(file_name.as_str()) {
+            continue;
+        }
         let file_desc = file_descriptors
             .iter()
             .find(|f| f.name.as_deref() == Some(file_name.as_str()))
@@ -3659,6 +3679,7 @@ pub fn generate_with_diagnostics(
 
     let empty_impls = TokenStream::new();
     let mut output = Vec::new();
+    let mut output_names = OutputNames::default();
     let mut custom_emitted = false;
     for (package, files) in by_package {
         let impls = if custom_emitted {
@@ -3667,10 +3688,47 @@ pub fn generate_with_diagnostics(
             custom_emitted = true;
             &custom_elem_impls
         };
-        generate_package(&ctx, &package, &files, &fds_bytes, impls, &mut output)?;
+        generate_package(
+            &ctx,
+            &package,
+            &files,
+            &fds_bytes,
+            impls,
+            &mut output_names,
+            &mut output,
+        )?;
     }
 
     Ok((output, ctx.take_warnings()))
+}
+
+/// The output paths assigned so far in one [`generate`] call, each with the
+/// input it was generated from, in the form
+/// [`CodeGenError::OutputFileNameConflict`] documents.
+#[derive(Default)]
+struct OutputNames(std::collections::HashMap<String, String>);
+
+impl OutputNames {
+    /// Records that `source` generates `file_name`.
+    ///
+    /// # Errors
+    ///
+    /// [`CodeGenError::OutputFileNameConflict`] if another input already
+    /// generates `file_name`.
+    fn claim(&mut self, file_name: &str, source: String) -> Result<(), CodeGenError> {
+        use std::collections::hash_map::Entry;
+        match self.0.entry(file_name.to_owned()) {
+            Entry::Occupied(first) => Err(CodeGenError::OutputFileNameConflict {
+                file_name: file_name.to_owned(),
+                first_source: first.get().clone(),
+                second_source: source,
+            }),
+            Entry::Vacant(slot) => {
+                slot.insert(source);
+                Ok(())
+            }
+        }
+    }
 }
 
 /// Generate a module tree that assembles per-package `.mod.rs` files into
@@ -3734,12 +3792,14 @@ pub fn generate_module_tree<F: AsRef<str>, P: AsRef<str>>(
         for file in &node.files {
             match mode {
                 IncludeMode::Relative(prefix) => {
-                    let _ = writeln!(out, r#"{indent}include!("{prefix}{file}");"#);
+                    let path = format!("{prefix}{file}");
+                    let _ = writeln!(out, "{indent}include!({path:?});");
                 }
                 IncludeMode::OutDir => {
+                    let path = format!("/{file}");
                     let _ = writeln!(
                         out,
-                        r#"{indent}include!(concat!(env!("OUT_DIR"), "/{file}"));"#
+                        "{indent}include!(concat!(env!(\"OUT_DIR\"), {path:?}));"
                     );
                 }
             }
@@ -4351,19 +4411,7 @@ fn generate_proto_content(
         owned.extend(owned_top);
         let mod_name = ctx.nested_module_name(current_package, top_level_name);
         let mod_ident = make_field_ident(&mod_name);
-        // When the nested-types module was deconflicted from a sub-package
-        // (issue #135), document why the name carries a trailing `_`.
-        let mod_doc = if mod_name == crate::oneof::to_snake_case(top_level_name) {
-            quote! {}
-        } else {
-            let doc = format!(
-                "Nested items of `{top_level_name}`. The module name carries a \
-                 trailing `_` to avoid a collision with another module in this \
-                 scope (a sub-package or sibling message of the same name). See \
-                 buffa#135."
-            );
-            quote! { #[doc = #doc] }
-        };
+        let mod_doc = message::module_rename_doc(top_level_name, &mod_name);
         for p in msg_reg.json_ext {
             reg.json_ext.push(quote! { #mod_ident :: #p });
         }
@@ -4529,6 +4577,7 @@ fn generate_package(
     // element types, collected generation-wide and emitted into exactly one
     // package's `__buffa` module (empty for every package but the first).
     custom_elem_impls: &TokenStream,
+    output_names: &mut OutputNames,
     out: &mut Vec<GeneratedFile>,
 ) -> Result<(), CodeGenError> {
     // Registry paths are package-root-relative; `register_types` lives at
@@ -4599,12 +4648,14 @@ fn generate_package(
                         kind: GeneratedFileKind,
                         tokens: TokenStream,
                         section: &mut Vec<TokenStream>,
+                        output_names: &mut OutputNames,
                         out: &mut Vec<GeneratedFile>|
              -> Result<(), CodeGenError> {
                 if tokens.is_empty() {
                     return Ok(());
                 }
                 let name = format!("{stem}{suffix}.rs");
+                output_names.claim(&name, source.to_owned())?;
                 section.push(quote! { include!(#name); });
                 out.push(GeneratedFile {
                     name,
@@ -4619,6 +4670,7 @@ fn generate_package(
                 GeneratedFileKind::Owned,
                 pc.owned,
                 &mut sections.owned,
+                output_names,
                 out,
             )?;
             emit(
@@ -4626,6 +4678,7 @@ fn generate_package(
                 GeneratedFileKind::View,
                 pc.view,
                 &mut sections.view,
+                output_names,
                 out,
             )?;
             emit(
@@ -4633,6 +4686,7 @@ fn generate_package(
                 GeneratedFileKind::LazyView,
                 pc.lazy_view,
                 &mut sections.lazy_view,
+                output_names,
                 out,
             )?;
             emit(
@@ -4640,6 +4694,7 @@ fn generate_package(
                 GeneratedFileKind::Oneof,
                 pc.oneof,
                 &mut sections.oneof,
+                output_names,
                 out,
             )?;
             emit(
@@ -4647,6 +4702,7 @@ fn generate_package(
                 GeneratedFileKind::ViewOneof,
                 pc.view_oneof,
                 &mut sections.view_oneof,
+                output_names,
                 out,
             )?;
             emit(
@@ -4654,6 +4710,7 @@ fn generate_package(
                 GeneratedFileKind::Ext,
                 pc.ext,
                 &mut sections.ext,
+                output_names,
                 out,
             )?;
         }
@@ -4662,12 +4719,19 @@ fn generate_package(
 
     let reexport_block = surviving_root_reexports(ctx, files, &reg, root_reexports);
 
+    let mod_name = if ctx.config.file_per_package {
+        package_to_filename(current_package)
+    } else {
+        package_to_mod_filename(current_package)
+    };
+    let mod_source = if current_package.is_empty() {
+        "the unnamed package".to_owned()
+    } else {
+        format!("package {current_package}")
+    };
+    output_names.claim(&mod_name, mod_source)?;
     out.push(GeneratedFile {
-        name: if ctx.config.file_per_package {
-            package_to_filename(current_package)
-        } else {
-            package_to_mod_filename(current_package)
-        },
+        name: mod_name,
         package: current_package.to_string(),
         kind: GeneratedFileKind::PackageMod,
         content: generate_package_mod(
@@ -4689,8 +4753,7 @@ fn generate_package(
 }
 
 /// Names occupied at a package's root by real items: top-level messages,
-/// enums, message nested-types modules (deconflicted name, #135), and the
-/// `__buffa` sentinel itself.
+/// enums, message nested-types modules, and the `__buffa` sentinel itself.
 ///
 /// The package root is shared across every `.proto` file in the package, so
 /// the set is built from *all* of them. File-level extension consts live in
@@ -4711,7 +4774,6 @@ fn root_occupied_names(
             // The declared struct name carries the configured prefix; the
             // module name stays proto-derived.
             occupied.insert(ctx.config.prefixed_type_name(name));
-            // The actual module name (deconflicted from sub-packages, #135).
             occupied.insert(ctx.nested_module_name(package, name));
         }
         for e in &file.enum_type {
@@ -5099,6 +5161,104 @@ pub fn normalize_exclude_package(value: &str) -> Result<String, String> {
     Ok(pkg.to_string())
 }
 
+/// Normalize and validate the proto side of one `extern_path` mapping.
+///
+/// Trims whitespace, adds the leading dot if absent, drops one trailing dot,
+/// and rejects a name with an empty segment (`my..common`) or with a segment
+/// that is not a protobuf identifier (`my.common-name`). Such a name matches
+/// no type, so a typo would otherwise leave the mapping silently unused.
+/// `"."`, the catch-all, is returned as is.
+///
+/// The `protoc-gen-buffa` option parser and `buffa-build` both run entries
+/// through this function, so the two front ends accept the same names.
+///
+/// # Errors
+///
+/// Returns the user-facing message for a malformed name, quoting the name as
+/// given. The error is a plain `String` for the reason
+/// [`normalize_exclude_package`] gives.
+pub fn normalize_extern_path_proto_name(value: &str) -> Result<String, String> {
+    const EXPECTED: &str = "expected '.' or a dotted protobuf package or type name, \
+                            e.g. .my.pkg or .my.pkg.Type";
+    let given = value.trim();
+    if given == "." {
+        return Ok(given.to_string());
+    }
+    let name = given.strip_prefix('.').unwrap_or(given);
+    let name = name.strip_suffix('.').unwrap_or(name);
+    for segment in name.split('.') {
+        if segment.is_empty() {
+            return Err(format!(
+                "'extern_path' proto name '{given}' has an empty segment; {EXPECTED}"
+            ));
+        }
+        // protoc's identifier rule: a letter or `_`, then letters, digits or `_`.
+        let mut chars = segment.chars();
+        let starts_ok = chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
+        if !(starts_ok && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')) {
+            return Err(format!(
+                "'extern_path' proto name '{given}': segment '{segment}' is not a \
+                 protobuf identifier; {EXPECTED}"
+            ));
+        }
+    }
+    Ok(format!(".{name}"))
+}
+
+#[cfg(test)]
+mod extern_path_proto_name_tests {
+    use super::normalize_extern_path_proto_name as normalize;
+
+    #[test]
+    fn accepts_and_normalizes_valid_names() {
+        for (given, normalized) in [
+            (".", "."),
+            (".my.common", ".my.common"),
+            ("my.common", ".my.common"),
+            (".my.common.", ".my.common"),
+            (" my.v2.Type_1 ", ".my.v2.Type_1"),
+            ("._internal._Foo", "._internal._Foo"),
+        ] {
+            assert_eq!(normalize(given), Ok(normalized.to_string()), "{given:?}");
+        }
+    }
+
+    #[test]
+    fn empty_segment_error_quotes_the_name_as_given() {
+        for given in [
+            "",
+            "..",
+            "..my",
+            "my..common",
+            ".my.common..",
+            ".my.common..Shared",
+        ] {
+            let err = normalize(given).unwrap_err();
+            assert!(
+                err.contains(&format!("'{given}' has an empty segment")),
+                "{given:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_identifier_error_names_the_segment() {
+        for (given, segment) in [
+            ("my.123", "123"),
+            (".my.common-name.", "common-name"),
+            ("my.com mon", "com mon"),
+        ] {
+            let err = normalize(given).unwrap_err();
+            assert!(
+                err.contains(&format!("proto name '{given}': segment '{segment}'")),
+                "{given:?}: {err}"
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod package_exclusion_tests {
     use super::package_is_excluded;
@@ -5281,6 +5441,33 @@ pub enum CodeGenError {
     /// A requested file was not present in the descriptor set.
     #[error("file_to_generate '{0}' not found in descriptor set")]
     FileNotFound(String),
+    /// Two generated files would be written to the same output path. A
+    /// content file is named after its `.proto` path with `/` replaced by
+    /// `.`, so `foo/bar.proto` and `foo.bar.proto` both produce `foo.bar.rs`;
+    /// a package's module file is `<package>.mod.rs`, which is also the
+    /// content file of `foo/mod.proto` in package `foo`.
+    ///
+    /// Resolve by renaming a proto file (the only one involved, when the
+    /// other source is a package), or by setting
+    /// [`CodeGenConfig::file_per_package`], which emits one file per package
+    /// and no per-proto content files.
+    #[error(
+        "output file name conflict: {first_source} and {second_source} both \
+         generate '{file_name}'; rename a proto file so that the output names \
+         differ, or enable file_per_package"
+    )]
+    OutputFileNameConflict {
+        /// The output path that both inputs map to.
+        file_name: String,
+        /// The input that generated the path first: the `.proto` file path
+        /// as its descriptor names it for a content file, or
+        /// `package <name>` (`the unnamed package` for a file that declares
+        /// no package) for a package's module file.
+        first_source: String,
+        /// The input that generated the path second, in the same form as
+        /// `first_source`.
+        second_source: String,
+    },
     /// Unexpected descriptor state (e.g. a map entry or oneof that cannot be
     /// resolved to a known descriptor field).
     #[error("codegen error: {0}")]
@@ -5328,6 +5515,30 @@ pub enum CodeGenError {
         /// Proto name of the oneof declared second.
         second_oneof: String,
         /// The Rust enum name that both oneofs map to.
+        rust_name: String,
+    },
+    /// Two members of one oneof produce the same Rust variant name after
+    /// PascalCase conversion and keyword escaping (e.g., `foo` and `foo_`
+    /// both become `Foo`; `foo_bar` and `foo__bar` both become `FooBar`;
+    /// `self` and `self_` both become `Self_`). Resolve by renaming one of
+    /// the members. A member's name is its default JSON and text-format
+    /// name, so the rename changes those too unless the field sets a
+    /// `json_name`; the wire format is unaffected.
+    #[error(
+        "oneof variant name conflict in message '{message_name}': members \
+         '{first_field}' and '{second_field}' of oneof '{oneof_name}' both map \
+         to Rust variant '{rust_name}'; rename one of them"
+    )]
+    OneofVariantNameConflict {
+        /// Fully-qualified proto name of the message, without a leading dot.
+        message_name: String,
+        /// Proto name of the oneof that declares both members.
+        oneof_name: String,
+        /// Proto name of the member declared first.
+        first_field: String,
+        /// Proto name of the member declared second.
+        second_field: String,
+        /// The Rust variant name that both members map to.
         rust_name: String,
     },
     /// Two types, each a message or an enum, declared at package level in

@@ -1,7 +1,8 @@
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::spanned::Spanned;
 use syn::{Data, DeriveInput, Fields, GenericParam};
 
@@ -164,8 +165,27 @@ fn parse_attrs(
                 .find(|key| meta.path.is_ident(*key))
             {
                 let path: syn::Path = meta.value()?.parse()?;
-                overrides.insert((*key).to_string(), path);
-                Ok(())
+                match overrides.entry((*key).to_string()) {
+                    Entry::Vacant(slot) => {
+                        slot.insert(path);
+                        Ok(())
+                    }
+                    // A repeat of the same path is accepted: two `cfg_attr`s
+                    // that both hold look the same here as a key written
+                    // twice. Two different paths have no such reading.
+                    Entry::Occupied(first) if same_tokens(first.get(), &path) => Ok(()),
+                    Entry::Occupied(first) => {
+                        let mut error = meta.error(format!(
+                            "conflicting `{key}` override: `{}` was already given",
+                            path_text(first.get())
+                        ));
+                        error.combine(syn::Error::new_spanned(
+                            first.get(),
+                            format!("`{key}` first given here"),
+                        ));
+                        Err(error)
+                    }
+                }
             } else {
                 Err(meta.error(format!(
                     "unsupported `buffa` attribute key, expected `remote`, `arbitrary` or `serde`{}",
@@ -184,6 +204,34 @@ fn parse_attrs(
         ));
     }
     Ok((overrides, flags))
+}
+
+/// Whether two paths are written with the same tokens. `a::b` and `::a::b`,
+/// or two spellings that resolve to one item, compare unequal: a derive
+/// cannot resolve paths.
+fn same_tokens(a: &syn::Path, b: &syn::Path) -> bool {
+    a.to_token_stream().to_string() == b.to_token_stream().to_string()
+}
+
+/// A compact rendering of `path`: `TokenStream`'s `Display` output without
+/// the spaces it puts between tokens, except a space that separates two words
+/// (`dyn Any`).
+fn path_text(path: &syn::Path) -> String {
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    let mut text = String::new();
+    let mut after_space = false;
+    for c in path.to_token_stream().to_string().chars() {
+        if c == ' ' {
+            after_space = true;
+            continue;
+        }
+        if after_space && is_word(c) && text.chars().next_back().is_some_and(is_word) {
+            text.push(' ');
+        }
+        after_space = false;
+        text.push(c);
+    }
+    text
 }
 
 /// Requires the struct to have exactly one type parameter and returns it —
@@ -263,5 +311,116 @@ impl RemoteField {
             Some(name) => quote! { Self { #name: #value } },
             None => quote! { Self(#value) },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conflicting_override_in_one_attribute_is_rejected() {
+        let input: DeriveInput = syn::parse_quote! {
+            #[buffa(remote = Holder<T>, new = Holder::wrap, new = Holder::new)]
+            struct Wrapped<T>(Holder<T>);
+        };
+
+        let error = parse_with_overrides(&input, &["new"])
+            .err()
+            .expect("a second, different path should be rejected");
+        assert_eq!(
+            error.to_string(),
+            "conflicting `new` override: `Holder::wrap` was already given"
+        );
+    }
+
+    #[test]
+    fn conflicting_override_across_attributes_is_rejected() {
+        let input: DeriveInput = syn::parse_quote! {
+            #[buffa(remote = Holder<T>, new = Holder::wrap)]
+            #[buffa(new = Holder::new)]
+            struct Wrapped<T>(Holder<T>);
+        };
+
+        let error = parse_with_overrides(&input, &["new"])
+            .err()
+            .expect("a second, different path should be rejected");
+        assert_eq!(
+            error.to_string(),
+            "conflicting `new` override: `Holder::wrap` was already given"
+        );
+    }
+
+    #[test]
+    fn identical_override_repeat_is_accepted() {
+        // What two `cfg_attr`s that both hold expand to, and the same key
+        // written twice in one attribute.
+        let across: DeriveInput = syn::parse_quote! {
+            #[buffa(remote = Holder<T>)]
+            #[buffa(new = Holder::wrap)]
+            #[buffa(new = Holder::wrap)]
+            struct Wrapped<T>(Holder<T>);
+        };
+        let within: DeriveInput = syn::parse_quote! {
+            #[buffa(remote = Holder<T>, new = Holder::wrap, new = Holder::wrap)]
+            struct Wrapped<T>(Holder<T>);
+        };
+
+        for input in [across, within] {
+            let (_, overrides) = parse_with_overrides(&input, &["new"])
+                .unwrap_or_else(|e| panic!("identical repeat should be accepted: {e}"));
+            assert_eq!(overrides.len(), 1);
+            assert_eq!(path_text(&overrides["new"]), "Holder::wrap");
+        }
+    }
+
+    #[test]
+    fn conflicting_override_reports_both_sites() {
+        let input: DeriveInput = syn::parse_quote! {
+            #[buffa(remote = Holder<T>, new = Holder::wrap)]
+            #[buffa(new = Holder::new)]
+            struct Wrapped<T>(Holder<T>);
+        };
+
+        let error = parse_with_overrides(&input, &["new"])
+            .err()
+            .expect("a second, different path should be rejected");
+        let messages: Vec<String> = error.into_iter().map(|e| e.to_string()).collect();
+        assert_eq!(
+            messages,
+            [
+                "conflicting `new` override: `Holder::wrap` was already given",
+                "`new` first given here",
+            ]
+        );
+    }
+
+    #[test]
+    fn path_text_keeps_the_space_between_two_words() {
+        let path: syn::Path = syn::parse_quote!(Holder::<dyn Any, &'a mut [u8; 4]>::wrap);
+        assert_eq!(path_text(&path), "Holder::<dyn Any,&'a mut[u8;4]>::wrap");
+    }
+
+    #[test]
+    fn override_repeat_with_a_different_spelling_is_rejected() {
+        // The comparison is by tokens: a derive cannot tell that two
+        // spellings resolve to one function.
+        let input: DeriveInput = syn::parse_quote! {
+            #[buffa(remote = Holder<T>, new = Holder::wrap, new = self::Holder::wrap)]
+            struct Wrapped<T>(Holder<T>);
+        };
+
+        assert!(parse_with_overrides(&input, &["new"]).is_err());
+    }
+
+    #[test]
+    fn distinct_overrides_across_attributes_are_accepted() {
+        let input: DeriveInput = syn::parse_quote! {
+            #[buffa(remote = Holder<T>, new = Holder::wrap)]
+            #[buffa(into_inner = Holder::unwrap)]
+            struct Wrapped<T>(Holder<T>);
+        };
+
+        assert!(parse_with_overrides(&input, &["new", "into_inner"]).is_ok());
     }
 }

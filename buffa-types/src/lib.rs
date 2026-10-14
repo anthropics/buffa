@@ -52,6 +52,43 @@
 //! - `Value` constructors: [`Value::null`](google::protobuf::Value::null), `From<f64>`, `From<String>`, `From<bool>`, etc.
 //! - Wrapper type `From`/`Into` impls
 //!
+//! # Equality and hashing
+//!
+//! Every well-known type implements `PartialEq`. All but five also implement
+//! `Eq` and `Hash`, so each of them can be a `HashMap` or `HashSet` key. The
+//! five are `DoubleValue`, `FloatValue`, `Value`, `Struct` and `ListValue`,
+//! which contain a floating-point value. `f32` and `f64` are `PartialEq` only,
+//! because NaN differs from itself. `Value` holds an `f64` number, and
+//! `Struct` and `ListValue` hold `Value` messages.
+//!
+//! `==` and `Hash` work field by field, and they include the unknown fields
+//! that decoding preserved. So a message decoded from a peer that sent an
+//! unknown field differs from one built in code with the same field values,
+//! although `Debug` prints the two alike:
+//!
+//! ```rust
+//! use buffa::Message;
+//! use buffa_types::google::protobuf::Timestamp;
+//!
+//! let built = Timestamp::default();
+//! // Field 99 is unknown to `Timestamp`.
+//! let decoded = Timestamp::decode_from_slice(&[0x98, 0x06, 0x07]).unwrap();
+//! assert_eq!(format!("{built:?}"), format!("{decoded:?}"));
+//! assert_ne!(built, decoded);
+//! ```
+//!
+//! Three types compare their fields as stored, which is stricter than what
+//! the value means:
+//!
+//! - [`FieldMask`]: the order of the paths and repeated paths count. Call
+//!   [`FieldMask::normalize`] on both masks first to compare them without
+//!   regard to order, duplicates, and paths that another path covers.
+//! - [`Any`]: `type_url` and the payload bytes are compared, and the payload
+//!   is not decoded. Two encodings of one message differ.
+//! - `Timestamp` and `Duration`: `seconds` and `nanos` are compared without
+//!   normalizing. A value with `nanos` outside its valid range differs from
+//!   the in-range value for the same instant or span.
+//!
 //! # Cargo features
 //!
 //! - **`std`** (default) — standard-library integration (`SystemTime`
@@ -79,6 +116,11 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![deny(rustdoc::broken_intra_doc_links)]
 extern crate alloc;
+
+// Compiles the Rust example in the crate README as a doctest.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
 
 // Extension modules (ergonomic helpers — hand-written, not generated).
 mod any_ext;

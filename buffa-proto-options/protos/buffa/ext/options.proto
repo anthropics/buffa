@@ -1,0 +1,79 @@
+// Custom options for the buffa code generator.
+//
+// Import this file and set an option on the element it applies to:
+//
+//   import "buffa/ext/options.proto";
+//
+//   message Reading {
+//     option (buffa.ext.message) = {};
+//     double mass = 1 [(buffa.ext.field) = {}];
+//   }
+//
+// protoc resolves the import from an include path. The file is in the
+// `protos/` directory of the `buffa-proto-options` crate.
+//
+// Each option is one message, and a setting is a field of that message, so a
+// new setting leaves the extension numbers as they are. An empty option
+// message leaves the generated code unchanged.
+//
+// buffa has reserved the numbers 1381-1390 in the protobuf global extension
+// registry (protocolbuffers/protobuf docs/options.md). Every option below
+// uses 1381, which is legal because each one extends a different message.
+// 1382-1390 are unassigned.
+//
+// The file is proto2 so that a protoc release that predates editions can
+// parse it. A proto3 or editions file can import it.
+
+syntax = "proto2";
+
+package buffa.ext;
+
+import "google/protobuf/descriptor.proto";
+
+// Settings for the code generated from one `.proto` file.
+message FileOptions {}
+
+// Settings for the code generated from one message.
+message MessageOptions {}
+
+// Settings for the code generated from one field.
+message FieldOptions {}
+
+// Settings for the code generated from one oneof.
+message OneofOptions {}
+
+// Settings for the code generated from one enum.
+message EnumOptions {}
+
+// Settings for the code generated from one enum value.
+message EnumValueOptions {}
+
+extend google.protobuf.FileOptions {
+  // The `buffa.ext.FileOptions` for the file that sets this option.
+  optional FileOptions file = 1381;
+}
+
+extend google.protobuf.MessageOptions {
+  // The `buffa.ext.MessageOptions` for the message that sets this option.
+  optional MessageOptions message = 1381;
+}
+
+extend google.protobuf.FieldOptions {
+  // The `buffa.ext.FieldOptions` for the field that sets this option.
+  optional FieldOptions field = 1381;
+}
+
+extend google.protobuf.OneofOptions {
+  // The `buffa.ext.OneofOptions` for the oneof that sets this option.
+  optional OneofOptions oneof = 1381;
+}
+
+extend google.protobuf.EnumOptions {
+  // The `buffa.ext.EnumOptions` for the enum that sets this option.
+  optional EnumOptions enum = 1381;
+}
+
+extend google.protobuf.EnumValueOptions {
+  // The `buffa.ext.EnumValueOptions` for the enum value that sets this option.
+  optional EnumValueOptions enum_value = 1381;
+}

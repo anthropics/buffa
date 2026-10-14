@@ -4,6 +4,7 @@ members = [
     "buffa",
     "buffa-types",
     "buffa-descriptor",
+    "buffa-proto-options",
     "buffa-codegen",
     "buffa-build",
     "buffa-remote-derive",
@@ -61,6 +62,7 @@ buffa-types = { path = "buffa-types", version = "0.9.2" }
 # `serde_json` / `base64`. Downstream consumers whose protos reference
 # `descriptor.proto` types as fields enable the features they need.
 buffa-descriptor = { path = "buffa-descriptor", version = "0.9.2", default-features = false }
+buffa-proto-options = { path = "buffa-proto-options", version = "0.9.2" }
 buffa-codegen = { path = "buffa-codegen", version = "0.9.2" }
 buffa-build = { path = "buffa-build", version = "0.9.2" }
 buffa-smolstr = { path = "examples/buffa-smolstr", version = "0.9.2" }

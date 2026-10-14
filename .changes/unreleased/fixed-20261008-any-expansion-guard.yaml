@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **A refused `Any` JSON expansion leaves the nesting depth counter unchanged** (#680). JSON serialization refuses to expand an `Any` nested more than `MAX_ANY_EXPANSION_DEPTH` (100) levels deep, and that refusal decremented the depth counter although it had not incremented it. With `std` the counter is per thread and the refusal ends the serialization with an error, so the miscount stayed inside the failing call. Without `std` the counter is shared by the whole process, so each refusal let a serialization running on another thread expand one level past the cap.
+time: 2026-10-08T00:30:18+02:00

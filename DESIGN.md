@@ -75,6 +75,16 @@ Self-hosted Rust types for `google/protobuf/descriptor.proto` and `google/protob
 
 The generated code is checked in (regenerate via `task gen-bootstrap-types`). The only runtime dependency is `buffa` — no quote/syn/prettyplease — so the crate is `no_std`-capable and dependency-light enough to depend on from the runtime without pulling in the codegen toolchain.
 
+### `buffa-proto-options` — Custom Options
+
+`buffa-proto-options/protos/buffa/ext/options.proto` declares buffa's custom options, which are where a schema carries per-element settings for buffa's code generation, and `buffa-proto-options` holds the Rust types generated from that file. There is one option for each kind of element that buffa generates Rust for: `(buffa.ext.file)`, `(buffa.ext.message)`, `(buffa.ext.field)`, `(buffa.ext.oneof)`, `(buffa.ext.enum)`, and `(buffa.ext.enum_value)`. Each option is a message (`buffa.ext.FieldOptions` for a field, and so on) and a setting is a field of that message, so an empty option message leaves the generated code unchanged.
+
+**Numbering.** buffa has reserved extension numbers 1381–1390 in the protobuf global extension registry. Every option uses 1381, which is legal because each one extends a different `descriptor.proto` message, and a new setting becomes a field of the option's message, so it does not take a registry number. A tool built against an older `options.proto` keeps a newer setting as an unknown field when it decodes and re-encodes a descriptor.
+
+**A crate of its own.** The only required dependency is `buffa`, because an extension constant names the message it extends by string. Anything that reads descriptors can therefore depend on the crate and read the options through the same typed constants: `buffa-codegen`, a downstream generator built on it, or a reflection consumer walking a `DescriptorPool`. The view, JSON, text, `arbitrary`, and reflection impls are generated, and each compiles only with its crate feature (`views`, `json`, `text`, `arbitrary`, `reflect`). The generated code is checked in (regenerate with `task gen-option-types`), so that `buffa-codegen` can depend on the crate without first generating it. The crate is named for what it holds, and the proto package stays the shorter `buffa.ext`, because a schema author writes the package in every annotation and only code that reads the options writes the crate name.
+
+The options keep protobuf's default runtime retention, so they are present both in the `CodeGeneratorRequest.proto_file` descriptors that the plugin reads and in the descriptor set that reflection embeds.
+
 ### `buffa-codegen` — Shared Code Generation Logic
 
 The code generation library, shared between `protoc-gen-buffa` and `buffa-build`. Takes protobuf descriptors (from protoc's `FileDescriptorProto`) and emits Rust source code.
@@ -270,15 +280,16 @@ Oneof and view-oneof enums drop the `Oneof`/`View` suffix — the tree position 
 
 Moving ancillary items under `__buffa::` removes almost every collision: a oneof `kind` and a nested message `Kind` coexist because they land in different trees.
 
-One owned-tree collision remains, because protobuf is case-sensitive while Rust module names are not: a message's nested-types module is `snake_case(MessageName)`, so `message Oof` and a sibling sub-package `pkg.oof` both want `pkg::oof`. When this happens, codegen deconflicts the **nested-types module** by appending `_` (and repeating until the name is unique against the sub-package segments, sibling message modules, and the `__buffa` sentinel in that scope). The message struct (`pkg::Oof`) and the sub-package module (`pkg::oof`) keep their natural names; only the nested-types module moves:
+One owned-tree collision remains: a message's nested-types module is `snake_case(MessageName)`, and that name can be unavailable in its scope. A package can declare `message Oof` beside a sub-package `oof`, and snake_case maps the message to the module `oof` too. A lower-case message name is also its struct's name (`message item` declares `struct item`). `self`, `super` and `crate` cannot name a module. A module named `arbitrary` would take the place of the crate in the output of `derive(Arbitrary)`, and at package level `oneof` is the root of the view-oneof tree under `__buffa::view`. In each case codegen deconflicts the **nested-types module** by appending `_` (and repeating until the name is unique against those reserved names, the sub-package segments, the generated types, sibling message modules, and the `__buffa` sentinel in that scope). The message struct (`pkg::Oof`) and the sub-package module (`pkg::oof`) keep their natural names; only the nested-types module moves, and the trees under `__buffa` use the same module name as the owned tree:
 
 ```text
 <pkg>::Oof                                # owned struct (unchanged)
 <pkg>::oof_::Inner                        # nested owned — module deconflicted from sub-package `oof`
+<pkg>::__buffa::view::oof_::InnerView     # its view — same module name
 <pkg>::oof::Thing                         # sub-package `pkg.oof` (unchanged)
 ```
 
-This activates only on a real collision (one that previously failed to compile), so output for every other schema is unchanged. The deconfliction is computed per scope from the full descriptor set, so the colliding message and sub-package must be generated in the same `buffa_build::Config::compile()` invocation — codegen cannot deconflict against a package it does not see. The per-message suffix length depends only on which names collide in the scope, not on file or message declaration order.
+A module keeps `snake_case(MessageName)` unless that name is unavailable in its scope. The reserved names are fixed, so they do not depend on the configuration. The rest is computed per scope from the full descriptor set, so the colliding message and sub-package (or type) must be generated in the same `buffa_build::Config::compile()` invocation — codegen cannot deconflict against a package or file it does not see. The per-message suffix length depends only on which names collide in the scope, not on file or message declaration order.
 
 **File layout — up to five content files + one stitcher:**
 

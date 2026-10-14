@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **The generated `Any` JSON parser rejects a key beside `@type` and `value` when the payload is a well-known type** (#654). `{"@type": "type.googleapis.com/google.protobuf.Duration", "value": "1.5s", "extra": true}` parsed, and `extra` was dropped. It is now an error that names the key, for a bare `@type` name too and whether or not the surrounding message ignores unknown keys, so a sender of such a key gets a parse error. The protobuf C++ parser rejects the key in every mode; protobuf-go rejects it unless `DiscardUnknown` is set.
+time: 2026-10-07T16:10:39.693599+02:00

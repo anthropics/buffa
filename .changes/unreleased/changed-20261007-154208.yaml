@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`StructView`, `ValueView` and `ListValueView` serialize to JSON by walking the view, without building an owned copy first** (#617). Their `Serialize` impls converted the whole tree with `to_owned_message()`, which allocated a `HashMap`, a `String` per key and an owned `Value` per entry for every `Struct` node; keys and string values are now written from the borrowed buffer. The JSON value is the same, with the last occurrence winning for a duplicated `Struct` key, and an unset `kind` or a non-finite number is still an error. The keys of a `Struct` object are written in wire order, where the owned path wrote them in `HashMap` iteration order. `AnyView` still converts to an owned `Any`.
+time: 2026-10-07T15:42:08.237607+02:00

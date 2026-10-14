@@ -557,7 +557,6 @@ fn serialize_any<S: Serializer>(
 /// The charge is returned once the payload has been decoded from the buffer.
 /// While it is held, the elements that decode builds are charged too, so the
 /// buffer and the message built from it fit the limit together.
-#[cfg(feature = "std")]
 fn deserialize_any<'de, D: Deserializer<'de>>(
     pool: Arc<DescriptorPool>,
     midx: MessageIndex,
@@ -646,19 +645,6 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     any.set_by_number(1, Value::String(type_url));
     any.set_by_number(2, Value::Bytes(inner_bytes));
     Ok(any)
-}
-
-#[cfg(not(feature = "std"))]
-fn deserialize_any<'de, D: Deserializer<'de>>(
-    _pool: Arc<DescriptorPool>,
-    _midx: MessageIndex,
-    _d: D,
-    _flags: ParseFlags,
-    _budget: &Cell<usize>,
-) -> Result<DynamicMessage, D::Error> {
-    Err(de::Error::custom(
-        "Any JSON deserialization requires the `std` feature",
-    ))
 }
 
 /// Resolve a `type_url` to a [`MessageIndex`]. Accepts `type.googleapis.com/`

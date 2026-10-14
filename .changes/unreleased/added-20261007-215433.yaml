@@ -1,0 +1,5 @@
+kind: Added
+body: |-
+    **`buffa_yaml::Error::io_error_kind` returns the `std::io::ErrorKind` of a failed read or write** (#661, closes #649).
+    An error from `from_reader`, `to_writer` or `to_writer_view` used to carry only the message of the I/O failure, so a caller could not match on its kind. The method returns `None` for an error that did not come from the reader or writer, such as malformed YAML.
+time: 2026-10-07T21:54:33.017438+02:00

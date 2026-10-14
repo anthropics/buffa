@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Text output of unknown fields stops descending into nested groups at `RECURSION_LIMIT`** (#667). `TextEncoder::write_unknown_fields` recursed into every unknown group without a depth check, and `UnknownFields::push` can build groups nested deeper than a decode allows, so the printer followed such a tree to its full depth. It now follows at most `RECURSION_LIMIT` (100) nested groups. A group nested past that depth is written with an empty body, so the text omits what is under it and the group reads the same as an empty one. Only unknown-field output is affected, which `emit_unknown(true)` turns on and which is debug output.
+time: 2026-10-07T22:22:33.985871+02:00

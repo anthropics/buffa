@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a MessageSet message that declares fields** (#599). A message with `message_set_wire_format = true` and an ordinary field linked, although a MessageSet holds extensions only and protoc reports "MessageSets cannot have fields, only extensions." It is `PoolError::MessageSetWithFields`, for top-level and nested messages. A MessageSet with extension ranges and no fields links as before.
+time: 2026-10-07T11:58:56+02:00

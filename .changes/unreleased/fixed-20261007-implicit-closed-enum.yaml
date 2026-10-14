@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` rejects a singular enum field with implicit presence whose enum is closed** (#609). Such a field linked. In an editions file it is a field whose `features.field_presence` resolves to `IMPLICIT`, which protoc rejects with "Implicit presence enum fields must always be open." In a proto3 file it is a singular field without `optional`. A map whose value type is a closed enum is rejected the same way when its entry has implicit presence, which includes every proto3 map, and the error names the `value` field of the entry message. Only hand-built or synthesized descriptor sets can reach this, because protoc rejects the file. The rejection is the new `PoolError::ImplicitPresenceClosedEnum` variant.
+    In an editions file, repeated fields, oneof members and extensions that name a closed enum are valid and link as before. In a proto3 file protoc rejects every field and extension that names a closed enum; the pool rejects the two cases above and does not yet reject a repeated field, an `optional` field, a oneof member or an extension.
+time: 2026-10-07T10:30:00+02:00

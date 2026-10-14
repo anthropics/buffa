@@ -648,6 +648,292 @@ fn test_multi_file_same_package_merged() {
 }
 
 #[test]
+fn test_rejects_proto_paths_with_the_same_generated_stem() {
+    let mut nested_path = proto3_file("foo/bar.proto");
+    nested_path.package = Some("shared.pkg".to_string());
+    nested_path.message_type.push(DescriptorProto {
+        name: Some("FromDirectory".to_string()),
+        ..Default::default()
+    });
+    let mut dotted_path = proto3_file("foo.bar.proto");
+    dotted_path.package = Some("shared.pkg".to_string());
+    dotted_path.message_type.push(DescriptorProto {
+        name: Some("FromFilename".to_string()),
+        ..Default::default()
+    });
+
+    let err = generate(
+        &[nested_path, dotted_path],
+        &["foo/bar.proto".to_string(), "foo.bar.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("distinct proto paths must not overwrite the same content files");
+
+    assert_output_conflict(&err, "foo.bar.rs", "foo/bar.proto", "foo.bar.proto");
+    assert_eq!(
+        err.to_string(),
+        "output file name conflict: foo/bar.proto and foo.bar.proto both generate \
+         'foo.bar.rs'; rename a proto file so that the output names differ, or enable \
+         file_per_package"
+    );
+}
+
+#[test]
+fn test_rejects_content_file_that_collides_with_package_stitcher() {
+    let mut file = proto3_file("foo.mod.proto");
+    file.package = Some("foo".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Message".to_string()),
+        ..Default::default()
+    });
+
+    let err = generate(
+        &[file],
+        &["foo.mod.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("content file must not overwrite the package stitcher");
+
+    assert_output_conflict(&err, "foo.mod.rs", "foo.mod.proto", "package foo");
+}
+
+#[test]
+fn test_rejects_mod_proto_in_a_directory_named_after_its_package() {
+    // `foo/mod.proto` in package `foo`: the layout most likely to produce
+    // a content file named like its own package's module file.
+    let mut file = proto3_file("foo/mod.proto");
+    file.package = Some("foo".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Message".to_string()),
+        ..Default::default()
+    });
+
+    let err = generate(
+        &[file],
+        &["foo/mod.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("content file must not overwrite the package stitcher");
+
+    assert_output_conflict(&err, "foo.mod.rs", "foo/mod.proto", "package foo");
+    assert_eq!(
+        err.to_string(),
+        "output file name conflict: foo/mod.proto and package foo both generate \
+         'foo.mod.rs'; rename a proto file so that the output names differ, or enable \
+         file_per_package"
+    );
+}
+
+#[test]
+fn test_rejects_content_file_that_collides_with_another_packages_stitcher() {
+    // The stitcher of package `a` is generated before the content file of
+    // `a.mod.proto` in package `b`, so the package is the first source.
+    let mut first = proto3_file("a.proto");
+    first.package = Some("a".to_string());
+    let mut second = proto3_file("a.mod.proto");
+    second.package = Some("b".to_string());
+    second.message_type.push(DescriptorProto {
+        name: Some("Message".to_string()),
+        ..Default::default()
+    });
+
+    let err = generate(
+        &[first, second],
+        &["a.proto".to_string(), "a.mod.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("content file must not overwrite another package's stitcher");
+
+    assert_output_conflict(&err, "a.mod.rs", "package a", "a.mod.proto");
+}
+
+#[test]
+fn test_rejects_mod_proto_colliding_with_the_unnamed_packages_stitcher() {
+    let mut file = proto3_file("__buffa.mod.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Message".to_string()),
+        ..Default::default()
+    });
+
+    let err = generate(
+        &[file],
+        &["__buffa.mod.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("content file must not overwrite the unnamed package's stitcher");
+
+    assert_output_conflict(
+        &err,
+        "__buffa.mod.rs",
+        "__buffa.mod.proto",
+        "the unnamed package",
+    );
+}
+
+#[test]
+fn test_file_listed_twice_is_generated_once() {
+    // Without the dedup this fails with `TypeNameConflict` ('Message' and
+    // 'Message'): type names are checked before output names are claimed.
+    let mut file = proto3_file("a.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Message".to_string()),
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["a.proto".to_string(), "a.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("a file listed twice generates once");
+
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(
+        names.iter().filter(|n| **n == "a.rs").count(),
+        1,
+        "{names:?}"
+    );
+    assert_eq!(
+        names.iter().filter(|n| **n == "pkg.mod.rs").count(),
+        1,
+        "{names:?}"
+    );
+}
+
+#[test]
+fn test_extension_only_file_listed_twice_is_generated_once() {
+    // The file declares no message or enum, so the type-name check has
+    // nothing to compare; without the dedup the second listing would claim
+    // `ext.__ext.rs` again and report a conflict of `ext.proto` with itself.
+    let mut target = proto3_file("target.proto");
+    target.package = Some("p".to_string());
+    target.message_type = vec![DescriptorProto {
+        name: Some("Target".to_string()),
+        extension_range: vec![
+            crate::generated::descriptor::descriptor_proto::ExtensionRange {
+                start: Some(100),
+                end: Some(200),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }];
+    let mut ext = proto3_file("ext.proto");
+    ext.package = Some("q".to_string());
+    ext.dependency = vec!["target.proto".to_string()];
+    ext.extension = vec![{
+        let mut f = make_field("my_opt", 100, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+        f.extendee = Some(".p.Target".to_string());
+        f
+    }];
+
+    let files = generate(
+        &[target, ext],
+        &["ext.proto".to_string(), "ext.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("a file listed twice generates once");
+
+    let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["ext.__ext.rs", "q.mod.rs"]);
+}
+
+/// Asserts that `err` is an `OutputFileNameConflict` with exactly these fields.
+#[track_caller]
+fn assert_output_conflict(err: &CodeGenError, file: &str, first: &str, second: &str) {
+    match err {
+        CodeGenError::OutputFileNameConflict {
+            file_name,
+            first_source,
+            second_source,
+        } => assert_eq!(
+            (
+                file_name.as_str(),
+                first_source.as_str(),
+                second_source.as_str()
+            ),
+            (file, first, second)
+        ),
+        other => panic!("expected OutputFileNameConflict, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_rejects_collisions_between_content_kinds() {
+    let mut view_path = proto3_file("foo.proto");
+    view_path.package = Some("shared.pkg".to_string());
+    view_path.message_type.push(DescriptorProto {
+        name: Some("ViewSource".to_string()),
+        ..Default::default()
+    });
+    let mut owned_path = proto3_file("foo.__view.proto");
+    owned_path.package = Some("shared.pkg".to_string());
+    owned_path.message_type.push(DescriptorProto {
+        name: Some("OwnedSource".to_string()),
+        ..Default::default()
+    });
+
+    let err = generate(
+        &[view_path, owned_path],
+        &["foo.proto".to_string(), "foo.__view.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect_err("owned and view outputs must not share a path");
+
+    assert_output_conflict(&err, "foo.__view.rs", "foo.proto", "foo.__view.proto");
+}
+
+#[test]
+fn test_file_per_package_avoids_per_proto_path_collisions() {
+    let mut nested_path = proto3_file("foo/bar.proto");
+    nested_path.package = Some("shared.pkg".to_string());
+    nested_path.message_type.push(DescriptorProto {
+        name: Some("FromDirectory".to_string()),
+        ..Default::default()
+    });
+    let mut dotted_path = proto3_file("foo.bar.proto");
+    dotted_path.package = Some("shared.pkg".to_string());
+    dotted_path.message_type.push(DescriptorProto {
+        name: Some("FromFilename".to_string()),
+        ..Default::default()
+    });
+    let config = CodeGenConfig {
+        file_per_package: true,
+        ..Default::default()
+    };
+
+    let files = generate(
+        &[nested_path, dotted_path],
+        &["foo/bar.proto".to_string(), "foo.bar.proto".to_string()],
+        &config,
+    )
+    .expect("inlined package output has no per-proto filename collision");
+
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].name, "shared.pkg.rs");
+    assert!(files[0].content.contains("pub struct FromDirectory"));
+    assert!(files[0].content.contains("pub struct FromFilename"));
+}
+
+#[test]
+fn test_empty_proto_does_not_claim_a_content_file_path() {
+    let mut file = proto3_file("foo.mod.proto");
+    file.package = Some("foo".to_string());
+
+    let files = generate(
+        &[file],
+        &["foo.mod.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("empty proto emits only its package stitcher");
+
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].name, "foo.mod.rs");
+    assert_eq!(files[0].kind, GeneratedFileKind::PackageMod);
+}
+
+#[test]
 fn test_package_to_filename() {
     assert_eq!(package_to_filename("google.protobuf"), "google.protobuf.rs");
     assert_eq!(package_to_filename("foo"), "foo.rs");
@@ -936,6 +1222,32 @@ fn test_child_package_named_view_no_collision() {
         tree.contains("pub mod foo {") && tree.contains("pub mod view {"),
         "tree must nest `view` under `foo`: {tree}"
     );
+}
+
+#[test]
+fn module_tree_escapes_relative_include_paths() {
+    let file = "quoted\"name\\segment\n.rs";
+    let source = crate::generate_module_tree(
+        &[(file, "example")],
+        crate::IncludeMode::Relative("generated/"),
+        false,
+    );
+
+    assert!(source.contains(&format!("include!({:?});", format!("generated/{file}"))));
+    syn::parse_file(&source).expect("relative include paths must be valid Rust string literals");
+}
+
+#[test]
+fn module_tree_escapes_out_dir_include_paths() {
+    let file = "quoted\"name\\segment\n.rs";
+    let source =
+        crate::generate_module_tree(&[(file, "example")], crate::IncludeMode::OutDir, false);
+
+    assert!(source.contains(&format!(
+        "include!(concat!(env!(\"OUT_DIR\"), {:?}));",
+        format!("/{file}")
+    )));
+    syn::parse_file(&source).expect("OUT_DIR include paths must be valid Rust string literals");
 }
 
 #[test]

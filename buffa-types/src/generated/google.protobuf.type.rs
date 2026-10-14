@@ -69,6 +69,7 @@ impl ::buffa::Enumeration for Syntax {
 /// FileDescriptorSet which preserves the necessary information.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Type {
     /// The fully qualified message name.
     ///
@@ -530,7 +531,7 @@ impl ::buffa::text::TextFormat for Type {
                     )?
                 }
                 "oneofs" => {
-                    dec.read_repeated_into(
+                    dec.read_repeated_scalar_into(
                         &mut self.oneofs,
                         |__d| ::core::result::Result::Ok(__d.read_string()?.into_owned()),
                     )?
@@ -565,6 +566,7 @@ pub const __TYPE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_
 /// make use of FileDescriptorSet which preserves the necessary information.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Field {
     /// The field type.
     ///
@@ -1394,6 +1396,7 @@ pub mod field {
 /// make use of FileDescriptorSet which preserves the necessary information.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Enum {
     /// Enum type name.
     ///
@@ -1855,6 +1858,7 @@ pub const __ENUM_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_
 /// make use of FileDescriptorSet which preserves the necessary information.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct EnumValue {
     /// Enum value name.
     ///
@@ -2170,6 +2174,7 @@ pub const __ENUM_VALUE_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa:
 /// are strongly discouraged.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Option {
     /// The option's name. For protobuf built-in options (options defined in
     /// descriptor.proto), this is the short name. For example, `"map_entry"`.

@@ -98,7 +98,13 @@ pub fn parse_request(mut buf: &[u8]) -> Result<Request, String> {
 
     while !buf.is_empty() {
         let tag = read_varint(&mut buf)?;
+        if tag > u32::MAX as u64 {
+            return Err("tag value exceeds u32::MAX in ConformanceRequest".into());
+        }
         let field_number = (tag >> 3) as u32;
+        if field_number == 0 {
+            return Err("field number 0 is invalid in ConformanceRequest".into());
+        }
         let wire_type = (tag & 0x07) as u8;
 
         match (field_number, wire_type) {
@@ -230,4 +236,53 @@ fn write_ld_field(out: &mut Vec<u8>, field_number: u32, data: &[u8]) {
     buffa::encoding::encode_varint(((field_number as u64) << 3) | 2, out);
     buffa::encoding::encode_varint(data.len() as u64, out);
     out.extend_from_slice(data);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_request;
+    use buffa::encoding::{encode_varint, MAX_FIELD_NUMBER};
+
+    #[test]
+    fn accepts_maximum_field_number() {
+        let mut bytes = Vec::new();
+        encode_varint(u64::from(MAX_FIELD_NUMBER) << 3, &mut bytes);
+        encode_varint(0, &mut bytes);
+
+        assert!(parse_request(&bytes).is_ok());
+    }
+
+    #[test]
+    fn rejects_field_number_zero() {
+        let cases = [
+            vec![0x00, 0x00],
+            vec![0x01, 0, 0, 0, 0, 0, 0, 0, 0],
+            vec![0x02, 0x00],
+            vec![0x05, 0, 0, 0, 0],
+        ];
+
+        for bytes in cases {
+            assert!(parse_request(&bytes).is_err());
+        }
+    }
+
+    #[test]
+    fn rejects_field_number_above_protobuf_maximum() {
+        let field_number = u64::from(MAX_FIELD_NUMBER) + 1;
+        let mut bytes = Vec::new();
+        encode_varint(field_number << 3, &mut bytes);
+        encode_varint(0, &mut bytes);
+
+        assert!(parse_request(&bytes).is_err());
+    }
+
+    #[test]
+    fn rejects_field_number_that_overflows_the_wire_tag() {
+        let field_number = u64::from(u32::MAX) + 2;
+        let mut bytes = Vec::new();
+        encode_varint((field_number << 3) | 2, &mut bytes);
+        bytes.push(0);
+
+        assert!(parse_request(&bytes).is_err());
+    }
 }

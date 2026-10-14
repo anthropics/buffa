@@ -115,7 +115,10 @@ impl<'a> TextDecoder<'a> {
     /// of message values. This method returns the name either way; for a
     /// scalar value, or a scalar list element, that follows a name without
     /// one, the call that reads the value returns the error. An empty list
-    /// parses with or without the colon.
+    /// `[]` has no element to read, so it parses with or without the colon,
+    /// unless the caller reads it with
+    /// [`read_repeated_scalar_into`](Self::read_repeated_scalar_into), which
+    /// requires the colon.
     ///
     /// # Errors
     ///
@@ -607,12 +610,19 @@ impl<'a> TextDecoder<'a> {
         Ok(())
     }
 
-    /// Read one-or-more values into `out`.
+    /// Read one or more values of a repeated field into `out`.
     ///
-    /// Handles both repeated-scalar forms: `f: [1, 2, 3]` (consumes `[` and
-    /// `]`) and `f: 1` (reads exactly one element). Generated code calls this
-    /// once per `f` occurrence; the `f: 1 f: 2` form is handled by the outer
-    /// `read_field_name` loop seeing `f` twice.
+    /// Handles both forms of a repeated value: the list `f: [1, 2, 3]`
+    /// (consumes `[` and `]`) and the single value `f: 1` (reads exactly one
+    /// element). Generated code calls this once per `f` occurrence; the
+    /// `f: 1 f: 2` form is handled by the outer `read_field_name` loop seeing
+    /// `f` twice.
+    ///
+    /// An empty list `[]` is accepted with or without a `:` after the field
+    /// name, which is the rule for a list of messages. For a field whose
+    /// elements are scalars, use
+    /// [`read_repeated_scalar_into`](Self::read_repeated_scalar_into), which
+    /// requires the colon.
     ///
     /// # Errors
     ///
@@ -620,11 +630,54 @@ impl<'a> TextDecoder<'a> {
     pub fn read_repeated_into<T>(
         &mut self,
         out: &mut Vec<T>,
+        read_one: impl FnMut(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<(), ParseError> {
+        self.read_repeated_inner(out, read_one, false)
+    }
+
+    /// Read one or more values of a repeated scalar field into `out`,
+    /// requiring the `:` after the field name even before an empty list.
+    ///
+    /// Reads the same two forms as
+    /// [`read_repeated_into`](Self::read_repeated_into). Use it when the
+    /// field's elements are numbers, bools, enums, strings or bytes, as
+    /// generated code does. The tokenizer cannot infer the field type from
+    /// `[]`, so this method applies the check for the empty list. For a
+    /// list with elements, or a single value, the tokenizer finds the
+    /// missing colon when this method reads the element.
+    ///
+    /// # Errors
+    ///
+    /// - [`ParseErrorKind::UnexpectedToken`] with `expected` set to
+    ///   `"':' before scalar value"` when the field name has no `:` after
+    ///   it. The error is positioned at the `[` of an empty list, and at the
+    ///   element for a list with elements or a single value.
+    /// - Any other error from `read_one` or the tokenizer.
+    pub fn read_repeated_scalar_into<T>(
+        &mut self,
+        out: &mut Vec<T>,
+        read_one: impl FnMut(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<(), ParseError> {
+        self.read_repeated_inner(out, read_one, true)
+    }
+
+    fn read_repeated_inner<T>(
+        &mut self,
+        out: &mut Vec<T>,
         mut read_one: impl FnMut(&mut Self) -> Result<T, ParseError>,
+        empty_list_requires_separator: bool,
     ) -> Result<(), ParseError> {
         if self.tok.peek()?.kind == TokenKind::ListOpen {
-            self.tok.read()?; // consume `[`
+            let open = self.tok.read()?;
             if self.tok.peek()?.kind == TokenKind::ListClose {
+                if empty_list_requires_separator && self.tok.in_list_without_separator() {
+                    return Err(self.err_at(
+                        &open,
+                        ParseErrorKind::UnexpectedToken {
+                            expected: super::token::COLON_BEFORE_SCALAR,
+                        },
+                    ));
+                }
                 self.tok.read()?; // empty: `[]`
                 return Ok(());
             }
@@ -880,7 +933,7 @@ mod tests {
                 match name {
                     "i" => self.i = dec.read_i32()?,
                     "s" => self.s = dec.read_string()?.into_owned(),
-                    "items" => dec.read_repeated_into(&mut self.items, |d| d.read_i64())?,
+                    "items" => dec.read_repeated_scalar_into(&mut self.items, |d| d.read_i64())?,
                     "child" => {
                         let child = self.child.get_or_insert_with(Default::default);
                         dec.merge_message(child.as_mut())?;
@@ -1255,6 +1308,76 @@ mod tests {
         let mut d = TextDecoder::new("items: []");
         m.merge_text(&mut d).unwrap();
         assert_eq!(m.items, Vec::<i64>::new());
+    }
+
+    #[test]
+    fn repeated_empty_scalar_list_requires_colon() {
+        for input in ["items []", "i: 1 items []", "child { items [] }"] {
+            let mut m = TestMsg::default();
+            let err = m.merge_text(&mut TextDecoder::new(input)).unwrap_err();
+            assert_eq!(
+                err.kind,
+                ParseErrorKind::UnexpectedToken {
+                    expected: "':' before scalar value",
+                },
+                "input: {input:?}"
+            );
+            assert_eq!(err.col as usize, input.find('[').unwrap() + 1);
+        }
+
+        // With an element present the same error is positioned at the
+        // element.
+        for input in ["items [1]", "items 1"] {
+            let mut m = TestMsg::default();
+            let err = m.merge_text(&mut TextDecoder::new(input)).unwrap_err();
+            assert_eq!(
+                err.kind,
+                ParseErrorKind::UnexpectedToken {
+                    expected: "':' before scalar value",
+                },
+                "input: {input:?}"
+            );
+            assert_eq!(err.col as usize, input.find('1').unwrap() + 1);
+        }
+
+        // The colon that counts is the list field's own. One on the
+        // enclosing field does not stand in for it, and its absence on the
+        // enclosing field does not matter.
+        let mut m = TestMsg::default();
+        let err = m
+            .merge_text(&mut TextDecoder::new("child: { items [] }"))
+            .unwrap_err();
+        assert_eq!(
+            err.kind,
+            ParseErrorKind::UnexpectedToken {
+                expected: "':' before scalar value",
+            }
+        );
+        for input in ["child { items: [] }", "child: { items: [] } items: []"] {
+            let mut m = TestMsg::default();
+            m.merge_text(&mut TextDecoder::new(input)).unwrap();
+            assert_eq!(m.items, Vec::<i64>::new(), "input: {input:?}");
+        }
+
+        // An empty scalar list with its colon, inside a message list that
+        // was opened without one.
+        let mut d = TextDecoder::new("f [{ items: [] }, { items [] }]");
+        d.read_field_name().unwrap();
+        let mut out: Vec<TestMsg> = Vec::new();
+        let err = d
+            .read_repeated_into(&mut out, |d| {
+                let mut m = TestMsg::default();
+                d.merge_message(&mut m)?;
+                Ok(m)
+            })
+            .unwrap_err();
+        assert_eq!(out.len(), 1, "the first element parses");
+        assert_eq!(
+            err.kind,
+            ParseErrorKind::UnexpectedToken {
+                expected: "':' before scalar value",
+            }
+        );
     }
 
     #[test]

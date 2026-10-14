@@ -1,3 +1,4 @@
+use crate::error::{CapturedIo, IoErrorCapture};
 use crate::Error;
 use buffa::{Message, MessageView};
 use std::io;
@@ -26,13 +27,16 @@ where
 /// # Errors
 ///
 /// Returns an [`Error`] if serialization fails or the writer returns an I/O
-/// error.
+/// error. For a writer failure, [`Error::io_error_kind`] returns its
+/// [`std::io::ErrorKind`].
 pub fn to_writer<W, M>(w: W, msg: &M) -> Result<(), Error>
 where
     W: io::Write,
     M: Message + serde::Serialize,
 {
-    serde_norway::to_writer(w, msg).map_err(Error::from_carrier)
+    let capture = IoErrorCapture::default();
+    serde_norway::to_writer(CapturedIo::new(w, capture.clone()), msg)
+        .map_err(|inner| Error::from_carrier_with_io_error_kind(inner, capture.error_kind()))
 }
 
 /// Serialize a zero-copy message view to a YAML string.
@@ -65,11 +69,14 @@ where
 /// # Errors
 ///
 /// Returns an [`Error`] if serialization fails or the writer returns an I/O
-/// error.
+/// error. For a writer failure, [`Error::io_error_kind`] returns its
+/// [`std::io::ErrorKind`].
 pub fn to_writer_view<'a, W, V>(w: W, view: &V) -> Result<(), Error>
 where
     W: io::Write,
     V: MessageView<'a> + serde::Serialize,
 {
-    serde_norway::to_writer(w, view).map_err(Error::from_carrier)
+    let capture = IoErrorCapture::default();
+    serde_norway::to_writer(CapturedIo::new(w, capture.clone()), view)
+        .map_err(|inner| Error::from_carrier_with_io_error_kind(inner, capture.error_kind()))
 }

@@ -41,14 +41,14 @@ impl From<jiff::SignedDuration> for Duration {
     /// Infallible: both types represent a signed duration as a sign-consistent
     /// `seconds` + sub-second `nanos` pair, so this is a direct field copy.
     ///
-    /// # Warning: proto JSON spec range
+    /// # Warning: Duration valid range
     ///
-    /// `jiff::SignedDuration` ranges to ±`i64::MAX` seconds (~2.9e11 years),
-    /// while the proto spec restricts `Duration` to ±315,576,000,000 seconds
-    /// (~10,000 years). A `SignedDuration` beyond that converts without error
-    /// here — binary encoding round-trips it — but the resulting `Duration`
-    /// will fail JSON serialization (`json` feature), which enforces the spec
-    /// range.
+    /// The protobuf `Duration` spec restricts valid values to
+    /// ±315,576,000,000 seconds (~10,000 years), and `jiff::SignedDuration`
+    /// ranges to ±`i64::MAX` seconds (~2.9e11 years). A `SignedDuration`
+    /// beyond the spec range still converts and round-trips through binary
+    /// encoding, but the result is outside the valid `Duration` range and
+    /// JSON serialization (`json` feature) rejects it.
     ///
     /// # Examples
     ///
@@ -98,6 +98,9 @@ impl TryFrom<Duration> for jiff::SignedDuration {
     /// `Duration` can carry any combination — the proto spec declares
     /// sign-mismatched ones invalid, and this conversion rejects them rather
     /// than letting `SignedDuration::new` silently re-normalize them.
+    ///
+    /// This conversion does not check the protobuf `Duration` range of
+    /// ±315,576,000,000 seconds.
     fn try_from(d: Duration) -> Result<Self, Self::Error> {
         Self::try_from(&d)
     }
@@ -125,6 +128,9 @@ impl TryFrom<&Duration> for jiff::SignedDuration {
     ///
     /// Returns [`DurationJiffError::InvalidNanos`] if `nanos` is out of range
     /// or its sign is inconsistent with `seconds`.
+    ///
+    /// This conversion does not check the protobuf `Duration` range of
+    /// ±315,576,000,000 seconds.
     fn try_from(d: &Duration) -> Result<Self, Self::Error> {
         if !(-999_999_999..=999_999_999).contains(&d.nanos) {
             return Err(DurationJiffError::InvalidNanos);

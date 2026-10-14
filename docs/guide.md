@@ -213,7 +213,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.gate_impls_on_crate_features(bool)` | `false` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface |
 | `.json_feature_name(name)` etc. | `"json"`, `"views"`, `"text"`, `"reflect"` | Rename the crate feature a gated impl kind is conditioned on (one setter per kind: `json_feature_name`, `views_feature_name`, `text_feature_name`, `reflect_feature_name`); inert without `gate_impls_on_crate_features`. The renamed feature must be declared in the consuming crate's `[features]` table — an undeclared name leaves the `#[cfg]` permanently false and the impls silently absent |
 | `.strict_utf8_mapping(bool)` | `false` | Map `utf8_validation = NONE` string fields to `Vec<u8>` / `&[u8]` instead of `String` (see [Skipping UTF-8 validation](#skipping-utf-8-validation)) |
-| `.extern_path(proto, rust)` | — | Map a proto package or a single type to an external Rust path (see below) |
+| `.extern_path(proto, rust)` | — | Map a proto package or a single type to an external Rust path (see below). `proto` is a dotted protobuf name with an optional leading dot; `compile()` rejects an empty or non-identifier segment |
 | `.exclude_package(pkg)` | — | Drop a proto package (and its sub-packages) from code generation. Useful when directory globbing pulls in option-only packages (e.g. `buf.validate`) that you don't want Rust types for. A leading dot is accepted and stripped. Pair with `.extern_path` if kept files reference types from the excluded package; the generator emits a `cargo:warning` for each such cross-package reference. |
 | `.type_name_prefix(prefix)` | `""` | Prepend a PascalCase prefix (`[A-Z][A-Za-z0-9]*`; anything else is rejected at generation time) to every generated message/enum type name (`message User` → `struct RpcUser`); modules, oneof enums, extern-mapped types, and the wire format are unaffected. A crate referencing these types via `extern_path` must spell out the prefixed name (`::crate_a::RpcUser`) |
 | `.codec_strategy(strategy)` | `Unrolled` | Generate each message's binary `Message` code specialised to its fields (`CodecStrategy::Unrolled`), or from a static table and interpreters shared by every message (`CodecStrategy::Table`), which makes a large schema about 40% smaller and is slower on messages of many small fields; see [Smaller generated code](#smaller-generated-code-codec_strategy) |
@@ -314,9 +314,9 @@ buffa_build::Config::new()
     .unwrap();
 ```
 
-When several entries could match a reference, the most specific one wins: an exact type FQN beats a covering package prefix, and a longer package prefix beats a shorter one. Nested types inherit an enclosing message's per-type override — `my.common.SharedMessage.Inner` resolves to `::shared_types::shared_message::Inner`, i.e. the override's parent module plus buffa's usual `snake_case(MessageName)` nested-types module. That layout matches another buffa-generated crate; if the target crate lays out nested types differently, add explicit per-type entries for the nested types as well.
+When several entries could match a reference, the most specific one wins: an exact type FQN beats a covering package prefix, and a longer package prefix beats a shorter one. Nested types inherit an enclosing message's per-type override — `my.common.SharedMessage.Inner` resolves to `::shared_types::shared_message::Inner`, i.e. the override's parent module plus buffa's nested-types module for a type of the mapped name (`shared_message`, or `item_` for an entry that ends in `::item`). That layout matches another buffa-generated crate, unless that crate renamed the module because of a sub-package or a second type of its name. In that case, or if the target crate lays out nested types differently, add explicit per-type entries for the nested types as well.
 
-**Nested-module deconfliction across crates:** if the owning crate renamed a message's nested-types module to avoid colliding with a sibling sub-package (e.g. `Money`'s nested types live in `money_` because sub-package `pb.lyft.money` also exists), the consumer must compute the same name. That requires the consumer's descriptor set to *contain* the colliding sub-package file — importing any type from it (even unused) is sufficient. If the consumer never imports from the sub-package, the generated reference uses the un-deconflicted module name and fails to compile against the owning crate.
+**Nested-module deconfliction across crates:** if the owning crate renamed a message's nested-types module to avoid colliding with a sibling sub-package (e.g. `Money`'s nested types live in `money_` because sub-package `pb.lyft.money` also exists), the consumer must compute the same name. That requires the consumer's descriptor set to *contain* the colliding sub-package file — importing any type from it (even unused) is sufficient. If the consumer never imports from the sub-package, the generated reference uses the un-deconflicted module name and fails to compile against the owning crate. The same applies when a type in another file of the package has the module's name (`message Mode` in `a.proto`, `enum mode` in `b.proto`): the consumer's descriptor set must contain `b.proto`.
 
 **View types:** When view generation is enabled (the default), the codegen also expects a `FooView<'a>` type at `<extern_crate>::__buffa::view::FooView` for each extern-mapped message `Foo`. If you're using extern_path to reference types from another buffa-generated crate, the views are already there. If you're mapping to [custom type implementations](#custom-type-implementations), see that section for how to provide the view type. This applies to per-type mappings too: a message referenced by generated views must map to a buffa-generated crate, or view generation must be disabled (`.generate_views(false)`).
 
@@ -460,11 +460,21 @@ The two members are a field and a oneof in either order, in any syntax, or two f
 
 Each affected message produces a build warning (`CodeGenWarning::KeywordEscapedNamesAdjusted`). A field is matched by its name and number, and a oneof by its name, across the files that the run generates. Another generated message that declares the same member gets the same Rust name and the warning. So two edits to a schema change existing Rust names. Adding a member named `self_` to a message that has `self` gives the name `self_` to the new member. Adding such a pair to one message renames the matching member of the others.
 
-**Message and enum names** keep the spelling of the `.proto` file, unless the name is a Rust keyword or one of ten primitive type names. A strict or reserved keyword of any edition through 2024 (`type`, `match`, `Self`, `gen`, `final`), and the primitive type names that generated code uses (`bool`, `str`, `u8`, `usize`, `i32`, `i64`, `u32`, `u64`, `f32` and `f64`), get a trailing underscore: `message type` generates `pub struct type_`, and `message bool` generates `pub struct bool_`. Unlike a field name, a type name never becomes a raw identifier (`r#type`): a derive macro that builds an identifier from the type name, as `#[derive(Arbitrary)]` does, panics on one. With `type_name_prefix` set, the prefix is added first and the rule applies to the prefixed name, so prefix `Rpc` and `message bool` generate `pub struct Rpcbool`. View types append to the escaped name: `bool_View`, `type_View`. The module that holds a message's nested types keeps the snake_case proto name, so a message nested in `bool` is `bool::Inner`, and one nested in `type` is `r#type::Inner`. The proto name is unchanged in JSON, the text format, type URLs and reflection.
+**Message and enum names** keep the spelling of the `.proto` file, unless the name is a Rust keyword or one of ten primitive type names. A strict or reserved keyword of any edition through 2024 (`type`, `match`, `Self`, `gen`, `final`), and the primitive type names that generated code uses (`bool`, `str`, `u8`, `usize`, `i32`, `i64`, `u32`, `u64`, `f32` and `f64`), get a trailing underscore: `message type` generates `pub struct type_`, and `message bool` generates `pub struct bool_`. Unlike a field name, a type name never becomes a raw identifier (`r#type`): a derive macro that builds an identifier from the type name, as `#[derive(Arbitrary)]` does, panics on one. With `type_name_prefix` set, the prefix is added first and the rule applies to the prefixed name, so prefix `Rpc` and `message bool` generate `pub struct Rpcbool`. View types append to the escaped name: `bool_View`, `type_View`. The module that holds a message's nested types is named from the proto name, not from the escaped type name, by the rule below: a message nested in `bool` is `bool::Inner`, and one nested in `type` is `r#type::Inner`. The proto name is unchanged in JSON, the text format, type URLs and reflection.
 
 Two sibling types that end up with one Rust name, such as `bool` and `bool_`, are rejected with `CodeGenError::TypeNameConflict`.
 
-A message whose name has no upper-case letter, such as `item`, cannot contain a nested message, a nested enum, an `extend` block or a oneof, unless the name is one of those ten primitive names or a keyword other than `self`, `super` and `crate`. The struct and the module for its nested items get the same Rust name, and the generated code does not compile. Rename the message.
+**The module that holds a message's nested types** is named after the message in snake_case: the types nested in `SearchRequest` are in `search_request`. The module gets a trailing underscore when that name is not available in its scope:
+
+- A generated type has the name. `message item` generates `pub struct item`, so its nested types are in `item_`. An enum counts: beside `enum mode`, the types nested in `message Mode` are in `mode_`.
+- A sub-package has the name. Beside `package foo.oof`, the types nested in `foo.Oof` are in `oof_`.
+- The name is `self`, `super` or `crate`. The types nested in `message Crate` are in `crate_`.
+- The name is `arbitrary`. The types nested in `message Arbitrary` are in `arbitrary_`, whether or not `generate_arbitrary` is on. The code that `#[derive(Arbitrary)]` expands to starts its paths with `arbitrary::`, and beside a module named `arbitrary` those paths resolve to the module and not to the crate.
+- The name is `oneof` and the message is declared at package level. The types nested in `message Oneof` are in `oneof_`, because `__buffa::view::oneof` holds the oneof enums of views.
+
+If the name with one underscore is also taken, another is added: `message crate` generates `pub struct crate_`, so its nested types are in `crate__`. The trees under `__buffa` use the same module name, so the view of `item.Inner` is `__buffa::view::item_::InnerView`. With `type_name_prefix` set, the first case compares against the prefixed type names, so prefix `Pb` and `message item` generate `pub struct Pbitem` beside `pub mod item`.
+
+Adding a type to a scope can therefore move a module: adding `enum mode` beside `message Mode` moves `mode::Detail` to `mode_::Detail`. Two sibling messages in one file whose names give the same module name, such as `Item` and `item`, are rejected with `CodeGenError::ModuleNameConflict`.
 
 **Generated files are named by proto file path, not package.** The file `proto/api/v1/service.proto` produces `api.v1.service.rs` regardless of the `package` declaration. The module tree generator uses the package from the file descriptor (not the file name) to build the `pub mod` nesting. This means the file name and module path may not correspond — the file `api.v1.service.rs` might be included inside `pub mod myapp { pub mod api { pub mod v1 { ... } } }` if the package is `myapp.api.v1`.
 
@@ -653,7 +663,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
 | `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |
 | `shared_descriptor_pool=true` | Deduplicate the embedded descriptor set: per-package reflect modules delegate to one shared `__buffa_fds` root module. Pass a matching `shared_descriptor_pool=true` to `protoc-gen-buffa-packaging` so the root module is emitted. See [Runtime reflection](#runtime-reflection) |
-| `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path |
+| `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path. The proto side is a dotted protobuf name with an optional leading dot; an empty or non-identifier segment is an error |
 | `exclude_package=.pkg` | Drop a proto package and its subpackages from generation (repeatable; leading dot optional). For option-only imports that `include_imports` pulls in but that are never used as field types, e.g. `buf.validate`, `gnostic`. **Pass the same `exclude_package` to `protoc-gen-buffa-packaging`** (see the note below the table) so the generated `mod.rs` omits the same packages. |
 | `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a `<dotted.pkg>.mod.rs` stitcher. Use this with the remote plugin when you don't want to install `protoc-gen-buffa-packaging` — see [Remote plugin only](#remote-plugin-only-no-local-install). Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean. |
 | `idiomatic_imports=true` | **Experimental.** Emit `use`-backed short type names at the package root. Requires `file_per_package=true`. Only type declarations are shortened; the generated file must keep its `#[allow]` wrapper. |
@@ -1015,6 +1025,8 @@ Adding or removing sibling types never changes the Rust name of an existing oneo
 
 Two oneofs of one message can still collide with each other: `oneof foo_bar` and `oneof foo__bar` both map to `FooBar`, and `oneof self` and `oneof self_` both map to `Self_`. Code generation rejects such a message with `CodeGenError::OneofEnumNameConflict`, which names both oneofs. Rename one of them; a oneof's name is in neither the wire format nor JSON, so the rename changes generated code only.
 
+The members of one oneof collide the same way: `foo` and `foo_` both map to the variant `Foo`, and `self` and `self_` to `Self_`. Code generation rejects the message with `CodeGenError::OneofVariantNameConflict`, which names the oneof and both members. Rename one of the members; a member's name is its default JSON name and its text-format name, so set a `json_name` if the JSON name must stay.
+
 ### Nested types and module structure
 
 Nested proto messages are scoped in Rust modules named after the parent:
@@ -1327,11 +1339,11 @@ repeated field from a much newer schema).
 
 Zero-copy view decoding (`decode_view`) honors the same limit with per-field accounting (one slot per unknown field, including fields nested inside unknown groups), even though views store unknown fields as borrowed byte ranges (coalesced into one span per contiguous run, ~16 bytes each) instead of materializing them. The limit bounds what converting the view to an owned message would materialize, and the conversion replays under exactly the budget decoding charged — so a view that decodes successfully always converts via `to_owned_message` without error.
 
-The element-memory limit bounds what a decode *materializes* rather than what it reads, which an input-size cap cannot do: an empty repeated message element is 2 bytes on the wire and `size_of::<T>()` in the `Vec` it lands in, so a payload well inside any input bound can still expand by two orders of magnitude. Packed scalar fields are not charged by the owned or view decoders, since their worst case there is a 1-byte varint becoming a 4-byte `i32` and charging them would reject columnar payloads that carry millions of elements by design. The reflective `DynamicMessage` codec does charge them, because it stores every element as a `Value` rather than a native scalar — roughly a 64x ratio instead of 4x — so a large columnar payload decoded reflectively may need `.with_element_memory_limit(n)` raised.
+The element-memory limit bounds what a decode *materializes* rather than what it reads, which an input-size cap cannot do: an empty repeated message element is 2 bytes on the wire and `size_of::<T>()` in the `Vec` it lands in, so a payload well inside any input bound can still expand by two orders of magnitude. Repeated numeric and enum elements are not charged by the owned or view decoders, whether encoded packed or unpacked. For packed fields, charging a 1-byte varint as a 4-byte `i32` would reject columnar payloads that carry millions of elements by design. The reflective `DynamicMessage` codec does charge these elements, because it stores each as a `Value` rather than a native scalar — roughly a 64x ratio instead of 4x — so a large columnar payload decoded reflectively may need `.with_element_memory_limit(n)` raised.
 
-Eager view decoding is charged the same way. A view borrows string and bytes contents rather than copying them, but a repeated field still costs one `size_of::<FooView>()` slot per element in the `Vec` that holds them, so `decode_view` applies the element-memory limit exactly as the owned decoder does. Whichever decoder you hand a given payload to, you get the same verdict.
+Eager view decoding charges repeated message, group, string, and bytes elements by the size of each stored view element; map entries are charged by their key and value slot sizes. A view borrows string and bytes contents rather than copying them, so a view element can differ in size from its owned type (for example, `&str` versus `String`). Near the configured limit, the owned and view decoders can return different results.
 
-The default `Message::decode` / `decode_from_slice` methods use the defaults (100 depth, 2 GiB max input, 1M unknown fields, 32 MiB of element memory), and so do the default view entry points `FooView::decode_view` and `OwnedView::decode`. `DecodeOptions` is only needed when you want different limits.
+The default `Message::decode` / `decode_from_slice` methods apply the default limits (100 depth, 1M unknown fields, 32 MiB of element memory), and so do the default view entry points such as `FooView::decode_view` and `OwnedView::decode`. These default entry points, owned and view alike, do not check the size of the input: only the `DecodeOptions` methods compare it with `max_message_size`. Use `DecodeOptions` when you need an input-size cap or different limits: `decode` or `decode_from_slice` for an owned message, `decode_view` or `OwnedView::decode_with_options` for a view.
 
 ### What these limits do and do not bound
 
@@ -2212,6 +2224,15 @@ field_opts.set_extension(&FIELD, my_rules);
 field_opts.clear_extension(&FIELD);
 ```
 
+`extension()` decodes under the default decode limits, whatever
+`DecodeOptions` decoded the extendee, and it has no error channel. For a
+repeated message or group extension it charges each element's `size_of` to
+`DEFAULT_ELEMENT_MEMORY_LIMIT` and stops at the first element that exceeds
+the budget, so the `Vec<T>` can be shorter than the list on the wire. Each
+record of such an extension is one element: compare the returned length with
+the number of `unknown_fields()` records whose `number` is the extension's to
+learn whether elements are missing.
+
 Message-typed extension values are encoded to wire bytes on `set`, so
 `set_extension()` panics if the value's encoded size exceeds the 2 GiB
 protobuf limit; `try_set_extension()` returns
@@ -2220,9 +2241,11 @@ unchanged. (Scalar-typed extensions cannot fail.)
 
 ### Extendee identity check
 
-`extension()`, `set_extension()`, and `clear_extension()` **panic** if you
-pass an extension declared for a different message — for example, passing a
-message-level option to a field-level options struct:
+The accessors that read, write or clear an extension (`extension()`,
+`extension_or_default()`, `set_extension()`, `try_set_extension()` and
+`clear_extension()`; the `buffa::extension` module docs keep the list under
+"Panics") **panic** if you pass an extension declared for a different message
+— for example, passing a message-level option to a field-level options struct:
 
 ```rust,ignore
 // (buf.validate.message) extends MessageOptions, not FieldOptions — this
@@ -2234,6 +2257,11 @@ This matches protobuf-go (which panics) and protobuf-es (which throws).
 `has_extension()` returns `false` gracefully instead of panicking, since
 "is this extension set here" has a legitimate answer (`false`) even when
 the extension can't extend here.
+
+If you declare an extension by hand, `Extension::new` and
+`Extension::with_default` panic when the field number is 0 or greater than
+`i32::MAX`. Both are `const fn`, so in a `const` item the panic is a compile
+error. Generated extension constants always have a valid number.
 
 ### Proto2 `[default = ...]`
 

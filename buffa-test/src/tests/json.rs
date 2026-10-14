@@ -551,6 +551,35 @@ fn test_proto2_closed_enum_json_null_defaults() {
     assert!(decoded.by_name.is_empty());
 }
 
+#[test]
+fn test_proto2_closed_enum_json_rejects_null_elements() {
+    use crate::p2json::ClosedEnumJson;
+
+    for ignore_unknown_enum_values in [false, true] {
+        let opts = buffa::json::JsonParseOptions::new()
+            .ignore_unknown_enum_values(ignore_unknown_enum_values);
+        buffa::json::with_json_parse_options(&opts, || {
+            for json in [
+                r#"{"tiers":[null]}"#,
+                r#"{"tiers":[null,"PRO"]}"#,
+                r#"{"tiers":["PRO",null]}"#,
+                r#"{"tiers":["FREE",null,2]}"#,
+                r#"{"tiers":["UNKNOWN",null]}"#,
+                r#"{"byName":{"a":null}}"#,
+                r#"{"byName":{"a":null,"b":"PRO"}}"#,
+                r#"{"byName":{"a":1,"b":null}}"#,
+                r#"{"byName":{"a":"UNKNOWN","b":null}}"#,
+            ] {
+                let result = serde_json::from_str::<ClosedEnumJson>(json);
+                assert!(
+                    result.is_err(),
+                    "accepted {json}, lenient={ignore_unknown_enum_values}"
+                );
+            }
+        });
+    }
+}
+
 // ── proto3 `optional` (explicit presence) for all scalar types ──────────
 // Covers optional_serde_module type dispatch: each type uses a distinct
 // opt_* helper (opt_int64, opt_uint64, opt_float, etc.). Previously only

@@ -17,6 +17,7 @@
 /// make use of FileDescriptorSet which preserves the necessary information.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Api {
     /// The fully qualified name of this interface, including package name
     /// followed by the interface's simple name.
@@ -574,6 +575,7 @@ pub const __API_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::type_r
 /// make use of FileDescriptorSet which preserves the necessary information.
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Method {
     /// The simple name of this method.
     ///
@@ -1150,6 +1152,7 @@ pub const __METHOD_TEXT_ANY: ::buffa::type_registry::TextAnyEntry = ::buffa::typ
 /// ```
 #[derive(Clone, PartialEq, Default)]
 #[cfg_attr(feature = "arbitrary", derive(::arbitrary::Arbitrary))]
+#[derive(Eq, Hash)]
 pub struct Mixin {
     /// The fully qualified name of the interface which is included.
     ///

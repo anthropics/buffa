@@ -599,6 +599,16 @@ pub mod type_name_escapes {
     buffa::include_proto!("test.type_name_escapes");
 }
 
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    dead_code,
+    non_camel_case_types
+)]
+pub mod nested_module_names {
+    buffa::include_proto!("test.nested_module_names");
+}
+
 #[allow(clippy::derivable_impls, clippy::match_single_binding, dead_code)]
 pub mod float_default_shadow {
     buffa::include_proto!("f32");
@@ -700,6 +710,13 @@ pub mod open_enums_enum_rule {
 )]
 pub mod open_enums_no_unknowns {
     buffa::include_proto!("test.openenums_nounknowns");
+}
+
+/// `buffa.ext` options fixture: every option set once. See
+/// tests/ext_options.rs.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod ext_options {
+    buffa::include_proto!("test.extoptions");
 }
 
 // Mixed-mode reflection fixtures: bridge-mode dependency, vtable-mode parent

@@ -58,7 +58,8 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
 
 /// Maximum length of a fully-qualified symbol name, in bytes.
 ///
-/// Matches protoc's own cap. Two things depend on it, neither obvious.
+/// Field and oneof names are exempt. Two things depend on this limit,
+/// neither obvious.
 ///
 /// A name is built by concatenating its parent's, and every descendant
 /// stores its own full copy — four of them, across the symbol table, the
@@ -331,6 +332,16 @@ pub enum PoolError {
         field: String,
         index: i32,
     },
+    /// A map's enum value type starts with a nonzero value. Only a closed
+    /// enum reaches this rule: an open enum with a nonzero first value fails
+    /// earlier with
+    /// [`OpenEnumFirstValueNotZero`](Self::OpenEnumFirstValueNotZero),
+    /// whether or not a map names it.
+    MapEnumFirstValueNotZero {
+        field: String,
+        enum_name: String,
+        number: i32,
+    },
     /// A oneof member has required or repeated cardinality instead of optional.
     InvalidOneofCardinality { field: String },
     /// A repeated field declares an explicit default value.
@@ -356,6 +367,20 @@ pub enum PoolError {
     /// An extension always has presence. A proto3 field reports
     /// [`Proto3FieldWithDefault`](Self::Proto3FieldWithDefault) instead.
     ImplicitPresenceFieldWithDefault { field: String },
+    /// A singular enum field has implicit presence but uses a closed enum.
+    /// Closed enum fields require presence to distinguish an unset field
+    /// from its default value.
+    ///
+    /// A map with a closed enum value type is rejected through the `value`
+    /// field of its entry message, which is the field this error names: in
+    /// a proto3 file, and in an editions file where the entry inherits
+    /// `features.field_presence = IMPLICIT`.
+    ///
+    /// In a proto3 file the rule covers a singular field without `optional`
+    /// and a map value. protoc rejects every enum field and extension of a
+    /// proto3 file whose enum is closed; the pool does not yet reject the
+    /// repeated, `optional`, oneof and extension cases.
+    ImplicitPresenceClosedEnum { field: String },
     /// A field marked `proto3_optional` is not declared in a proto3 file.
     Proto3OptionalOutsideProto3 { field: String },
     /// A field marked `proto3_optional` does not have optional cardinality.
@@ -391,6 +416,11 @@ pub enum PoolError {
     /// [`RequiredLabelOutsideProto2`](Self::RequiredLabelOutsideProto2)
     /// instead.
     RequiredExtension { field: String },
+    /// An extension of a MessageSet is not an optional message field. A
+    /// message field with delimited encoding is rejected too, whether it is
+    /// declared as a group or resolves `features.message_encoding` to
+    /// `DELIMITED` in an editions file.
+    InvalidMessageSetExtension { field: String },
     /// A field number, or a finite extension range, overlaps the field-number
     /// interval reserved for the protobuf implementation. The bounds are
     /// [`buffa::encoding::FIRST_RESERVED_FIELD_NUMBER`] through
@@ -418,6 +448,9 @@ pub enum PoolError {
     /// protoc rejects this within one compilation unit, but it can arise
     /// when merging independently-compiled `FileDescriptorSet`s.
     DuplicateExtensionNumber { extendee: String, number: u32 },
+    /// A message using MessageSet wire format declares an ordinary field.
+    /// MessageSets may contain extensions only.
+    MessageSetWithFields { message: String },
     /// Two methods in one service have the same proto name.
     DuplicateMethodName { service: String, name: String },
     /// Two enum values in the same symbol scope have the same proto name.
@@ -492,6 +525,11 @@ pub enum PoolError {
         name: String,
         number: u32,
     },
+    /// A message in a proto3 file sets `message_set_wire_format`, which
+    /// proto3 does not support. A message that also declares an extension
+    /// range reports [`ExtensionRangeInProto3`](Self::ExtensionRangeInProto3)
+    /// instead.
+    MessageSetInProto3 { message: String },
     /// An open enum's first declared value has a non-zero number.
     OpenEnumFirstValueNotZero {
         enum_name: String,
@@ -694,6 +732,10 @@ impl core::fmt::Display for PoolError {
                 f,
                 "field {field} in message {message} has invalid oneof index {index}"
             ),
+            Self::MapEnumFirstValueNotZero { field, enum_name, number } => write!(
+                f,
+                "map field {field} uses enum {enum_name} whose first value is {number}, which must be zero"
+            ),
             Self::InvalidOneofCardinality { field } => {
                 write!(f, "field {field} is a oneof member but is not optional")
             }
@@ -703,6 +745,10 @@ impl core::fmt::Display for PoolError {
             Self::ImplicitPresenceFieldWithDefault { field } => write!(
                 f,
                 "field {field} has implicit presence and declares a default value"
+            ),
+            Self::ImplicitPresenceClosedEnum { field } => write!(
+                f,
+                "field {field} has implicit presence and uses a closed enum"
             ),
             Self::Proto3OptionalOutsideProto3 { field } => write!(
                 f,
@@ -748,6 +794,9 @@ impl core::fmt::Display for PoolError {
             Self::RequiredExtension { field } => {
                 write!(f, "extension {field} must not be required")
             }
+            Self::InvalidMessageSetExtension { field } => {
+                write!(f, "MessageSet extension {field} must be an optional, length-prefixed message")
+            }
             Self::ReservedFieldNumber { field, number } => {
                 write!(
                     f,
@@ -774,6 +823,9 @@ impl core::fmt::Display for PoolError {
                     f,
                     "more than one extension claims field number {number} on {extendee}"
                 )
+            }
+            Self::MessageSetWithFields { message } => {
+                write!(f, "MessageSet {message} declares fields instead of extensions")
             }
             Self::DuplicateMethodName { service, name } => {
                 write!(
@@ -860,6 +912,9 @@ impl core::fmt::Display for PoolError {
                 f,
                 "message {message} field {name:?} uses number {number} inside an extension range"
             ),
+            Self::MessageSetInProto3 { message } => {
+                write!(f, "message {message} uses MessageSet wire format in proto3")
+            }
             Self::OpenEnumFirstValueNotZero {
                 enum_name,
                 name,
@@ -987,6 +1042,8 @@ enum Definition {
 enum SymbolKind {
     Message,
     Enum,
+    Field,
+    Oneof,
     Service,
     Method,
     Extension,
@@ -1451,6 +1508,7 @@ impl DescriptorPool {
             }
         }
         self.finalize_field_enum_types(first_new_message, first_new_extension);
+        self.check_linked_enum_fields(first_new_message)?;
 
         // Record the symbol → file index (for `FindFileContainingSymbol`).
         for (i, f) in new_files.iter().enumerate() {
@@ -1877,10 +1935,10 @@ impl DescriptorPool {
     /// The `FileDescriptorProto` that declares a fully-qualified symbol, the
     /// way gRPC server reflection's `FindFileContainingSymbol` resolves it.
     ///
-    /// Resolves messages (including nested), enums (including nested),
-    /// services, methods (`pkg.Service.Method`), and extensions — every
-    /// symbol kind a reflection client queries. `O(log n)` over the symbol
-    /// index.
+    /// Resolves messages (including nested), fields, oneofs, enums (including
+    /// nested), enum values, services, methods (`pkg.Service.Method`), and
+    /// extensions — every symbol kind a reflection client queries. `O(log n)`
+    /// over the symbol index.
     #[must_use]
     pub fn file_containing_symbol(&self, full_name: &str) -> Option<&FileDescriptorProto> {
         let name = full_name.strip_prefix('.').unwrap_or(full_name);
@@ -1891,7 +1949,7 @@ impl DescriptorPool {
     // ── Pass 1: register names ──────────────────────────────────────────────
 
     fn register_symbol(&mut self, fqn: &str, kind: SymbolKind) -> Result<(), PoolError> {
-        if fqn.len() > MAX_SYMBOL_LEN {
+        if !matches!(kind, SymbolKind::Field | SymbolKind::Oneof) && fqn.len() > MAX_SYMBOL_LEN {
             return Err(PoolError::NameTooLong {
                 len: fqn.len(),
                 limit: MAX_SYMBOL_LEN,
@@ -1998,8 +2056,28 @@ impl DescriptorPool {
         } else {
             format!("{parent_fqn}.{name}")
         };
+        // protoc reports the extension range before the option, so a proto3
+        // message with both gets `ExtensionRangeInProto3` from the check
+        // below.
+        if scope.proto3
+            && msg.extension_range.is_empty()
+            && msg
+                .options
+                .as_option()
+                .is_some_and(|options| options.message_set_wire_format == Some(true))
+        {
+            return Err(PoolError::MessageSetInProto3 { message: fqn });
+        }
         if scope.proto3 && !msg.extension_range.is_empty() {
             return Err(PoolError::ExtensionRangeInProto3 { message: fqn });
+        }
+        if !msg.field.is_empty()
+            && msg
+                .options
+                .as_option()
+                .is_some_and(|options| options.message_set_wire_format == Some(true))
+        {
+            return Err(PoolError::MessageSetWithFields { message: fqn });
         }
         let msg_features =
             features::resolve_child(parent_features, features::message_features(msg));
@@ -2024,6 +2102,7 @@ impl DescriptorPool {
                     name: oneof_name.to_string(),
                 });
             }
+            self.register_symbol(&format!("{fqn}.{oneof_name}"), SymbolKind::Oneof)?;
             oneofs.push(OneofDescriptor {
                 name: oneof_name.to_string(),
                 field_indices: Vec::new(),
@@ -2106,9 +2185,7 @@ impl DescriptorPool {
                     name: fd.name.clone(),
                 });
             }
-            if oneof_names.contains(fd.name.as_str()) {
-                return Err(PoolError::DuplicateName(format!("{fqn}.{}", fd.name)));
-            }
+            self.register_symbol(&format!("{fqn}.{}", fd.name), SymbolKind::Field)?;
             if enforce_json_names
                 && fd.json_name != fd.name
                 && field_names.insert(fd.json_name.clone(), i).is_some()
@@ -2531,9 +2608,17 @@ impl DescriptorPool {
         // there is exactly one valid interpretation of an extension's oneof
         // membership, and it is "none".
         field.oneof_index = None;
+        let extendee_message = &self.messages[extendee.0 as usize];
+        if extendee_message
+            .options()
+            .is_some_and(|options| options.message_set_wire_format == Some(true))
+            && (field.delimited
+                || !matches!(field.kind, FieldKind::Singular(SingularKind::Message(_))))
+        {
+            return Err(PoolError::InvalidMessageSetExtension { field: fqn });
+        }
         // Validate the number falls inside one of the extendee's declared
         // extension ranges.
-        let extendee_message = &self.messages[extendee.0 as usize];
         if !extendee_message.in_extension_range(field.number) {
             return Err(PoolError::InvalidFieldNumber {
                 field: fqn,
@@ -2910,6 +2995,67 @@ impl DescriptorPool {
         for extension in &mut self.extensions[first_new_extension..] {
             resolve(&mut extension.field);
         }
+    }
+
+    /// Checks the rules that relate a message field to the enum it names.
+    ///
+    /// The walk runs once every enum in the set is linked, because a field's
+    /// enum may be declared later in its file or in a later file of the set.
+    /// It visits the new messages in link order and each message's fields in
+    /// declaration order, and returns the first violation.
+    fn check_linked_enum_fields(&self, first_new_message: usize) -> Result<(), PoolError> {
+        for message in &self.messages[first_new_message..] {
+            for field in &message.fields {
+                self.check_map_enum_first_value(message, field)?;
+                Self::check_implicit_presence_enum(message, field)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// A map's enum value type must declare zero as its first value, in
+    /// every syntax.
+    fn check_map_enum_first_value(
+        &self,
+        message: &MessageDescriptor,
+        field: &FieldDescriptor,
+    ) -> Result<(), PoolError> {
+        let FieldKind::Map {
+            value: SingularKind::Enum(eidx),
+            ..
+        } = field.kind
+        else {
+            return Ok(());
+        };
+        let enumeration = &self.enums[eidx.0 as usize];
+        if let Some(first) = enumeration.values.first().filter(|value| value.number != 0) {
+            return Err(PoolError::MapEnumFirstValueNotZero {
+                field: format!("{}.{}", message.full_name, field.name),
+                enum_name: enumeration.full_name.clone(),
+                number: first.number,
+            });
+        }
+        Ok(())
+    }
+
+    /// A singular enum field with implicit presence must name an open enum.
+    /// A map entry's `value` field is such a field when its presence is
+    /// implicit, so the rule covers map values too. Repeated fields, oneof
+    /// members and proto3 `optional` fields do not have implicit presence
+    /// and pass, in proto3 files as well.
+    fn check_implicit_presence_enum(
+        message: &MessageDescriptor,
+        field: &FieldDescriptor,
+    ) -> Result<(), PoolError> {
+        if matches!(field.kind, FieldKind::Singular(SingularKind::Enum(_)))
+            && field.presence == FieldPresence::Implicit
+            && field.enum_type == Some(EnumType::Closed)
+        {
+            return Err(PoolError::ImplicitPresenceClosedEnum {
+                field: format!("{}.{}", message.full_name, field.name),
+            });
+        }
+        Ok(())
     }
 
     fn resolve_singular(
