@@ -913,6 +913,33 @@ fn repeated_enum_null_returns_empty_vec() {
     assert!(result.is_empty());
 }
 
+/// A collection other than `Vec`, as a `repeated_type_custom` field has.
+#[derive(Debug, PartialEq)]
+struct List<T>(Vec<T>);
+
+impl<T> From<Vec<T>> for List<T> {
+    fn from(v: Vec<T>) -> Self {
+        List(v)
+    }
+}
+
+#[test]
+fn repeated_enum_modules_deserialize_into_a_custom_list() {
+    let json = r#"["RED","BLUE"]"#;
+    let open: List<crate::EnumValue<Color>> =
+        repeated_enum::deserialize(&mut serde_json::Deserializer::from_str(json)).unwrap();
+    assert_eq!(
+        open,
+        List(vec![
+            crate::EnumValue::Known(Color::Red),
+            crate::EnumValue::Known(Color::Blue)
+        ])
+    );
+    let closed: List<Color> =
+        repeated_closed_enum::deserialize(&mut serde_json::Deserializer::from_str(json)).unwrap();
+    assert_eq!(closed, List(vec![Color::Red, Color::Blue]));
+}
+
 #[test]
 fn map_enum_deserializes_known_values() {
     let json = r#"{"a":"RED","b":"GREEN"}"#;
@@ -960,7 +987,7 @@ fn lenient_open_enum_containers_reject_malformed_values() {
     };
     with_json_parse_options(&opts, || {
         for json in ["[1.5]", "[true]", "[{}]", "[[]]", "[2147483648]"] {
-            let result = repeated_enum::deserialize::<Color, _>(
+            let result = repeated_enum::deserialize::<Color, Vec<_>, _>(
                 &mut serde_json::Deserializer::from_str(json),
             );
             assert!(
@@ -1662,7 +1689,7 @@ fn closed_enum_containers_reject_null_elements() {
                 r#"["ZERO",null,1]"#,
                 r#"["UNKNOWN",null]"#,
             ] {
-                let result = repeated_closed_enum::deserialize::<BareEnum, _>(
+                let result = repeated_closed_enum::deserialize::<BareEnum, Vec<_>, _>(
                     &mut serde_json::Deserializer::from_str(json),
                 );
                 assert!(
@@ -1777,7 +1804,7 @@ fn opt_closed_enum_unknown_string_error_names_the_value() {
 fn repeated_closed_enum_works_without_deserialize_impl() {
     let json = r#"["ZERO","ONE",1]"#;
     let mut d = serde_json::Deserializer::from_str(json);
-    let got = repeated_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap();
+    let got = repeated_closed_enum::deserialize::<BareEnum, Vec<_>, _>(&mut d).unwrap();
     assert_eq!(got, vec![BareEnum::Zero, BareEnum::One, BareEnum::One]);
 }
 
@@ -1827,12 +1854,12 @@ fn closed_enum_lenient_drops_unknown_but_rejects_malformed_values() {
 
         // A string is a name whatever its text.
         let mut d = serde_json::Deserializer::from_str(r#"["", "1"]"#);
-        let values = repeated_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap();
+        let values = repeated_closed_enum::deserialize::<BareEnum, Vec<_>, _>(&mut d).unwrap();
         assert!(values.is_empty());
 
         // Repeated and map containers keep the same distinction.
         let mut d = serde_json::Deserializer::from_str(r#"["ZERO","UNKNOWN","ONE",99,-1]"#);
-        let values = repeated_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap();
+        let values = repeated_closed_enum::deserialize::<BareEnum, Vec<_>, _>(&mut d).unwrap();
         assert_eq!(values, vec![BareEnum::Zero, BareEnum::One]);
 
         for json in [
@@ -1846,7 +1873,7 @@ fn closed_enum_lenient_drops_unknown_but_rejects_malformed_values() {
         ] {
             let mut d = serde_json::Deserializer::from_str(json);
             assert!(
-                repeated_closed_enum::deserialize::<BareEnum, _>(&mut d).is_err(),
+                repeated_closed_enum::deserialize::<BareEnum, Vec<_>, _>(&mut d).is_err(),
                 "malformed input must remain an error: {json}"
             );
         }

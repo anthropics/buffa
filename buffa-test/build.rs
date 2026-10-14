@@ -583,6 +583,18 @@ fn main() {
         .compile()
         .expect("buffa_build failed for repeated_type.proto");
 
+    // repeated_enum_json: the same `CustomList<T>` for repeated open and
+    // closed enum fields with JSON on, so the `repeated_enum` and
+    // `repeated_closed_enum` serde modules must return the field's collection.
+    buffa_build::Config::new()
+        .files(&["protos/repeated_enum_json.proto"])
+        .includes(&["protos/"])
+        .repeated_type_custom("crate::repeated_type::CustomList<*>")
+        .generate_json(true)
+        .generate_views(false)
+        .compile()
+        .expect("buffa_build failed for repeated_enum_json.proto");
+
     // Comprehensive proto3 semantics: implicit vs explicit presence for all
     // scalar types, open-enum contexts, default packing, synthetic oneofs.
     buffa_build::Config::new()

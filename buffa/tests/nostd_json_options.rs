@@ -54,7 +54,7 @@ impl Enumeration for Color {
 fn global_lenient_option_filters_enum_containers() {
     let assert_closed_enum_nulls_rejected = || {
         for json in ["[null]", r#"["RED",null,"GREEN"]"#] {
-            assert!(repeated_closed_enum::deserialize::<Color, _>(
+            assert!(repeated_closed_enum::deserialize::<Color, Vec<_>, _>(
                 &mut serde_json::Deserializer::from_str(json)
             )
             .is_err());
@@ -117,12 +117,10 @@ fn global_lenient_option_filters_enum_containers() {
     assert_eq!(optional, Some(EnumValue::Unknown(99)));
 
     // A value of the wrong JSON type is an error, not an unknown value.
-    assert!(
-        repeated_enum::deserialize::<Color, _>(&mut serde_json::Deserializer::from_str(
-            r#"["RED",true]"#
-        ))
-        .is_err()
-    );
+    assert!(repeated_enum::deserialize::<Color, Vec<_>, _>(
+        &mut serde_json::Deserializer::from_str(r#"["RED",true]"#)
+    )
+    .is_err());
     assert!(map_enum::deserialize::<Map<String, EnumValue<Color>>, _>(
         &mut serde_json::Deserializer::from_str(r#"{"bad":true}"#)
     )

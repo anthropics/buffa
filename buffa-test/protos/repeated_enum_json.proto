@@ -1,0 +1,24 @@
+edition = "2023";
+
+package repeated_enum_json;
+
+// Compiled with `repeated_type_custom("crate::repeated_type::CustomList<*>")`
+// and `generate_json(true)`, so both fields are `CustomList<_>` and
+// deserialize through the `repeated_enum` / `repeated_closed_enum` serde
+// modules.
+
+enum OpenColor {
+  OPEN_UNSPECIFIED = 0;
+  OPEN_RED = 1;
+}
+
+enum ClosedColor {
+  option features.enum_type = CLOSED;
+  CLOSED_UNSPECIFIED = 0;
+  CLOSED_RED = 1;
+}
+
+message Palette {
+  repeated OpenColor open = 1;
+  repeated ClosedColor closed = 2;
+}

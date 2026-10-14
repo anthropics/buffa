@@ -111,6 +111,7 @@ mod owned_view;
 mod proto2;
 mod proto3_semantics;
 mod remote_derive_serde;
+mod repeated_enum_json;
 mod repeated_type;
 mod rope_encode;
 mod scoped_unknown_fields;

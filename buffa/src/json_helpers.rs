@@ -777,7 +777,8 @@ fn try_deserialize_enum<T: serde::de::DeserializeOwned>(
 
 // ── repeated_enum: Vec<EnumValue<E>> with unknown-value filtering ────────────
 
-/// Serde with-module for `Vec<EnumValue<E>>` repeated enum fields.
+/// Serde with-module for `Vec<EnumValue<E>>` repeated enum fields, or any
+/// collection that is `From<Vec<EnumValue<E>>>`.
 ///
 /// When `ignore_unknown_enum_values` is active, unknown enum string values
 /// are silently skipped instead of producing an error. In default mode this
@@ -794,9 +795,12 @@ pub mod repeated_enum {
         serde::Serialize::serialize(value, s)
     }
 
-    pub fn deserialize<'de, E: crate::Enumeration, D: Deserializer<'de>>(
-        d: D,
-    ) -> Result<Vec<crate::EnumValue<E>>, D::Error> {
+    pub fn deserialize<'de, E, C, D>(d: D) -> Result<C, D::Error>
+    where
+        E: crate::Enumeration,
+        C: From<Vec<crate::EnumValue<E>>>,
+        D: Deserializer<'de>,
+    {
         struct V<E>(core::marker::PhantomData<E>);
         impl<'de, E: crate::Enumeration> serde::de::Visitor<'de> for V<E> {
             type Value = Vec<crate::EnumValue<E>>;
@@ -824,7 +828,8 @@ pub mod repeated_enum {
                 Ok(out)
             }
         }
-        d.deserialize_any(V(core::marker::PhantomData))
+        d.deserialize_any(V::<E>(core::marker::PhantomData))
+            .map(C::from)
     }
 }
 
@@ -2091,7 +2096,8 @@ pub mod opt_closed_enum {
 
 // ── repeated_closed_enum: Vec<E> with unknown-value filtering ────────────────
 
-/// Serde with-module for `Vec<E>` repeated closed enum fields.
+/// Serde with-module for `Vec<E>` repeated closed enum fields, or any
+/// collection that is `From<Vec<E>>`.
 ///
 /// When `ignore_unknown_enum_values` is active, an unknown enum name, or a
 /// number in `i32` range that the enum does not declare, is silently
@@ -2113,9 +2119,12 @@ pub mod repeated_closed_enum {
         seq.end()
     }
 
-    pub fn deserialize<'de, E: crate::Enumeration + Default, D: Deserializer<'de>>(
-        d: D,
-    ) -> Result<Vec<E>, D::Error> {
+    pub fn deserialize<'de, E, C, D>(d: D) -> Result<C, D::Error>
+    where
+        E: crate::Enumeration + Default,
+        C: From<Vec<E>>,
+        D: Deserializer<'de>,
+    {
         struct V<E>(core::marker::PhantomData<E>);
         impl<'de, E: crate::Enumeration + Default> serde::de::Visitor<'de> for V<E> {
             type Value = Vec<E>;
@@ -2143,7 +2152,8 @@ pub mod repeated_closed_enum {
                 Ok(out)
             }
         }
-        d.deserialize_any(V(core::marker::PhantomData))
+        d.deserialize_any(V::<E>(core::marker::PhantomData))
+            .map(C::from)
     }
 }
 

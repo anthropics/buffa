@@ -258,6 +258,18 @@ pub mod repeated_type {
     buffa::include_proto!("repeated_type");
 }
 
+/// `repeated_enum_json` fixture: repeated open and closed enum fields stored
+/// in [`repeated_type::CustomList`], with JSON on.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod repeated_enum_json {
+    buffa::include_proto!("repeated_enum_json");
+}
+
 /// Crate-local `ProtoString` newtypes wrapping foreign small-string types, used
 /// by the `string_types` fixture. They mirror `buffa_smolstr::SmolStr`: a thin
 /// newtype with an inline, allocation-free `from_wire`. Direct use of the
