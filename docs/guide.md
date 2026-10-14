@@ -1255,6 +1255,7 @@ These stay unrolled, whatever the setting:
 - the message type of a group field;
 - a message that uses the `MessageSet` wire format;
 - a message with extension ranges, when JSON code is generated and unknown fields are preserved;
+- a message with a `map` field, when `map_entries_omit_defaults` is set: the table writes both fields of every entry;
 - a message with a field of a non-default string, bytes, or collection type, which `use_bytes_type`, `string_type`, `bytes_type`, `repeated_type`, and a custom map type (`map_type_custom`) select. `HashMap` and `BTreeMap` maps are supported; a `map` whose keys or values are of a non-default string or bytes type is not;
 - a message that holds, in a singular, repeated, `oneof`, or map value field, a message of the same run that has a `bytes` field of a non-default type, or that holds one. The table decodes from one contiguous slice, so it would copy the `bytes::Bytes` fields that unrolled code decoding from a `Bytes` shares with the input.
 

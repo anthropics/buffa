@@ -1099,6 +1099,8 @@ pub enum CodecStrategy {
     /// - a message that uses the `MessageSet` wire format;
     /// - a message with extension ranges, when JSON code is generated and
     ///   unknown fields are preserved;
+    /// - a message with a `map` field, when `map_entries_omit_defaults` is
+    ///   set: the table writes both fields of every entry;
     /// - a message with a field of a non-default string, bytes, or collection
     ///   type, such as `use_bytes_type`, `string_type`, `bytes_type`,
     ///   `repeated_type`, and a custom `map_type` select. `HashMap` and

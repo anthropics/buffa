@@ -1567,6 +1567,38 @@ fn a_map_with_a_custom_collection_or_element_type_falls_back() {
 }
 
 #[test]
+fn a_message_with_maps_falls_back_when_map_entries_omit_defaults() {
+    let config = CodeGenConfig {
+        map_entries_omit_defaults: true,
+        ..table_config(CodecStrategy::Table)
+    };
+    let (code, warnings) = run_maps(&config);
+    assert!(!tables(&code).contains(&"Maps".to_string()), "{code}");
+    assert!(tables(&code).contains(&"Leaf".to_string()), "{code}");
+    let (_, reasons) = summary(&warnings);
+    assert_eq!(
+        reasons,
+        [("has a map field and map_entries_omit_defaults is set", 1)]
+    );
+    assert!(
+        code.contains("map_codec::field_len_omitting_defaults::<"),
+        "{code}"
+    );
+    // A rule that names the message asks for the impossible.
+    let config = CodeGenConfig {
+        codec_strategy_in: vec![(".t.Maps".to_string(), CodecStrategy::Table)],
+        ..config
+    };
+    let err = generate_with_diagnostics(&[map_schema()], &["t.proto".to_string()], &config)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("map_entries_omit_defaults is set and it has map field `counts`"),
+        "{err}"
+    );
+}
+
+#[test]
 fn a_map_of_messages_without_a_table_is_reached_through_the_message_impl() {
     // `Leaf` is unrolled by a rule, so the map's values have no table here.
     let config = CodeGenConfig {
