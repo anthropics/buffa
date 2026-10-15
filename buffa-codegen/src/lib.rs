@@ -5393,32 +5393,41 @@ pub fn proto_path_to_stem(proto_path: &str) -> String {
 ///
 /// `name` must be a bare-sibling filename — the same convention buffa uses
 /// for its own `include!` calls, so it resolves relative to the stitcher
-/// without any `OUT_DIR` prefix. Names must not contain `"`, `\`, `/`, or
-/// newlines (the function `debug_assert!`s this in debug builds), and must
+/// without any `OUT_DIR` prefix. Names must not contain `/` or `\`, and must
 /// not collide with any of buffa's own generated filenames for the same
 /// package (`<stem>.rs`, `<stem>.__view.rs`, etc.) — pick an unused suffix
-/// such as `<stem>.__myplugin.rs`.
+/// such as `<stem>.__myplugin.rs`. The name is written into the `include!`
+/// as an escaped string literal, as buffa's own include paths are.
 ///
 /// Companion files with no matching `PackageMod` (e.g. for a package buffa
 /// did not generate any output for) are still appended to `files` but no
 /// `include!` is emitted; the caller is responsible for wiring them up. If
 /// you don't expect orphans, check that every companion's `package` appears
 /// in `files` as a `PackageMod` after calling.
+///
+/// # Panics
+///
+/// Panics if a companion's `name` contains `/` or `\`. Every name is checked
+/// before `files` is changed.
+#[track_caller]
 pub fn apply_companions(files: &mut Vec<GeneratedFile>, companions: Vec<GeneratedFile>) {
     for comp in &companions {
-        debug_assert!(
-            !comp.name.contains(['"', '\\', '/', '\n']),
-            "companion file name {:?} contains a character that would break \
-             the generated include!() literal or its bare-sibling resolution",
+        assert!(
+            !comp.name.contains(['/', '\\']),
+            "companion file name {:?} contains a path separator ('/' or '\\'); use a \
+             bare file name such as `<stem>.__myplugin.rs`, which include!() resolves \
+             next to the stitcher",
             comp.name
         );
+    }
+    for comp in &companions {
         if let Some(pkg_mod) = files
             .iter_mut()
             .find(|f| f.kind == GeneratedFileKind::PackageMod && f.package == comp.package)
         {
             pkg_mod
                 .content
-                .push_str(&format!("include!(\"{}\");\n", comp.name));
+                .push_str(&format!("include!({:?});\n", comp.name));
         }
     }
     files.extend(companions);

@@ -2898,19 +2898,109 @@ fn apply_companions_empty_is_noop() {
 }
 
 #[test]
-#[cfg(debug_assertions)]
-#[should_panic(expected = "contains a character that would break")]
-fn apply_companions_rejects_unsafe_name() {
+fn apply_companions_escapes_name_in_include() {
+    // The include! must name exactly this file, as buffa's own include sites
+    // do: the quote must not end the string literal early, and the control
+    // and bidi characters must be escaped.
+    let mut file = proto3_file("svc/echo.proto");
+    file.package = Some("svc".to_string());
+    let mut files = generate(
+        &[file],
+        &["svc/echo.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("generate ok");
+
+    let name = "svc.we\"ird'\n\t\u{301}\u{202e}.__service.rs";
+    let companion = GeneratedFile {
+        name: name.to_string(),
+        package: "svc".to_string(),
+        kind: GeneratedFileKind::Companion,
+        content: "pub struct EchoService;".to_string(),
+    };
+    apply_companions(&mut files, vec![companion]);
+
+    let stitcher = files
+        .iter()
+        .find(|f| f.kind == GeneratedFileKind::PackageMod)
+        .expect("stitcher present");
+    let parsed = syn::parse_file(&stitcher.content).expect("stitcher still parses");
+    let included: Vec<String> = parsed
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            syn::Item::Macro(m) if m.mac.path.is_ident("include") => m
+                .mac
+                .parse_body::<syn::LitStr>()
+                .ok()
+                .map(|lit| lit.value()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        included.iter().any(|path| path == name),
+        "no include! names {name:?}; included: {included:?}"
+    );
+}
+
+#[test]
+#[should_panic(expected = "contains a path separator")]
+fn apply_companions_rejects_name_with_slash() {
     let mut files: Vec<GeneratedFile> = vec![];
     apply_companions(
         &mut files,
         vec![GeneratedFile {
-            name: r#"bad".rs"#.to_string(),
+            name: "sub/bad.rs".to_string(),
             package: "svc".to_string(),
             kind: GeneratedFileKind::Companion,
             content: String::new(),
         }],
     );
+}
+
+#[test]
+#[should_panic(expected = "contains a path separator")]
+fn apply_companions_rejects_name_with_backslash() {
+    let mut files: Vec<GeneratedFile> = vec![];
+    apply_companions(
+        &mut files,
+        vec![GeneratedFile {
+            name: r"sub\bad.rs".to_string(),
+            package: "svc".to_string(),
+            kind: GeneratedFileKind::Companion,
+            content: String::new(),
+        }],
+    );
+}
+
+#[test]
+fn apply_companions_checks_every_name_before_changing_files() {
+    // The bad name is second: the first companion's include! must not be
+    // written before the panic.
+    let mut file = proto3_file("svc/echo.proto");
+    file.package = Some("svc".to_string());
+    let mut files = generate(
+        &[file],
+        &["svc/echo.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("generate ok");
+    let before: Vec<String> = files.iter().map(|f| f.content.clone()).collect();
+
+    let companion = |name: &str| GeneratedFile {
+        name: name.to_string(),
+        package: "svc".to_string(),
+        kind: GeneratedFileKind::Companion,
+        content: String::new(),
+    };
+    let companions = vec![companion("svc.echo.__good.rs"), companion("sub/bad.rs")];
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        apply_companions(&mut files, companions)
+    }));
+
+    assert!(result.is_err(), "a name with '/' must panic");
+    let after: Vec<String> = files.iter().map(|f| f.content.clone()).collect();
+    assert_eq!(before, after, "files changed before the panic");
 }
 
 #[test]
