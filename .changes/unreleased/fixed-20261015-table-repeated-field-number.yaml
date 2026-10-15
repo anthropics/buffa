@@ -1,5 +1,5 @@
 kind: Fixed
 body: |-
-    **codegen: a message with two fields of the same number stays unrolled under `CodecStrategy::Table`** (closes #706).
+    **codegen: a message with two fields of the same number stays unrolled under `CodecStrategy::Table`** (#716, closes #706).
     protoc rejects such a message, but a descriptor built in code or edited after protoc can have one, and codegen gave it a table with two entries for the number. The consumer's crate then failed to compile on a const panic in `Table::new` that named neither the message nor the field. The message now falls back to the unrolled codec and is counted in the fallback warning under "has two fields with the same number". A `codec_strategy_in` rule that selects the table for it by exact path is an error that names both fields and the number. The descriptor is still malformed: the unrolled decoder sends every record with that number to the first of the two fields, so the second always decodes as its default, and rustc reports the decoder's second `match` arm for the number as `unreachable_patterns` (#626 covers descriptors that codegen accepts and `DescriptorPool` rejects).
 time: 2026-10-15T00:00:00+08:00
