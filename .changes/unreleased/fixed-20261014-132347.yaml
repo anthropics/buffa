@@ -1,4 +1,4 @@
 kind: Fixed
 body: |-
-    **A repeated enum field with a custom `repeated_type` compiles under `generate_json(true)`** (closes #628). The `repeated_enum` and `repeated_closed_enum` JSON helpers returned a `Vec`, so a field typed `CustomList<EnumValue<E>>` or `CustomList<E>` failed with E0308. They now return any collection that is `From<Vec<_>>`, as `proto_seq` does, so a `Vec` field is unchanged. Code that names their type parameters with a turbofish now passes the collection type as well: `repeated_enum::deserialize::<E, Vec<_>, _>`.
+    **A repeated enum field with a custom `repeated_type` compiles under `generate_json(true)`** (#714, closes #628). The `repeated_enum` and `repeated_closed_enum` JSON helpers returned a `Vec`, so a field typed `CustomList<EnumValue<E>>` or `CustomList<E>` failed with E0308. They now return any collection that is `From<Vec<_>>`, as `proto_seq` does, so a `Vec` field is unchanged. Code that names their type parameters with a turbofish now passes the collection type as well: `repeated_enum::deserialize::<E, Vec<_>, _>`.
 time: 2026-10-14T13:23:47+01:00

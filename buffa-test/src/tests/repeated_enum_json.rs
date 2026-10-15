@@ -6,7 +6,7 @@
 //! test: the `repeated_enum` and `repeated_closed_enum` deserializers must
 //! return the field's `CustomList`, not a `Vec`.
 
-use crate::repeated_enum_json::{ClosedColor, OpenColor, Palette};
+use crate::repeated_enum_json::{swatch, ClosedColor, OpenColor, Palette, Swatch};
 use crate::repeated_type::CustomList;
 use buffa::EnumValue;
 
@@ -64,4 +64,27 @@ fn custom_list_enum_fields_skip_unknown_names_when_lenient() {
         msg.closed,
         CustomList(::buffa::alloc::vec![ClosedColor::CLOSED_RED])
     );
+}
+
+#[test]
+fn custom_list_enum_fields_roundtrip_through_hand_generated_deserialize() {
+    let msg: Swatch =
+        serde_json::from_str(r#"{"open":["OPEN_RED",7],"closed":["CLOSED_RED"],"name":"sky"}"#)
+            .unwrap();
+    assert_eq!(
+        msg.open,
+        CustomList(::buffa::alloc::vec![
+            EnumValue::Known(OpenColor::OPEN_RED),
+            EnumValue::Unknown(7)
+        ])
+    );
+    assert_eq!(
+        msg.closed,
+        CustomList(::buffa::alloc::vec![ClosedColor::CLOSED_RED])
+    );
+    assert_eq!(msg.label, Some(swatch::Label::Name("sky".into())));
+
+    let json = serde_json::to_string(&msg).unwrap();
+    let back: Swatch = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, msg);
 }
