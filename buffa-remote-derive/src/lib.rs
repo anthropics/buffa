@@ -350,6 +350,12 @@
 //! path in an override such as `insert = key` cannot collide with a generated
 //! one.
 //!
+//! The impls name primitive types as `::core::primitive::str` and so on, and
+//! call `WirePayload::to_str` and `WirePayload::as_slice` by path. So a type
+//! or alias named like a primitive type, such as `str`, `u8` or `usize`, or a
+//! trait in scope with a method named `to_str` or `as_slice`, does not change
+//! what they mean either.
+//!
 //! # Why a `remote` attribute that just repeats the field's type?
 //!
 //! It doesn't change what's generated — the macro always reads the wrapped

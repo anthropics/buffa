@@ -66,7 +66,7 @@ pub fn serde(remote: &RemoteField, form: SerdeForm) -> TokenStream {
             quote! {
                 ::#krate::Serializer::serialize_str(
                     __buffa_serializer,
-                    <Self as ::core::convert::AsRef<str>>::as_ref(self),
+                    <Self as ::core::convert::AsRef<::core::primitive::str>>::as_ref(self),
                 )
             },
             string_only_deserialize(
@@ -78,7 +78,7 @@ pub fn serde(remote: &RemoteField, form: SerdeForm) -> TokenStream {
                 &quote! {
                     fn visit_str<__BuffaError: ::#krate::de::Error>(
                         self,
-                        __buffa_value: &str,
+                        __buffa_value: &::core::primitive::str,
                     ) -> ::core::result::Result<__BuffaValue, __BuffaError> {
                         ::core::result::Result::Ok(
                             <__BuffaValue as ::buffa::ProtoString>::copy_from_str(__buffa_value),
@@ -100,7 +100,7 @@ pub fn serde(remote: &RemoteField, form: SerdeForm) -> TokenStream {
             string_only_deserialize(
                 &krate,
                 &lifetime,
-                &quote! { ::core::convert::From<::buffa::alloc::vec::Vec<u8>> },
+                &quote! { ::core::convert::From<::buffa::alloc::vec::Vec<::core::primitive::u8>> },
                 "a base64-encoded string",
                 // `bytes::deserialize` owns the base64 alphabets and padding
                 // rules that proto3 JSON accepts. It reads `null` as empty, so
@@ -108,10 +108,10 @@ pub fn serde(remote: &RemoteField, form: SerdeForm) -> TokenStream {
                 &quote! {
                     fn visit_str<__BuffaError: ::#krate::de::Error>(
                         self,
-                        __buffa_value: &str,
+                        __buffa_value: &::core::primitive::str,
                     ) -> ::core::result::Result<__BuffaValue, __BuffaError> {
                         ::buffa::json_helpers::bytes::deserialize(
-                            <&str as ::#krate::de::IntoDeserializer<'_, __BuffaError>>
+                            <&::core::primitive::str as ::#krate::de::IntoDeserializer<'_, __BuffaError>>
                                 ::into_deserializer(__buffa_value),
                         )
                     }
@@ -385,7 +385,7 @@ mod tests {
                 wants.extend([
                     "struct __BuffaVisitor < __BuffaValue >",
                     "fn expecting (& self , __buffa_formatter :",
-                    "fn visit_str < __BuffaError : :: serde :: de :: Error > (self , __buffa_value : & str ,)",
+                    "fn visit_str < __BuffaError : :: serde :: de :: Error > (self , __buffa_value : & :: core :: primitive :: str ,)",
                 ]);
             }
             for want in wants {
@@ -394,19 +394,10 @@ mod tests {
         }
     }
 
-    /// Every binding an expansion introduces starts with `__buffa_`: the
-    /// parameters, the closure parameters and the `let` bindings. A plain
-    /// name becomes a constant pattern beside a constant of that name, and
-    /// takes the place of a one-segment override path with that name (#652).
-    #[test]
-    fn every_binding_starts_with_the_reserved_prefix() {
-        struct Bindings(Vec<syn::Ident>);
-        impl<'ast> syn::visit::Visit<'ast> for Bindings {
-            fn visit_pat_ident(&mut self, pat: &'ast syn::PatIdent) {
-                self.0.push(pat.ident.clone());
-                syn::visit::visit_pat_ident(self, pat);
-            }
-        }
+    /// Expands every derive with each optional impl, over tuple structs and
+    /// over a named field with every override key. Returns
+    /// `(family, expansion)`.
+    fn every_expansion() -> Vec<(&'static str, String)> {
         // A named field and every override key, beside the tuple structs
         // without overrides that the other helpers expand.
         type Derive = fn(syn::DeriveInput) -> syn::Result<proc_macro2::TokenStream>;
@@ -464,7 +455,26 @@ mod tests {
         let arbitrary = expansions()
             .into_iter()
             .map(|(name, _, keyed)| (name, keyed));
-        for (name, expansion) in arbitrary.chain(serde_expansions()).chain(overridden) {
+        arbitrary
+            .chain(serde_expansions())
+            .chain(overridden)
+            .collect()
+    }
+
+    /// Every binding an expansion introduces starts with `__buffa_`: the
+    /// parameters, the closure parameters and the `let` bindings. A plain
+    /// name becomes a constant pattern beside a constant of that name, and
+    /// takes the place of a one-segment override path with that name (#652).
+    #[test]
+    fn every_binding_starts_with_the_reserved_prefix() {
+        struct Bindings(Vec<syn::Ident>);
+        impl<'ast> syn::visit::Visit<'ast> for Bindings {
+            fn visit_pat_ident(&mut self, pat: &'ast syn::PatIdent) {
+                self.0.push(pat.ident.clone());
+                syn::visit::visit_pat_ident(self, pat);
+            }
+        }
+        for (name, expansion) in every_expansion() {
             let file: syn::File = syn::parse_str(&expansion).expect("the expansion parses");
             let mut bindings = Bindings(Vec::new());
             syn::visit::Visit::visit_file(&mut bindings, &file);
@@ -473,6 +483,94 @@ mod tests {
                 assert!(
                     binding.to_string().starts_with("__buffa_"),
                     "{name}: binding `{binding}`:\n{expansion}"
+                );
+            }
+        }
+    }
+
+    /// Every primitive type an expansion names is spelled
+    /// `::core::primitive::<name>`. A bare `str`, `u8` or `usize` names a
+    /// type or alias of that name in scope at the derive instead (#707).
+    #[test]
+    fn every_primitive_is_named_through_core_primitive() {
+        const PRIMITIVES: [&str; 17] = [
+            "bool", "char", "str", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32",
+            "i64", "i128", "isize", "f32", "f64",
+        ];
+        struct BarePrimitives(Vec<String>);
+        impl<'ast> syn::visit::Visit<'ast> for BarePrimitives {
+            fn visit_path(&mut self, path: &'ast syn::Path) {
+                if path.leading_colon.is_none() && path.segments.len() == 1 {
+                    let name = path.segments[0].ident.to_string();
+                    if PRIMITIVES.contains(&name.as_str()) {
+                        self.0.push(name);
+                    }
+                }
+                syn::visit::visit_path(self, path);
+            }
+        }
+        for (name, expansion) in every_expansion() {
+            let file: syn::File = syn::parse_str(&expansion).expect("the expansion parses");
+            let mut bare = BarePrimitives(Vec::new());
+            syn::visit::Visit::visit_file(&mut bare, &file);
+            assert!(
+                bare.0.is_empty(),
+                "{name}: bare primitive paths {:?}:\n{expansion}",
+                bare.0
+            );
+            // The string, bytes and map impls name a primitive.
+            if matches!(name, "string" | "bytes" | "map") {
+                assert!(
+                    expansion.contains(":: core :: primitive ::"),
+                    "{name}: no `::core::primitive` path:\n{expansion}"
+                );
+            }
+        }
+    }
+
+    /// `from_wire` calls `WirePayload::to_str` and `WirePayload::as_slice` by
+    /// path. With method-call syntax, a by-value method of the same name on a
+    /// trait in scope at the derive is found first (#707).
+    #[test]
+    fn the_wire_payload_is_never_a_method_receiver() {
+        #[derive(Default)]
+        struct PayloadUses {
+            method_calls: Vec<String>,
+            reads: usize,
+        }
+        impl<'ast> syn::visit::Visit<'ast> for PayloadUses {
+            fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+                let mut receiver = &*call.receiver;
+                while let syn::Expr::Paren(inner) = receiver {
+                    receiver = &inner.expr;
+                }
+                if let syn::Expr::Path(receiver) = receiver {
+                    if receiver.path.is_ident("__buffa_payload") {
+                        self.method_calls.push(call.method.to_string());
+                    }
+                }
+                syn::visit::visit_expr_method_call(self, call);
+            }
+            fn visit_expr_path(&mut self, expr: &'ast syn::ExprPath) {
+                if expr.path.is_ident("__buffa_payload") {
+                    self.reads += 1;
+                }
+                syn::visit::visit_expr_path(self, expr);
+            }
+        }
+        for (name, expansion) in every_expansion() {
+            let file: syn::File = syn::parse_str(&expansion).expect("the expansion parses");
+            let mut uses = PayloadUses::default();
+            syn::visit::Visit::visit_file(&mut uses, &file);
+            assert!(
+                uses.method_calls.is_empty(),
+                "{name}: method calls on `__buffa_payload` {:?}:\n{expansion}",
+                uses.method_calls
+            );
+            if matches!(name, "string" | "bytes") {
+                assert!(
+                    uses.reads > 0,
+                    "{name}: `from_wire` does not read `__buffa_payload`:\n{expansion}"
                 );
             }
         }
@@ -618,7 +716,7 @@ mod tests {
             ),
             (
                 "bytes",
-                "__buffa_seed : :: buffa :: alloc :: vec :: Vec < u8 >",
+                "__buffa_seed : :: buffa :: alloc :: vec :: Vec < :: core :: primitive :: u8 >",
             ),
             (
                 "list",

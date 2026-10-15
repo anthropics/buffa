@@ -49,7 +49,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
             type Value = #value_ty;
 
             #[inline]
-            fn storage_len(&self) -> usize {
+            fn storage_len(&self) -> ::core::primitive::usize {
                 #len_call(&#accessor)
             }
 

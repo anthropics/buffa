@@ -21,14 +21,24 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         quote! { ::core::convert::From<::buffa::alloc::string::String> },
         "from",
     );
-    let from_str =
-        remote_field::qualified_call(field_ty, quote! { ::core::convert::From<&str> }, "from");
+    let from_str = remote_field::qualified_call(
+        field_ty,
+        quote! { ::core::convert::From<&::core::primitive::str> },
+        "from",
+    );
     // Fully qualified, not `#accessor.as_ref()` — a remote type implementing
     // more than one `AsRef<_>` (e.g. both `AsRef<str>` and `AsRef<[u8]>`)
     // makes plain method-call syntax ambiguous, since method resolution
     // doesn't use the caller's expected return type to disambiguate.
-    let as_str =
-        remote_field::qualified_call(field_ty, quote! { ::core::convert::AsRef<str> }, "as_ref");
+    let as_str = remote_field::qualified_call(
+        field_ty,
+        quote! { ::core::convert::AsRef<::core::primitive::str> },
+        "as_ref",
+    );
+    // By path, not `__buffa_payload.to_str()` — method lookup tries the
+    // by-value receiver before it auto-references, so a by-value `to_str` on
+    // a trait in scope at the derive would be called instead.
+    let payload_str = quote! { ::buffa::WirePayload::to_str(&__buffa_payload) };
 
     let ctor_from_string = remote.construct(quote! { #from_string(__buffa_string) });
     let ctor_from_str = remote.construct(quote! { #from_str(__buffa_str) });
@@ -45,16 +55,16 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
 
     Ok(quote! {
         impl #impl_generics ::core::ops::Deref for #ident #ty_generics #where_clause {
-            type Target = str;
+            type Target = ::core::primitive::str;
             #[inline]
-            fn deref(&self) -> &str {
+            fn deref(&self) -> &::core::primitive::str {
                 #as_str(&#accessor)
             }
         }
 
-        impl #impl_generics ::core::convert::AsRef<str> for #ident #ty_generics #where_clause {
+        impl #impl_generics ::core::convert::AsRef<::core::primitive::str> for #ident #ty_generics #where_clause {
             #[inline]
-            fn as_ref(&self) -> &str {
+            fn as_ref(&self) -> &::core::primitive::str {
                 #as_str(&#accessor)
             }
         }
@@ -66,16 +76,16 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
             }
         }
 
-        impl #impl_generics ::core::convert::From<&str> for #ident #ty_generics #where_clause {
+        impl #impl_generics ::core::convert::From<&::core::primitive::str> for #ident #ty_generics #where_clause {
             #[inline]
-            fn from(__buffa_str: &str) -> Self {
+            fn from(__buffa_str: &::core::primitive::str) -> Self {
                 #ctor_from_str
             }
         }
 
         impl #impl_generics ::buffa::ProtoString for #ident #ty_generics #where_clause {
             #[inline]
-            fn copy_from_str(__buffa_str: &str) -> Self {
+            fn copy_from_str(__buffa_str: &::core::primitive::str) -> Self {
                 #ctor_from_str
             }
 
@@ -83,7 +93,7 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
             fn from_wire(
                 __buffa_payload: ::buffa::WirePayload<'_>,
             ) -> ::core::result::Result<Self, ::buffa::DecodeError> {
-                __buffa_payload.to_str().map(|__buffa_str| #ctor_from_str)
+                #payload_str.map(|__buffa_str| #ctor_from_str)
             }
         }
 
