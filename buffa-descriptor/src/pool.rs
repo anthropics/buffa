@@ -56,6 +56,28 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
     opts.as_option().cloned().map(Box::new)
 }
 
+/// The name protoc requires for the entry message of map field `field_name`
+/// (`ToCamelCase(name, false)` followed by `Entry` in `descriptor.cc`):
+/// every `_` is dropped, the first character and each one after a `_` are
+/// ASCII upper-cased, the rest are kept as they are, and `Entry` is
+/// appended. `foo_bar` gets `FooBarEntry`.
+fn map_entry_name(field_name: &str) -> String {
+    let mut name = String::with_capacity(field_name.len() + "Entry".len());
+    let mut upper_next = true;
+    for c in field_name.chars() {
+        if c == '_' {
+            upper_next = true;
+        } else if upper_next {
+            name.push(c.to_ascii_uppercase());
+            upper_next = false;
+        } else {
+            name.push(c);
+        }
+    }
+    name.push_str("Entry");
+    name
+}
+
 /// Maximum length of a fully-qualified symbol name, in bytes.
 ///
 /// Field and oneof names are exempt. Two things depend on this limit,
@@ -441,8 +463,22 @@ pub enum PoolError {
     /// messages, or enums.
     ///
     /// `message` is the full name of the map field that uses the entry, and
-    /// the entry message is the field's type.
+    /// the entry message is the field's type. A field whose type is a map
+    /// entry it does not own reports
+    /// [`InvalidMapEntryUse`](Self::InvalidMapEntryUse) instead.
     MalformedMapEntry { message: String },
+    /// A field or extension has a map entry message (`map_entry = true`) as
+    /// its type, but is not the map field the entry belongs to. As in protoc,
+    /// a map entry can only be the type of a repeated message field (not a
+    /// group) of the message that declares the entry, or of a repeated
+    /// message extension of that message, and the entry's name must be the
+    /// field's name with each `_` dropped, the first letter and each one
+    /// after a `_` upper-cased, and `Entry` appended (field `foo_bar`, entry
+    /// `FooBarEntry`). Such an extension links as a list of entries.
+    ///
+    /// `field` is the full name of the field or extension, and `entry` the
+    /// full name of the map entry message.
+    InvalidMapEntryUse { field: String, entry: String },
     /// Two extensions claim the same field number on the same message.
     /// protoc rejects this within one compilation unit, but it can arise
     /// when merging independently-compiled `FileDescriptorSet`s.
@@ -827,6 +863,12 @@ impl core::fmt::Display for PoolError {
                 "map field {message} has a malformed entry message: it needs exactly the optional \
                  fields key = 1 and value = 2, in that order, and a key of an integer type, bool, \
                  or string; extensions, extension ranges, nested messages, and enums are not allowed"
+            ),
+            Self::InvalidMapEntryUse { field, entry } => write!(
+                f,
+                "field {field} has map entry message {entry} as its type, but a map entry can \
+                 only be the type of a repeated message field or extension of the message that \
+                 declares it, whose name gives the entry name (field foo_bar, entry FooBarEntry)"
             ),
             Self::DuplicateExtensionNumber { extendee, number } => {
                 write!(
@@ -2006,7 +2048,10 @@ impl DescriptorPool {
         {
             return Err(PoolError::DuplicateName(fqn));
         }
-        // Push a placeholder; pass 2 fills it in.
+        // Push a placeholder; pass 2 fills it in. The options are set now,
+        // because pass 2 can link a field of this type before this message
+        // (in an earlier message, or in this message's parent) and
+        // `link_field` reads `map_entry` from them.
         self.messages.push(MessageDescriptor {
             full_name: fqn.clone(),
             fields: Vec::new(),
@@ -2014,7 +2059,7 @@ impl DescriptorPool {
             field_by_name: Vec::new(),
             oneofs: Vec::new(),
             extension_ranges: Vec::new(),
-            options: None,
+            options: clone_options(&msg.options),
         });
         self.message_file.push(file_idx);
         for nested in &msg.nested_type {
@@ -2401,6 +2446,8 @@ impl DescriptorPool {
             self.messages[next_index].full_name, fqn,
             "pass-1/pass-2 walk order desync (this is a bug in DescriptorPool)"
         );
+        // Pass 1 cloned the options into the placeholder already.
+        let options = self.messages[next_index].options.take();
         self.messages[next_index] = MessageDescriptor {
             full_name: fqn.clone(),
             fields,
@@ -2408,7 +2455,7 @@ impl DescriptorPool {
             field_by_name,
             oneofs,
             extension_ranges,
-            options: clone_options(&msg.options),
+            options,
         };
         let mut after = next_index + 1;
 
@@ -2606,10 +2653,34 @@ impl DescriptorPool {
             });
         }
         // The field links exactly like a declared field. `containing_msg` is
-        // `None` because extensions cannot be map fields (a map requires a
-        // synthetic MapEntry message nested in the declaring message, which
-        // an `extend` block cannot contain).
+        // `None` because an extension never links as a map field.
         let mut field = self.link_field(scope_fqn, ext, parent_features, None, scope)?;
+        // protoc accepts an extension of a map entry type only as a repeated
+        // message extension of the entry's containing message, named for the
+        // entry, as it does a field. Such an extension links as a list of
+        // entries, which is the map's wire form.
+        if let FieldKind::Singular(SingularKind::Message(midx))
+        | FieldKind::List(SingularKind::Message(midx)) = field.kind
+        {
+            let entry = self.message(midx);
+            let entry_owned_by_extendee = ext.label.unwrap_or_default() == Label::LABEL_REPEATED
+                && !ext.r#type.is_some_and(|ty| ty != ProtoType::TYPE_MESSAGE)
+                && entry
+                    .full_name()
+                    .strip_prefix(extendee_name.as_str())
+                    .and_then(|rest| rest.strip_prefix('.'))
+                    == Some(map_entry_name(name).as_str());
+            if entry
+                .options()
+                .is_some_and(|options| options.map_entry == Some(true))
+                && !entry_owned_by_extendee
+            {
+                return Err(PoolError::InvalidMapEntryUse {
+                    field: fqn,
+                    entry: entry.full_name().to_owned(),
+                });
+            }
+        }
         if scope.proto3 {
             self.check_proto3_closed_enum(&field, || fqn.clone())?;
         }
@@ -2787,13 +2858,35 @@ impl DescriptorPool {
         }
 
         // Detect map fields: repeated + message type + the message is a
-        // map_entry. `containing_msg` is `None` for extensions, which cannot
-        // be map fields — the lookup is skipped entirely.
-        let (kind, enum_type) = if is_repeated {
-            if let SingularKind::Message(midx) = element {
-                if let Some(entry) =
-                    containing_msg.and_then(|m| self.find_map_entry(msg_fqn, m, f, midx))
+        // map_entry nested in this message and named for this field.
+        // `containing_msg` is `None` for extensions, which never link as map
+        // fields — the lookup is skipped entirely.
+        let map_entry = match element {
+            SingularKind::Message(midx) => {
+                let entry = containing_msg.and_then(|m| self.find_map_entry(msg_fqn, m, f, midx));
+                // As in protoc, a map entry can be the type of its own map
+                // field only, which is the field `find_map_entry` accepts.
+                // `link_extension` checks an extension, whose extendee
+                // decides the case.
+                let message = self.message(midx);
+                if entry.is_none()
+                    && containing_msg.is_some()
+                    && message
+                        .options()
+                        .is_some_and(|options| options.map_entry == Some(true))
                 {
+                    return Err(PoolError::InvalidMapEntryUse {
+                        field: field_fqn,
+                        entry: message.full_name().to_owned(),
+                    });
+                }
+                entry
+            }
+            _ => None,
+        };
+        let (kind, enum_type) = if is_repeated {
+            if let SingularKind::Message(_) = element {
+                if let Some(entry) = map_entry {
                     let (key_ty, value_kind) = self.resolve_map_entry(entry, &field_fqn, scope)?;
                     let enum_type = entry
                         .field
@@ -3191,6 +3284,9 @@ impl DescriptorPool {
             .full_name()
             .strip_prefix(msg_fqn)?
             .strip_prefix('.')?;
+        if entry_name != map_entry_name(f.name.as_deref().unwrap_or_default()) {
+            return None;
+        }
         let entry = containing
             .nested_type
             .iter()
