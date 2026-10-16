@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`box_type_in` and `unbox_oneof_in` rules that match nothing now warn** (#619). A `CodeGenConfig::pointer_fields` or `CodeGenConfig::unboxed_oneof_fields` rule that matches no generated field or oneof variant now produces `CodeGenWarning::FieldTypeRuleMatchedNothing`, as the other field-type rule lists already did. Both lists address a oneof variant as `.pkg.Msg.oneof.member`, so a rule written as the member's field path (`.pkg.Msg.member`) is reported too.
+time: 2026-10-16T15:00:21-06:00

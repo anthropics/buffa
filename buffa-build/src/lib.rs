@@ -1311,7 +1311,9 @@ impl Config {
     /// `".my.pkg.MyMessage.body.small"` for one variant or `".my.pkg"` for a
     /// package (same matching as [`use_bytes_type_in`](Self::use_bytes_type_in)).
     /// Paths are normalized as for [`bytes_type_in`](Self::bytes_type_in). A
-    /// rule that matches no variant is not reported.
+    /// rule that matches no variant is reported as a
+    /// [`FieldTypeRuleMatchedNothing`](buffa_codegen::CodeGenWarning::FieldTypeRuleMatchedNothing)
+    /// warning; note that a variant path includes the oneof's name.
     ///
     /// Recursive variants cannot be stored inline (the type would be
     /// unsized). A rule that names a recursive variant *exactly* is rejected
@@ -1528,7 +1530,9 @@ impl Config {
     /// narrower overrides after.
     ///
     /// Paths are normalized as for [`bytes_type_in`](Self::bytes_type_in). A
-    /// rule that matches no field is not reported.
+    /// rule that matches no field or oneof variant is reported as a
+    /// [`FieldTypeRuleMatchedNothing`](buffa_codegen::CodeGenWarning::FieldTypeRuleMatchedNothing)
+    /// warning.
     ///
     /// The default `Inline` is recursion-aware (recursive fields stay on
     /// `Box`), so this knob is for opting *out*: `PointerRepr::Box` for large
