@@ -675,7 +675,8 @@ fn map_entries_omit_defaults_compares_view_enum_values_with_their_default() {
         type_name: Some(entry_type.to_string()),
         ..make_field(name, number, Label::LABEL_REPEATED, Type::TYPE_MESSAGE)
     };
-    // `A = 1` first: protoc rejects this as a map value, buf accepts it.
+    // `A = 1` first: protoc rejects this as a map value, and a descriptor
+    // built another way can have it.
     let first_is_one = |name: &str| EnumDescriptorProto {
         name: Some(name.to_string()),
         value: vec![enum_value("A", 1), enum_value("B", 0)],

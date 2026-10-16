@@ -1184,8 +1184,8 @@ mod tests {
         map
     }
 
-    /// A closed enum whose default, its first value `A`, is not 0, as protoc
-    /// rejects in a map but buf accepts.
+    /// A closed enum whose default, its first value `A`, is not 0. protoc
+    /// rejects it as a map value; a descriptor built another way can have it.
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
     #[repr(i32)]
     enum FirstIsOne {
