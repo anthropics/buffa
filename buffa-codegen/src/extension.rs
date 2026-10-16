@@ -71,9 +71,14 @@ fn generate_one(
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("extension.name"))?;
-    let number = crate::impl_message::validated_field_number(field)?;
-    let ty = crate::impl_message::effective_type(ctx, field, features);
     let extendee = field.extendee.as_deref().unwrap_or("<unknown>");
+    let max_number = if ctx.is_message_set(extendee) {
+        i32::MAX
+    } else {
+        buffa::encoding::MAX_FIELD_NUMBER as i32
+    };
+    let number = crate::impl_message::validated_field_number_with_max(field, max_number)?;
+    let ty = crate::impl_message::effective_type(ctx, field, features);
     // Strip leading dot for both the runtime extendee check (PROTO_FQN is
     // emitted without a dot too) and the JSON registry entry.
     let extendee_no_dot = extendee.strip_prefix('.').unwrap_or(extendee);

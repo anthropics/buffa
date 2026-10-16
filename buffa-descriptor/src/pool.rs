@@ -2181,7 +2181,14 @@ impl DescriptorPool {
                     });
                 }
             }
-            let fd = self.link_field(&fqn, f, &msg_features, Some(msg), scope)?;
+            let fd = self.link_field(
+                &fqn,
+                f,
+                &msg_features,
+                Some(msg),
+                buffa::encoding::MAX_FIELD_NUMBER,
+                scope,
+            )?;
             if reserved_names.contains(fd.name.as_str()) {
                 return Err(PoolError::ReservedMessageFieldName {
                     message: fqn.clone(),
@@ -2609,7 +2616,18 @@ impl DescriptorPool {
         // `None` because extensions cannot be map fields (a map requires a
         // synthetic MapEntry message nested in the declaring message, which
         // an `extend` block cannot contain).
-        let mut field = self.link_field(scope_fqn, ext, parent_features, None, scope)?;
+        // MessageSet stores extension numbers as int32 type IDs, not tags.
+        // Only the resolved extendee can relax the ordinary field bound.
+        let is_message_set = self.messages[extendee.0 as usize]
+            .options()
+            .is_some_and(|options| options.message_set_wire_format == Some(true));
+        let max_number = if is_message_set {
+            i32::MAX as u32
+        } else {
+            buffa::encoding::MAX_FIELD_NUMBER
+        };
+        let mut field =
+            self.link_field(scope_fqn, ext, parent_features, None, max_number, scope)?;
         if scope.proto3 {
             self.check_proto3_closed_enum(&field, || fqn.clone())?;
         }
@@ -2621,9 +2639,7 @@ impl DescriptorPool {
         // membership, and it is "none".
         field.oneof_index = None;
         let extendee_message = &self.messages[extendee.0 as usize];
-        if extendee_message
-            .options()
-            .is_some_and(|options| options.message_set_wire_format == Some(true))
+        if is_message_set
             && (field.delimited
                 || !matches!(field.kind, FieldKind::Singular(SingularKind::Message(_))))
         {
@@ -2634,8 +2650,8 @@ impl DescriptorPool {
         if !extendee_message.in_extension_range(field.number) {
             return Err(PoolError::InvalidFieldNumber {
                 field: fqn,
-                // `link_field` bounds the number to `MAX_FIELD_NUMBER`
-                // (2^29 - 1), which fits `i32`; saturate defensively anyway.
+                // `link_field` bounds the number to at most `i32::MAX`;
+                // saturate defensively anyway.
                 number: i32::try_from(field.number).unwrap_or(i32::MAX),
             });
         }
@@ -2730,6 +2746,7 @@ impl DescriptorPool {
         f: &FieldDescriptorProto,
         parent_features: &ResolvedFeatures,
         containing_msg: Option<&DescriptorProto>,
+        max_number: u32,
         scope: LinkScope<'_>,
     ) -> Result<FieldDescriptor, PoolError> {
         let name = f.name.clone().unwrap_or_default();
@@ -2934,13 +2951,14 @@ impl DescriptorPool {
         }
 
         // Validate the field number. The wire format reserves 0, and the
-        // upper bound is `(1 << 29) - 1`. Spec-compliant `protoc` never emits
-        // an invalid number, but the input is no longer trusted to come from
-        // `protoc` once consumers feed network-loaded descriptors.
+        // upper bound is `(1 << 29) - 1`, except for MessageSet extensions
+        // whose resolved extendee permits int32 type IDs. Spec-compliant
+        // `protoc` never emits an invalid number, but consumers can supply
+        // untrusted network-loaded descriptors.
         let raw_number = f.number.unwrap_or(0);
         let number = u32::try_from(raw_number)
             .ok()
-            .filter(|&n| (1..=buffa::encoding::MAX_FIELD_NUMBER).contains(&n))
+            .filter(|&n| (1..=max_number).contains(&n))
             .ok_or_else(|| PoolError::InvalidFieldNumber {
                 field: field_fqn.clone(),
                 number: raw_number,

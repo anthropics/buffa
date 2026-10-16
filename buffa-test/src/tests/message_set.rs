@@ -201,3 +201,61 @@ fn clear_resets_to_empty() {
     container.clear();
     assert_eq!(container.encode_to_vec(), Vec::<u8>::new());
 }
+
+/// Protoc-generated extension descriptors agree with MessageSet Item framing
+/// above the ordinary wire-tag number limit. DynamicMessage currently preserves
+/// MessageSet Items as unknown groups; their bytes still round-trip unchanged.
+#[test]
+fn high_type_ids_roundtrip_through_generated_and_dynamic_messages() {
+    use crate::msgset::__buffa::ext::{BOUNDARY_EXT, HIGH_EXT};
+    use buffa_descriptor::reflect::DynamicMessage;
+
+    let pool = crate::msgset::descriptor_pool();
+    let index = pool
+        .message_index("buffa.test.messageset.Container")
+        .unwrap();
+    for (extension, number, type_id_bytes) in [
+        (
+            &HIGH_EXT,
+            1_000_000_000,
+            &[0x80, 0x94, 0xeb, 0xdc, 0x03][..],
+        ),
+        (
+            &BOUNDARY_EXT,
+            2_147_483_646,
+            &[0xfe, 0xff, 0xff, 0xff, 0x07][..],
+        ),
+    ] {
+        let mut container = Container::default();
+        container.set_extension(
+            extension,
+            Payload {
+                value: Some(7),
+                ..Default::default()
+            },
+        );
+        let bytes = container.encode_to_vec();
+        let mut expected = vec![0x0b, 0x10];
+        expected.extend_from_slice(type_id_bytes);
+        expected.extend_from_slice(&[0x1a, 0x02, 0x10, 0x07, 0x0c]);
+        assert_eq!(bytes, expected);
+        assert_eq!(container.encoded_len() as usize, bytes.len());
+        let dynamic = DynamicMessage::decode(pool.clone(), index, &bytes).unwrap();
+        let descriptor = pool
+            .extension_by_name(if number == 1_000_000_000 {
+                "buffa.test.messageset.high_ext"
+            } else {
+                "buffa.test.messageset.boundary_ext"
+            })
+            .unwrap();
+        assert_eq!(descriptor.field().number(), number);
+        // Typed MessageSet reflection is not implemented by DynamicMessage.
+        // Its existing unknown-group preservation must retain the whole Item.
+        assert!(dynamic.field_by_number(number).is_none());
+        assert_eq!(dynamic.unknown_fields().len(), 1);
+        let reencoded = dynamic.encode_to_vec();
+        assert_eq!(reencoded, bytes);
+        let generated = Container::decode_from_slice(&reencoded).unwrap();
+        assert_eq!(generated.extension(extension).unwrap().value, Some(7));
+    }
+}

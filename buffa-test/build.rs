@@ -1365,6 +1365,7 @@ fn main() {
         .includes(&["protos/"])
         .generate_views(false)
         .allow_message_set(true)
+        .generate_reflection(true)
         .compile()
         .expect("buffa_build failed for messageset.proto");
 
