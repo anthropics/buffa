@@ -255,15 +255,15 @@ impl ::buffa::Message for Duration {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
                 )?;
                 self.seconds = ::buffa::types::decode_int64(buf)?;
             }
-            2u32 => {
+            (2u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,

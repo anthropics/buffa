@@ -125,36 +125,36 @@ impl ::buffa::Message for RequestContext {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 ::buffa::types::merge_string(&mut self.request_id, buf)?;
             }
-            2u32 => {
+            (2u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 ::buffa::types::merge_string(&mut self.user_id, buf)?;
             }
-            3u32 => {
+            (3u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 ::buffa::types::merge_string(&mut self.method, buf)?;
             }
-            4u32 => {
+            (4u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 ::buffa::types::merge_string(&mut self.path, buf)?;
             }
-            5u32 => {
+            (5u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,

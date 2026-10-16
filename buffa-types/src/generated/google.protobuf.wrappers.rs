@@ -171,8 +171,8 @@ impl ::buffa::Message for DoubleValue {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::Fixed64) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Fixed64,
@@ -405,8 +405,8 @@ impl ::buffa::Message for FloatValue {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::Fixed32) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Fixed32,
@@ -640,8 +640,8 @@ impl ::buffa::Message for Int64Value {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -875,8 +875,8 @@ impl ::buffa::Message for UInt64Value {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -1110,8 +1110,8 @@ impl ::buffa::Message for Int32Value {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -1345,8 +1345,8 @@ impl ::buffa::Message for UInt32Value {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -1580,8 +1580,8 @@ impl ::buffa::Message for BoolValue {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -1815,8 +1815,8 @@ impl ::buffa::Message for StringValue {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -2050,8 +2050,8 @@ impl ::buffa::Message for BytesValue {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,

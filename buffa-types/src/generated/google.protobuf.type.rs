@@ -364,15 +364,15 @@ impl ::buffa::Message for Type {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 ::buffa::types::merge_string(&mut self.name, buf)?;
             }
-            2u32 => {
+            (2u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -384,7 +384,7 @@ impl ::buffa::Message for Type {
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.fields.push(elem);
             }
-            3u32 => {
+            (3u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -395,7 +395,7 @@ impl ::buffa::Message for Type {
                 )?;
                 self.oneofs.push(__elem);
             }
-            4u32 => {
+            (4u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -407,7 +407,7 @@ impl ::buffa::Message for Type {
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.options.push(elem);
             }
-            5u32 => {
+            (5u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -418,7 +418,7 @@ impl ::buffa::Message for Type {
                     ctx,
                 )?;
             }
-            6u32 => {
+            (6u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -427,7 +427,7 @@ impl ::buffa::Message for Type {
                     ::buffa::types::decode_int32(buf)?,
                 );
             }
-            7u32 => {
+            (7u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -884,15 +884,15 @@ impl ::buffa::Message for Field {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
                 )?;
                 self.kind = ::buffa::EnumValue::from(::buffa::types::decode_int32(buf)?);
             }
-            2u32 => {
+            (2u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -901,42 +901,42 @@ impl ::buffa::Message for Field {
                     ::buffa::types::decode_int32(buf)?,
                 );
             }
-            3u32 => {
+            (3u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
                 )?;
                 self.number = ::buffa::types::decode_int32(buf)?;
             }
-            4u32 => {
+            (4u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 ::buffa::types::merge_string(&mut self.name, buf)?;
             }
-            6u32 => {
+            (6u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 ::buffa::types::merge_string(&mut self.type_url, buf)?;
             }
-            7u32 => {
+            (7u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
                 )?;
                 self.oneof_index = ::buffa::types::decode_int32(buf)?;
             }
-            8u32 => {
+            (8u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
                 )?;
                 self.packed = ::buffa::types::decode_bool(buf)?;
             }
-            9u32 => {
+            (9u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -948,14 +948,14 @@ impl ::buffa::Message for Field {
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.options.push(elem);
             }
-            10u32 => {
+            (10u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 ::buffa::types::merge_string(&mut self.json_name, buf)?;
             }
-            11u32 => {
+            (11u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -1678,15 +1678,15 @@ impl ::buffa::Message for Enum {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 ::buffa::types::merge_string(&mut self.name, buf)?;
             }
-            2u32 => {
+            (2u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -1698,7 +1698,7 @@ impl ::buffa::Message for Enum {
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.enumvalue.push(elem);
             }
-            3u32 => {
+            (3u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -1710,7 +1710,7 @@ impl ::buffa::Message for Enum {
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.options.push(elem);
             }
-            4u32 => {
+            (4u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -1721,7 +1721,7 @@ impl ::buffa::Message for Enum {
                     ctx,
                 )?;
             }
-            5u32 => {
+            (5u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -1730,7 +1730,7 @@ impl ::buffa::Message for Enum {
                     ::buffa::types::decode_int32(buf)?,
                 );
             }
-            6u32 => {
+            (6u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -2062,22 +2062,22 @@ impl ::buffa::Message for EnumValue {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 ::buffa::types::merge_string(&mut self.name, buf)?;
             }
-            2u32 => {
+            (2u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
                 )?;
                 self.number = ::buffa::types::decode_int32(buf)?;
             }
-            3u32 => {
+            (3u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -2375,15 +2375,15 @@ impl ::buffa::Message for Option {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
                 )?;
                 ::buffa::types::merge_string(&mut self.name, buf)?;
             }
-            2u32 => {
+            (2u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,

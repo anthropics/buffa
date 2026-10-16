@@ -582,16 +582,16 @@ fn a_singular_field_takes_the_last_value_and_messages_merge() {
 }
 
 #[test]
-fn a_wire_type_mismatch_is_an_error() {
+fn a_wire_type_mismatch_is_preserved_as_unknown() {
     // a (varint) sent as length-delimited; c (string) sent as varint.
-    assert!(matches!(
-        Outer::decode_from_slice(&[0x0a, 0x00]),
-        Err(DecodeError::WireTypeMismatch { .. })
-    ));
-    assert!(matches!(
-        Outer::decode_from_slice(&[0x18, 0x01]),
-        Err(DecodeError::WireTypeMismatch { .. })
-    ));
+    for wire in [&[0x0a, 0x00][..], &[0x18, 0x01][..]] {
+        let msg = Outer::decode_from_slice(wire).unwrap();
+        assert_eq!(msg.unknown.iter().count(), 1);
+        let mut unknown_wire = Vec::new();
+        msg.unknown.write_to(&mut unknown_wire);
+        assert_eq!(unknown_wire, wire);
+        assert_eq!(msg, Outer { unknown: msg.unknown.clone(), ..Outer::default() });
+    }
 }
 
 #[test]
@@ -2079,12 +2079,9 @@ fn a_closed_enum_value_the_member_does_not_know_leaves_the_oneof_alone() {
 
 #[test]
 fn a_rejected_member_value_leaves_the_oneof_as_it_was() {
-    // For every member: a value that is cut short, a string that is not UTF-8,
-    // and a wire type the member does not have. Each fails without touching
-    // the member that is set, whichever it is, or setting one.
-    let failing: [&[u8]; 9] = [
+    // Truncated payloads and invalid UTF-8 fail without changing the member.
+    let failing: [&[u8]; 8] = [
         &[0x10, 0x80],
-        &[0x12, 0x00],
         &[0x22, 0x01, 0xff],
         &[0x22, 0x05, b'a'],
         &[0x2a, 0x05, 0x01],
@@ -2108,8 +2105,21 @@ fn a_rejected_member_value_leaves_the_oneof_as_it_was() {
             assert_eq!(msg.pick, initial(), "{wire:02x?}");
         }
     }
-    // The float member of the other oneof, in the same way.
-    for wire in [&[0x35, 0x00][..], &[0x32, 0x00][..]] {
+    // Valid incompatible records preserve every initial variant and the record.
+    for initial in initial {
+        for wire in [&[0x12, 0][..], &[0x20, 1][..], &[0x4d, 0, 0, 0, 0][..]] {
+            let mut msg = Holder { pick: initial(), ..Holder::default() };
+            let mut expected = msg.encode_to_vec();
+            expected.extend_from_slice(wire);
+            msg.merge_from_slice(wire).unwrap();
+            assert_eq!(msg.pick, initial());
+            assert_eq!(msg.unknown.iter().count(), 1);
+            assert_eq!(msg.encode_to_vec(), expected);
+        }
+    }
+    // A float payload cut short still fails.
+    {
+        let wire = &[0x35, 0x00][..];
         let mut msg = Holder {
             other: Some(Alt::Y(Inner::default())),
             ..Holder::default()
@@ -2117,6 +2127,10 @@ fn a_rejected_member_value_leaves_the_oneof_as_it_was() {
         assert!(msg.merge_from_slice(wire).is_err(), "{wire:02x?}");
         assert_eq!(msg.other, Some(Alt::Y(Inner::default())), "{wire:02x?}");
     }
+    let mut msg = Holder { other: Some(Alt::Y(Inner::default())), ..Holder::default() };
+    msg.merge_from_slice(&[0x32, 0]).unwrap();
+    assert_eq!(msg.other, Some(Alt::Y(Inner::default())));
+    assert_eq!(msg.unknown.iter().next().unwrap().number, 6);
     assert!(matches!(
         Holder::decode_from_slice(&[0x22, 0x01, 0xff]),
         Err(DecodeError::InvalidUtf8)
@@ -2124,15 +2138,16 @@ fn a_rejected_member_value_leaves_the_oneof_as_it_was() {
 }
 
 #[test]
-fn a_member_with_the_wrong_wire_type_is_an_error() {
-    // num (varint) sent as length-delimited; text sent as a varint; a message
-    // sent as a fixed32.
-    for wire in [[0x12, 0x00], [0x20, 0x01], [0x4d, 0x00]] {
-        assert!(matches!(
-            Holder::decode_from_slice(&wire),
-            Err(DecodeError::WireTypeMismatch { .. })
-        ));
+fn a_member_with_the_wrong_wire_type_is_preserved() {
+    for wire in [&[0x12, 0][..], &[0x20, 1][..], &[0x4d, 0, 0, 0, 0][..]] {
+        let msg = Holder::decode_from_slice(wire).unwrap();
+        assert_eq!(msg.pick, None);
+        assert_eq!(msg.other, None);
+        assert_eq!(msg.unknown.iter().count(), 1);
+        assert_eq!(msg.encode_to_vec(), wire);
     }
+    // The same incompatible Fixed32 tag with a truncated payload is malformed.
+    assert_eq!(Holder::decode_from_slice(&[0x4d, 0]), Err(DecodeError::UnexpectedEof));
 }
 
 #[test]

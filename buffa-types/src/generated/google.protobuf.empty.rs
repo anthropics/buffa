@@ -166,7 +166,7 @@ impl ::buffa::Message for Empty {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
+        match (tag.field_number(), tag.wire_type()) {
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, ctx)?);

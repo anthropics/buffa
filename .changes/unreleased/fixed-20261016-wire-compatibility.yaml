@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+    **Treat known fields with incompatible wire types as unknown records** (#717). Owned, eager-view, lazy-view and table decoding preserve or skip them according to the configured unknown-field policy, retaining earlier singular and oneof values. Inner map-entry key/value records retain their existing strict wire-type checks. Packed and unpacked numeric records remain accepted, while malformed input and resource limits still fail decoding.

@@ -260,6 +260,17 @@ fn main() {
     let table_codec = rustc_minor() >= 77;
     if table_codec {
         println!("cargo:rustc-cfg=has_table_codec");
+        let wire_compat = read_proto("wire_compat.proto");
+        compile_both_codecs_with("wire_compat.proto", &wire_compat, "wc", &[], |c| {
+            c.lazy_views(true).generate_reflection(true)
+        });
+        compile_both_codecs_with(
+            "wire_compat.proto",
+            &wire_compat.replace("package wc;", "package wd;"),
+            "wd",
+            &[],
+            |c| c.lazy_views(true).preserve_unknown_fields(false),
+        );
         compile_both_codecs(
             "table_codec.proto",
             &read_proto("table_codec.proto"),

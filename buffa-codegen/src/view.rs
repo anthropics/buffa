@@ -17,12 +17,12 @@ use quote::{format_ident, quote};
 use crate::context::{ancillary_prefix, AncillaryKind, CodeGenContext, MessageScope, SENTINEL_MOD};
 use crate::features::ResolvedFeatures;
 use crate::impl_message::{
-    closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, effective_type,
-    effective_type_in_map_entry, extend_packed_fn_token, extend_packed_varint_fn_token,
-    field_string_repr, find_map_entry_fields, is_explicit_presence_scalar, is_packed_type,
-    is_real_oneof_member, is_required_field, is_supported_field_type, map_string_repr,
-    map_value_bytes_repr, packed_decode_fn_token, validated_field_number, wire_type_check,
-    wire_type_token,
+    closed_enum_decode, closed_enum_decode_with_unknown, decode_fn_token, decode_wire_pattern,
+    effective_type, effective_type_in_map_entry, extend_packed_fn_token,
+    extend_packed_varint_fn_token, field_string_repr, find_map_entry_fields,
+    is_explicit_presence_scalar, is_packed_type, is_real_oneof_member, is_required_field,
+    is_supported_field_type, map_string_repr, map_value_bytes_repr, packed_decode_fn_token,
+    validated_field_number, wire_type_check, wire_type_token,
 };
 use crate::message::{is_closed_enum, is_map_field, make_field_ident, rust_path_to_tokens};
 use crate::oneof::{is_null_value_field, serde_helper_path};
@@ -465,7 +465,7 @@ pub(crate) fn generate_view_with_nesting(
                 #[allow(unused_variables)]
                 let view = self;
                 let mut cur = cur;
-                match tag.field_number() {
+                match (tag.field_number(), tag.wire_type()) {
                     #(#scalar_arms)*
                     #(#repeated_arms)*
                     #(#oneof_arms)*
@@ -1478,6 +1478,7 @@ pub(crate) fn scalar_decode_arm(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
+    let wire_pattern = decode_wire_pattern(ty, false);
     let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     let wire_type = wire_type_token(ty);
 
@@ -1510,7 +1511,7 @@ pub(crate) fn scalar_decode_arm(
                 quote! { view.#ident = Some(#dfn(&mut cur)?); }
             }
         };
-        return Ok(quote! { #field_number => { #wire_check #assign } });
+        return Ok(quote! { (#field_number, #wire_pattern) => { #wire_check #assign } });
     }
 
     let bit_stmt = required_bit_stmt.cloned().unwrap_or_default();
@@ -1571,7 +1572,7 @@ pub(crate) fn scalar_decode_arm(
         }
     };
 
-    Ok(quote! { #field_number => { #wire_check #assign } })
+    Ok(quote! { (#field_number, #wire_pattern) => { #wire_check #assign } })
 }
 
 pub(crate) fn repeated_decode_arm(
@@ -1591,6 +1592,7 @@ pub(crate) fn repeated_decode_arm(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
+    let wire_pattern = decode_wire_pattern(ty, true);
     let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
 
     // Message: always LengthDelimited, unpacked.
@@ -1601,7 +1603,7 @@ pub(crate) fn repeated_decode_arm(
         );
         let vt = resolve_view_decode_tokens(scope, field)?;
         return Ok(quote! {
-            #field_number => {
+            (#field_number, #wire_pattern) => {
                 #ld_check
                 let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_bytes(&mut cur)?;
@@ -1619,7 +1621,7 @@ pub(crate) fn repeated_decode_arm(
         );
         let vt = resolve_view_decode_tokens(scope, field)?;
         return Ok(quote! {
-            #field_number => {
+            (#field_number, #wire_pattern) => {
                 #sg_check
                 let __sub_ctx = ctx.descend()?;
                 let sub = ::buffa::types::borrow_group(&mut cur, #field_number, __sub_ctx.depth())?;
@@ -1662,7 +1664,7 @@ pub(crate) fn repeated_decode_arm(
             }
         };
         return Ok(quote! {
-            #field_number => {
+            (#field_number, #wire_pattern) => {
                 #ld_check
                 let __elem = #borrow;
                 ctx.register_element_memory(::buffa::__private::element_footprint(&__elem))?;
@@ -1746,7 +1748,7 @@ pub(crate) fn repeated_decode_arm(
     };
 
     Ok(quote! {
-        #field_number => {
+        (#field_number, #wire_pattern) => {
             if tag.wire_type() == ::buffa::encoding::WireType::LengthDelimited {
                 // Packed: extract payload, decode elements via local cursor.
                 let payload = ::buffa::types::borrow_bytes(&mut cur)?;
@@ -1771,6 +1773,7 @@ pub(crate) fn map_decode_arm(
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
+    let wire_pattern = wire_type_token(Type::TYPE_MESSAGE);
     let MessageScope { ctx, features, .. } = scope;
     let preserve_unknown_fields = scope.preserve_unknown_fields();
     let field_name = field
@@ -1836,7 +1839,7 @@ pub(crate) fn map_decode_arm(
     };
 
     Ok(quote! {
-        #field_number => {
+        (#field_number, #wire_pattern) => {
             #ld_check
             let entry_bytes = ::buffa::types::borrow_bytes(&mut cur)?;
             let mut entry_cur: &'a [u8] = entry_bytes;
@@ -1940,6 +1943,7 @@ pub(crate) fn oneof_decode_arms(
                 .ok_or(CodeGenError::MissingField("field.name"))?;
             let field_number = validated_field_number(field)?;
             let ty = effective_type(ctx, field, features);
+            let wire_pattern = decode_wire_pattern(ty, false);
             let field_features = crate::features::resolve_field(ctx, field, features);
             let variant = crate::oneof::oneof_variant_ident(name);
             let wire_type = wire_type_token(ty);
@@ -1955,7 +1959,7 @@ pub(crate) fn oneof_decode_arms(
                     // Uses an early `return Ok(...)` since the merge path doesn't
                     // fit the `value` expression shape used by scalar variants.
                     return Ok(quote! {
-                        #field_number => {
+                        (#field_number, #wire_pattern) => {
                             #wire_check
                             let __sub_ctx = ctx.descend()?;
                             let sub = ::buffa::types::borrow_bytes(&mut cur)?;
@@ -1978,7 +1982,7 @@ pub(crate) fn oneof_decode_arms(
                 Type::TYPE_GROUP => {
                     let vt = resolve_view_decode_tokens(scope, field)?;
                     return Ok(quote! {
-                        #field_number => {
+                        (#field_number, #wire_pattern) => {
                             #wire_check
                             let __sub_ctx = ctx.descend()?;
                             let sub = ::buffa::types::borrow_group(&mut cur, #field_number, __sub_ctx.depth())?;
@@ -2008,7 +2012,7 @@ pub(crate) fn oneof_decode_arms(
                             unknown_route,
                         );
                         return Ok(quote! {
-                            #field_number => {
+                            (#field_number, #wire_pattern) => {
                                 #wire_check
                                 #decode
                             }
@@ -2023,7 +2027,7 @@ pub(crate) fn oneof_decode_arms(
             };
 
             Ok(quote! {
-                #field_number => {
+                (#field_number, #wire_pattern) => {
                     #wire_check
                     view.#field_ident = Some(#view_enum::#variant(#value));
                 }

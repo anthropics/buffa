@@ -113,15 +113,15 @@ impl<'a> ::buffa::MessageView<'a> for DurationView<'a> {
         #[allow(unused_variables)]
         let view = self;
         let mut cur = cur;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
                 )?;
                 view.seconds = ::buffa::types::decode_int64(&mut cur)?;
             }
-            2u32 => {
+            (2u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,

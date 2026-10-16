@@ -1,0 +1,23 @@
+syntax = "proto2";
+package wc;
+message Leaf { optional int32 n = 1; optional string text = 2; }
+enum State { ZERO = 0; ONE = 1; }
+message Probe {
+ optional int32 n = 1;
+ optional fixed32 fixed = 2;
+ optional string text = 3;
+ optional Leaf child = 4;
+ repeated int32 nums = 5 [packed = true];
+ repeated int32 unpacked = 6 [packed = false];
+ oneof pick { int32 selected = 7; Leaf selected_child = 8; }
+ map<int32, int32> counts = 9;
+ map<int32, Leaf> children = 10;
+ repeated Leaf kids = 11;
+ optional State state = 12;
+ repeated State states = 13 [packed = true];
+ repeated fixed32 fixeds = 14 [packed = true];
+ map<int32, State> enum_map = 15;
+}
+message Groups {
+ optional group Item = 1 { optional int32 n = 2; }
+}

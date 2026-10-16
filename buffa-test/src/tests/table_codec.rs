@@ -332,10 +332,16 @@ fn unknown_fields_are_kept() {
 }
 
 #[test]
-fn a_known_field_with_the_wrong_wire_type_is_rejected_alike() {
+fn a_known_field_with_the_wrong_wire_type_is_preserved_alike() {
     // `i32` (field 1) as a length-delimited record, `s` (field 14) as a varint.
     let mut wire = length_delimited_field(1, b"ab");
     wire.extend(varint_field(14, 3));
+    assert_eq!(
+        crate::tct::Scalars::decode_from_slice(&wire)
+            .unwrap()
+            .encode_to_vec(),
+        wire
+    );
     assert_same_decode::<crate::tcu::Scalars, crate::tct::Scalars>(&wire, false);
 }
 
@@ -2431,15 +2437,50 @@ fn a_table_with_a_prefix_and_inline_oneof_members_agrees() {
 
 #[test]
 fn a_member_that_fails_to_decode_in_an_inline_layout_leaves_the_message_as_unrolled_code_does() {
-    // `tc4x` stores the message member of `Kinds` inline, where a failed
-    // merge into a new default member must leave the old member in place too.
+    // tc4u preserves unknowns; tc4x has inline members and drops unknowns.
+    // Compare typed state and check each policy explicitly, including when an
+    // incompatible complete record precedes the malformed end of the input.
     let opts = buffa::DecodeOptions::new();
     let valid_first = varint_field(3, 9);
-    for u in oneofs_u::kinds() {
-        let x = <crate::tc4x::RpcKinds as Message>::decode_from_slice(&u.encode_to_vec()).unwrap();
+    for start_u in oneofs_u::kinds() {
+        let start_x =
+            <crate::tc4x::RpcKinds as Message>::decode_from_slice(&start_u.encode_to_vec())
+                .unwrap();
         for wire in failing_kinds_wires() {
+            let mut expected_unknown = buffa::UnknownFields::new();
+            let mut remaining = wire.as_slice();
+            let tag = buffa::encoding::Tag::decode(&mut remaining).unwrap();
+            if tag.wire_type() as u32 != kinds_wire_type(tag.field_number()) {
+                let budget = core::cell::Cell::new(buffa::DEFAULT_UNKNOWN_FIELD_LIMIT);
+                let field = buffa::encoding::decode_unknown_field(
+                    tag,
+                    &mut remaining,
+                    buffa::DecodeContext::new(buffa::RECURSION_LIMIT, &budget),
+                )
+                .expect("incompatible fixture record is complete before its malformed tail");
+                expected_unknown.push(field);
+            }
             for prefix in [&[][..], &valid_first[..]] {
-                assert_same_merge(&opts, &u, &x, &[prefix, &wire[..]].concat());
+                let input = [prefix, &wire[..]].concat();
+                let (mut u, mut x) = (start_u.clone(), start_x.clone());
+                assert_eq!(
+                    opts.merge_from_slice(&mut u, &input),
+                    opts.merge_from_slice(&mut x, &input)
+                );
+                assert_eq!(u.__buffa_unknown_fields, expected_unknown, "{input:02x?}");
+                assert_eq!(
+                    format!("{u:?}"),
+                    format!("{x:?}").replace("Rpc", ""),
+                    "typed state on {input:02x?}"
+                );
+                // The inline fixture has no unknown slot. Its encoding must
+                // contain exactly the same known fields as the preserving one.
+                u.__buffa_unknown_fields.clear();
+                assert_eq!(
+                    u.encode_to_vec(),
+                    x.encode_to_vec(),
+                    "drop policy on {input:02x?}"
+                );
             }
         }
     }

@@ -331,7 +331,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
                 while !cur.is_empty() {
                     #before_tag_capture
                     let tag = ::buffa::encoding::Tag::decode(&mut cur)?;
-                    match tag.field_number() {
+                    match (tag.field_number(), tag.wire_type()) {
                         #(#scalar_arms)*
                         #(#repeated_arms)*
                         #(#oneof_arms)*
@@ -731,6 +731,7 @@ fn lazy_singular_message_arm(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
+    let wire_pattern = quote! { ::buffa::encoding::WireType::LengthDelimited };
     let field_number = validated_field_number(field)?;
     let ident = scope.ctx.field_ident(
         field
@@ -744,7 +745,7 @@ fn lazy_singular_message_arm(
         &quote! { ::buffa::encoding::WireType::LengthDelimited },
     );
     Ok(quote! {
-        #field_number => {
+        (#field_number, #wire_pattern) => {
             #wire_check
             let __sub_ctx = ctx.descend()?;
             let sub = ::buffa::types::borrow_bytes(&mut cur)?;
@@ -765,6 +766,7 @@ fn lazy_repeated_message_arm(
     scope: MessageScope<'_>,
     field: &FieldDescriptorProto,
 ) -> Result<TokenStream, CodeGenError> {
+    let wire_pattern = quote! { ::buffa::encoding::WireType::LengthDelimited };
     let field_number = validated_field_number(field)?;
     let ident = scope.ctx.field_ident(
         field
@@ -778,7 +780,7 @@ fn lazy_repeated_message_arm(
         &quote! { ::buffa::encoding::WireType::LengthDelimited },
     );
     Ok(quote! {
-        #field_number => {
+        (#field_number, #wire_pattern) => {
             #wire_check
             let __sub_ctx = ctx.descend()?;
             let sub = ::buffa::types::borrow_bytes(&mut cur)?;
