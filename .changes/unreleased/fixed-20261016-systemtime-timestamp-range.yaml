@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Document the protobuf year-range behavior of conversions between `Timestamp` and `SystemTime`.**'
+time: 2026-10-16T11:34:41+02:00
