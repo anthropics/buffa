@@ -52,10 +52,6 @@ These are intentionally out of scope:
 [`with_json_parse_options`]: https://docs.rs/buffa/latest/buffa/json/fn.with_json_parse_options.html
 [`set_global_json_parse_options`]: https://docs.rs/buffa/latest/buffa/json/fn.set_global_json_parse_options.html
 
-## Known limitations
-
-These are gaps we intend to address in future releases:
-
 ## Semver and API stability
 
 Buffa is pre-1.0. We follow the [Rust community convention](https://doc.rust-lang.org/cargo/reference/semver.html) for 0.x crates: breaking changes increment the **minor** version (0.1.x → 0.2.0), additive changes increment the **patch** version (0.1.0 → 0.1.1). Pin to a minor version (`buffa = "x.y"`; the full `x.y.z` that `cargo add buffa` writes is equivalent under caret semantics) to avoid surprises.
