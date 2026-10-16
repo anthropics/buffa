@@ -159,10 +159,19 @@ pub trait ReflectMessage {
     /// Whether a field is present.
     ///
     /// For explicit-presence fields (proto2 `optional`/`required`, proto3
-    /// `optional`, message-typed fields), this is "was a value written".
+    /// `optional`, message-typed fields), this is "was a value written"
+    /// (but see below for `required` on generated owned messages).
     /// For implicit-presence fields, this is "is non-default". A `float` or
     /// `double` is at its default only when it is `+0.0`, so `-0.0` and NaN
     /// are present. For repeated/map fields, this is "non-empty".
+    ///
+    /// A generated owned message stores a `required` (or editions
+    /// `LEGACY_REQUIRED`) scalar, string, bytes or enum field without
+    /// presence and always encodes it, so its `has` is always `true`. A
+    /// generated view reports whether the field was on the wire, as its
+    /// `has_<field>()` accessor does; check a view, or a `DynamicMessage`
+    /// decoded from the bytes, to learn whether a required field arrived. A
+    /// `required` message field reports whether it is set in every case.
     fn has(&self, field: &FieldDescriptor) -> bool;
 
     /// Visit every set field.

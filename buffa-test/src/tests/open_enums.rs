@@ -551,16 +551,18 @@ fn open_enum_override_required_vtable_reflection_uses_generated_default() {
     use crate::open_enums::{RequiredDefault, RequiredDefaultView, RequiredImplicitDefault};
     use buffa_descriptor::reflect::{ReflectMessage, Reflectable, ValueRef};
 
+    // The owned message always encodes a required field, so it is set even
+    // at its default (#627). The view reports wire presence instead.
     let msg = RequiredDefault::default();
     let reflected = msg.reflect();
     let field = reflected.message_descriptor().field(1).unwrap();
-    assert!(!reflected.has(field));
+    assert!(reflected.has(field));
     assert!(matches!(reflected.get(field), ValueRef::EnumNumber(2)));
 
     let mut changed = RequiredImplicitDefault::default();
     let reflected = changed.reflect();
     let field = reflected.message_descriptor().field(1).unwrap();
-    assert!(!reflected.has(field));
+    assert!(reflected.has(field));
     assert!(matches!(reflected.get(field), ValueRef::EnumNumber(2)));
 
     changed.level = EnumValue::Unknown(99);
