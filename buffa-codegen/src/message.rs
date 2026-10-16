@@ -5,7 +5,9 @@ use crate::generated::descriptor::DescriptorProto;
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
-use crate::context::{ancillary_prefix, AncillaryKind, CodeGenContext, MessageScope};
+use crate::context::{
+    ancillary_prefix, AncillaryKind, CodeGenContext, CustomAttributeKind, MessageScope,
+};
 use crate::defaults::parse_default_value;
 use crate::features::ResolvedFeatures;
 use crate::impl_message::{is_explicit_presence_scalar, is_real_oneof_member};
@@ -281,8 +283,8 @@ fn generate_message_with_nesting(
         let rename_note = ctx
             .oneof_rename_note(oneof_name)
             .map(|note| quote! { #[doc = #note] });
-        let custom_attrs = CodeGenContext::matching_attributes(
-            &ctx.config.oneof_struct_field_attributes,
+        let custom_attrs = ctx.matching_attributes(
+            CustomAttributeKind::OneofStructField,
             &format!("{proto_fqn}.{oneof_name}"),
         )?;
         let tokens = quote! {
@@ -574,10 +576,8 @@ fn generate_message_with_nesting(
     } else {
         quote! {}
     };
-    let custom_type_attrs =
-        CodeGenContext::matching_attributes(&ctx.config.type_attributes, proto_fqn)?;
-    let custom_message_attrs =
-        CodeGenContext::matching_attributes(&ctx.config.message_attributes, proto_fqn)?;
+    let custom_type_attrs = ctx.matching_attributes(CustomAttributeKind::Type, proto_fqn)?;
+    let custom_message_attrs = ctx.matching_attributes(CustomAttributeKind::Message, proto_fqn)?;
     let custom_deserialize = if needs_custom_deserialize {
         crate::feature_gates::cfg_block(
             generate_custom_deserialize(
@@ -2045,8 +2045,7 @@ fn generate_field(
     } else {
         quote! {}
     };
-    let custom_field_attrs =
-        CodeGenContext::matching_attributes(&ctx.config.field_attributes, &field_fqn)?;
+    let custom_field_attrs = ctx.matching_attributes(CustomAttributeKind::Field, &field_fqn)?;
     // Deprecation reaches a generated field from two sources: the
     // `[deprecated = true]` option, and a caller-supplied `#[deprecated]` from
     // `field_attribute` (the documented workaround for the option having been
