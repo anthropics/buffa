@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**`DurationError` names `core::time::Duration` in its negative-duration message.** The conversion is available without `std`, so the message no longer incorrectly refers to `std::time::Duration`.'
+time: 2026-10-16T13:20:17.263141+02:00
