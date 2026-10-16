@@ -961,18 +961,22 @@ impl<'a> CodeGenContext<'a> {
     }
 
     /// Build a context matching what [`generate()`](crate::generate) uses
-    /// internally.
+    /// internally when the extern-path proto names are already canonical.
     ///
     /// Computes effective extern paths (user-provided + auto-injected WKT
     /// mapping to `buffa-types` + auto-injected `descriptor.proto` /
     /// `compiler/plugin.proto` file-level mapping to `buffa-descriptor`) and
     /// builds the type map from them.
     ///
+    /// This constructor does not normalize or validate extern-path proto names.
+    /// Direct callers must first pass each name in [`CodeGenConfig::extern_paths`]
+    /// through [`normalize_extern_path_proto_name`](crate::normalize_extern_path_proto_name).
+    ///
     /// Convenience for downstream generators (e.g. `connectrpc-codegen`)
     /// that emit code alongside buffa's message types and need identical
     /// type-path resolution. Using this instead of [`new()`](Self::new) +
     /// manual extern-path computation ensures zero drift with buffa's own
-    /// generation.
+    /// generation for canonical extern-path input.
     pub fn for_generate(
         files: &'a [FileDescriptorProto],
         files_to_generate: &[String],
