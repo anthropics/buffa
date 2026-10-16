@@ -392,8 +392,8 @@ impl ::buffa::Message for FieldMask {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,

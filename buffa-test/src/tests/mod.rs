@@ -129,3 +129,6 @@ mod view;
 mod view_json;
 mod with_setters;
 mod wkt;
+
+#[cfg(has_table_codec)]
+mod wire_compat;

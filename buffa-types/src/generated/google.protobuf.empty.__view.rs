@@ -43,7 +43,7 @@ impl<'a> ::buffa::MessageView<'a> for EmptyView<'a> {
         #[allow(unused_variables)]
         let view = self;
         let mut cur = cur;
-        match tag.field_number() {
+        match (tag.field_number(), tag.wire_type()) {
             _ => {
                 ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
                 let span_len = before_tag.len() - cur.len();

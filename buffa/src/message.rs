@@ -887,6 +887,8 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     /// from `buf`.
     ///
     /// This is the per-field dispatch method generated for each message type.
+    /// A structurally valid record with an incompatible wire type follows the
+    /// unknown-field preservation or skipping policy without changing the field.
     /// Both [`merge_to_limit`](Self::merge_to_limit) and
     /// [`merge_group`](Self::merge_group) call this in their respective loops.
     ///
@@ -897,7 +899,7 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     ///
     /// Returns a [`DecodeError`] if:
     /// - the buffer is truncated or malformed,
-    /// - a wire-type mismatch is detected for a known field,
+    /// - a map-entry key or value has an incompatible wire type,
     /// - the recursion limit is exceeded, or
     /// - the allocation budget is exhausted.
     fn merge_field(
@@ -949,8 +951,8 @@ pub trait Message: DefaultInstance + Clone + PartialEq + Send + Sync {
     ///
     /// Returns a [`DecodeError`] if:
     /// - the buffer is truncated before the EndGroup tag,
+    /// - a map-entry key or value has an incompatible wire type,
     /// - an EndGroup tag is encountered with a mismatched field number,
-    /// - a wire-type mismatch is detected for a known field, or
     /// - the recursion limit is exceeded.
     fn merge_group(
         &mut self,

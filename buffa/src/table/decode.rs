@@ -154,7 +154,10 @@ unsafe fn merge_one(
     buf: &mut &[u8],
     ctx: DecodeContext<'_>,
 ) -> Result<(), DecodeError> {
-    let Some(e) = table.find(tag.field_number()) else {
+    let Some(e) = table
+        .find(tag.field_number())
+        .filter(|e| e.wire_type_compatible(tag.wire_type()))
+    else {
         // SAFETY: forwarded from the caller.
         return unsafe { merge_unknown(table, base, tag, buf, ctx) };
     };

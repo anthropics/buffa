@@ -722,7 +722,7 @@ pub fn generate_message_impl(
                     use ::buffa::bytes::Buf as _;
                     #[allow(unused_imports)]
                     use ::buffa::Enumeration as _;
-                    match tag.field_number() {
+                    match (tag.field_number(), tag.wire_type()) {
                         #(#merge_arms)*
                         #unknown_fields_merge_arm
                     }
@@ -1378,6 +1378,18 @@ pub(crate) fn wire_type_token(ty: Type) -> TokenStream {
     }
 }
 
+/// Wire patterns admitted by a field before decoding or mutating its value.
+/// Repeated numeric fields accept both packed and unpacked records, regardless
+/// of the encoding chosen for output.
+pub(crate) fn decode_wire_pattern(ty: Type, repeated: bool) -> TokenStream {
+    let wire = wire_type_token(ty);
+    if repeated && is_packed_type(ty) {
+        quote! { #wire | ::buffa::encoding::WireType::LengthDelimited }
+    } else {
+        wire
+    }
+}
+
 fn encode_fn_token(ty: Type) -> TokenStream {
     match ty {
         Type::TYPE_INT32 => quote! { ::buffa::types::encode_int32 },
@@ -1881,9 +1893,10 @@ fn explicit_presence_merge_arm(
     string_repr: crate::StringRepr,
     preserve_unknown_fields: bool,
 ) -> TokenStream {
+    let wire_pattern = decode_wire_pattern(ty, false);
     match ty {
         Type::TYPE_STRING if string_repr.is_default() => quote! {
-            #field_number => {
+            (#field_number, #wire_pattern) => {
                 #wire_check
                 ::buffa::types::merge_string(
                     self.#ident.get_or_insert_with(::buffa::alloc::string::String::new),
@@ -1892,7 +1905,7 @@ fn explicit_presence_merge_arm(
             }
         },
         Type::TYPE_STRING => quote! {
-            #field_number => {
+            (#field_number, #wire_pattern) => {
                 #wire_check
                 self.#ident = ::core::option::Option::Some(
                     ::buffa::types::decode_string_to(buf)?
@@ -1902,7 +1915,7 @@ fn explicit_presence_merge_arm(
         Type::TYPE_BYTES => {
             if bytes_repr.is_default() {
                 quote! {
-                    #field_number => {
+                    (#field_number, #wire_pattern) => {
                         #wire_check
                         ::buffa::types::merge_bytes(
                             self.#ident.get_or_insert_with(::buffa::alloc::vec::Vec::new),
@@ -1915,7 +1928,7 @@ fn explicit_presence_merge_arm(
                 // in-place `merge_bytes` allocation reuse is `Vec<u8>`-only.
                 let decoded = bytes_decode_expr(bytes_repr);
                 quote! {
-                    #field_number => {
+                    (#field_number, #wire_pattern) => {
                         #wire_check
                         self.#ident = ::core::option::Option::Some(#decoded);
                     }
@@ -1933,14 +1946,14 @@ fn explicit_presence_merge_arm(
                     unknown_route,
                 );
                 quote! {
-                    #field_number => {
+                    (#field_number, #wire_pattern) => {
                         #wire_check
                         #decode
                     }
                 }
             } else {
                 quote! {
-                    #field_number => {
+                    (#field_number, #wire_pattern) => {
                         #wire_check
                         self.#ident = ::core::option::Option::Some(
                             ::buffa::EnumValue::from(::buffa::types::decode_int32(buf)?)
@@ -1952,7 +1965,7 @@ fn explicit_presence_merge_arm(
         _ => {
             let decode_fn = decode_fn_token(ty);
             quote! {
-                #field_number => {
+                (#field_number, #wire_pattern) => {
                     #wire_check
                     self.#ident = ::core::option::Option::Some(#decode_fn(buf)?);
                 }
@@ -1975,6 +1988,7 @@ fn scalar_merge_arm(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
+    let wire_pattern = decode_wire_pattern(ty, false);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
     let string_repr = field_string_repr(ctx, proto_fqn, field_name);
     let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
@@ -2008,7 +2022,7 @@ fn scalar_merge_arm(
         Type::TYPE_STRING => {
             return Ok(if string_repr.is_default() {
                 quote! {
-                    #field_number => {
+                    (#field_number, #wire_pattern) => {
                         #wire_check
                         ::buffa::types::merge_string(&mut self.#ident, buf)?;
                     }
@@ -2017,7 +2031,7 @@ fn scalar_merge_arm(
                 // Non-default string types are constructed fresh on decode; the
                 // in-place `merge_string` allocation reuse is `String`-only.
                 quote! {
-                    #field_number => {
+                    (#field_number, #wire_pattern) => {
                         #wire_check
                         self.#ident = ::buffa::types::decode_string_to(buf)?;
                     }
@@ -2027,7 +2041,7 @@ fn scalar_merge_arm(
         Type::TYPE_BYTES => {
             return Ok(if bytes_repr.is_default() {
                 quote! {
-                    #field_number => {
+                    (#field_number, #wire_pattern) => {
                         #wire_check
                         ::buffa::types::merge_bytes(&mut self.#ident, buf)?;
                     }
@@ -2037,7 +2051,7 @@ fn scalar_merge_arm(
                 // in-place `merge_bytes` allocation reuse is `Vec<u8>`-only.
                 let decoded = bytes_decode_expr(&bytes_repr);
                 quote! {
-                    #field_number => {
+                    (#field_number, #wire_pattern) => {
                         #wire_check
                         self.#ident = #decoded;
                     }
@@ -2055,14 +2069,14 @@ fn scalar_merge_arm(
                     unknown_route,
                 );
                 return Ok(quote! {
-                    #field_number => {
+                    (#field_number, #wire_pattern) => {
                         #wire_check
                         #decode
                     }
                 });
             }
             return Ok(quote! {
-                #field_number => {
+                (#field_number, #wire_pattern) => {
                     #wire_check
                     self.#ident = ::buffa::EnumValue::from(::buffa::types::decode_int32(buf)?);
                 }
@@ -2070,7 +2084,7 @@ fn scalar_merge_arm(
         }
         Type::TYPE_MESSAGE => {
             return Ok(quote! {
-                #field_number => {
+                (#field_number, #wire_pattern) => {
                     #wire_check
                     // Merge into the existing sub-message value (proto merge semantics).
                     ::buffa::Message::merge_length_delimited(
@@ -2083,7 +2097,7 @@ fn scalar_merge_arm(
         }
         Type::TYPE_GROUP => {
             return Ok(quote! {
-                #field_number => {
+                (#field_number, #wire_pattern) => {
                     #wire_check
                     // Merge group: read fields until EndGroup tag.
                     ::buffa::Message::merge_group(
@@ -2101,7 +2115,7 @@ fn scalar_merge_arm(
     // Numeric scalars (proto3 last-wins: plain assignment overwrites any prior value).
     let decode_fn = decode_fn_token(ty);
     Ok(quote! {
-        #field_number => {
+        (#field_number, #wire_pattern) => {
             #wire_check
             self.#ident = #decode_fn(buf)?;
         }
@@ -2395,6 +2409,7 @@ fn repeated_merge_arm(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let field_number = validated_field_number(field)?;
     let ty = effective_type(ctx, field, features);
+    let wire_pattern = decode_wire_pattern(ty, true);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, field_name);
     let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
     // For a custom collection, bring `ProtoList` into the arm's scope so the
@@ -2414,7 +2429,7 @@ fn repeated_merge_arm(
             &quote! { ::buffa::encoding::WireType::LengthDelimited },
         );
         return Ok(quote! {
-            #field_number => {
+            (#field_number, #wire_pattern) => {
                 #list_use
                 #wire_check
                 let mut elem = ::core::default::Default::default();
@@ -2430,7 +2445,7 @@ fn repeated_merge_arm(
             &quote! { ::buffa::encoding::WireType::StartGroup },
         );
         return Ok(quote! {
-            #field_number => {
+            (#field_number, #wire_pattern) => {
                 #list_use
                 #wire_check
                 let mut elem = ::core::default::Default::default();
@@ -2475,7 +2490,7 @@ fn repeated_merge_arm(
             }
         };
         return Ok(quote! {
-            #field_number => {
+            (#field_number, #wire_pattern) => {
                 #list_use
                 #wire_check
                 let __elem = #decode_expr;
@@ -2587,7 +2602,7 @@ fn repeated_merge_arm(
     };
 
     Ok(quote! {
-        #field_number => {
+        (#field_number, #wire_pattern) => {
             #list_use
             if tag.wire_type() == ::buffa::encoding::WireType::LengthDelimited {
                 // Packed encoding.
@@ -2766,6 +2781,7 @@ fn oneof_merge_arm(
     custom_box: Option<&(TokenStream, TokenStream)>,
 ) -> TokenStream {
     let wire_type = wire_type_token(ty);
+    let wire_pattern = decode_wire_pattern(ty, false);
     let wire_check = wire_type_check(&quote! { tag }, &wire_type);
     // Message/group variants merge into the existing value. When boxed, the
     // binding is `&mut **existing` — `DerefMut` through any `ProtoBox` (`Box` or
@@ -2795,7 +2811,7 @@ fn oneof_merge_arm(
                 quote! { ::buffa::types::decode_string_to(buf)? }
             };
             quote! {
-                #field_number => {
+                (#field_number, #wire_pattern) => {
                     #wire_check
                     self.#field_ident = ::core::option::Option::Some(
                         #enum_ident::#variant_ident(#decoded)
@@ -2806,7 +2822,7 @@ fn oneof_merge_arm(
         Type::TYPE_BYTES => {
             let decoded = bytes_decode_expr(bytes_repr);
             quote! {
-                #field_number => {
+                (#field_number, #wire_pattern) => {
                     #wire_check
                     self.#field_ident = ::core::option::Option::Some(
                         #enum_ident::#variant_ident(#decoded)
@@ -2829,14 +2845,14 @@ fn oneof_merge_arm(
                     unknown_route,
                 );
                 quote! {
-                    #field_number => {
+                    (#field_number, #wire_pattern) => {
                         #wire_check
                         #decode
                     }
                 }
             } else {
                 quote! {
-                    #field_number => {
+                    (#field_number, #wire_pattern) => {
                         #wire_check
                         self.#field_ident = ::core::option::Option::Some(
                             #enum_ident::#variant_ident(
@@ -2848,7 +2864,7 @@ fn oneof_merge_arm(
             }
         }
         Type::TYPE_MESSAGE => quote! {
-            #field_number => {
+            (#field_number, #wire_pattern) => {
                 #wire_check
                 // Proto3 merge semantics: if this oneof variant is already
                 // set, merge into the existing value rather than replacing it.
@@ -2866,7 +2882,7 @@ fn oneof_merge_arm(
             }
         },
         Type::TYPE_GROUP => quote! {
-            #field_number => {
+            (#field_number, #wire_pattern) => {
                 #wire_check
                 if let ::core::option::Option::Some(
                     #enum_ident::#variant_ident(ref mut existing)
@@ -2884,7 +2900,7 @@ fn oneof_merge_arm(
         _ => {
             let decode_fn = decode_fn_token(ty);
             quote! {
-                #field_number => {
+                (#field_number, #wire_pattern) => {
                     #wire_check
                     self.#field_ident = ::core::option::Option::Some(
                         #enum_ident::#variant_ident(#decode_fn(buf)?)
@@ -3399,6 +3415,7 @@ fn map_merge_arm(
     features: &ResolvedFeatures,
     preserve_unknown_fields: bool,
 ) -> Result<TokenStream, CodeGenError> {
+    let wire_pattern = wire_type_token(Type::TYPE_MESSAGE);
     let m = map_entry_ctx(ctx, msg, field, proto_fqn, features)?;
     let MapEntryCtx {
         field_number,
@@ -3434,7 +3451,7 @@ fn map_merge_arm(
         }
     };
     Ok(quote! {
-        #field_number => {
+        (#field_number, #wire_pattern) => {
             #wire_check
             #merge_call
         }
