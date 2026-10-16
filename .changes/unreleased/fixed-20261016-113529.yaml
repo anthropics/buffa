@@ -1,0 +1,3 @@
+kind: Fixed
+body: Unknown fields with an invalid field number now panic during sizing or encoding instead of writing a malformed protobuf tag.
+time: 2026-10-16T11:35:29.701967+02:00
