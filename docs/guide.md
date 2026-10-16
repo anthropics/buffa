@@ -2140,6 +2140,28 @@ let obj = Struct::from_fields([
 
 `Value::default()` has no kind set, which `struct.proto` defines as an error. It encodes to zero bytes, and JSON serialization of it fails, also when it is an element of a `ListValue` or a field of a `Struct`. Use `Value::null()` for a JSON `null`. A `Value` decoded from binary can have no kind too: an empty payload, or one written with a kind that this version of `struct.proto` lacks. Serializing a decoded message to JSON returns an error for such a value.
 
+### FieldMask
+
+These helpers compare path strings verbatim, so pass proto field names. `covers(path)`
+is true when a mask path equals `path` or is its ancestor. `overlaps(path)` also
+matches when the mask selects a descendant:
+
+```rust,ignore
+use buffa_types::google::protobuf::FieldMask;
+
+let mask = FieldMask::from_paths(["settings.theme"]);
+assert!(mask.covers("settings.theme.color"));
+assert!(!mask.covers("settings"));
+assert!(mask.overlaps("settings"));
+assert!(!FieldMask::default().overlaps("settings"));
+assert!(!FieldMask::from_paths(["*"]).overlaps("settings"));
+```
+
+`*` is an ordinary path here, not a wildcard. An empty mask has no paths, so
+these helpers return `false`. They do not inspect request-field presence. If
+your API treats an absent update mask as selecting every field, check the
+`MessageField` with `is_set()` first.
+
 ## `no_std` usage
 
 Buffa works without `std` (requires `alloc`):
