@@ -1490,6 +1490,61 @@ impl Config {
         self
     }
 
+    /// Encode map entries as prost does: leave an entry's key or value out
+    /// when it holds the default (default: false, both are always written, as
+    /// the C++ and Java runtimes write them). Entries themselves are never
+    /// dropped.
+    ///
+    /// For migrations from prost where stored or hashed map encodings must
+    /// not change. Decoding is unchanged: buffa, like every protobuf runtime,
+    /// reads both forms to the same map. One value does not survive the round
+    /// trip: a `-0.0` float value is left out, as prost leaves it out, and
+    /// decodes as `0.0`.
+    ///
+    /// The default is what a missing field decodes to: zero, `false`, empty,
+    /// an open enum's 0 or a closed enum's first value. A message value is
+    /// left out when it encodes to nothing.
+    ///
+    /// # Differences from prost
+    ///
+    /// - prost leaves out a message value equal to its default. A value that
+    ///   equals its default and still encodes a field, such as one with a
+    ///   `required` field at its default or a float field holding `-0.0`, is
+    ///   written here and not by prost.
+    /// - A value of an enum made open with
+    ///   [`open_enums_in`](Self::open_enums_in) is left out at 0, which a
+    ///   missing open enum decodes to, where prost leaves out the enum's
+    ///   first value. The two differ only for an enum whose first value is
+    ///   not 0. protoc rejects that as a map value, so the case can occur
+    ///   only with a descriptor set that another tool built
+    ///   ([`use_buf`](Self::use_buf), [`descriptor_set`](Self::descriptor_set)).
+    /// - The option covers the entries' bytes only. For a map with more than
+    ///   one entry to encode identically, the entries must also come in the
+    ///   same order: use [`map_type`](Self::map_type) with
+    ///   [`MapRepr::BTreeMap`] where prost used `btree_map`.
+    ///
+    /// # Scope
+    ///
+    /// - The option applies to the owned, view and lazy view encoders of the
+    ///   messages generated in this run. Each crate's types encode as that
+    ///   crate was generated.
+    /// - `google.protobuf.Struct`, the well-known type with a map field,
+    ///   comes from `buffa-types` and writes both fields, and so does
+    ///   `DynamicMessage`.
+    /// - A lazy view keeps its singular and repeated message fields undecoded
+    ///   and writes them as they were read, so map entries inside them keep
+    ///   the encoding they arrived with. Every encoder writes entries kept as
+    ///   unknown fields as they were read.
+    /// - With [`CodecStrategy::Table`], messages with a map field keep the
+    ///   unrolled codec, and a
+    ///   [`codec_strategy_in`](Self::codec_strategy_in) rule that selects the
+    ///   table for such a message by its exact path is an error.
+    #[must_use]
+    pub fn map_entries_omit_defaults(mut self, enabled: bool) -> Self {
+        self.codegen_config.map_entries_omit_defaults = enabled;
+        self
+    }
+
     /// Map the matching `map` fields to a custom collection implementing
     /// `buffa::map_codec::MapStorage`, named by its fully-qualified Rust path
     /// (e.g. `"::my_crate::OrderedMap"`). The path must **not** include the

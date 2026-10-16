@@ -157,6 +157,24 @@ fn corpus_output() -> &'static str {
     })
 }
 
+/// The corpus generated with `map_entries_omit_defaults`.
+fn sparse_corpus_output() -> &'static str {
+    static OUTPUT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    OUTPUT.get_or_init(|| {
+        let config = CodeGenConfig {
+            map_entries_omit_defaults: true,
+            ..CodeGenConfig::default()
+        };
+        let files = generate(
+            &[size_corpus_file()],
+            &["size_corpus.proto".to_string()],
+            &config,
+        )
+        .expect("corpus should generate");
+        joined(&files)
+    })
+}
+
 /// Extract the bodies of every `fn` whose name starts with `prefix`
 /// (matching `fn compute_size` and `fn write_to` in owned, view, and lazy
 /// impls) by brace counting from the signature.
@@ -227,25 +245,62 @@ fn no_u32_arithmetic_in_size_paths() {
     // arithmetic inside these bodies is a wrap bug (see module docs);
     // u32 uses elsewhere in generated code (decode paths, accessors) are
     // out of scope by construction.
+    for content in [corpus_output(), sparse_corpus_output()] {
+        let bodies: Vec<&str> = fn_bodies(content, "compute_size")
+            .into_iter()
+            .chain(fn_bodies(content, "write_to"))
+            .collect();
+        assert!(
+            bodies.len() >= 6,
+            "corpus should produce compute_size/write_to bodies for owned and \
+             view impls, got {}",
+            bodies.len()
+        );
+        for body in bodies {
+            assert!(
+                !body.contains("as u32"),
+                "u32 cast reintroduced in a size path: {body}"
+            );
+            assert!(
+                !body.contains("sum::<u32>()"),
+                "u32 sum reintroduced in a size path: {body}"
+            );
+        }
+    }
+}
+
+/// `map_entries_omit_defaults` switches both map shapes, message- and
+/// scalar-valued, and both owned passes to the encoders that leave default
+/// entry fields out.
+#[test]
+fn map_entries_omit_defaults_selects_the_sparse_encoders() {
+    let dense = [
+        "map_codec::field_len::<",
+        "map_codec::write_field::<",
+        "map_codec::message_field_len::<",
+        "map_codec::write_message_field::<",
+    ];
+    let sparse = [
+        "map_codec::field_len_omitting_defaults::<",
+        "map_codec::write_field_omitting_defaults::<",
+        "map_codec::message_field_len_omitting_defaults::<",
+        "map_codec::write_message_field_omitting_defaults::<",
+    ];
     let content = corpus_output();
-    let bodies: Vec<&str> = fn_bodies(content, "compute_size")
-        .into_iter()
-        .chain(fn_bodies(content, "write_to"))
-        .collect();
-    assert!(
-        bodies.len() >= 6,
-        "corpus should produce compute_size/write_to bodies for owned and \
-         view impls, got {}",
-        bodies.len()
-    );
-    for body in bodies {
+    for name in dense {
         assert!(
-            !body.contains("as u32"),
-            "u32 cast reintroduced in a size path: {body}"
+            content.contains(name),
+            "{name} without the option: {content}"
         );
-        assert!(
-            !body.contains("sum::<u32>()"),
-            "u32 sum reintroduced in a size path: {body}"
-        );
+    }
+    for name in sparse {
+        assert!(!content.contains(name), "{name} without the option");
+    }
+    let content = sparse_corpus_output();
+    for name in sparse {
+        assert!(content.contains(name), "{name} with the option: {content}");
+    }
+    for name in dense {
+        assert!(!content.contains(name), "{name} with the option");
     }
 }

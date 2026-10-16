@@ -179,6 +179,14 @@ For proto2 closed enums, Buffa follows closed-enum semantics by default and rout
 +let len = msg.encoded_len() as usize;
 ```
 
+### Map entries
+
+prost leaves a map entry's key or value out when it holds the default; buffa writes both, as the C++ and Java runtimes do. Both decode the same, but the bytes differ. If stored or hashed map encodings must not change, turn on `.map_entries_omit_defaults(true)` to leave a default key or value out as prost does, and keep the entry order with `.map_type(buffa_build::MapRepr::BTreeMap)` where prost used `btree_map`. The option removes this difference, except for the message values described in the next paragraph. Other differences remain, for example: outside a map, a proto3 `float` or `double` field without `optional` that is `-0.0` is written by buffa and not by prost, and buffa writes back the [unknown fields](#unknown-field-preservation) it read.
+
+The option leaves out what a missing field decodes to: zero, `false`, empty, an open enum's 0, a closed enum's first value, and a message value that encodes to nothing. As with prost, a `-0.0` float value is left out and decodes as `0.0`. prost leaves out a message value equal to its default, so a value that equals its default but still encodes a field, such as a `required` field at its default or a float field holding `-0.0`, is written by buffa and not by prost.
+
+It applies to the owned, view and lazy view encoders of the messages generated with it. A lazy view keeps its singular and repeated message fields undecoded and writes them as they were read, so map entries inside them keep the encoding they arrived with, and every encoder writes entries kept as unknown fields as they were read. A value of an enum made open with `open_enums_in` is left out at 0, which a missing open enum decodes to, where prost leaves out its first value; the two differ only for an enum whose first value is not 0, which protoc rejects as a map value, so the case can occur only with a descriptor set that another tool built. Each crate's types encode as that crate was generated; `google.protobuf.Struct`, the well-known type with a map field, comes from `buffa-types` and writes both fields, and so does `DynamicMessage`. `protoc-gen-buffa` has no `map_type` option, so through the plugin a map with several entries keeps `HashMap` order. With `CodecStrategy::Table`, messages with a map field keep the unrolled codec, and a `codec_strategy_in` rule that selects the table for such a message by its exact path is an error.
+
 ## 6. Decoding API
 
 ```diff
@@ -292,6 +300,7 @@ The buffa equivalent of each prost-build feature, or a note that there is none:
 | prost feature | buffa status |
 |---------------|-------------|
 | `btree_map(&[...])` | Supported. `.map_type(buffa_build::MapRepr::BTreeMap)` for all, or `.map_type_in(buffa_build::MapRepr::BTreeMap, &[...])` for specific fields. Paths are fully qualified (`".my_pkg.MyMessage.items"`), and the leading dot is optional. prost's suffix paths (`"items"`, `"MyMessage.items"`) are not supported: `"items"` is read as `".items"`, matches no field, and produces a build warning. |
+| map entry encoding (default key or value left out) | Opt-in: `.map_entries_omit_defaults(true)`. See [Map entries](#map-entries). |
 | `bytes(&[...])` | Supported. `.use_bytes_type()` for all, or `.use_bytes_type_in(&[...])` for specific fields. Paths are matched as for `map_type_in`. |
 | `extern_path(proto, rust)` | Supported. Same API, both package-level (`.extern_path(".pkg", "::crate")`) and per-type (`.extern_path(".google.protobuf.Timestamp", "::pbjson_types::Timestamp")`) mappings. A per-type mapping to a non-buffa crate requires `.generate_views(false)`, or map to a buffa-generated crate instead — see [External type paths](guide.md#external-type-paths). |
 | `type_attribute(path, attr)` | Supported. Same API, plus `message_attribute` / `enum_attribute` / `oneof_attribute` for narrower targeting. (For serde, prefer `generate_json(true)`, which emits the proto3-canonical JSON impls.) |

@@ -276,6 +276,13 @@ fn map_field<'a>(
     features: &ResolvedFeatures,
 ) -> Result<TableField<'a>, Ineligible> {
     let name = f.name.as_deref().unwrap_or("");
+    // The table writes both fields of every entry.
+    if ctx.config.map_entries_omit_defaults {
+        return Err(ineligible(
+            "has a map field and map_entries_omit_defaults is set",
+            format!("map_entries_omit_defaults is set and it has map field `{name}`"),
+        ));
+    }
     let field_fqn = format!("{fqn}.{name}");
     if matches!(ctx.map_repr(&field_fqn), crate::MapRepr::Custom(_)) {
         return Err(ineligible(

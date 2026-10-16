@@ -1099,6 +1099,8 @@ pub enum CodecStrategy {
     /// - a message that uses the `MessageSet` wire format;
     /// - a message with extension ranges, when JSON code is generated and
     ///   unknown fields are preserved;
+    /// - a message with a `map` field, when `map_entries_omit_defaults` is
+    ///   set: the table writes both fields of every entry;
     /// - a message with a field of a non-default string, bytes, or collection
     ///   type, such as `use_bytes_type`, `string_type`, `bytes_type`,
     ///   `repeated_type`, and a custom `map_type` select. `HashMap` and
@@ -1636,6 +1638,27 @@ pub struct CodeGenConfig {
     ///
     /// Defaults to `true`.
     pub generate_with_setters: bool,
+    /// Encode map entries as prost does: leave an entry's key or value out
+    /// when it holds what a missing field decodes to, and a message value when
+    /// it encodes to nothing.
+    ///
+    /// Off, every entry carries both fields, as the C++ and Java runtimes
+    /// write them. Decoding reads either; a `-0.0` float value is left out
+    /// and so decodes as `0.0`. prost leaves out a message value equal to its
+    /// default, so a value that still encodes a field, such as one with a
+    /// `required` field at its default, is written here and not by prost.
+    ///
+    /// Applies to the owned, view and lazy view encoders of the messages
+    /// generated in this run: types generated without it, the well-known
+    /// types and `DynamicMessage` write both fields. With
+    /// [`CodecStrategy::Table`], messages with a map field keep the unrolled
+    /// codec, and a [`codec_strategy_in`](Self::codec_strategy_in) rule that
+    /// selects the table for such a message by its exact path is a
+    /// [`CodeGenError`]. `buffa_build::Config::map_entries_omit_defaults` has
+    /// the details.
+    ///
+    /// Defaults to `false`.
+    pub map_entries_omit_defaults: bool,
     /// Generate `impl Reflectable` for owned message types (bridge mode).
     ///
     /// When enabled, each generated message gets an
@@ -2029,6 +2052,7 @@ impl Default for CodeGenConfig {
             oneof_struct_field_attributes: Vec::new(),
             gate_impls_on_crate_features: false,
             generate_with_setters: true,
+            map_entries_omit_defaults: false,
             generate_reflection: false,
             generate_reflection_vtable: false,
             shared_descriptor_pool: false,

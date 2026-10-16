@@ -529,6 +529,20 @@ fn main() {
         .compile()
         .expect("buffa_build failed for map_type.proto");
 
+    // map_omit_defaults: entries encoded as prost writes them, by the owned,
+    // view and lazy view encoders; BTreeMap so the tests can pin the bytes.
+    buffa_build::Config::new()
+        .files(&[
+            "protos/map_omit_defaults.proto",
+            "protos/map_omit_defaults_proto2.proto",
+        ])
+        .includes(&["protos/"])
+        .map_type(buffa_build::MapRepr::BTreeMap)
+        .map_entries_omit_defaults(true)
+        .lazy_views(true)
+        .compile()
+        .expect("buffa_build failed for map_omit_defaults.proto");
+
     // map_type_custom: a crate-LOCAL `CustomMap<K, V>` newtype (a `MapStorage`
     // impl wrapping BTreeMap) used for every `map` field, via the
     // `map_type_custom` knob. Exercises the `MapRepr::Custom` codegen path and

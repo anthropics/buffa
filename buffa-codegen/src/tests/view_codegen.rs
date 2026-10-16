@@ -649,3 +649,75 @@ fn test_view_oneof_with_message_variant() {
         "message-type oneof variant must check recursion depth: {content}"
     );
 }
+
+/// Under `map_entries_omit_defaults`, a view leaves a closed enum map value
+/// out at the enum's default, its first value, and an open one at 0, as a
+/// missing value decodes to those.
+#[test]
+fn map_entries_omit_defaults_compares_view_enum_values_with_their_default() {
+    let entry = |name: &str, value_type: &str| DescriptorProto {
+        name: Some(name.to_string()),
+        field: vec![
+            make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_INT32),
+            FieldDescriptorProto {
+                type_name: Some(value_type.to_string()),
+                ..make_field("value", 2, Label::LABEL_OPTIONAL, Type::TYPE_ENUM)
+            },
+        ],
+        options: Some(MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        })
+        .into(),
+        ..Default::default()
+    };
+    let map = |name: &str, number: i32, entry_type: &str| FieldDescriptorProto {
+        type_name: Some(entry_type.to_string()),
+        ..make_field(name, number, Label::LABEL_REPEATED, Type::TYPE_MESSAGE)
+    };
+    // `A = 1` first: protoc rejects this as a map value, and a descriptor
+    // built another way can have it.
+    let first_is_one = |name: &str| EnumDescriptorProto {
+        name: Some(name.to_string()),
+        value: vec![enum_value("A", 1), enum_value("B", 0)],
+        ..Default::default()
+    };
+    let file = FileDescriptorProto {
+        name: Some("enum_maps.proto".to_string()),
+        package: Some("em".to_string()),
+        syntax: Some("proto2".to_string()),
+        enum_type: vec![first_is_one("Closed"), first_is_one("Opened")],
+        message_type: vec![DescriptorProto {
+            name: Some("Maps".to_string()),
+            field: vec![
+                map("closed", 1, ".em.Maps.ClosedEntry"),
+                map("opened", 2, ".em.Maps.OpenedEntry"),
+            ],
+            nested_type: vec![
+                entry("ClosedEntry", ".em.Closed"),
+                entry("OpenedEntry", ".em.Opened"),
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let config = CodeGenConfig {
+        map_entries_omit_defaults: true,
+        feature_overrides: open_enum_overrides(&[".em.Opened"]),
+        ..CodeGenConfig::default()
+    };
+    let files =
+        generate(&[file], &["enum_maps.proto".to_string()], &config).expect("should generate");
+    // Without whitespace and the trailing commas prettyplease adds.
+    let view: String = files
+        .iter()
+        .filter(|f| f.name.contains("__view"))
+        .flat_map(|f| f.content.split_whitespace())
+        .collect::<String>()
+        .replace(",>", ">");
+    // In the size pass, and twice in the write pass: the length and the field.
+    let closed =
+        "!<::buffa::map_codec::ClosedEnum<_>as::buffa::map_codec::MapCodec>::is_default(v)";
+    assert_eq!(view.matches(closed).count(), 3, "{view}");
+    assert_eq!(view.matches("v.to_i32()!=0").count(), 3, "{view}");
+}
