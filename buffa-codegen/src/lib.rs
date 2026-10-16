@@ -5393,11 +5393,12 @@ pub fn proto_path_to_stem(proto_path: &str) -> String {
 ///
 /// `name` must be a bare-sibling filename — the same convention buffa uses
 /// for its own `include!` calls, so it resolves relative to the stitcher
-/// without any `OUT_DIR` prefix. Names must not contain `/` or `\`, and must
-/// not collide with any of buffa's own generated filenames for the same
-/// package (`<stem>.rs`, `<stem>.__view.rs`, etc.) — pick an unused suffix
-/// such as `<stem>.__myplugin.rs`. The name is written into the `include!`
-/// as an escaped string literal, as buffa's own include paths are.
+/// without any `OUT_DIR` prefix. Names must not contain `/` or `\`, must not
+/// be empty, `.` or `..`, and must not collide with any of buffa's own
+/// generated filenames for the same package (`<stem>.rs`, `<stem>.__view.rs`,
+/// etc.) — pick an unused suffix such as `<stem>.__myplugin.rs`. The name is
+/// written into the `include!` as an escaped string literal, as buffa's own
+/// include paths are.
 ///
 /// Companion files with no matching `PackageMod` (e.g. for a package buffa
 /// did not generate any output for) are still appended to `files` but no
@@ -5407,8 +5408,8 @@ pub fn proto_path_to_stem(proto_path: &str) -> String {
 ///
 /// # Panics
 ///
-/// Panics if a companion's `name` contains `/` or `\`. Every name is checked
-/// before `files` is changed.
+/// Panics if a companion's `name` contains `/` or `\`, or is empty, `.` or
+/// `..`. Every name is checked before `files` is changed.
 #[track_caller]
 pub fn apply_companions(files: &mut Vec<GeneratedFile>, companions: Vec<GeneratedFile>) {
     for comp in &companions {
@@ -5417,6 +5418,12 @@ pub fn apply_companions(files: &mut Vec<GeneratedFile>, companions: Vec<Generate
             "companion file name {:?} contains a path separator ('/' or '\\'); use a \
              bare file name such as `<stem>.__myplugin.rs`, which include!() resolves \
              next to the stitcher",
+            comp.name
+        );
+        assert!(
+            !matches!(comp.name.as_str(), "" | "." | ".."),
+            "companion file name {:?} is empty, `.` or `..`, which names a directory, \
+             not a file; use a bare file name such as `<stem>.__myplugin.rs`",
             comp.name
         );
     }
