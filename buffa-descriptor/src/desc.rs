@@ -169,6 +169,13 @@ pub enum FieldKind {
     /// A `repeated` field.
     List(SingularKind),
     /// A `map<K, V>` field.
+    ///
+    /// A message with `map_entry = true` is reachable through a field only
+    /// as this variant: [`Singular`](Self::Singular) and [`List`](Self::List)
+    /// never carry one, and an extension's kind is never `Map` (see
+    /// [`PoolError::InvalidMapEntryUse`](crate::PoolError::InvalidMapEntryUse)
+    /// and
+    /// [`PoolError::ExtensionWithMapEntryType`](crate::PoolError::ExtensionWithMapEntryType)).
     Map {
         /// Key type. Always integral, bool, or string per the protobuf spec.
         key: ScalarType,

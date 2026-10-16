@@ -56,6 +56,29 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
     opts.as_option().cloned().map(Box::new)
 }
 
+/// The name protoc gives the entry message of map field `field_name`
+/// (`MapEntryName` in `compiler/parser.cc`) and requires of it
+/// (`ToCamelCase(name, false)` followed by `Entry` in `descriptor.cc`):
+/// every `_` is dropped, the first character and each one after a `_` are
+/// ASCII upper-cased, the rest are kept as they are, and `Entry` is
+/// appended. `foo_bar` gets `FooBarEntry`, and `FOO_BAR` gets `FOOBAREntry`.
+fn map_entry_name(field_name: &str) -> String {
+    let mut name = String::with_capacity(field_name.len() + "Entry".len());
+    let mut upper_next = true;
+    for c in field_name.chars() {
+        if c == '_' {
+            upper_next = true;
+        } else if upper_next {
+            name.push(c.to_ascii_uppercase());
+            upper_next = false;
+        } else {
+            name.push(c);
+        }
+    }
+    name.push_str("Entry");
+    name
+}
+
 /// Maximum length of a fully-qualified symbol name, in bytes.
 ///
 /// Field and oneof names are exempt. Two things depend on this limit,
@@ -441,8 +464,50 @@ pub enum PoolError {
     /// messages, or enums.
     ///
     /// `message` is the full name of the map field that uses the entry, and
-    /// the entry message is the field's type.
+    /// the entry message is the field's type. A field whose type is a map
+    /// entry it does not own reports
+    /// [`InvalidMapEntryUse`](Self::InvalidMapEntryUse) instead, and an
+    /// extension whose type is a map entry reports
+    /// [`ExtensionWithMapEntryType`](Self::ExtensionWithMapEntryType).
     MalformedMapEntry { message: String },
+    /// A field has a map entry message (`map_entry = true`) as its type, but
+    /// is not the map field the entry belongs to. As in protoc, a map entry
+    /// can be the type of one field only: a repeated message field of the
+    /// message that declares the entry, whose name gives the entry's name.
+    /// The entry of field `foo_bar` is `FooBarEntry`: each `_` is dropped,
+    /// the first character and each one after a `_` are upper-cased, the
+    /// case of the rest is kept, and `Entry` is appended.
+    ///
+    /// A group whose type is a map entry is rejected whatever its name.
+    /// protobuf 33.5 accepts a repeated group named for the entry when it
+    /// builds a descriptor, as a field or as an extension; protobuf's `main`
+    /// branch rejects it.
+    ///
+    /// `field` is the full name of the field and `entry` the full name of
+    /// the map entry message. `expected_entry` is the full name a map field
+    /// named like `field` requires of its entry: the containing message's
+    /// name, then the derived entry name. It equals `entry` when the name is
+    /// right and something else is wrong: the field is not repeated or is a
+    /// group, or the entry is not declared in the field's message (possible
+    /// only with a name that contains a `.`, or a package named like the
+    /// message).
+    InvalidMapEntryUse {
+        field: String,
+        entry: String,
+        expected_entry: String,
+    },
+    /// An extension has a map entry message (`map_entry = true`) as its
+    /// type. A map entry can be the type of its map field only, and an
+    /// extension is never a map field.
+    ///
+    /// Here the pool is stricter than protoc, which accepts one such
+    /// extension: a repeated one that extends the message declaring the
+    /// entry and is named for the entry, as in
+    /// `extend Holder { repeated Holder.EntriesEntry entries = 100; }`.
+    ///
+    /// `field` is the full name of the extension, and `entry` the full name
+    /// of the map entry message.
+    ExtensionWithMapEntryType { field: String, entry: String },
     /// Two extensions claim the same field number on the same message.
     /// protoc rejects this within one compilation unit, but it can arise
     /// when merging independently-compiled `FileDescriptorSet`s.
@@ -827,6 +892,36 @@ impl core::fmt::Display for PoolError {
                 "map field {message} has a malformed entry message: it needs exactly the optional \
                  fields key = 1 and value = 2, in that order, and a key of an integer type, bool, \
                  or string; extensions, extension ranges, nested messages, and enums are not allowed"
+            ),
+            // The name is right, so the remedy is the field's shape.
+            Self::InvalidMapEntryUse {
+                field,
+                entry,
+                expected_entry,
+            } if entry == expected_entry => write!(
+                f,
+                "field {field} has type {entry}, a map entry message, but is not its map field: \
+                 a map field is a repeated message field, not a group, of the message that \
+                 declares the entry; make the field one, or clear map_entry on {entry}"
+            ),
+            Self::InvalidMapEntryUse {
+                field,
+                entry,
+                expected_entry,
+            } => write!(
+                f,
+                "field {field} has type {entry}, a map entry message, but is not its map field: \
+                 a map entry can be the type of one field only, the repeated message field it \
+                 is named for, and the entry of a map field with this name is {expected_entry}; \
+                 give the field an entry of that name, or clear map_entry on {entry} if it is \
+                 not a map's entry"
+            ),
+            Self::ExtensionWithMapEntryType { field, entry } => write!(
+                f,
+                "extension {field} has type {entry}, a map entry message; a map entry can be \
+                 the type of its map field only, and an extension is never a map field (protoc \
+                 accepts one such extension, the pool rejects all); give the extension a \
+                 message type without map_entry"
             ),
             Self::DuplicateExtensionNumber { extendee, number } => {
                 write!(
@@ -1285,8 +1380,10 @@ impl DescriptorPool {
     /// in a file the referring file does not import. Also returns one if a file
     /// breaks a descriptor rule that the pool checks. The rules are protoc's,
     /// apart from the pool's own field-count limit
-    /// ([`PoolError::TooManyFields`]). Each [`PoolError`] variant documents one
-    /// rule.
+    /// ([`PoolError::TooManyFields`]) and an extension whose type is a map
+    /// entry, one shape of which protoc compiles
+    /// ([`PoolError::ExtensionWithMapEntryType`]). Each [`PoolError`] variant
+    /// documents one rule.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -2006,7 +2103,10 @@ impl DescriptorPool {
         {
             return Err(PoolError::DuplicateName(fqn));
         }
-        // Push a placeholder; pass 2 fills it in.
+        // Push a placeholder; pass 2 fills it in. The options are set now,
+        // because pass 2 can link a field of this type before this message
+        // (in an earlier message, or in this message's parent) and
+        // `link_field` reads `map_entry` from them.
         self.messages.push(MessageDescriptor {
             full_name: fqn.clone(),
             fields: Vec::new(),
@@ -2014,7 +2114,7 @@ impl DescriptorPool {
             field_by_name: Vec::new(),
             oneofs: Vec::new(),
             extension_ranges: Vec::new(),
-            options: None,
+            options: clone_options(&msg.options),
         });
         self.message_file.push(file_idx);
         for nested in &msg.nested_type {
@@ -2401,6 +2501,8 @@ impl DescriptorPool {
             self.messages[next_index].full_name, fqn,
             "pass-1/pass-2 walk order desync (this is a bug in DescriptorPool)"
         );
+        // Pass 1 cloned the options into the placeholder already.
+        let options = self.messages[next_index].options.take();
         self.messages[next_index] = MessageDescriptor {
             full_name: fqn.clone(),
             fields,
@@ -2408,7 +2510,7 @@ impl DescriptorPool {
             field_by_name,
             oneofs,
             extension_ranges,
-            options: clone_options(&msg.options),
+            options,
         };
         let mut after = next_index + 1;
 
@@ -2606,10 +2708,27 @@ impl DescriptorPool {
             });
         }
         // The field links exactly like a declared field. `containing_msg` is
-        // `None` because extensions cannot be map fields (a map requires a
-        // synthetic MapEntry message nested in the declaring message, which
-        // an `extend` block cannot contain).
+        // `None` because an extension never links as a map field.
         let mut field = self.link_field(scope_fqn, ext, parent_features, None, scope)?;
+        // An extension whose type is a map entry does not link. protoc accepts
+        // one shape, a repeated extension of the entry's containing message
+        // that is named for the entry, and treats it as a map field. The pool
+        // has no map extension, and linking it as a list of entries would
+        // leave the entry's own rules unchecked.
+        if let FieldKind::Singular(SingularKind::Message(midx))
+        | FieldKind::List(SingularKind::Message(midx)) = field.kind
+        {
+            let entry = self.message(midx);
+            if entry
+                .options()
+                .is_some_and(|options| options.map_entry == Some(true))
+            {
+                return Err(PoolError::ExtensionWithMapEntryType {
+                    field: fqn,
+                    entry: entry.full_name().to_string(),
+                });
+            }
+        }
         if scope.proto3 {
             self.check_proto3_closed_enum(&field, || fqn.clone())?;
         }
@@ -2787,13 +2906,35 @@ impl DescriptorPool {
         }
 
         // Detect map fields: repeated + message type + the message is a
-        // map_entry. `containing_msg` is `None` for extensions, which cannot
-        // be map fields — the lookup is skipped entirely.
-        let (kind, enum_type) = if is_repeated {
-            if let SingularKind::Message(midx) = element {
-                if let Some(entry) =
-                    containing_msg.and_then(|m| self.find_map_entry(msg_fqn, m, f, midx))
+        // map_entry nested in this message and named for this field.
+        // `containing_msg` is `None` for extensions, which never link as map
+        // fields — the lookup is skipped entirely.
+        let map_entry = match element {
+            SingularKind::Message(midx) => {
+                let entry = containing_msg.and_then(|m| self.find_map_entry(msg_fqn, m, f, midx));
+                // As in protoc, a map entry can be the type of its own map
+                // field only, which is the field `find_map_entry` accepts.
+                // `link_extension` rejects an extension whose type is one.
+                let message = self.message(midx);
+                if entry.is_none()
+                    && containing_msg.is_some()
+                    && message
+                        .options()
+                        .is_some_and(|options| options.map_entry == Some(true))
                 {
+                    return Err(PoolError::InvalidMapEntryUse {
+                        field: field_fqn,
+                        entry: message.full_name().to_string(),
+                        expected_entry: format!("{msg_fqn}.{}", map_entry_name(&name)),
+                    });
+                }
+                entry
+            }
+            _ => None,
+        };
+        let (kind, enum_type) = if is_repeated {
+            if let SingularKind::Message(_) = element {
+                if let Some(entry) = map_entry {
                     let (key_ty, value_kind) = self.resolve_map_entry(entry, &field_fqn, scope)?;
                     let enum_type = entry
                         .field
@@ -3191,6 +3332,9 @@ impl DescriptorPool {
             .full_name()
             .strip_prefix(msg_fqn)?
             .strip_prefix('.')?;
+        if entry_name != map_entry_name(f.name.as_deref().unwrap_or_default()) {
+            return None;
+        }
         let entry = containing
             .nested_type
             .iter()

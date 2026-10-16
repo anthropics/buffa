@@ -369,7 +369,8 @@ fn map_wire_type_pool() -> (Arc<DescriptorPool>, Vec<(u32, WireType, WireType)>)
     let mut wires = Vec::new();
     for (i, (kt, kw, vt, vname, vw)) in specs.into_iter().enumerate() {
         let number = i as i32 + 1;
-        let entry = format!("E{number}");
+        // The entry name protoc derives from the field name `f{number}`.
+        let entry = format!("F{number}Entry");
         m.nested_type.push(DescriptorProto {
             name: Some(entry.clone()),
             field: vec![
