@@ -56,11 +56,12 @@ fn clone_options<T: Clone + Default, P: buffa::ProtoBox<T>>(
     opts.as_option().cloned().map(Box::new)
 }
 
-/// The name protoc requires for the entry message of map field `field_name`
+/// The name protoc gives the entry message of map field `field_name`
+/// (`MapEntryName` in `compiler/parser.cc`) and requires of it
 /// (`ToCamelCase(name, false)` followed by `Entry` in `descriptor.cc`):
 /// every `_` is dropped, the first character and each one after a `_` are
 /// ASCII upper-cased, the rest are kept as they are, and `Entry` is
-/// appended. `foo_bar` gets `FooBarEntry`.
+/// appended. `foo_bar` gets `FooBarEntry`, and `FOO_BAR` gets `FOOBAREntry`.
 fn map_entry_name(field_name: &str) -> String {
     let mut name = String::with_capacity(field_name.len() + "Entry".len());
     let mut upper_next = true;
@@ -465,20 +466,48 @@ pub enum PoolError {
     /// `message` is the full name of the map field that uses the entry, and
     /// the entry message is the field's type. A field whose type is a map
     /// entry it does not own reports
-    /// [`InvalidMapEntryUse`](Self::InvalidMapEntryUse) instead.
+    /// [`InvalidMapEntryUse`](Self::InvalidMapEntryUse) instead, and an
+    /// extension whose type is a map entry reports
+    /// [`ExtensionWithMapEntryType`](Self::ExtensionWithMapEntryType).
     MalformedMapEntry { message: String },
-    /// A field or extension has a map entry message (`map_entry = true`) as
-    /// its type, but is not the map field the entry belongs to. As in protoc,
-    /// a map entry can only be the type of a repeated message field (not a
-    /// group) of the message that declares the entry, or of a repeated
-    /// message extension of that message, and the entry's name must be the
-    /// field's name with each `_` dropped, the first letter and each one
-    /// after a `_` upper-cased, and `Entry` appended (field `foo_bar`, entry
-    /// `FooBarEntry`). Such an extension links as a list of entries.
+    /// A field has a map entry message (`map_entry = true`) as its type, but
+    /// is not the map field the entry belongs to. As in protoc, a map entry
+    /// can be the type of one field only: a repeated message field of the
+    /// message that declares the entry, whose name gives the entry's name.
+    /// The entry of field `foo_bar` is `FooBarEntry`: each `_` is dropped,
+    /// the first character and each one after a `_` are upper-cased, the
+    /// case of the rest is kept, and `Entry` is appended.
     ///
-    /// `field` is the full name of the field or extension, and `entry` the
-    /// full name of the map entry message.
-    InvalidMapEntryUse { field: String, entry: String },
+    /// A group whose type is a map entry is rejected whatever its name.
+    /// protobuf 33.5 accepts a repeated group named for the entry when it
+    /// builds a descriptor, as a field or as an extension; protobuf's `main`
+    /// branch rejects it.
+    ///
+    /// `field` is the full name of the field and `entry` the full name of
+    /// the map entry message. `expected_entry` is the full name a map field
+    /// named like `field` requires of its entry: the containing message's
+    /// name, then the derived entry name. It equals `entry` when the name is
+    /// right and something else is wrong: the field is not repeated or is a
+    /// group, or the entry is not declared in the field's message (possible
+    /// only with a name that contains a `.`, or a package named like the
+    /// message).
+    InvalidMapEntryUse {
+        field: String,
+        entry: String,
+        expected_entry: String,
+    },
+    /// An extension has a map entry message (`map_entry = true`) as its
+    /// type. A map entry can be the type of its map field only, and an
+    /// extension is never a map field.
+    ///
+    /// Here the pool is stricter than protoc, which accepts one such
+    /// extension: a repeated one that extends the message declaring the
+    /// entry and is named for the entry, as in
+    /// `extend Holder { repeated Holder.EntriesEntry entries = 100; }`.
+    ///
+    /// `field` is the full name of the extension, and `entry` the full name
+    /// of the map entry message.
+    ExtensionWithMapEntryType { field: String, entry: String },
     /// Two extensions claim the same field number on the same message.
     /// protoc rejects this within one compilation unit, but it can arise
     /// when merging independently-compiled `FileDescriptorSet`s.
@@ -864,11 +893,35 @@ impl core::fmt::Display for PoolError {
                  fields key = 1 and value = 2, in that order, and a key of an integer type, bool, \
                  or string; extensions, extension ranges, nested messages, and enums are not allowed"
             ),
-            Self::InvalidMapEntryUse { field, entry } => write!(
+            // The name is right, so the remedy is the field's shape.
+            Self::InvalidMapEntryUse {
+                field,
+                entry,
+                expected_entry,
+            } if entry == expected_entry => write!(
                 f,
-                "field {field} has map entry message {entry} as its type, but a map entry can \
-                 only be the type of a repeated message field or extension of the message that \
-                 declares it, whose name gives the entry name (field foo_bar, entry FooBarEntry)"
+                "field {field} has type {entry}, a map entry message, but is not its map field: \
+                 a map field is a repeated message field, not a group, of the message that \
+                 declares the entry; make the field one, or clear map_entry on {entry}"
+            ),
+            Self::InvalidMapEntryUse {
+                field,
+                entry,
+                expected_entry,
+            } => write!(
+                f,
+                "field {field} has type {entry}, a map entry message, but is not its map field: \
+                 a map entry can be the type of one field only, the repeated message field it \
+                 is named for, and the entry of a map field with this name is {expected_entry}; \
+                 give the field an entry of that name, or clear map_entry on {entry} if it is \
+                 not a map's entry"
+            ),
+            Self::ExtensionWithMapEntryType { field, entry } => write!(
+                f,
+                "extension {field} has type {entry}, a map entry message; a map entry can be \
+                 the type of its map field only, and an extension is never a map field (protoc \
+                 accepts one such extension, the pool rejects all); give the extension a \
+                 message type without map_entry"
             ),
             Self::DuplicateExtensionNumber { extendee, number } => {
                 write!(
@@ -1327,8 +1380,10 @@ impl DescriptorPool {
     /// in a file the referring file does not import. Also returns one if a file
     /// breaks a descriptor rule that the pool checks. The rules are protoc's,
     /// apart from the pool's own field-count limit
-    /// ([`PoolError::TooManyFields`]). Each [`PoolError`] variant documents one
-    /// rule.
+    /// ([`PoolError::TooManyFields`]) and an extension whose type is a map
+    /// entry, one shape of which protoc compiles
+    /// ([`PoolError::ExtensionWithMapEntryType`]). Each [`PoolError`] variant
+    /// documents one rule.
     pub fn new(set: FileDescriptorSet) -> Result<Self, PoolError> {
         let mut pool = Self::default();
         pool.add_file_descriptor_set(set)?;
@@ -2655,27 +2710,20 @@ impl DescriptorPool {
         // The field links exactly like a declared field. `containing_msg` is
         // `None` because an extension never links as a map field.
         let mut field = self.link_field(scope_fqn, ext, parent_features, None, scope)?;
-        // protoc accepts an extension of a map entry type only as a repeated
-        // message extension of the entry's containing message, named for the
-        // entry, as it does a field. Such an extension links as a list of
-        // entries, which is the map's wire form.
+        // An extension whose type is a map entry does not link. protoc accepts
+        // one shape, a repeated extension of the entry's containing message
+        // that is named for the entry, and treats it as a map field. The pool
+        // has no map extension, and linking it as a list of entries would
+        // leave the entry's own rules unchecked.
         if let FieldKind::Singular(SingularKind::Message(midx))
         | FieldKind::List(SingularKind::Message(midx)) = field.kind
         {
             let entry = self.message(midx);
-            let entry_owned_by_extendee = ext.label.unwrap_or_default() == Label::LABEL_REPEATED
-                && !ext.r#type.is_some_and(|ty| ty != ProtoType::TYPE_MESSAGE)
-                && entry
-                    .full_name()
-                    .strip_prefix(extendee_name.as_str())
-                    .and_then(|rest| rest.strip_prefix('.'))
-                    == Some(map_entry_name(name).as_str());
             if entry
                 .options()
                 .is_some_and(|options| options.map_entry == Some(true))
-                && !entry_owned_by_extendee
             {
-                return Err(PoolError::InvalidMapEntryUse {
+                return Err(PoolError::ExtensionWithMapEntryType {
                     field: fqn,
                     entry: entry.full_name().to_string(),
                 });
@@ -2866,8 +2914,7 @@ impl DescriptorPool {
                 let entry = containing_msg.and_then(|m| self.find_map_entry(msg_fqn, m, f, midx));
                 // As in protoc, a map entry can be the type of its own map
                 // field only, which is the field `find_map_entry` accepts.
-                // `link_extension` checks an extension, whose extendee
-                // decides the case.
+                // `link_extension` rejects an extension whose type is one.
                 let message = self.message(midx);
                 if entry.is_none()
                     && containing_msg.is_some()
@@ -2878,6 +2925,7 @@ impl DescriptorPool {
                     return Err(PoolError::InvalidMapEntryUse {
                         field: field_fqn,
                         entry: message.full_name().to_string(),
+                        expected_entry: format!("{msg_fqn}.{}", map_entry_name(&name)),
                     });
                 }
                 entry
