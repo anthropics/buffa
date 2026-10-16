@@ -262,7 +262,10 @@ pub(crate) fn table_fields<'a>(
             }),
         });
     }
+    // The numbers are distinct: `generate` rejects a message with two fields
+    // of one number before the plan (`CodeGenError::DuplicateFieldNumber`).
     fields.sort_by_key(|f| f.number);
+    debug_assert!(fields.windows(2).all(|w| w[0].number < w[1].number));
     Ok(fields)
 }
 

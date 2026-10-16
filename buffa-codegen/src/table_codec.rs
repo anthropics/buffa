@@ -173,6 +173,8 @@ pub(crate) fn generate_table_impl(
 ///
 /// Returns an error if the one-based index of a field numbered below 64 does
 /// not fit in `u8`, which takes a message whose field numbers repeat.
+/// `generate` rejects such a message before the table plan
+/// ([`CodeGenError::DuplicateFieldNumber`]), so this is a backstop.
 fn dense_lookup(fields: &[TableField<'_>], dotted_fqn: &str) -> Result<Vec<u8>, CodeGenError> {
     let top = fields
         .iter()

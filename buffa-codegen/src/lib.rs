@@ -3326,6 +3326,9 @@ fn warn_excluded_refs_msg(
 ///   [`CodeGenError::ModuleNameConflict`],
 ///   [`CodeGenError::ReservedFieldName`] or
 ///   [`CodeGenError::ReservedModuleName`].
+/// - [`CodeGenError::DuplicateFieldNumber`] if a message of a file in
+///   `files_to_generate` has two fields with one field number, which protoc
+///   rejects.
 /// - Other [`CodeGenError`] variants for a schema that generation does not
 ///   support or a malformed descriptor, such as
 ///   [`CodeGenError::MissingField`].
@@ -3556,6 +3559,13 @@ pub fn generate_with_diagnostics(
         if !rule_matches_generated_message(rule, file_descriptors, files_to_generate) {
             ctx.warn(CodeGenWarning::CodecStrategyRuleMatchedNothing { rule: rule.clone() });
         }
+    }
+    // Two fields with one number make the generated code wrong under either
+    // codec. Checked before the table plan: a message that also cannot use
+    // the table would otherwise get the plan's advice to select the unrolled
+    // codec, which fails here too.
+    for (file, _) in generated_files(file_descriptors, files_to_generate) {
+        check_field_numbers(&file.message_type, file.package.as_deref().unwrap_or(""))?;
     }
     if ctx.table_codec_requested() {
         ctx.plan_table_codec(file_descriptors, files_to_generate)?;
@@ -4213,6 +4223,46 @@ fn check_type_names<'a>(
                 rust_name,
             });
         }
+    }
+    Ok(())
+}
+
+/// Returns [`CodeGenError::DuplicateFieldNumber`] for the first message of
+/// `messages`, or nested in one, that has two fields with one number.
+/// `scope` is the full name of what contains `messages`: the package, or the
+/// enclosing message.
+///
+/// A oneof member is a field of the message, so it is compared with every
+/// other field. An extension declared in the message is a field of its
+/// extendee, so it is not compared with the message's own fields, and an
+/// extension's number is not checked against its extendee here.
+fn check_field_numbers(
+    messages: &[crate::generated::descriptor::DescriptorProto],
+    scope: &str,
+) -> Result<(), CodeGenError> {
+    for msg in messages {
+        let name = msg.name.as_deref().unwrap_or("");
+        let fqn = if scope.is_empty() {
+            name.to_string()
+        } else {
+            format!("{scope}.{name}")
+        };
+        let mut seen: std::collections::HashMap<i32, &str> = std::collections::HashMap::new();
+        for field in &msg.field {
+            let Some(number) = field.number else {
+                continue;
+            };
+            let field_name = field.name.as_deref().unwrap_or("");
+            if let Some(first) = seen.insert(number, field_name) {
+                return Err(CodeGenError::DuplicateFieldNumber {
+                    message_name: fqn,
+                    first_field: first.to_string(),
+                    second_field: field_name.to_string(),
+                    number,
+                });
+            }
+        }
+        check_field_numbers(&msg.nested_type, &fqn)?;
     }
     Ok(())
 }
@@ -5643,6 +5693,29 @@ pub enum CodeGenError {
          and digits only)"
     )]
     InvalidTypeNamePrefix { prefix: String },
+    /// Two fields of one message, in a file being generated, have the same
+    /// field number. protoc rejects such a message, so the descriptor was
+    /// built in code or changed after protoc wrote it.
+    ///
+    /// Generated code for it would write both fields with one field number
+    /// and decode every record with that number into one of them, so the
+    /// error is returned whichever codec is selected.
+    #[error(
+        "duplicate field number in message '{message_name}': fields '{first_field}' and \
+         '{second_field}' are both numbered {number}; protoc rejects this, so renumber one of \
+         them in the code or tool that built the descriptor"
+    )]
+    DuplicateFieldNumber {
+        /// The message's full name, without a leading dot.
+        message_name: String,
+        /// The name of the field declared first.
+        first_field: String,
+        /// The name of the field declared second.
+        second_field: String,
+        /// The number both fields have, as the descriptor gives it. It may be
+        /// outside the valid range for a field number.
+        number: i32,
+    },
 }
 
 #[cfg(test)]

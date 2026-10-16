@@ -269,7 +269,7 @@ fn test_type_name_prefix_does_not_touch_modules_or_wkt() {
         .push("google/protobuf/timestamp.proto".to_string());
     file.message_type[1].field.push(FieldDescriptorProto {
         name: Some("created".to_string()),
-        number: Some(4),
+        number: Some(5),
         label: Some(Label::LABEL_OPTIONAL),
         r#type: Some(Type::TYPE_MESSAGE),
         type_name: Some(".google.protobuf.Timestamp".to_string()),
