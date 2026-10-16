@@ -2218,7 +2218,7 @@ mod tests {
     #[test]
     fn repeated_group_extension_keeps_the_charge_of_a_malformed_element() {
         let mut malformed = UnknownFields::new();
-        malformed.push(varint(0, 1)); // field number zero is invalid
+        malformed.push(ld(1, vec![0x08, 0x80])); // malformed int32 field payload
         let mut fields = UnknownFields::new();
         fields.push(group(1, malformed));
         fields.push(group(1, inner_a(3)));
