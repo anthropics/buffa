@@ -188,3 +188,94 @@ fn implicit_float_has_arms_compare_bit_patterns() {
         );
     }
 }
+
+#[test]
+fn owned_required_has_arms_are_true() {
+    // An owned required field is stored bare and always encoded, so the
+    // owned `has` reports it set (#627). The view keeps wire presence through
+    // its `has_*` accessor, and a required message field keeps `is_set`.
+    use crate::generated::descriptor::{
+        feature_set::FieldPresence, Edition, FeatureSet, FieldOptions,
+    };
+
+    let mut message = make_field("child", 5, Label::LABEL_REQUIRED, Type::TYPE_MESSAGE);
+    message.type_name = Some(".Req".to_string());
+    let proto2 = FileDescriptorProto {
+        name: Some("vt_required.proto".to_string()),
+        syntax: Some("proto2".to_string()),
+        message_type: vec![DescriptorProto {
+            name: Some("Req".to_string()),
+            field: vec![
+                make_field("n", 1, Label::LABEL_REQUIRED, Type::TYPE_INT32),
+                make_field("s", 2, Label::LABEL_REQUIRED, Type::TYPE_STRING),
+                make_field("b", 3, Label::LABEL_REQUIRED, Type::TYPE_BYTES),
+                make_field("x", 4, Label::LABEL_REQUIRED, Type::TYPE_DOUBLE),
+                message,
+            ],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    let mut legacy = make_field("n", 1, Label::LABEL_OPTIONAL, Type::TYPE_INT32);
+    legacy.options = FieldOptions {
+        features: FeatureSet {
+            field_presence: Some(FieldPresence::LEGACY_REQUIRED),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    }
+    .into();
+    let editions = FileDescriptorProto {
+        name: Some("vt_legacy_required.proto".to_string()),
+        package: Some("ed".to_string()),
+        syntax: Some("editions".to_string()),
+        edition: Some(Edition::EDITION_2023),
+        message_type: vec![DescriptorProto {
+            name: Some("Legacy".to_string()),
+            field: vec![legacy],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    for (file, name, numbers) in [
+        (proto2, "vt_required.proto", &[1u32, 2, 3, 4][..]),
+        (editions, "vt_legacy_required.proto", &[1u32][..]),
+    ] {
+        let files =
+            generate(&[file], &[name.to_string()], &vtable_config()).expect("should generate");
+        let flat: String = joined(&files)
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        for number in numbers {
+            assert_eq!(
+                flat.matches(&format!("{number}u32=>true,")).count(),
+                1,
+                "{name}: the owned `has` must report field {number} set"
+            );
+        }
+        if name == "vt_required.proto" {
+            assert_eq!(
+                flat.matches("5u32=>self.child.is_set(),").count(),
+                1,
+                "the owned `has` of a required message field keeps `is_set`"
+            );
+        }
+        // Any `true` arm brings the allow: an all-`true` match is
+        // `clippy::match_like_matches_macro`.
+        assert_eq!(
+            flat.matches("#[allow(clippy::match_like_matches_macro)]fnhas(")
+                .count(),
+            1,
+            "{name}: the owned `has` must allow the lint"
+        );
+    }
+
+    // A message without required fields keeps the plain `has`.
+    let files = generate(&[msg_file()], &["vt.proto".to_string()], &vtable_config())
+        .expect("should generate");
+    assert!(!joined(&files).contains("match_like_matches_macro"));
+}

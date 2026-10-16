@@ -26,7 +26,8 @@ use crate::features::{resolve_field, ResolvedFeatures};
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
 use crate::generated::descriptor::DescriptorProto;
 use crate::impl_message::{
-    effective_type, is_explicit_presence_scalar, is_real_oneof_member, is_supported_field_type,
+    effective_type, is_explicit_presence_scalar, is_real_oneof_member, is_required_field,
+    is_supported_field_type,
 };
 use crate::message::{is_closed_enum, is_map_field, rust_path_to_tokens};
 use crate::oneof::oneof_variant_ident;
@@ -79,6 +80,8 @@ pub(crate) fn reflect_owned_impls(
 
     let mut get_arms: Vec<TokenStream> = Vec::new();
     let mut has_arms: Vec<TokenStream> = Vec::new();
+    // Set when a required field's `has` arm is `true`.
+    let mut has_true_arm = false;
 
     // Direct (non-oneof) fields.
     for field in &msg.field {
@@ -118,7 +121,8 @@ pub(crate) fn reflect_owned_impls(
         }
 
         let f_features = resolve_field(ctx, field, features);
-        let (get_val, has_val) = if is_explicit_presence_scalar(field, ty, &f_features) {
+        let explicit = is_explicit_presence_scalar(field, ty, &f_features);
+        let (get_val, has_val) = if explicit {
             // Stored as `Option<T>`; absent singular returns the type default.
             match ty {
                 Type::TYPE_STRING => (
@@ -149,9 +153,8 @@ pub(crate) fn reflect_owned_impls(
             }
         } else {
             // Implicit presence: absent is the default value, present is
-            // non-default. proto2 `required` fields also fall here (stored as
-            // bare types), so a required field set to its default reflects as
-            // `has() == false` — the same limitation the view path documents.
+            // non-default. Required fields are stored bare too and fall here;
+            // the `has` of a required non-message field is replaced below.
             match ty {
                 Type::TYPE_STRING => (
                     quote! { #vr::String(&self.#id) },
@@ -169,20 +172,10 @@ pub(crate) fn reflect_owned_impls(
                 ),
                 Type::TYPE_ENUM => {
                     // Closed enums compare against the type default (which
-                    // need not be zero); enums opened by an enum-type override keep
-                    // their declared default the same way.
+                    // need not be zero). An open enum with a non-zero default
+                    // is a required field, whose `has` is replaced below.
                     let has_val = if is_closed_enum(&f_features) {
                         quote! { self.#id != ::core::default::Default::default() }
-                    } else if let Some(default_expr) =
-                        crate::defaults::open_enum_bare_default_value(
-                            field,
-                            ctx,
-                            current_package,
-                            &f_features,
-                            nesting,
-                        )?
-                    {
-                        quote! { self.#id != #default_expr }
                     } else {
                         quote! { self.#id.to_i32() != 0 }
                     };
@@ -202,6 +195,18 @@ pub(crate) fn reflect_owned_impls(
                     (quote! { #vr::#variant(self.#id) }, has_val)
                 }
             }
+        };
+        // The owned encoder writes a bare required field whatever its value,
+        // so the field is set (#627). A required message field keeps
+        // `MessageField::is_set`. The view reports wire presence instead.
+        let has_val = if !explicit
+            && is_required_field(field, features)
+            && !matches!(ty, Type::TYPE_MESSAGE | Type::TYPE_GROUP)
+        {
+            has_true_arm = true;
+            quote! { true }
+        } else {
+            has_val
         };
         get_arms.push(quote! { #number => #get_val, });
         has_arms.push(quote! { #number => #has_val, });
@@ -307,6 +312,12 @@ pub(crate) fn reflect_owned_impls(
         quote! {}
     };
 
+    // A message whose fields are all required has only `=> true` arms in
+    // `has`, which `clippy::match_like_matches_macro` flags in the user's
+    // crate. The attribute goes on whenever a `true` arm exists, a superset
+    // of where the lint fires.
+    let has_allow = has_true_arm.then(|| quote! { #[allow(clippy::match_like_matches_macro)] });
+
     Ok(quote! {
         #deprecated_field_allow
         impl ::buffa_descriptor::reflect::ReflectMessage for #name_ident {
@@ -339,6 +350,7 @@ pub(crate) fn reflect_owned_impls(
                 }
             }
 
+            #has_allow
             fn has(&self, field: &::buffa_descriptor::FieldDescriptor) -> bool {
                 match field.number() {
                     #(#has_arms)*
