@@ -30,12 +30,19 @@ use buffa::encoding::MAX_FIELD_NUMBER;
 ///
 /// Protobuf field numbers must be in `[1, MAX_FIELD_NUMBER]`.
 pub(crate) fn validated_field_number(field: &FieldDescriptorProto) -> Result<u32, CodeGenError> {
+    validated_field_number_with_max(field, MAX_FIELD_NUMBER as i32)
+}
+
+/// Validate a field number against its wire format's inclusive upper bound.
+pub(crate) fn validated_field_number_with_max(
+    field: &FieldDescriptorProto,
+    max_number: i32,
+) -> Result<u32, CodeGenError> {
     let n = field
         .number
         .ok_or(CodeGenError::MissingField("field.number"))?;
-    // FieldDescriptorProto.number is int32 in the descriptor schema, hence
-    // the cast for the range check (2^29 − 1 fits comfortably in i32).
-    if !(1..=MAX_FIELD_NUMBER as i32).contains(&n) {
+    // FieldDescriptorProto.number and MessageSet type IDs are int32.
+    if !(1..=max_number).contains(&n) {
         return Err(CodeGenError::Other(format!("invalid field number: {n}")));
     }
     Ok(n as u32)

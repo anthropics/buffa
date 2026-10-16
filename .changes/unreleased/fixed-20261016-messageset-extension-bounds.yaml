@@ -1,0 +1,3 @@
+kind: Fixed
+body: Code generation and DescriptorPool accept extension numbers above 2^29 - 1 when the resolved extendee uses MessageSet wire format, matching the runtime's int32 type IDs. Ordinary fields and extensions retain their existing bounds, and descriptor extension range ends remain exclusive (#702).
+time: 2026-10-16T01:26:50+03:00
