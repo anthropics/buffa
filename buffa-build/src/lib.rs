@@ -1773,6 +1773,11 @@ impl Config {
     /// [`compile`](Self::compile) fail with
     /// [`CodeGenError::InvalidCustomAttribute`](buffa_codegen::CodeGenError),
     /// whether or not `path` matches a generated type.
+    /// A valid rule matching no generated type emits a build warning naming
+    /// the attribute list and path. The same applies to the other five custom
+    /// attribute methods, each using its own target set. Rules are checked
+    /// across all files in this compilation. Descriptors used only as imports,
+    /// excluded files and generated view families do not supply targets.
     ///
     /// Multiple calls accumulate in insertion order — all matching attributes
     /// are emitted, and ordering is preserved in generated code.
@@ -2036,8 +2041,8 @@ impl Config {
     /// [`compile`](Self::compile) fail.
     ///
     /// A rule on a variant's path (`.my.pkg.MyMessage.my_oneof.variant_name`)
-    /// does not match the oneof, so it has no effect, and the build does not
-    /// warn about it. Variants take their attributes from
+    /// does not match the oneof, so it has no effect and emits an unmatched-rule
+    /// build warning. Variants take their attributes from
     /// [`field_attribute`](Self::field_attribute).
     ///
     /// Each of these lines of the generated code for a oneof takes its

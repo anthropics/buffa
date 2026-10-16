@@ -40,6 +40,43 @@ pub struct SplitPath {
     pub is_extern: bool,
 }
 
+/// An attribute list and its distinct generated target set.
+#[derive(Clone, Copy)]
+pub(crate) enum CustomAttributeKind {
+    Type,
+    Message,
+    Enum,
+    Oneof,
+    Field,
+    OneofStructField,
+}
+
+impl CustomAttributeKind {
+    // This order also determines unmatched-rule diagnostic order.
+    const ALL: [Self; 6] = [
+        Self::Type,
+        Self::Message,
+        Self::Enum,
+        Self::Oneof,
+        Self::Field,
+        Self::OneofStructField,
+    ];
+
+    fn rules(self, config: &CodeGenConfig) -> (&'static str, &[(String, String)]) {
+        match self {
+            Self::Type => ("type_attributes", &config.type_attributes),
+            Self::Message => ("message_attributes", &config.message_attributes),
+            Self::Enum => ("enum_attributes", &config.enum_attributes),
+            Self::Oneof => ("oneof_attributes", &config.oneof_attributes),
+            Self::Field => ("field_attributes", &config.field_attributes),
+            Self::OneofStructField => (
+                "oneof_struct_field_attributes",
+                &config.oneof_struct_field_attributes,
+            ),
+        }
+    }
+}
+
 /// Shared context for a code generation run.
 ///
 /// Holds the full set of file descriptors and a mapping from fully-qualified
@@ -122,6 +159,9 @@ pub struct CodeGenContext<'a> {
     ///
     /// [`generate_with_diagnostics`]: crate::generate_with_diagnostics
     warnings: std::cell::RefCell<Vec<crate::CodeGenWarning>>,
+    /// One bit per list entry, set only where custom attributes are emitted.
+    /// Indexing entries rather than paths preserves duplicate rules.
+    custom_attribute_matches: [Vec<std::cell::Cell<bool>>; 6],
     /// The messages generated with the table codec, planned by
     /// [`plan_table_codec`](Self::plan_table_codec). Unset, which is the same
     /// as empty, unless a table codec was requested.
@@ -672,6 +712,8 @@ impl<'a> CodeGenContext<'a> {
             keyword_field_renames: keyword_plan.field_renames,
             keyword_oneof_renames: keyword_plan.oneof_renames,
             warnings: std::cell::RefCell::new(plan_warnings),
+            custom_attribute_matches: CustomAttributeKind::ALL
+                .map(|kind| vec![std::cell::Cell::new(false); kind.rules(config).1.len()]),
             imports: std::cell::RefCell::new(crate::imports::ImportsPhase::Off),
         }
     }
@@ -1271,20 +1313,48 @@ impl<'a> CodeGenContext<'a> {
     /// Returns `CodeGenError::InvalidCustomAttribute` if any matching attribute
     /// string does not parse as one or more `#[...]` attributes.
     pub(crate) fn matching_attributes(
-        attrs: &[(String, String)],
+        &self,
+        kind: CustomAttributeKind,
         fqn: &str,
     ) -> Result<proc_macro2::TokenStream, crate::CodeGenError> {
+        let (_, attrs) = kind.rules(self.config);
         if attrs.is_empty() {
             return Ok(proc_macro2::TokenStream::new());
         }
         let fqn_dotted = format!(".{fqn}");
         let mut tokens = proc_macro2::TokenStream::new();
-        for (prefix, attr_str) in attrs {
+        for (index, (prefix, attr_str)) in attrs.iter().enumerate() {
             if matches_proto_prefix(prefix, &fqn_dotted) {
                 tokens.extend(parse_custom_attribute(prefix, attr_str)?);
+                // The import-collection pass discards its generated tokens;
+                // only the subsequent real emission counts as a match.
+                if !matches!(
+                    *self.imports.borrow(),
+                    crate::imports::ImportsPhase::Collecting(_)
+                ) {
+                    self.custom_attribute_matches[kind as usize][index].set(true);
+                }
             }
         }
         Ok(tokens)
+    }
+
+    /// Report inert entries after every requested package has been generated.
+    pub(crate) fn warn_unmatched_custom_attributes(&self) {
+        for kind in CustomAttributeKind::ALL {
+            let (option, rules) = kind.rules(self.config);
+            for ((rule, _), matched) in rules
+                .iter()
+                .zip(&self.custom_attribute_matches[kind as usize])
+            {
+                if !matched.get() {
+                    self.warn(crate::CodeGenWarning::CustomAttributeRuleMatchedNothing {
+                        option,
+                        rule: rule.clone(),
+                    });
+                }
+            }
+        }
     }
 
     /// Resolve the [`BytesRepr`](crate::BytesRepr) for a `bytes` field at the
@@ -3660,25 +3730,61 @@ mod tests {
 
     // ── matching_attributes tests ──────────────────────────────────────
 
+    fn matching_attributes(
+        attrs: &[(String, String)],
+        fqn: &str,
+    ) -> Result<proc_macro2::TokenStream, crate::CodeGenError> {
+        let config = CodeGenConfig {
+            type_attributes: attrs.to_vec(),
+            ..CodeGenConfig::default()
+        };
+        CodeGenContext::new(&[], &config, &[]).matching_attributes(CustomAttributeKind::Type, fqn)
+    }
+
+    #[test]
+    fn test_import_collection_does_not_count_as_attribute_emission() {
+        let config = CodeGenConfig {
+            type_attributes: vec![(".pkg.Msg".into(), "#[derive(Hash)]".into())],
+            ..CodeGenConfig::default()
+        };
+        let ctx = CodeGenContext::new(&[], &config, &[]);
+        ctx.imports_begin_collecting();
+        ctx.matching_attributes(CustomAttributeKind::Type, "pkg.Msg")
+            .unwrap();
+        ctx.warn_unmatched_custom_attributes();
+        assert!(matches!(
+            ctx.take_warnings().as_slice(),
+            [crate::CodeGenWarning::CustomAttributeRuleMatchedNothing {
+                option: "type_attributes",
+                ..
+            }]
+        ));
+        ctx.imports_take_collected();
+        ctx.matching_attributes(CustomAttributeKind::Type, "pkg.Msg")
+            .unwrap();
+        ctx.warn_unmatched_custom_attributes();
+        assert!(ctx.take_warnings().is_empty());
+    }
+
     #[test]
     fn test_matching_attributes_catchall() {
         // "." matches every type.
         let attrs = vec![(".".into(), "#[derive(Foo)]".into())];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
+        let result = matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
         assert!(result.to_string().contains("derive"));
     }
 
     #[test]
     fn test_matching_attributes_exact_match() {
         let attrs = vec![(".my.pkg.MyMessage".into(), "#[derive(Bar)]".into())];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
+        let result = matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
         assert!(result.to_string().contains("derive"));
     }
 
     #[test]
     fn test_matching_attributes_package_prefix() {
         let attrs = vec![(".my.pkg".into(), "#[derive(Baz)]".into())];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
+        let result = matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
         assert!(result.to_string().contains("derive"));
     }
 
@@ -3686,14 +3792,14 @@ mod tests {
     fn test_matching_attributes_no_partial_segment_match() {
         // ".my.pk" must not match ".my.pkg" (partial segment).
         let attrs = vec![(".my.pk".into(), "#[derive(Bad)]".into())];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
+        let result = matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
     fn test_matching_attributes_no_match() {
         let attrs = vec![(".other.pkg".into(), "#[derive(Nope)]".into())];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
+        let result = matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
         assert!(result.is_empty());
     }
 
@@ -3704,7 +3810,7 @@ mod tests {
             (".".into(), "#[derive(A)]".into()),
             (".my.pkg".into(), "#[derive(B)]".into()),
         ];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
+        let result = matching_attributes(&attrs, "my.pkg.MyMessage").unwrap();
         let s = result.to_string();
         assert!(s.contains("A") && s.contains("B"));
     }
@@ -3714,7 +3820,7 @@ mod tests {
         // Unparseable attributes surface as a hard error so the user sees
         // the problem at build time rather than a silently-dropped attribute.
         let attrs = vec![(".".into(), "not valid {{{{".into())];
-        let err = CodeGenContext::matching_attributes(&attrs, "my.pkg.Msg").unwrap_err();
+        let err = matching_attributes(&attrs, "my.pkg.Msg").unwrap_err();
         assert!(matches!(
             err,
             crate::CodeGenError::InvalidCustomAttribute { .. }
@@ -3724,7 +3830,7 @@ mod tests {
     /// The `detail` of the error `matching_attributes` gives for `attribute`.
     fn attribute_error_detail(attribute: &str) -> String {
         let attrs = vec![(".my.pkg".to_string(), attribute.to_string())];
-        match CodeGenContext::matching_attributes(&attrs, "my.pkg.Msg") {
+        match matching_attributes(&attrs, "my.pkg.Msg") {
             Err(crate::CodeGenError::InvalidCustomAttribute {
                 path,
                 attribute: reported,
@@ -3789,7 +3895,7 @@ mod tests {
              #[cfg_attr(feature = \"json\", serde(default))]"
                 .into(),
         )];
-        let result = CodeGenContext::matching_attributes(&attrs, "my.pkg.Msg").unwrap();
+        let result = matching_attributes(&attrs, "my.pkg.Msg").unwrap();
         let parsed: syn::ItemStruct = syn::parse2(quote::quote!(#result struct S;)).unwrap();
         let paths: Vec<String> = parsed
             .attrs
