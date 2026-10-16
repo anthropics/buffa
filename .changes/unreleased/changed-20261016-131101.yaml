@@ -1,0 +1,3 @@
+kind: Changed
+body: '**Document that converting from `core::time::Duration` can exceed the protobuf `Duration` ProtoJSON range.**'
+time: 2026-10-16T13:11:01.434445+02:00
