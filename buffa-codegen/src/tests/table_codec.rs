@@ -637,7 +637,7 @@ fn wide_messages_keep_dense_lookup_for_low_field_numbers() {
 }
 
 /// `Plain` with `b` numbered 1 like `a`, which protoc would reject.
-fn with_repeated_number() -> FileDescriptorProto {
+fn with_duplicate_number() -> FileDescriptorProto {
     let mut file = schema();
     file.message_type[0]
         .field
@@ -645,58 +645,131 @@ fn with_repeated_number() -> FileDescriptorProto {
     file
 }
 
+/// Two fields with one number are an error under either codec.
+///
+/// In the last case `Plain` also cannot use the table, because `s` has a
+/// custom string type, and an exact-path rule selects the table for it. The
+/// plan would report that as an error advising the unrolled codec, so the
+/// case passes only while the field numbers are checked before the plan.
 #[test]
-fn a_message_with_a_repeated_field_number_falls_back() {
-    let (files, warnings) = generate_with_diagnostics(
-        &[with_repeated_number()],
-        &["t.proto".to_string()],
-        &table_config(CodecStrategy::Table),
-    )
-    .unwrap();
-    let code = joined(&files);
-    assert!(!tables(&code).contains(&"Plain".to_string()), "{code}");
-    let (_, reasons) = summary(&warnings);
-    assert!(
-        reasons.contains(&("has two fields with the same number", 1)),
-        "{reasons:?}"
-    );
+fn a_duplicate_field_number_is_an_error_under_every_codec_strategy() {
+    let exact_rule_for_an_ineligible_message = CodeGenConfig {
+        codec_strategy_in: vec![(".t.Plain".to_string(), CodecStrategy::Table)],
+        string_fields: vec![(
+            ".t.Plain.s".to_string(),
+            StringRepr::Custom("crate::Str".to_string()),
+        )],
+        ..Default::default()
+    };
+    for (strategy, config) in [
+        ("unrolled", CodeGenConfig::default()),
+        ("table", table_config(CodecStrategy::Table)),
+        (
+            "exact table rule for an ineligible message",
+            exact_rule_for_an_ineligible_message,
+        ),
+    ] {
+        let err = generate_with_diagnostics(
+            &[with_duplicate_number()],
+            &["t.proto".to_string()],
+            &config,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                CodeGenError::DuplicateFieldNumber {
+                    message_name,
+                    first_field,
+                    second_field,
+                    number: 1,
+                } if message_name == "t.Plain" && first_field == "a" && second_field == "b"
+            ),
+            "{strategy}: {err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "duplicate field number in message 't.Plain': fields 'a' and 'b' are both numbered \
+             1; protoc rejects this, so renumber one of them in the code or tool that built the \
+             descriptor",
+            "{strategy}"
+        );
+    }
 }
 
 #[test]
-fn an_exact_path_rule_for_a_message_with_a_repeated_field_number_names_both_fields() {
-    let config = CodeGenConfig {
-        codec_strategy_in: vec![(".t.Plain".to_string(), CodecStrategy::Table)],
+fn a_duplicate_field_number_is_found_in_a_nested_message_and_across_a_oneof() {
+    // `Outer.Inner` gets a oneof member numbered like its plain field `y`.
+    let mut file = schema();
+    let inner = &mut file.message_type[5].nested_type[0];
+    inner.oneof_decl = vec![OneofDescriptorProto {
+        name: Some("kind".to_string()),
         ..Default::default()
-    };
+    }];
+    inner.field.push(FieldDescriptorProto {
+        oneof_index: Some(0),
+        ..scalar("z", 1, Type::TYPE_INT32)
+    });
     let err =
-        generate_with_diagnostics(&[with_repeated_number()], &["t.proto".to_string()], &config)
-            .unwrap_err()
-            .to_string();
+        generate_with_diagnostics(&[file], &["t.proto".to_string()], &CodeGenConfig::default())
+            .unwrap_err();
     assert!(
-        err.contains("fields `a` and `b` are both numbered 1"),
+        matches!(
+            &err,
+            CodeGenError::DuplicateFieldNumber {
+                message_name,
+                first_field,
+                second_field,
+                number: 1,
+            } if message_name == "t.Outer.Inner" && first_field == "y" && second_field == "z"
+        ),
         "{err}"
     );
 }
 
+/// 256 fields numbered 7 would overflow the `u8` dense index of the table.
+/// The duplicate-number error comes first, so `dense_lookup`'s own error for
+/// that case cannot be reached from `generate`.
 #[test]
-fn a_message_with_many_repeated_field_numbers_falls_back_before_dense_lookup() {
-    // 256 fields numbered 7 would overflow the `u8` dense index.
+fn many_duplicate_field_numbers_are_reported_before_the_dense_lookup() {
     let mut file = schema();
     file.message_type[0].field = (1..=256)
         .map(|n| scalar(&format!("f{n}"), 7, Type::TYPE_INT32))
         .collect();
-    let (files, warnings) = generate_with_diagnostics(
+    let err = generate_with_diagnostics(
         &[file],
         &["t.proto".to_string()],
         &table_config(CodecStrategy::Table),
     )
-    .unwrap();
-    assert!(!tables(&joined(&files)).contains(&"Plain".to_string()));
-    let (_, reasons) = summary(&warnings);
+    .unwrap_err();
     assert!(
-        reasons.contains(&("has two fields with the same number", 1)),
-        "{reasons:?}"
+        matches!(
+            &err,
+            CodeGenError::DuplicateFieldNumber {
+                first_field,
+                second_field,
+                number: 7,
+                ..
+            } if first_field == "f1" && second_field == "f2"
+        ),
+        "{err}"
     );
+}
+
+/// A message of a file that is not generated is not checked: its descriptor
+/// is only read to resolve types.
+#[test]
+fn a_duplicate_field_number_in_a_file_that_is_not_generated_is_not_an_error() {
+    let mut dep = with_duplicate_number();
+    dep.name = Some("dep.proto".to_string());
+    dep.package = Some("dep".to_string());
+    let (files, _) = generate_with_diagnostics(
+        &[dep, schema()],
+        &["t.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .unwrap();
+    assert!(!joined(&files).is_empty());
 }
 
 #[test]

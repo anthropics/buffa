@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **A message with two fields that share a field number is a codegen error** (#716, closes #706).
+    protoc rejects such a message, but a descriptor built in code or edited after protoc can have one, and codegen accepted it. The generated crate compiled, with an `unreachable_patterns` warning in the decoder, and lost data: both fields were written with one field number and every record with that number was decoded into one of them, so with two `int32` fields `{a: 5, b: 7}` came back as `{a: 7, b: 0}`. `buffa_build::Config::compile`, the plugin and `buffa_codegen::generate` now fail with the new `CodeGenError::DuplicateFieldNumber`, which names the message, both fields and the number, whichever codec is selected. A hand-built descriptor or test fixture must give each field of a message its own number. Files that are only imported, and packages under `exclude_package`, are not checked. `DescriptorPool` already rejected the same descriptor (#626 covers the other descriptors that codegen accepts and the pool rejects).
+time: 2026-10-15T00:00:00+08:00

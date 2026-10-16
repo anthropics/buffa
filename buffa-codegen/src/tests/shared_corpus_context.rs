@@ -47,7 +47,7 @@ fn test_files() -> Vec<FileDescriptorProto> {
 
     let mut oneof_variant = FieldDescriptorProto {
         name: Some("payload".to_string()),
-        number: Some(1),
+        number: Some(2),
         label: Some(Label::LABEL_OPTIONAL),
         r#type: Some(Type::TYPE_MESSAGE),
         type_name: Some(".Leaf".to_string()),
