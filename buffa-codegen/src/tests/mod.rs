@@ -61,6 +61,7 @@ mod generation;
 mod idiomatic_enums;
 mod idiomatic_fields;
 mod idiomatic_imports;
+mod inferred_field_types;
 mod json_codegen;
 mod keyword_escaped_fields;
 mod lifetime_anchor;
