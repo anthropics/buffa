@@ -2677,7 +2677,7 @@ impl DescriptorPool {
             {
                 return Err(PoolError::InvalidMapEntryUse {
                     field: fqn,
-                    entry: entry.full_name().to_owned(),
+                    entry: entry.full_name().to_string(),
                 });
             }
         }
@@ -2877,7 +2877,7 @@ impl DescriptorPool {
                 {
                     return Err(PoolError::InvalidMapEntryUse {
                         field: field_fqn,
-                        entry: message.full_name().to_owned(),
+                        entry: message.full_name().to_string(),
                     });
                 }
                 entry
