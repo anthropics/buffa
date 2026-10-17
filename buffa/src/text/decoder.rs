@@ -105,6 +105,14 @@ impl<'a> TextDecoder<'a> {
         ParseError::new(line, col, kind)
     }
 
+    /// Like [`err_at`](Self::err_at), but shifts the position by `offset`
+    /// bytes into `tok.raw` (for errors reported by the unescaper).
+    #[inline]
+    fn err_at_in_token(&self, tok: &Token<'_>, offset: usize, kind: ParseErrorKind) -> ParseError {
+        let (line, col) = self.tok.line_col(tok.pos + offset);
+        ParseError::new(line, col, kind)
+    }
+
     /// Read the next field name, or return `None` at end-of-message / EOF.
     ///
     /// The returned slice is borrowed directly from the input. For bracketed
@@ -456,14 +464,11 @@ impl<'a> TextDecoder<'a> {
     /// UTF-8.
     pub fn read_string(&mut self) -> Result<Cow<'a, str>, ParseError> {
         let tok = self.read_scalar(ScalarKind::String)?;
-        unescape_str(tok.raw).map_err(|e| {
-            self.err_at(
-                &tok,
-                match e {
-                    UnescapeError::InvalidUtf8 => ParseErrorKind::InvalidUtf8,
-                    UnescapeError::BadEscape(why) => ParseErrorKind::InvalidString(why),
-                },
-            )
+        unescape_str(tok.raw).map_err(|e| match e {
+            UnescapeError::InvalidUtf8 => self.err_at(&tok, ParseErrorKind::InvalidUtf8),
+            UnescapeError::BadEscape { reason, offset } => {
+                self.err_at_in_token(&tok, offset, ParseErrorKind::InvalidString(reason))
+            }
         })
     }
 
@@ -476,10 +481,10 @@ impl<'a> TextDecoder<'a> {
         let tok = self.read_scalar(ScalarKind::String)?;
         unescape(tok.raw).map_err(|e| {
             // unescape (byte-level) never returns InvalidUtf8.
-            let UnescapeError::BadEscape(why) = e else {
+            let UnescapeError::BadEscape { reason, offset } = e else {
                 unreachable!("unescape is byte-level")
             };
-            self.err_at(&tok, ParseErrorKind::InvalidString(why))
+            self.err_at_in_token(&tok, offset, ParseErrorKind::InvalidString(reason))
         })
     }
 
@@ -1610,5 +1615,18 @@ mod tests {
         let err = decode_from_str::<TestMsg>("i: 1\ni: notanumber").unwrap_err();
         assert_eq!(err.line, 2);
         assert!(matches!(err.kind, ParseErrorKind::UnexpectedToken { .. }));
+    }
+
+    #[test]
+    fn invalid_escape_in_second_concatenated_literal() {
+        let err = decode_from_str::<TestMsg>(
+            r#"s: "abc"
+  "def\q""#,
+        )
+        .unwrap_err();
+        assert!(matches!(err.kind, ParseErrorKind::InvalidString(_)));
+        assert_eq!(err.line, 2);
+        // `"def\q"` — column of `\` (1-based scalar count).
+        assert_eq!(err.col, 7);
     }
 }

@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`UnescapeError::BadEscape` carries a byte offset** (#648). The variant is now `{ reason, offset }` instead of a bare string; `Display` includes the offset, and `TextDecoder` adds it to the token position so a bad escape in a later concatenated literal is reported on the correct line and column.
+time: 2026-10-17T19:45:00+05:30
