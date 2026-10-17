@@ -92,8 +92,15 @@ impl ::core::fmt::Debug for Api {
     }
 }
 impl Api {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Api";
@@ -636,8 +643,15 @@ impl ::core::fmt::Debug for Method {
     }
 }
 impl Method {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Method";
@@ -1175,8 +1189,15 @@ impl ::core::fmt::Debug for Mixin {
     }
 }
 impl Mixin {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Mixin";
