@@ -2063,6 +2063,16 @@ pass. A `type_url` that is only a full name, such as
 `is_message` and `unpack_message` match it. protobuf-go and Python read such
 an `Any` the same way; C++ and Java do not match it to a message.
 
+`AnyView` has the same `type_name`, `is_message`, `is_type`, `unpack_message`
+and `unpack_if`, so a handler can dispatch on a decoded view without converting
+it to an `Any`. They read the borrowed `type_url` and `value` without copying
+them, and `type_name()` borrows from the decoded buffer, not from the view.
+`unpack_message` and `unpack_if` decode an owned message. For a view of the
+payload that borrows the same buffer, check `is_message::<MyMessageView>()` and
+pass `view.value` to `MyMessageView::decode_view`. An `AnyOwnedView` has no
+copies of these methods; call them through `view()`, as in
+`owned.view().is_message::<MyMessage>()`.
+
 JSON and text format write an `Any` with the fields of the packed message
 expanded: `{"@type": "type.googleapis.com/my.package.MyMessage", "name": "x"}`
 in JSON, and `[type.googleapis.com/my.package.MyMessage] { name: "x" }` in

@@ -2,7 +2,7 @@
 
 use alloc::string::String;
 
-use crate::google::protobuf::Any;
+use crate::google::protobuf::{Any, AnyView};
 
 impl Any {
     /// Pack a message into an [`Any`] with the given type URL.
@@ -214,11 +214,7 @@ impl Any {
     /// assert_eq!(describe(&no_name), "no type name");
     /// ```
     pub fn type_name(&self) -> Option<&str> {
-        let type_url = self.type_url.as_str();
-        let type_name = type_url
-            .rsplit_once('/')
-            .map_or(type_url, |(_, type_name)| type_name);
-        (!type_name.is_empty()).then_some(type_name)
+        type_name_of(&self.type_url)
     }
 
     /// Returns `true` if the type URL of this [`Any`] identifies `T` under
@@ -235,6 +231,135 @@ impl Any {
     /// Returns the type URL stored in this [`Any`].
     pub fn type_url(&self) -> &str {
         &self.type_url
+    }
+}
+
+/// The type name in `type_url`, as [`Any::type_name`] documents it: the text
+/// after the last `/`, or all of `type_url` when it has no `/`, and `None`
+/// when that text is empty.
+fn type_name_of(type_url: &str) -> Option<&str> {
+    let type_name = type_url
+        .rsplit_once('/')
+        .map_or(type_url, |(_, type_name)| type_name);
+    (!type_name.is_empty()).then_some(type_name)
+}
+
+/// The type-URL helpers of [`Any`], on its view. The type checks borrow
+/// `type_url` and allocate nothing; `unpack_message` and `unpack_if` decode
+/// the borrowed `value` and allocate only the owned message they return.
+impl<'a> AnyView<'a> {
+    /// Returns `true` if the `type_url` of this view is exactly `type_url`,
+    /// prefix included, as [`Any::is_type`] does.
+    ///
+    /// Most callers want [`is_message`](Self::is_message), which accepts any
+    /// prefix; use this method when the prefix itself carries meaning.
+    pub fn is_type(&self, type_url: &str) -> bool {
+        self.type_url == type_url
+    }
+
+    /// Returns the type name in `type_url`, by the rule [`Any::type_name`]
+    /// documents: the text after the last `/`, or the whole `type_url` when
+    /// it has no `/`. Returns `None` when that text is empty.
+    ///
+    /// The result borrows from the decoded buffer, not from the view, so it
+    /// outlives `self`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use buffa::{Message as _, MessageName as _, MessageView as _};
+    /// use buffa_types::google::protobuf::{Any, AnyView, Duration};
+    ///
+    /// let bytes = Any::pack_message(&Duration::from_secs(5)).encode_to_vec();
+    /// let view = AnyView::decode_view(&bytes)?;
+    /// assert_eq!(view.type_name(), Some(Duration::FULL_NAME));
+    /// # Ok::<(), buffa::DecodeError>(())
+    /// ```
+    pub fn type_name(&self) -> Option<&'a str> {
+        type_name_of(self.type_url)
+    }
+
+    /// Returns `true` if `type_url` identifies `T` under any prefix: its
+    /// [`type_name`](Self::type_name) is the
+    /// [`MessageName::FULL_NAME`](buffa::MessageName::FULL_NAME) of `T`, as
+    /// [`Any::is_message`] checks.
+    ///
+    /// The prefix is not compared, and a URL that is only the full name
+    /// matches too. Returns `false` when [`type_name`](Self::type_name) is
+    /// `None`.
+    ///
+    /// `T` may be a view type, such as `DurationView`, since views implement
+    /// [`MessageName`](buffa::MessageName) with the same full name.
+    pub fn is_message<T: buffa::MessageName>(&self) -> bool {
+        self.type_name() == Some(<T as buffa::MessageName>::FULL_NAME)
+    }
+
+    /// Decodes `value` as the owned message `T`, but only if `type_url` is
+    /// exactly `expected_type_url`, prefix included, as [`Any::unpack_if`]
+    /// does.
+    ///
+    /// Most callers want [`unpack_message`](Self::unpack_message), which
+    /// accepts any prefix. Returns `Ok(None)` when the type URL does not
+    /// match.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`buffa::DecodeError`] if the type URL matches but `value`
+    /// cannot be decoded as `T`.
+    pub fn unpack_if<T: buffa::Message>(
+        &self,
+        expected_type_url: &str,
+    ) -> Result<Option<T>, buffa::DecodeError> {
+        if self.type_url != expected_type_url {
+            return Ok(None);
+        }
+        T::decode(&mut &*self.value).map(Some)
+    }
+
+    /// Decodes `value` as the owned message `T`, but only if `type_url`
+    /// identifies `T` under any prefix ([`is_message`](Self::is_message)),
+    /// as [`Any::unpack_message`] does.
+    ///
+    /// Returns `Ok(None)` when the message name does not match. The decode
+    /// reads the borrowed `value`, so only `T` itself allocates.
+    ///
+    /// `T` must be an owned message: a view type such as `FooView` does not
+    /// implement [`Message`](buffa::Message).
+    ///
+    /// For a view of the payload that borrows the same buffer, check
+    /// `is_message::<FooView>()` and pass `value` to
+    /// [`MessageView::decode_view`](buffa::MessageView::decode_view).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use buffa::{Message as _, MessageView as _};
+    /// use buffa_types::google::protobuf::{Any, AnyView, Duration, DurationView, Timestamp};
+    ///
+    /// let bytes = Any::pack_message(&Duration::from_secs(5)).encode_to_vec();
+    /// let view = AnyView::decode_view(&bytes)?;
+    /// assert_eq!(view.unpack_message::<Duration>()?, Some(Duration::from_secs(5)));
+    /// assert_eq!(view.unpack_message::<Timestamp>()?, None);
+    ///
+    /// // Zero-copy: decode a view that borrows `bytes`.
+    /// assert!(view.is_message::<DurationView>());
+    /// let duration = DurationView::decode_view(view.value)?;
+    /// assert_eq!(duration.seconds, 5);
+    /// # Ok::<(), buffa::DecodeError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`buffa::DecodeError`] if the message name matches but
+    /// `value` cannot be decoded as `T`.
+    pub fn unpack_message<T>(&self) -> Result<Option<T>, buffa::DecodeError>
+    where
+        T: buffa::Message + buffa::MessageName,
+    {
+        if !self.is_message::<T>() {
+            return Ok(None);
+        }
+        T::decode(&mut &*self.value).map(Some)
     }
 }
 
@@ -947,6 +1072,98 @@ mod tests {
         };
 
         assert!(any.unpack_message::<Timestamp>().is_err());
+    }
+
+    #[test]
+    fn any_view_type_url_helpers_agree_with_any() {
+        use crate::google::protobuf::Duration;
+        use buffa::view::MessageView as _;
+
+        let duration = Duration::from_secs(5);
+        for type_url in [
+            "type.googleapis.com/google.protobuf.Duration",
+            "custom.example/v1/google.protobuf.Duration",
+            "/google.protobuf.Duration",
+            "google.protobuf.Duration",
+            "type.googleapis.com/x.google.protobuf.Duration",
+            "type.googleapis.com/google.protobuf.Timestamp",
+            "custom.example/v1/",
+            "",
+        ] {
+            let any = Any::pack(&duration, type_url);
+            let bytes = any.encode_to_vec();
+            let view = AnyView::decode_view(&bytes).unwrap();
+
+            assert_eq!(view.type_name(), any.type_name(), "{type_url}");
+            assert_eq!(
+                view.is_message::<Duration>(),
+                any.is_message::<Duration>(),
+                "{type_url}"
+            );
+            assert_eq!(
+                view.unpack_message::<Duration>().unwrap(),
+                any.unpack_message::<Duration>().unwrap(),
+                "{type_url}"
+            );
+            assert_eq!(
+                view.unpack_message::<Timestamp>().unwrap(),
+                any.unpack_message::<Timestamp>().unwrap(),
+                "{type_url}"
+            );
+            for expected in [type_url, "type.googleapis.com/google.protobuf.Duration"] {
+                assert_eq!(view.is_type(expected), any.is_type(expected), "{type_url}");
+                assert_eq!(
+                    view.unpack_if::<Duration>(expected).unwrap(),
+                    any.unpack_if::<Duration>(expected).unwrap(),
+                    "{type_url} vs {expected}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn any_view_type_name_outlives_the_view() {
+        use buffa::view::MessageView as _;
+
+        let bytes = Any::pack(
+            &Timestamp::default(),
+            "custom.example/v1/google.protobuf.Timestamp",
+        )
+        .encode_to_vec();
+        let type_name = {
+            let view = AnyView::decode_view(&bytes).unwrap();
+            view.type_name()
+        };
+        assert_eq!(type_name, Some("google.protobuf.Timestamp"));
+    }
+
+    #[test]
+    fn any_view_is_message_accepts_a_view_type() {
+        use crate::google::protobuf::{Duration, DurationView, TimestampView};
+        use buffa::view::MessageView as _;
+
+        let bytes = Any::pack_message(&Duration::from_secs(7)).encode_to_vec();
+        let view = AnyView::decode_view(&bytes).unwrap();
+        assert!(view.is_message::<DurationView>());
+        assert!(!view.is_message::<TimestampView>());
+        assert_eq!(DurationView::decode_view(view.value).unwrap().seconds, 7);
+    }
+
+    #[test]
+    fn any_view_unpack_reports_decode_errors_for_matching_names() {
+        use buffa::view::MessageView as _;
+
+        let type_url = "custom.example/v1/google.protobuf.Timestamp";
+        let bytes = Any {
+            type_url: type_url.into(),
+            value: bytes::Bytes::from_static(&[0x0f]),
+            ..Default::default()
+        }
+        .encode_to_vec();
+        let view = AnyView::decode_view(&bytes).unwrap();
+
+        assert!(view.unpack_message::<Timestamp>().is_err());
+        assert!(view.unpack_if::<Timestamp>(type_url).is_err());
     }
 
     #[test]
