@@ -33,6 +33,15 @@ impl Value {
         }
     }
 
+    /// Returns a mutable reference to the number if this is a number,
+    /// otherwise `None`.
+    pub fn as_number_mut(&mut self) -> Option<&mut f64> {
+        match &mut self.kind {
+            Some(KindOneof::NumberValue(n)) => Some(n),
+            _ => None,
+        }
+    }
+
     /// Returns the string value if this is a string, otherwise `None`.
     pub fn as_str(&self) -> Option<&str> {
         match &self.kind {
@@ -41,10 +50,38 @@ impl Value {
         }
     }
 
+    /// Returns a mutable reference to the owned string if this is a string,
+    /// otherwise `None`. Unlike `as_str`, this permits changing its length.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::google::protobuf::Value;
+    ///
+    /// let mut value = Value::from("hello");
+    /// value.as_str_mut().unwrap().push_str(" world");
+    /// assert_eq!(value.as_str(), Some("hello world"));
+    /// ```
+    pub fn as_str_mut(&mut self) -> Option<&mut String> {
+        match &mut self.kind {
+            Some(KindOneof::StringValue(s)) => Some(s),
+            _ => None,
+        }
+    }
+
     /// Returns the bool value if this is a bool, otherwise `None`.
     pub fn as_bool(&self) -> Option<bool> {
         match &self.kind {
             Some(KindOneof::BoolValue(b)) => Some(*b),
+            _ => None,
+        }
+    }
+
+    /// Returns a mutable reference to the bool if this is a bool,
+    /// otherwise `None`.
+    pub fn as_bool_mut(&mut self) -> Option<&mut bool> {
+        match &mut self.kind {
+            Some(KindOneof::BoolValue(b)) => Some(b),
             _ => None,
         }
     }
@@ -1170,6 +1207,56 @@ mod tests {
     }
 
     // ---- mutable accessors ------------------------------------------------
+
+    #[test]
+    fn scalar_mutable_accessors_update_values() {
+        let mut number = Value::from(1.5_f64);
+        *number.as_number_mut().unwrap() = 2.5;
+        assert_eq!(number.as_number(), Some(2.5));
+
+        let mut string = Value::from("before");
+        string.as_str_mut().unwrap().push_str(" and after");
+        assert_eq!(string.as_str(), Some("before and after"));
+
+        let mut boolean = Value::from(false);
+        *boolean.as_bool_mut().unwrap() = true;
+        assert_eq!(boolean.as_bool(), Some(true));
+    }
+
+    #[test]
+    fn scalar_mutable_accessors_match_only_their_variants() {
+        let variants = [
+            Value::default(),
+            Value::null(),
+            Value::from(2.0_f64),
+            Value::from("word"),
+            Value::from(false),
+            Value::from(Struct::new()),
+            Value::from(ListValue::default()),
+        ];
+
+        for mut value in variants {
+            let expected_number = value.as_number().is_some();
+            let expected_str = value.as_str().is_some();
+            let expected_bool = value.as_bool().is_some();
+            let original = value.clone();
+
+            assert_eq!(value.as_number_mut().is_some(), expected_number);
+            assert_eq!(value.as_str_mut().is_some(), expected_str);
+            assert_eq!(value.as_bool_mut().is_some(), expected_bool);
+            assert_eq!(value, original);
+        }
+    }
+
+    #[test]
+    fn scalar_mutable_accessors_work_through_struct() {
+        let mut data = Struct::new();
+        data.insert("count", 1_i32);
+
+        *data.get_mut("count").unwrap().as_number_mut().unwrap() += 1.0;
+
+        assert_eq!(data.get("count").and_then(Value::as_number), Some(2.0));
+    }
 
     #[test]
     fn as_struct_mut_returns_some_for_struct_value() {
