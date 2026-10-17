@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`Value` gains mutable scalar accessors.** `as_number_mut`, `as_str_mut`, and `as_bool_mut` let callers update an existing number, string, or bool variant in place. Each returns `None` for an unset value or a different variant, without changing the value.
+time: 2026-10-18T00:35:00+02:00
