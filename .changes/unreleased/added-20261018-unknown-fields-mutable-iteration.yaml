@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`UnknownFields` supports mutable iteration.** `iter_mut()` and `IntoIterator` for `&mut UnknownFields` let callers update stored field records in place while preserving their order.
+time: 2026-10-18T00:16:00+02:00
