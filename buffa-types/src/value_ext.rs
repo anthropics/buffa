@@ -1249,6 +1249,16 @@ mod tests {
     }
 
     #[test]
+    fn scalar_mutable_accessors_work_through_struct() {
+        let mut data = Struct::new();
+        data.insert("count", 1_i32);
+
+        *data.get_mut("count").unwrap().as_number_mut().unwrap() += 1.0;
+
+        assert_eq!(data.get("count").and_then(Value::as_number), Some(2.0));
+    }
+
+    #[test]
     fn as_struct_mut_returns_some_for_struct_value() {
         let mut s = Struct::new();
         s.insert("a", 1.0_f64);
