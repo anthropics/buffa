@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **Lazy initialization for `MessageField`** with `get_or_insert_with` lets callers construct an optional submessage from a closure only when the field is unset. It works with both boxed and inline message storage.
+time: 2026-10-18T00:16:00+02:00

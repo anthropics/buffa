@@ -411,6 +411,27 @@ impl<T: Default, P: ProtoBox<T>> MessageField<T, P> {
             .get_or_insert_with(|| <P as ProtoBox<T>>::new(T::default()))
     }
 
+    /// Get a mutable reference to the value, initializing it with `f` if unset.
+    ///
+    /// The closure runs only when the field is unset. Unlike
+    /// [`get_or_insert_default`](Self::get_or_insert_default), this lets callers
+    /// provide a value without constructing `T::default()`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa::MessageField;
+    ///
+    /// let mut field: MessageField<String> = MessageField::none();
+    /// assert_eq!(field.get_or_insert_with(|| "Alice".into()).as_str(), "Alice");
+    /// assert_eq!(field.get_or_insert_with(|| panic!("already set")).as_str(), "Alice");
+    /// ```
+    #[inline]
+    pub fn get_or_insert_with(&mut self, f: impl FnOnce() -> T) -> &mut T {
+        self.inner
+            .get_or_insert_with(|| <P as ProtoBox<T>>::new(f()))
+    }
+
     /// Call `f` with a mutable reference to the inner value, initializing to
     /// the default if the field is currently unset.
     ///
@@ -762,6 +783,41 @@ mod tests {
         field.get_or_insert_default().value = 10;
         assert!(field.is_set());
         assert_eq!(field.value, 10);
+    }
+
+    #[test]
+    fn test_get_or_insert_with() {
+        fn check<P: ProtoBox<Inner>>() {
+            let mut field = MessageField::<Inner, P>::none();
+            let mut calls = 0;
+            let value = field.get_or_insert_with(|| {
+                calls += 1;
+                Inner {
+                    value: 41,
+                    ..Default::default()
+                }
+            });
+            assert_eq!(value.value, 41);
+            value.value = 42;
+
+            assert_eq!(
+                field
+                    .get_or_insert_with(|| {
+                        calls += 1;
+                        Inner {
+                            value: -1,
+                            ..Default::default()
+                        }
+                    })
+                    .value,
+                42
+            );
+            assert_eq!(calls, 1);
+            assert!(field.is_set());
+        }
+
+        check::<Box<Inner>>();
+        check::<Inline<Inner>>();
     }
 
     /// Equality cases shared by every pointer representation `P`.
