@@ -220,6 +220,19 @@ impl ListValue {
     pub fn iter_mut(&mut self) -> core::slice::IterMut<'_, Value> {
         self.values.iter_mut()
     }
+
+    /// Returns the element at `index`, or `None` if it is out of bounds.
+    #[inline]
+    pub fn get(&self, index: usize) -> Option<&Value> {
+        self.values.get(index)
+    }
+
+    /// Returns a mutable reference to the element at `index`, or `None`
+    /// if it is out of bounds.
+    #[inline]
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut Value> {
+        self.values.get_mut(index)
+    }
 }
 
 impl<'a> IntoIterator for &'a ListValue {
@@ -912,6 +925,28 @@ mod tests {
         let three = ListValue::from_values([1.0_f64, 2.0, 3.0]);
         assert!(!three.is_empty());
         assert_eq!(three.len(), 3);
+    }
+
+    #[test]
+    fn list_value_get_handles_bounds() {
+        let list = ListValue::from_values([true, false]);
+        assert_eq!(list.get(0).and_then(Value::as_bool), Some(true));
+        assert_eq!(list.get(1).and_then(Value::as_bool), Some(false));
+        assert!(list.get(2).is_none());
+        assert!(ListValue::default().get(0).is_none());
+    }
+
+    #[test]
+    fn list_value_get_mut_edits_in_place() {
+        let mut list = ListValue::from_values([false, false]);
+        *list.get_mut(1).unwrap() = Value::from(true);
+        assert_eq!(list.get(1).and_then(Value::as_bool), Some(true));
+        assert_eq!(list.get(0).and_then(Value::as_bool), Some(false));
+        assert!(list.get_mut(2).is_none());
+        assert_eq!(list.len(), 2);
+
+        let mut empty = ListValue::default();
+        assert!(empty.get_mut(0).is_none());
     }
 
     #[test]
