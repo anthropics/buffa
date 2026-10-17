@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**The generated `TYPE_URL` doc points at `Any::pack_message` and `Any::unpack_message`** (#621). It named only `Any::pack` and `Any::unpack_if`, the forms that take the URL as an argument, and `unpack_if` compares the whole URL, prefix included, so `any.unpack_if::<Msg>(Msg::TYPE_URL)` returns `Ok(None)` for a `Msg` packed under another prefix. The doc now names `pack_message`, which packs under the type URL, and `unpack_message`, which matches the message''s full name under any prefix, ahead of `pack` and `unpack_if`, and says the const equals `MessageName::TYPE_URL`.'
+time: 2026-10-17T09:51:18.1775637+02:00

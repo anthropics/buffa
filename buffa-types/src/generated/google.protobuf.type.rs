@@ -119,8 +119,15 @@ impl ::core::fmt::Debug for Type {
     }
 }
 impl Type {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Type";
@@ -630,8 +637,15 @@ impl ::core::fmt::Debug for Field {
     }
 }
 impl Field {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Field";
@@ -1441,8 +1455,15 @@ impl ::core::fmt::Debug for Enum {
     }
 }
 impl Enum {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Enum";
@@ -1885,8 +1906,15 @@ impl ::core::fmt::Debug for EnumValue {
     }
 }
 impl EnumValue {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.EnumValue";
@@ -2202,8 +2230,15 @@ impl ::core::fmt::Debug for Option {
     }
 }
 impl Option {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Option";
