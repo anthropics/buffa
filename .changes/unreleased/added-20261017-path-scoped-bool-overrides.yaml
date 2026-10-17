@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **Path-scoped disable for preserve/deny unknown-field rules** (#624). `buffa_build::Config::preserve_unknown_fields_in_with` and `deny_unknown_json_fields_in_with` record `(path, false)` entries so a nested message can be carved out after a broader enable rule; last match wins, matching `CodeGenConfig`. The existing `*_in` builders remain enable-only shorthands. `protoc-gen-buffa` accepts `unknown_fields_in=<path>=false` and `deny_unknown_json_fields_in=<path>=false` alongside the historical bare-path spelling.
+time: 2026-10-17T18:30:00+05:30
