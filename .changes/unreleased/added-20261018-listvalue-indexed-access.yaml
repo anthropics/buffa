@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **Indexed access to `ListValue`**. Add `get` and `get_mut` helpers that return `None` for out-of-range indices, matching the convenience methods provided by `Struct`.
+time: 2026-10-18T00:16:00+02:00
