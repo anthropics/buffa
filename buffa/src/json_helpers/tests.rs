@@ -907,6 +907,42 @@ fn repeated_enum_skips_unknown_when_lenient() {
 }
 
 #[test]
+fn open_enum_containers_reject_null_elements() {
+    for ignore_unknown_enum_values in [false, true] {
+        let opts = crate::json::JsonParseOptions {
+            ignore_unknown_enum_values,
+            ..Default::default()
+        };
+        crate::json::with_json_parse_options(&opts, || {
+            for json in ["[null]", r#"["RED",null]"#, r#"[null,"PURPLE"]"#] {
+                let result = repeated_enum::deserialize::<Color, Vec<_>, _>(
+                    &mut serde_json::Deserializer::from_str(json),
+                );
+                assert!(
+                    result.is_err(),
+                    "accepted {json}, lenient={ignore_unknown_enum_values}"
+                );
+            }
+
+            for json in [
+                r#"{"a":null}"#,
+                r#"{"a":"RED","b":null}"#,
+                r#"{"a":"PURPLE","b":null}"#,
+            ] {
+                let result = map_enum::deserialize::<
+                    crate::__private::HashMap<String, crate::EnumValue<Color>>,
+                    _,
+                >(&mut serde_json::Deserializer::from_str(json));
+                assert!(
+                    result.is_err(),
+                    "accepted {json}, lenient={ignore_unknown_enum_values}"
+                );
+            }
+        });
+    }
+}
+
+#[test]
 fn repeated_enum_null_returns_empty_vec() {
     let result: Vec<crate::EnumValue<Color>> =
         repeated_enum::deserialize(&mut serde_json::Deserializer::from_str("null")).unwrap();

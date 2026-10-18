@@ -89,6 +89,25 @@ fn closed_enum_map_int_key_json_roundtrip() {
 }
 
 #[test]
+fn open_enum_map_rejects_null_values() {
+    for ignore_unknown_enum_values in [false, true] {
+        let opts = buffa::json::JsonParseOptions::new()
+            .ignore_unknown_enum_values(ignore_unknown_enum_values);
+        buffa::json::with_json_parse_options(&opts, || {
+            for json in [
+                r#"{"openByKey":{"a":null}}"#,
+                r#"{"openByKey":{"a":"OPEN_STRAWBERRY","b":null}}"#,
+            ] {
+                assert!(
+                    serde_json::from_str::<EnumJsonContexts>(json).is_err(),
+                    "accepted {json}, lenient={ignore_unknown_enum_values}"
+                );
+            }
+        });
+    }
+}
+
+#[test]
 fn open_enum_map_value_json_roundtrip_control() {
     // Control: file-default OPEN enum → EnumValue<E> wrapper, map_enum module.
     // This path was always correct; pinned here so a regression would be caught.

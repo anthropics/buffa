@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    Reject JSON `null` inside repeated open-enum fields and open-enum map values instead of treating it as the default enum value. A `null` for the whole list or map remains valid.
+time: 2026-10-19T01:13:00+02:00

@@ -783,7 +783,8 @@ fn try_deserialize_enum<T: serde::de::DeserializeOwned>(
 /// When `ignore_unknown_enum_values` is active, unknown enum string values
 /// are silently skipped instead of producing an error. In default mode this
 /// behaves identically to the standard `Vec<EnumValue<E>>` deserialization
-/// with null→empty-vec handling.
+/// with null→empty-vec handling for the whole field. Null array elements
+/// are rejected.
 pub mod repeated_enum {
     use alloc::vec::Vec;
     use serde::{Deserializer, Serializer};
@@ -819,6 +820,11 @@ pub mod repeated_enum {
             ) -> Result<Vec<crate::EnumValue<E>>, A::Error> {
                 let mut out = Vec::with_capacity(super::clamp_size_hint(seq.size_hint()));
                 while let Some(super::BufferedValue(raw)) = seq.next_element()? {
+                    if raw.is_null() {
+                        return Err(serde::de::Error::custom(
+                            "null is not allowed as a repeated enum element",
+                        ));
+                    }
                     match super::try_deserialize_enum::<crate::EnumValue<E>>(raw) {
                         Ok(Some(v)) => out.push(v),
                         Ok(None) => continue,
@@ -840,7 +846,8 @@ pub mod repeated_enum {
 ///
 /// When `ignore_unknown_enum_values` is active, map entries whose value is
 /// an unknown enum string are silently dropped. In default mode this behaves
-/// identically to standard deserialization with null→empty-map handling.
+/// identically to standard deserialization with null→empty-map handling for
+/// the whole field. Null map values are rejected.
 ///
 /// The lenient rule assumes that the map's value type is `EnumValue<E>`: it
 /// drops an entry whose value is a string that fails to decode.
@@ -894,6 +901,11 @@ pub mod map_enum {
                 let mut out = C::default();
                 while let Some(key) = map.next_key::<C::Key>()? {
                     let super::BufferedValue(raw) = map.next_value()?;
+                    if raw.is_null() {
+                        return Err(serde::de::Error::custom(
+                            "null is not allowed as an enum map value",
+                        ));
+                    }
                     match super::try_deserialize_enum::<C::Value>(raw) {
                         Ok(Some(v)) => {
                             out.storage_insert(key, v);
