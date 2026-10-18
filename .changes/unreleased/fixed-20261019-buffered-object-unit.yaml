@@ -1,0 +1,4 @@
+kind: Fixed
+body: >-
+  **Object-only JSON buffering now rejects Serde unit values instead of treating them as empty objects.** The `BufferedObject`, `object` and `charged_object` entry points all expect a map, but accepted a unit value from deserializers that call `visit_unit` during `deserialize_map`. Unit input now fails with a type error; valid object input is unchanged.
+time: 2026-10-18T23:25:41.548Z
