@@ -228,10 +228,6 @@ impl<'de> Visitor<'de> for ObjectVisitor {
         f.write_str("a map")
     }
 
-    fn visit_unit<E>(self) -> Result<Self::Value, E> {
-        Ok(Map::new())
-    }
-
     fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
         read_object(map)
     }
@@ -400,10 +396,6 @@ impl<'de> Visitor<'de> for ChargingObjectVisitor<'_> {
 
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("a map")
-    }
-
-    fn visit_unit<E>(self) -> Result<Self::Value, E> {
-        Ok(Map::new())
     }
 
     fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
@@ -580,6 +572,28 @@ mod tests {
         let too_deep = nested_raw_values(1, 128);
         let err = buffer(&too_deep).unwrap_err();
         assert!(err.to_string().contains("recursion limit"), "{err}");
+    }
+
+    /// A self-describing Serde deserializer can send unit through
+    /// `deserialize_map`. The object-only entry points must reject it,
+    /// rather than silently converting it into an empty object.
+    #[test]
+    fn object_buffers_reject_unit_values() {
+        use serde::de::value::{Error as ValueError, UnitDeserializer};
+
+        assert!(BufferedObject::deserialize(UnitDeserializer::<ValueError>::new()).is_err());
+        assert!(object(UnitDeserializer::<ValueError>::new()).is_err());
+
+        let remaining = Cell::new(3);
+        assert!(charged_object(
+            UnitDeserializer::<ValueError>::new(),
+            &remaining,
+            2,
+            1,
+            "limit exceeded",
+        )
+        .is_err());
+        assert_eq!(remaining.get(), 3);
     }
 
     #[test]
