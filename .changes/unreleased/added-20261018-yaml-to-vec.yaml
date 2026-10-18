@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    Add `buffa_yaml::to_vec` and `to_vec_view` to serialize owned messages and zero-copy views directly into UTF-8 YAML byte vectors.
+time: 2026-10-18T14:26:00+02:00
