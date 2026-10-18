@@ -209,6 +209,28 @@ impl ListValue {
         self.values.is_empty()
     }
 
+    /// Append a value to the list, converting it into a [`Value`].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use buffa_types::ListValue;
+    ///
+    /// let mut list = ListValue::default();
+    /// list.push("hello");
+    /// assert_eq!(list.values[0].as_str(), Some("hello"));
+    /// ```
+    #[inline]
+    pub fn push(&mut self, value: impl Into<Value>) {
+        self.values.push(value.into());
+    }
+
+    /// Remove and return the last value, or `None` when the list is empty.
+    #[inline]
+    pub fn pop(&mut self) -> Option<Value> {
+        self.values.pop()
+    }
+
     /// Returns an iterator over the values in the list.
     #[inline]
     pub fn iter(&self) -> core::slice::Iter<'_, Value> {
@@ -912,6 +934,32 @@ mod tests {
         let three = ListValue::from_values([1.0_f64, 2.0, 3.0]);
         assert!(!three.is_empty());
         assert_eq!(three.len(), 3);
+    }
+
+    #[test]
+    fn list_value_push_converts_and_appends() {
+        let mut list = ListValue::default();
+        list.push(1.5_f64);
+        list.push("two");
+        list.push(true);
+        assert_eq!(
+            list.values,
+            [Value::from(1.5_f64), Value::from("two"), Value::from(true)]
+        );
+    }
+
+    #[test]
+    fn list_value_pop_returns_last_item_and_handles_empty() {
+        let mut list = ListValue::from_values([1.0_f64, 2.0, 3.0]);
+        for expected in [3.0, 2.0, 1.0] {
+            assert_eq!(list.pop().unwrap().as_number(), Some(expected));
+        }
+        assert!(list.pop().is_none());
+        assert!(list.is_empty());
+
+        list.push("again");
+        assert_eq!(list.pop().unwrap().as_str(), Some("again"));
+        assert!(list.is_empty());
     }
 
     #[test]
