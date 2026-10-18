@@ -26,6 +26,7 @@
 use core::cell::Cell;
 
 use alloc::borrow::ToOwned;
+use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
@@ -338,6 +339,45 @@ impl Serialize for MapKeyRef<'_> {
 /// budget. `buffa::DecodeError::ElementMemoryLimitExceeded` displays the same
 /// text.
 const ELEMENT_MEMORY_LIMIT_EXCEEDED: &str = "element memory limit exceeded";
+
+/// Keep duplicate checks cheap for ordinary messages, but avoid a linear scan
+/// for every field in unusually wide descriptors.
+const SMALL_SEEN_VALUES: usize = 32;
+
+enum SeenValues<T> {
+    Small(Vec<T>),
+    Large(BTreeSet<T>),
+}
+
+impl<T> SeenValues<T> {
+    fn new() -> Self {
+        Self::Small(Vec::new())
+    }
+
+    /// Returns false when `value` has already been inserted.
+    fn insert(&mut self, value: T) -> bool
+    where
+        T: Copy + Ord,
+    {
+        match self {
+            Self::Small(values) => {
+                if values.contains(&value) {
+                    return false;
+                }
+                if values.len() < SMALL_SEEN_VALUES {
+                    values.push(value);
+                    return true;
+                }
+
+                let mut values = core::mem::take(values);
+                values.push(value);
+                *self = Self::Large(values.into_iter().collect());
+                true
+            }
+            Self::Large(values) => values.insert(value),
+        }
+    }
+}
 
 /// Charge `bytes` of element footprint against the parse's shared budget.
 ///
@@ -800,14 +840,14 @@ impl<'de> Visitor<'de> for MessageVisitor<'_> {
         // same (non-synthetic) oneof is an error. Track which oneof indices
         // have been written. Synthetic oneofs (proto3 `optional`) are
         // single-member and can't trigger this.
-        let mut seen_oneofs: Vec<u16> = Vec::new();
+        let mut seen_oneofs = SeenValues::new();
         // The spec also requires rejecting a field that appears more than
         // once in the same object. serde_json's streaming deserializer
         // yields every key in document order (it does not deduplicate), so
         // tracking seen field numbers catches both exact duplicates and the
         // proto-name/json-name casing variants (`foo_bar` then `fooBar`),
         // which resolve to the same descriptor.
-        let mut seen_fields: Vec<u32> = Vec::new();
+        let mut seen_fields = SeenValues::new();
         while let Some(key) = map.next_key::<String>()? {
             // The proto3 JSON spec says parsers must accept both the camelCase
             // json_name and the original proto field name. `field_by_name`
@@ -858,13 +898,12 @@ impl<'de> Visitor<'de> for MessageVisitor<'_> {
             let synthetic = oneof_index
                 .and_then(|oi| md.oneofs.get(oi as usize))
                 .is_some_and(|o| o.synthetic);
-            if seen_fields.contains(&number) {
+            if !seen_fields.insert(number) {
                 return Err(de::Error::custom(format!(
                     "duplicate field {key:?} on message {}",
                     md.full_name
                 )));
             }
-            seen_fields.push(number);
             let v = map.next_value_seed(FieldSeed {
                 pool: &self.pool,
                 kind,
@@ -876,13 +915,10 @@ impl<'de> Visitor<'de> for MessageVisitor<'_> {
             // FieldSeed handles).
             if let Some(v) = v {
                 if let Some(oi) = oneof_index {
-                    if !synthetic {
-                        if seen_oneofs.contains(&oi) {
-                            return Err(de::Error::custom(format!(
-                                "more than one member of oneof set ({key:?})"
-                            )));
-                        }
-                        seen_oneofs.push(oi);
+                    if !synthetic && !seen_oneofs.insert(oi) {
+                        return Err(de::Error::custom(format!(
+                            "more than one member of oneof set ({key:?})"
+                        )));
                     }
                     // Clear sibling oneof members so a stale member doesn't
                     // survive in the field map.
@@ -1381,7 +1417,7 @@ const _: fn(&MessageDescriptor) = |_| {};
 
 #[cfg(test)]
 mod tests {
-    use super::{field_mask_to_camel, field_mask_to_snake};
+    use super::{field_mask_to_camel, field_mask_to_snake, SeenValues, SMALL_SEEN_VALUES};
 
     #[test]
     fn field_mask_leading_underscore_roundtrip() {
@@ -1393,5 +1429,18 @@ mod tests {
             assert_eq!(field_mask_to_camel(snake).unwrap(), camel);
             assert_eq!(field_mask_to_snake(camel).unwrap(), snake);
         }
+    }
+
+    #[test]
+    fn seen_values_promote_and_still_reject_duplicates() {
+        let mut seen = SeenValues::new();
+        for value in 0u32..SMALL_SEEN_VALUES as u32 {
+            assert!(seen.insert(value));
+        }
+        assert!(!seen.insert(0));
+
+        assert!(seen.insert(SMALL_SEEN_VALUES as u32));
+        assert!(!seen.insert((SMALL_SEEN_VALUES / 2) as u32));
+        assert!(seen.insert((SMALL_SEEN_VALUES + 1) as u32));
     }
 }
