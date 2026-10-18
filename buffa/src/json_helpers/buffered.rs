@@ -585,14 +585,14 @@ mod tests {
         assert!(object(UnitDeserializer::<ValueError>::new()).is_err());
 
         let remaining = Cell::new(3);
-        assert!(charged_object(
+        let result = charged_object(
             UnitDeserializer::<ValueError>::new(),
             &remaining,
             2,
             1,
             "limit exceeded",
-        )
-        .is_err());
+        );
+        assert!(result.is_err());
         assert_eq!(remaining.get(), 3);
     }
 
