@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    Add `EnumValue::as_unknown()` to read the numeric value of an unknown protobuf enum without matching on its variant. Known variants return `None`.
+time: 2026-10-18T12:06:00+00:00
