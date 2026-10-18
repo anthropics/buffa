@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`FieldMask::is_subset_of` checks whether one mask selects only paths allowed by another.** For example, `requested.is_subset_of(&allowed)` returns true when each requested path is present in or covered by an ancestor in the allowed mask. It uses the same path rules as `covers`; an empty requested mask is a subset of every mask.
+time: 2026-10-18T14:06:00+02:00

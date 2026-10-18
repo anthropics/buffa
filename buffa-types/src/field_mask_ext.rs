@@ -81,6 +81,33 @@ impl FieldMask {
             .any(|ancestor| path_is_covered(path, ancestor))
     }
 
+    /// Returns `true` if every path in this mask is covered by `other`.
+    ///
+    /// An exact path or an ancestor in `other` covers a requested path.
+    /// For example, a mask selecting `user.name` is a subset of `user`,
+    /// but not the other way around. Path order and duplicates do not matter;
+    /// neither mask is modified. Runs in O(n × m) path comparisons.
+    ///
+    /// An empty mask is a subset of every mask, including another empty mask.
+    /// As with [`covers`](Self::covers), callers treating an *absent* update
+    /// mask as selecting every field must handle that convention separately.
+    /// Dots are component boundaries; `*` is a literal path, not a wildcard.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use buffa_types::FieldMask;
+    ///
+    /// let allowed = FieldMask::from_paths(["user", "settings.locale"]);
+    /// let requested = FieldMask::from_paths(["user.name", "settings.locale"]);
+    /// assert!(requested.is_subset_of(&allowed));
+    /// assert!(!allowed.is_subset_of(&requested));
+    /// ```
+    #[must_use]
+    pub fn is_subset_of(&self, other: &Self) -> bool {
+        self.paths.iter().all(|path| other.covers(path))
+    }
+
     /// Returns `true` if this mask contains `path`, an ancestor of `path`, or
     /// a descendant of `path`.
     ///
@@ -504,6 +531,40 @@ mod tests {
         }
         assert!(!FieldMask::default().covers("user"));
         assert!(!FieldMask::from_paths(["*"]).covers("user"));
+    }
+
+    #[test]
+    fn subset_requires_every_requested_path_to_be_covered() {
+        let allowed = FieldMask::from_paths(["user", "settings.locale"]);
+        let requested = FieldMask::from_paths(["settings.locale", "user.name", "user.name"]);
+        assert!(requested.is_subset_of(&allowed));
+        assert!(!allowed.is_subset_of(&requested));
+        assert!(allowed.is_subset_of(&allowed));
+
+        let unapproved = FieldMask::from_paths(["user.name", "settings.theme"]);
+        assert!(!unapproved.is_subset_of(&allowed));
+    }
+
+    #[test]
+    fn subset_uses_exact_component_boundaries() {
+        let allowed = FieldMask::from_paths(["user", "*"]);
+        assert!(FieldMask::from_paths(["user.name", "*"]).is_subset_of(&allowed));
+        for path in ["username", "User.name", "settings", "user_name"] {
+            assert!(
+                !FieldMask::from_paths([path]).is_subset_of(&allowed),
+                "{path}"
+            );
+        }
+        assert!(!FieldMask::from_paths(["user"]).is_subset_of(&FieldMask::from_paths(["user.name"])));
+    }
+
+    #[test]
+    fn empty_mask_is_a_subset_but_covers_no_nonempty_mask() {
+        let empty = FieldMask::default();
+        let nonempty = FieldMask::from_paths(["user"]);
+        assert!(empty.is_subset_of(&empty));
+        assert!(empty.is_subset_of(&nonempty));
+        assert!(!nonempty.is_subset_of(&empty));
     }
 
     #[test]
