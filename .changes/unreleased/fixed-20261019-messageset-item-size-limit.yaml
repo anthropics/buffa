@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**MessageSet Item decoding rejects oversized payload lengths**. The decoder checks the combined size of repeated message chunks against the protobuf 2 GiB limit before allocating or copying, returning MessageTooLarge for oversized declared lengths.'
+time: 2026-10-19T01:13:00+02:00

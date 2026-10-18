@@ -91,14 +91,15 @@ pub fn merge_item(
             }
             (3, WireType::LengthDelimited) => {
                 let len = decode_varint(buf)?;
-                // Compare as u64 so a 32-bit build rejects a length that
-                // overflows usize before the cast truncates it.
+                // An Item may have several message fields. Check the total
+                // payload size before resizing, including for direct callers
+                // that bypass DecodeOptions' top-level input size limit.
+                let new_len = checked_message_length(message.len(), len)?;
                 if len > buf.remaining() as u64 {
                     return Err(DecodeError::UnexpectedEof);
                 }
-                let len = len as usize;
                 let start = message.len();
-                message.resize(start + len, 0);
+                message.resize(new_len, 0);
                 buf.copy_to_slice(&mut message[start..]);
             }
             (_, WireType::EndGroup) => {
@@ -117,6 +118,19 @@ pub fn merge_item(
 
     let type_id = type_id.ok_or(DecodeError::InvalidMessageSet("missing type_id"))?;
     Ok((type_id, message))
+}
+
+/// Check the cumulative size of an Item's concatenated message chunks.
+///
+/// `MAX_MESSAGE_BYTES` fits in `usize` on supported 32- and 64-bit targets.
+fn checked_message_length(current: usize, next: u64) -> Result<usize, DecodeError> {
+    let total = (current as u64)
+        .checked_add(next)
+        .ok_or(DecodeError::MessageTooLarge)?;
+    if total > u64::from(crate::MAX_MESSAGE_BYTES) {
+        return Err(DecodeError::MessageTooLarge);
+    }
+    Ok(total as usize)
 }
 
 /// Encoded length of one MessageSet `Item` wrapping `payload_len` bytes at
@@ -296,6 +310,31 @@ mod tests {
             let result = merge_item_d(&mut body.as_slice(), 50);
             assert_eq!(result.is_ok(), ok, "type_id = {id}");
         }
+    }
+
+    #[test]
+    fn message_chunks_must_fit_the_combined_size_limit() {
+        let max = crate::MAX_MESSAGE_BYTES as usize;
+        assert_eq!(checked_message_length(max - 2, 2), Ok(max));
+        assert_eq!(
+            checked_message_length(max - 2, 3),
+            Err(DecodeError::MessageTooLarge)
+        );
+        assert_eq!(
+            checked_message_length(3, u64::MAX),
+            Err(DecodeError::MessageTooLarge)
+        );
+    }
+
+    #[test]
+    fn merge_item_rejects_oversized_payload_before_copying() {
+        let mut body = type_id_field(7);
+        encode_varint(MESSAGE_TAG, &mut body);
+        encode_varint(u64::from(crate::MAX_MESSAGE_BYTES) + 1, &mut body);
+        assert_eq!(
+            merge_item_d(&mut body.as_slice(), 50),
+            Err(DecodeError::MessageTooLarge)
+        );
     }
 
     #[test]
