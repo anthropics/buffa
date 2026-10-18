@@ -555,7 +555,8 @@ mod tests {
                 "{path}"
             );
         }
-        assert!(!FieldMask::from_paths(["user"]).is_subset_of(&FieldMask::from_paths(["user.name"])));
+        let child_only = FieldMask::from_paths(["user.name"]);
+        assert!(!FieldMask::from_paths(["user"]).is_subset_of(&child_only));
     }
 
     #[test]
