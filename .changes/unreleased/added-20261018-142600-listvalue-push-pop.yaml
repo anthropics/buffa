@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`ListValue` adds `push` and `pop`**. Append individual items convertible to `Value` and remove the last value, returning `None` for an empty list.
+time: 2026-10-18T14:26:00+02:00
