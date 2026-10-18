@@ -29,10 +29,9 @@ use crate::generated::descriptor::{
 /// Resolve a file's effective features from its declared syntax/edition and
 /// any explicit file-level feature overrides.
 ///
-/// A file with syntax `editions` and no edition that this crate defines
-/// resolves to the edition 2023 defaults. `DescriptorPool` (feature
-/// `reflect`) rejects such a file when its `edition` is unset or
-/// `EDITION_UNKNOWN`, before it calls this function.
+/// Unsupported editions fall back to 2023 defaults for direct callers.
+/// DescriptorPool rejects missing and unsupported editions before it reaches
+/// this resolver, so it never silently links a file with the wrong defaults.
 #[must_use]
 pub fn for_file(file: &FileDescriptorProto) -> ResolvedFeatures {
     match file.syntax.as_deref() {

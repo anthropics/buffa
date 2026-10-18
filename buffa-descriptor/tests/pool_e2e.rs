@@ -719,14 +719,12 @@ fn editions_file_without_edition_is_rejected_without_mutating_pool() {
 }
 
 #[test]
-fn editions_file_with_an_undefined_edition_number_links_with_2023_defaults() {
+fn editions_file_with_an_undefined_edition_number_is_rejected() {
     use buffa::Message;
-    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
     use buffa_descriptor::generated::descriptor::{
         DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet,
     };
 
-    // An edition number that `Edition` does not define.
     const UNDEFINED_EDITION: i32 = 5000;
     assert_eq!(
         <Edition as buffa::Enumeration>::from_i32(UNDEFINED_EDITION),
@@ -738,7 +736,6 @@ fn editions_file_with_an_undefined_edition_number_links_with_2023_defaults() {
         syntax: Some("editions".into()),
         message_type: vec![DescriptorProto {
             name: Some("FutureEdition".into()),
-            field: vec![scalar_field("value", 1, Type::TYPE_INT32)],
             ..Default::default()
         }],
         ..Default::default()
@@ -747,23 +744,78 @@ fn editions_file_with_an_undefined_edition_number_links_with_2023_defaults() {
         number: 14,
         data: buffa::UnknownFieldData::Varint(UNDEFINED_EDITION as u64),
     });
-    let bytes = FileDescriptorSet {
+    let set = FileDescriptorSet {
         file: vec![file],
         ..Default::default()
-    }
-    .encode_to_vec();
+    };
+    let bytes = set.encode_to_vec();
 
-    // The wire form carries the number, and decoding keeps it as an unknown
-    // field with `edition` unset.
-    let p = DescriptorPool::decode(&bytes).unwrap();
-    assert_eq!(
-        p.message_by_name("FutureEdition")
-            .unwrap()
-            .field(1)
-            .unwrap()
-            .presence(),
-        FieldPresence::Explicit
+    assert_set_rejected_without_mutating_pool(
+        "future-edition.proto",
+        "FutureEdition",
+        set,
+        |err| {
+            assert!(matches!(
+                err,
+                PoolError::UnsupportedEdition { file, edition }
+                    if file == "future-edition.proto" && *edition == UNDEFINED_EDITION
+            ));
+            assert_eq!(
+                err.to_string(),
+                "file future-edition.proto has unsupported edition 5000 (supported: 998..=1001)"
+            );
+        },
     );
+    assert!(matches!(
+        DescriptorPool::decode(&bytes),
+        Err(PoolError::UnsupportedEdition {
+            edition: UNDEFINED_EDITION,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn editions_file_with_reserved_edition_values_is_rejected() {
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, Edition, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    for edition in [
+        Edition::EDITION_LEGACY,
+        Edition::EDITION_1_TEST_ONLY,
+        Edition::EDITION_2_TEST_ONLY,
+        Edition::EDITION_UNSTABLE,
+        Edition::EDITION_99999_TEST_ONLY,
+        Edition::EDITION_MAX,
+    ] {
+        let set = FileDescriptorSet {
+            file: vec![FileDescriptorProto {
+                name: Some("unsupported-edition.proto".into()),
+                package: Some("invalid.test".into()),
+                syntax: Some("editions".into()),
+                edition: Some(edition),
+                message_type: vec![DescriptorProto {
+                    name: Some("BadEdition".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_set_rejected_without_mutating_pool(
+            "unsupported-edition.proto",
+            "invalid.test.BadEdition",
+            set,
+            |err| {
+                assert!(matches!(
+                    err,
+                    PoolError::UnsupportedEdition { file, edition: number }
+                        if file == "unsupported-edition.proto" && *number == edition as i32
+                ));
+            },
+        );
+    }
 }
 
 #[test]
