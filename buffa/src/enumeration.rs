@@ -131,6 +131,19 @@ impl<E: Enumeration> EnumValue<E> {
             Self::Unknown(_) => None,
         }
     }
+
+    /// Return the raw wire number if this is an unknown enum variant.
+    ///
+    /// Unlike [`to_i32`](Self::to_i32), this returns `None` for known variants.
+    /// An explicitly constructed `Unknown(n)` is still unknown even when
+    /// `E::from_i32(n)` would recognize the same number.
+    #[inline]
+    pub fn as_unknown(&self) -> Option<i32> {
+        match self {
+            Self::Unknown(n) => Some(*n),
+            Self::Known(_) => None,
+        }
+    }
 }
 
 impl<E: Enumeration> From<i32> for EnumValue<E> {
@@ -382,6 +395,32 @@ mod tests {
     fn as_known_returns_none_for_unknown() {
         let v: EnumValue<Color> = EnumValue::Unknown(7);
         assert_eq!(v.as_known(), None);
+    }
+
+    // ---- as_unknown ------------------------------------------------------
+
+    #[test]
+    fn as_unknown_returns_none_for_known_variant() {
+        let v = EnumValue::Known(Color::Red);
+        assert_eq!(v.as_unknown(), None);
+    }
+
+    #[test]
+    fn as_unknown_returns_raw_number_for_unknown_variant() {
+        for n in [0, 7, -1, i32::MIN, i32::MAX] {
+            let v: EnumValue<Color> = EnumValue::Unknown(n);
+            assert_eq!(v.as_unknown(), Some(n));
+        }
+    }
+
+    #[test]
+    fn as_unknown_uses_variant_not_numeric_membership() {
+        let explicitly_unknown: EnumValue<Color> = EnumValue::Unknown(1);
+        assert_eq!(explicitly_unknown.as_unknown(), Some(1));
+        assert_eq!(explicitly_unknown.as_known(), None);
+
+        let recognized: EnumValue<Color> = EnumValue::from(1);
+        assert_eq!(recognized.as_unknown(), None);
     }
 
     // ---- Debug -----------------------------------------------------------
