@@ -156,7 +156,9 @@ pub type Map<K, V> = crate::__private::HashMap<K, V>;
 /// - `arbitrary::Arbitrary` under the `arbitrary` feature (derivable on a
 ///   newtype). Not needed on a map field whose key or value is a custom string
 ///   type or whose value is a non-default bytes type: generated code builds
-///   that field through `MapStorage` and `Default`.
+///   that field through `MapStorage` and `Default`. A `buffa-remote-derive`
+///   newtype gets the impl from `#[buffa(remote = ..., arbitrary)]`, which
+///   needs no `Arbitrary` impl on the remote map.
 /// - `serde::Serialize` / `Deserialize` under a JSON-enabled build. The proto3
 ///   JSON codec drives serialization through this trait, so **every** proto map
 ///   key/value type is supported regardless of the container — there is no
@@ -164,7 +166,9 @@ pub type Map<K, V> = crate::__private::HashMap<K, V>;
 ///   in a single field, a derived `Serialize` / `Deserialize` already routes
 ///   transparently to the inner map; the with-modules call this trait's methods
 ///   directly rather than the newtype's serde, so even that is only needed when
-///   the field type bypasses a with-module.)
+///   the field type bypasses a with-module.) A `buffa-remote-derive` newtype
+///   gets the impls from `#[buffa(remote = ..., serde)]`, which forwards to
+///   the remote map's own impls.
 ///
 /// The buffa-provided `HashMap` and `BTreeMap` already satisfy all of these, so
 /// selecting `BTreeMap` needs no consumer code.

@@ -2105,6 +2105,88 @@ fn test_message_string_and_bytes_fields() {
     );
 }
 
+fn custom_elements_output(generate_json: bool, reflect_mode: ReflectMode) -> String {
+    let blobs_entry = DescriptorProto {
+        name: Some("BlobsEntry".to_string()),
+        field: vec![
+            make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+            make_field("value", 2, Label::LABEL_OPTIONAL, Type::TYPE_BYTES),
+        ],
+        options: MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    };
+    let mut file = proto3_file("custom_elements.proto");
+    file.package = Some("pkg".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("WithCustomElements".to_string()),
+        field: vec![
+            make_field("chunks", 1, Label::LABEL_REPEATED, Type::TYPE_BYTES),
+            FieldDescriptorProto {
+                type_name: Some(".pkg.WithCustomElements.BlobsEntry".to_string()),
+                ..make_field("blobs", 2, Label::LABEL_REPEATED, Type::TYPE_MESSAGE)
+            },
+            make_field("names", 3, Label::LABEL_REPEATED, Type::TYPE_STRING),
+        ],
+        nested_type: vec![blobs_entry],
+        ..Default::default()
+    });
+    let mut config = CodeGenConfig {
+        bytes_fields: vec![
+            (
+                ".pkg.WithCustomElements.chunks".to_string(),
+                BytesRepr::Custom("::foreign::Chunk".to_string()),
+            ),
+            (
+                ".pkg.WithCustomElements.blobs".to_string(),
+                BytesRepr::Custom("::foreign::Blob".to_string()),
+            ),
+        ],
+        string_fields: vec![(
+            ".pkg.WithCustomElements.names".to_string(),
+            StringRepr::Custom("::foreign::Name".to_string()),
+        )],
+        generate_json,
+        ..Default::default()
+    };
+    reflect_mode.apply(&mut config);
+    let files = generate(&[file], &["custom_elements.proto".to_string()], &config)
+        .expect("custom element message should generate");
+    joined(&files)
+}
+
+#[test]
+fn test_custom_element_impls_need_json_or_vtable_reflection() {
+    for generate_json in [false, true] {
+        for reflect_mode in [ReflectMode::Off, ReflectMode::Bridge, ReflectMode::VTable] {
+            let content = custom_elements_output(generate_json, reflect_mode);
+            let setup = format!("generate_json={generate_json}, {reflect_mode:?}");
+            let vtable = reflect_mode == ReflectMode::VTable;
+            for (ty, json_impl_expected) in [
+                ("::foreign::Chunk", generate_json),
+                ("::foreign::Blob", generate_json),
+                ("::foreign::Name", false),
+            ] {
+                let json_impl = format!("ProtoElemJson for {ty}");
+                let reflect_impl = format!("ReflectElement for {ty}");
+                assert_eq!(
+                    content.contains(&json_impl),
+                    json_impl_expected,
+                    "{json_impl} with {setup}: {content}"
+                );
+                assert_eq!(
+                    content.contains(&reflect_impl),
+                    vtable,
+                    "{reflect_impl} with {setup}: {content}"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn test_message_enum_field() {
     let mut file = proto3_file("enumfield.proto");
