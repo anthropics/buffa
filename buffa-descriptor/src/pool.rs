@@ -31,8 +31,8 @@ use alloc::vec::Vec;
 
 use crate::desc::{
     EnumDescriptor, EnumIndex, EnumValueDescriptor, ExtensionDescriptor, ExtensionIndex,
-    FieldDescriptor, FieldKind, MessageDescriptor, MessageIndex, MethodDescriptor, OneofDescriptor,
-    ScalarType, ServiceDescriptor, ServiceIndex, SingularKind,
+    FieldDefault, FieldDescriptor, FieldKind, MessageDescriptor, MessageIndex, MethodDescriptor,
+    OneofDescriptor, ScalarType, ServiceDescriptor, ServiceIndex, SingularKind,
 };
 use crate::features::{self, ResolvedFeatures};
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type as ProtoType};
@@ -369,6 +369,9 @@ pub enum PoolError {
     /// An extension always has presence. A proto3 field reports
     /// [`Proto3FieldWithDefault`](Self::Proto3FieldWithDefault) instead.
     ImplicitPresenceFieldWithDefault { field: String },
+    /// A scalar or enum field declares a default string that cannot be parsed
+    /// as the field's type.
+    InvalidFieldDefault { field: String, value: String },
     /// A singular enum field of an editions file has implicit presence but
     /// uses a closed enum. Closed enum fields require presence to
     /// distinguish an unset field from its default value.
@@ -756,6 +759,9 @@ impl core::fmt::Display for PoolError {
                 f,
                 "field {field} has implicit presence and declares a default value"
             ),
+            Self::InvalidFieldDefault { field, value } => {
+                write!(f, "field {field} has invalid default value {value:?}")
+            }
             Self::ImplicitPresenceClosedEnum { field } => write!(
                 f,
                 "field {field} has implicit presence and uses a closed enum"
@@ -1551,6 +1557,7 @@ impl DescriptorPool {
                 self.link_nested_extensions(pkg, msg, &file_features, scope)?;
             }
         }
+        self.resolve_field_defaults(first_new_message, first_new_extension)?;
         self.finalize_field_enum_types(first_new_message, first_new_extension);
 
         // Record the symbol → file index (for `FindFileContainingSymbol`).
@@ -2955,6 +2962,19 @@ impl DescriptorPool {
             });
         }
 
+        let explicit_default = f
+            .default_value
+            .as_deref()
+            .map(|raw| {
+                crate::field_default::parse(raw, kind).map_err(|()| {
+                    PoolError::InvalidFieldDefault {
+                        field: field_fqn.clone(),
+                        value: raw.to_string(),
+                    }
+                })
+            })
+            .transpose()?;
+
         Ok(FieldDescriptor {
             name,
             json_name,
@@ -2965,6 +2985,7 @@ impl DescriptorPool {
             delimited,
             oneof_index,
             enum_type,
+            explicit_default,
             options: clone_options(&f.options),
         })
     }
@@ -3007,6 +3028,46 @@ impl DescriptorPool {
         for extension in &mut self.extensions[first_new_extension..] {
             resolve(&mut extension.field);
         }
+    }
+
+    fn resolve_field_defaults(
+        &mut self,
+        first_new_message: usize,
+        first_new_extension: usize,
+    ) -> Result<(), PoolError> {
+        let (messages, extensions, enums) = (&mut self.messages, &mut self.extensions, &self.enums);
+        let resolve = |field: &mut FieldDescriptor, field_name: String| {
+            let Some(FieldDefault::EnumName(value_name)) = field.explicit_default.as_ref() else {
+                return Ok(());
+            };
+            let value_name = value_name.clone();
+            let enum_index = match field.kind {
+                FieldKind::Singular(SingularKind::Enum(index)) => index,
+                _ => unreachable!("only singular enum fields can declare defaults"),
+            };
+            let Some(number) = enums[enum_index.0 as usize]
+                .value_by_name(&value_name)
+                .map(|value| value.number())
+            else {
+                return Err(PoolError::InvalidFieldDefault {
+                    field: field_name,
+                    value: value_name,
+                });
+            };
+            field.explicit_default = Some(FieldDefault::EnumNumber(number));
+            Ok(())
+        };
+
+        for message in &mut messages[first_new_message..] {
+            let message_name = message.full_name.clone();
+            for field in &mut message.fields {
+                resolve(field, format!("{message_name}.{}", field.name))?;
+            }
+        }
+        for extension in &mut extensions[first_new_extension..] {
+            resolve(&mut extension.field, extension.full_name.clone())?;
+        }
+        Ok(())
     }
 
     /// Checks the rules that relate a message field to the enum it names.

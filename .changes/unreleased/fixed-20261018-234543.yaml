@@ -1,0 +1,3 @@
+kind: Fixed
+body: Dynamic reflection returns declared defaults for absent fields.
+time: 2026-10-18T23:45:43.303865+02:00

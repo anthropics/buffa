@@ -194,11 +194,41 @@ pub struct FieldDescriptor {
     pub(crate) delimited: bool,
     pub(crate) oneof_index: Option<u16>,
     pub(crate) enum_type: Option<EnumType>,
+    /// Parsed proto2/explicit-presence default, if the source descriptor
+    /// declares one. Kept separately from `FieldOptions`: `default_value` is
+    /// a `FieldDescriptorProto` field, not an option.
+    #[cfg(feature = "reflect")]
+    pub(crate) explicit_default: Option<FieldDefault>,
     /// Raw `FieldOptions`, boxed (`None` when the field declares none).
     pub(crate) options: Option<Box<FieldOptions>>,
 }
 
+/// A parsed default declared on a singular scalar or enum field.
+///
+/// This is stored on linked descriptors so reflection can return the same
+/// value as generated accessors without reparsing descriptor strings.
+#[derive(Clone, Debug)]
+#[cfg(feature = "reflect")]
+pub(crate) enum FieldDefault {
+    F64(f64),
+    F32(f32),
+    I64(i64),
+    U64(u64),
+    I32(i32),
+    U32(u32),
+    Bool(bool),
+    String(String),
+    Bytes(Vec<u8>),
+    EnumName(String),
+    EnumNumber(i32),
+}
+
 impl FieldDescriptor {
+    #[cfg(feature = "reflect")]
+    pub(crate) fn explicit_default(&self) -> Option<&FieldDefault> {
+        self.explicit_default.as_ref()
+    }
+
     /// Proto field name (as written in the `.proto` file).
     #[inline]
     #[must_use]
@@ -833,6 +863,8 @@ mod tests {
             delimited: false,
             oneof_index: None,
             enum_type: None,
+            #[cfg(feature = "reflect")]
+            explicit_default: None,
             options: None,
         }
     }
