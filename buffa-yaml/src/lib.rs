@@ -52,6 +52,11 @@
 //! ("billion laughs"). Bound the size of untrusted input before passing it to
 //! [`from_str`], [`from_slice`], or [`from_reader`].
 
+// Compile the README example as a doctest.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
 mod decode;
 mod encode;
 mod error;
