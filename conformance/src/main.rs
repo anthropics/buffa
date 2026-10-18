@@ -427,10 +427,7 @@ mod frame_tests {
 
         let mut reader = bytes.as_slice();
         assert_eq!(read_frame_length(&mut reader).unwrap(), Some(0));
-        assert_eq!(
-            read_frame_length(&mut reader).unwrap(),
-            Some(0x8000_0000)
-        );
+        assert_eq!(read_frame_length(&mut reader).unwrap(), Some(0x8000_0000));
         assert_eq!(read_frame_length(&mut reader).unwrap(), None);
     }
 
