@@ -113,7 +113,7 @@ pub(crate) fn local_type_name(type_name_prefix: &str, proto_name: &str) -> Strin
 /// The other primitive type names (`char`, `i8`, `u16`) are left out:
 /// generated code does not name them, so a message with one of those names
 /// compiles as written.
-fn is_generated_primitive(name: &str) -> bool {
+pub(crate) fn is_generated_primitive(name: &str) -> bool {
     matches!(
         name,
         "bool" | "str" | "u8" | "usize" | "i32" | "i64" | "u32" | "u64" | "f32" | "f64"

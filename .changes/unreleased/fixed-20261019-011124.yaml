@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Generated primitive paths are resolved through `core`.** Local names can no longer change generated field types, casts, or primitive constants.
+time: 2026-10-19T01:11:24.000000000+02:00
