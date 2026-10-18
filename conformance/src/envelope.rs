@@ -203,13 +203,15 @@ fn read_varint(buf: &mut &[u8]) -> Result<u64, String> {
 }
 
 fn read_ld(buf: &mut &[u8]) -> Result<Vec<u8>, String> {
-    let len = read_varint(buf)? as usize;
-    if buf.len() < len {
+    let len = read_varint(buf)?;
+    if len > buf.len() as u64 {
         return Err(format!(
             "unexpected EOF in length-delimited field: need {len}, have {}",
             buf.len()
         ));
     }
+    // The length fits usize because it is no larger than the input slice.
+    let len = len as usize;
     let data = buf[..len].to_vec();
     *buf = &buf[len..];
     Ok(data)
@@ -274,6 +276,27 @@ mod tests {
         encode_varint(0, &mut bytes);
 
         assert!(parse_request(&bytes).is_err());
+    }
+
+    #[test]
+    fn rejects_length_delimited_fields_larger_than_remaining_input() {
+        // Values above 32 bits must not wrap to zero or one on 32-bit hosts.
+        for len in [1_u64 << 32, (1_u64 << 32) + 1, u64::MAX] {
+            let mut bytes = Vec::new();
+            encode_varint((4_u64 << 3) | 2, &mut bytes); // message_type
+            encode_varint(len, &mut bytes);
+
+            let err = parse_request(&bytes).unwrap_err();
+            assert!(err.contains(&format!("need {len}, have 0")), "len={len}: {err}");
+        }
+    }
+
+    #[test]
+    fn parses_in_bounds_length_delimited_field_and_following_field() {
+        let bytes = [0x22, 2, b'o', b'k', 0x18, 1];
+        let request = parse_request(&bytes).unwrap();
+        assert_eq!(request.message_type, "ok");
+        assert_eq!(request.requested_output_format, super::WireFormat::Protobuf);
     }
 
     #[test]
