@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`Timestamp::from_unix_millis` and `Timestamp::from_unix_micros` construct timestamps from signed Unix epoch offsets.** Both use Euclidean division so negative subsecond offsets produce the required non-negative protobuf nanoseconds, including dates before 1970.
+time: 2026-10-18T12:14:48.151Z
