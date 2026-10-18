@@ -656,6 +656,8 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `idiomatic_enum_aliases=false` | Omit the `UpperCamelCase` associated-const aliases for enum values (`Status::Active`); the `SHOUTY_SNAKE_CASE` variants are unaffected (default: emitted). See [Enums](#enumvaluet--type-safe-open-enums) |
 | `override_feature_in=<path>=<feature>:<value>` | Apply a path-scoped editions feature override (currently `enum_type:OPEN`) to the compiled descriptors. Repeatable |
 | `open_enums_in=<path>` | Shorthand for `override_feature_in=<path>=enum_type:OPEN`. Repeatable |
+| `map_type=btree_map` | Use a `BTreeMap` for every generated map field (default: `hash_map`). Ordered keys make encoded map entries deterministic across builds. |
+| `map_type_in=<path>=<repr>` | Select `hash_map` or `btree_map` for matching map fields, e.g. `map_type_in=.my.pkg.Msg.labels=btree_map`. Repeatable; leading dot optional; last matching rule wins. Custom map types remain builder-only. |
 | `codec_strategy=table` | Generate each message's binary `Message` code from a static table and shared interpreters instead of code specialised to its fields, for the messages the table can handle (default `unrolled`). The plugin cannot check the compiler version: on Rust before 1.77 the generated code fails to compile. See [Smaller generated code](#smaller-generated-code-codec_strategy) |
 | `codec_strategy_in=<path>=<strategy>` | Choose `table` or `unrolled` for matching messages and the messages nested in them. Repeatable; leading dot optional; the last matching rule wins |
 | `unbox_oneof=true` | Store every non-recursive message/group oneof variant inline instead of `Box<T>`. Recursive variants stay boxed. |
