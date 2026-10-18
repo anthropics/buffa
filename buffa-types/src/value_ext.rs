@@ -4,7 +4,7 @@
 
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
-use core::iter::FusedIterator;
+use core::iter::{ExactSizeIterator, FusedIterator};
 
 use crate::google::protobuf::__buffa::oneof::value::Kind as KindOneof;
 use crate::google::protobuf::{ListValue, NullValue, Struct, Value};
@@ -397,6 +397,24 @@ impl Struct {
     #[inline]
     pub fn iter_mut(&mut self) -> StructIterMut<'_> {
         StructIterMut(self.fields.iter_mut())
+    }
+
+    /// Returns the field names in unspecified order, without allocating.
+    #[inline]
+    pub fn keys(&self) -> impl ExactSizeIterator<Item = &str> + '_ {
+        self.fields.keys().map(String::as_str)
+    }
+
+    /// Returns the field values in unspecified order, without allocating.
+    #[inline]
+    pub fn values(&self) -> impl ExactSizeIterator<Item = &Value> + '_ {
+        self.fields.values()
+    }
+
+    /// Returns mutable field values in unspecified order, without allocating.
+    #[inline]
+    pub fn values_mut(&mut self) -> impl ExactSizeIterator<Item = &mut Value> + '_ {
+        self.fields.values_mut()
     }
 }
 
@@ -1029,6 +1047,32 @@ mod tests {
         }
         assert_eq!(s.get("a").and_then(Value::as_str), Some("x"));
         assert_eq!(s.get("b").and_then(Value::as_number), Some(20.0));
+    }
+
+    #[test]
+    fn struct_key_and_value_accessors() {
+        let mut s = Struct::from_fields([("b", 2.0_f64), ("a", 1.0_f64)]);
+        assert_eq!(s.keys().len(), 2);
+        let mut keys: Vec<_> = s.keys().collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["a", "b"]);
+
+        assert_eq!(s.values().len(), 2);
+        let mut numbers: Vec<_> = s.values().filter_map(Value::as_number).collect();
+        numbers.sort_by(f64::total_cmp);
+        assert_eq!(numbers, [1.0, 2.0]);
+
+        assert_eq!(s.values_mut().len(), 2);
+        for value in s.values_mut() {
+            *value = Value::from(value.as_number().unwrap() + 10.0);
+        }
+        assert_eq!(s.get("a").and_then(Value::as_number), Some(11.0));
+        assert_eq!(s.get("b").and_then(Value::as_number), Some(12.0));
+
+        let mut empty = Struct::new();
+        assert_eq!(empty.keys().len(), 0);
+        assert_eq!(empty.values().len(), 0);
+        assert_eq!(empty.values_mut().len(), 0);
     }
 
     #[test]
