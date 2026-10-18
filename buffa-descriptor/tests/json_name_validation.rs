@@ -7,7 +7,7 @@ use buffa_descriptor::generated::descriptor::{
     DescriptorProto, Edition, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
     MessageOptions,
 };
-use buffa_descriptor::{DescriptorPool, PoolError};
+use buffa_descriptor::{DescriptorPool, InvalidJsonNameReason, PoolError};
 
 fn file_with_json_name(json_name: Option<&str>) -> FileDescriptorProto {
     FileDescriptorProto {
@@ -37,23 +37,34 @@ fn descriptor_set(file: FileDescriptorProto) -> FileDescriptorSet {
     }
 }
 
-/// Asserts that `err` is `InvalidJsonName` for `field` and `name`, and that
-/// its message ends with `reason`.
-fn assert_invalid_json_name_because(err: &PoolError, field: &str, name: &str, reason: &str) {
+/// Asserts that `err` is `InvalidJsonName` for the given field, name, and reason.
+fn assert_invalid_json_name_because(
+    err: &PoolError,
+    field: &str,
+    name: &str,
+    reason: InvalidJsonNameReason,
+) {
     assert!(matches!(
         err,
-        PoolError::InvalidJsonName { field: actual_field, name: actual_name }
-            if actual_field == field && actual_name == name
+        PoolError::InvalidJsonName {
+            field: actual_field,
+            name: actual_name,
+            reason: actual_reason,
+        } if actual_field == field && actual_name == name && *actual_reason == reason
     ));
+    let explanation = match reason {
+        InvalidJsonNameReason::ContainsNul => " containing NUL",
+        InvalidJsonNameReason::ExtensionKey => ", which has the form of an extension key",
+    };
     assert_eq!(
         err.to_string(),
-        format!("field {field} has JSON name {name:?}{reason}")
+        format!("field {field} has JSON name {name:?}{explanation}")
     );
     assert!(!err.to_string().contains('\0'));
 }
 
 fn assert_invalid_json_name(err: &PoolError, field: &str, name: &str) {
-    assert_invalid_json_name_because(err, field, name, " containing NUL");
+    assert_invalid_json_name_because(err, field, name, InvalidJsonNameReason::ContainsNul);
 }
 
 #[test]
@@ -193,6 +204,13 @@ fn invalid_json_names_do_not_mutate_an_existing_pool() {
 }
 
 #[test]
+fn nul_in_bracketed_json_name_is_reported_as_nul() {
+    let name = "[\0]";
+    let err = DescriptorPool::new(descriptor_set(file_with_json_name(Some(name)))).unwrap_err();
+    assert_invalid_json_name(&err, "json.test.Item.field_name", name);
+}
+
+#[test]
 fn bracketed_custom_json_names_are_rejected() {
     for name in ["[x]", "[]", "[json.test.ext]", "[a][b]"] {
         let err = DescriptorPool::new(descriptor_set(file_with_json_name(Some(name))))
@@ -201,7 +219,7 @@ fn bracketed_custom_json_names_are_rejected() {
             &err,
             "json.test.Item.field_name",
             name,
-            ", which has the form of an extension key",
+            InvalidJsonNameReason::ExtensionKey,
         );
     }
 }
