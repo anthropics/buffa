@@ -1201,7 +1201,7 @@ fn replacing_oneof_members_clears_all_siblings() {
     let inner_idx = p.message_index("reflect.test.Inner").unwrap();
     let mut msg = DynamicMessage::new(Arc::clone(&p), oneof_idx);
 
-    // Seed two conflicting siblings to check that the whole oneof is cleared.
+    // Exercise scalar, string, message, and scalar updates through both APIs.
     msg.set(p.message(oneof_idx).field(1).unwrap(), Value::I32(7));
     msg.merge(&[0x12, 0x03, b'o', b'l', b'd']).unwrap();
     assert!(msg.field_by_number(1).is_none());

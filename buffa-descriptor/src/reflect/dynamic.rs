@@ -2880,6 +2880,31 @@ mod tests {
     }
 
     #[test]
+    fn clearing_oneof_siblings_preserves_selected_and_unrelated_fields() {
+        use alloc::sync::Arc;
+        use crate::reflect::Value;
+        use crate::DescriptorPool;
+
+        let fds = include_bytes!("../../tests/protos/reflect_test.fds");
+        let pool = Arc::new(DescriptorPool::decode(fds).unwrap());
+        let oneof_idx = pool.message_index("reflect.test.OneOf").unwrap();
+        let inner_idx = pool.message_index("reflect.test.Inner").unwrap();
+        let mut msg = DynamicMessage::new(Arc::clone(&pool), oneof_idx);
+
+        // Start from a conflicting field map to check that both siblings go.
+        msg.insert_value(1, Value::I32(7));
+        msg.insert_value(2, Value::String("stale".into()));
+        msg.insert_value(3, Value::Message(DynamicMessage::new(pool, inner_idx)));
+        msg.insert_value(99, Value::I32(99));
+
+        msg.clear_other_oneof_members(0, 3);
+        assert!(msg.field_by_number(1).is_none());
+        assert!(msg.field_by_number(2).is_none());
+        assert!(matches!(msg.field_by_number(3), Some(Value::Message(_))));
+        assert_eq!(msg.field_by_number(99), Some(&Value::I32(99)));
+    }
+
+    #[test]
     fn iter_set_fields_skips_a_number_with_no_descriptor() {
         use alloc::sync::Arc;
 
