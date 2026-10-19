@@ -43,6 +43,8 @@ iso = []
 # `encode_sink` gates the sink-comparison bench (`task bench-encode-sink`) out of
 # the default run for the same reason: its IDs must not enter saved baselines.
 encode_sink = []
+# Opt-in microbench, outside the saved cross-implementation baseline.
+varint_count = []
 
 [[bench]]
 name = "protobuf"
@@ -102,6 +104,11 @@ required-features = ["iso", "mesh"]
 # workspace, so [profile.*] in a parent manifest is ignored; the empty [workspace]
 # table makes each crate its own workspace root, which is what lets [profile.bench]
 # take effect here. Without it cargo silently builds at cgu=16/lto=off.
+[[bench]]
+name = "varint_count"
+harness = false
+required-features = ["varint_count"]
+
 [workspace]
 
 [profile.bench]
