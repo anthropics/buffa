@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **Reserve output space for packed fixed64 extensions.** Reduce repeated vector growth when decoding packed values.
+time: 2026-10-19T21:11:55+02:00

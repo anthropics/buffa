@@ -817,6 +817,9 @@ pub mod codecs {
                     }
                 }
                 fn decode_packed(bytes: &[u8], out: &mut Vec<$ty>) {
+                    // Ignore any incomplete trailing chunk when sizing the
+                    // vector, matching the existing decoding loop.
+                    out.reserve(bytes.len() / 8);
                     let mut buf = bytes;
                     while buf.remaining() >= 8 {
                         let $d = buf.get_u64_le();
@@ -1835,6 +1838,28 @@ mod tests {
         let mut c = Carrier::default();
         c.unknown.push(ld(1, vec![1, 0, 0, 0, 2, 0, 0, 0]));
         assert_eq!(c.extension(&E), vec![1_u32, 2_u32]);
+    }
+
+    #[test]
+    fn repeated_fixed64_packed_preserves_mixed_records_and_partial_tails() {
+        const E: Extension<Repeated<Fixed64>> = Extension::new(1, CARRIER);
+        for tail_len in 0..8 {
+            let mut c = Carrier::default();
+            c.unknown.push(UnknownField {
+                number: 1,
+                data: UnknownFieldData::Fixed64(u64::MAX),
+            });
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&0x0102_0304_0506_0708_u64.to_le_bytes());
+            bytes.extend_from_slice(&0_u64.to_le_bytes());
+            bytes.extend_from_slice(&[0xAB; 7][..tail_len]);
+            c.unknown.push(ld(1, bytes));
+            c.unknown.push(UnknownField {
+                number: 1,
+                data: UnknownFieldData::Fixed64(7),
+            });
+            assert_eq!(c.extension(&E), vec![u64::MAX, 0x0102_0304_0506_0708, 0, 7]);
+        }
     }
 
     #[test]
