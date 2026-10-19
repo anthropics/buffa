@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **DynamicMessage oneof updates avoid an unnecessary allocation.** Switching a oneof member now removes its siblings directly while borrowing immutable descriptor metadata, rather than collecting field numbers into a temporary Vec. Decoding and reflective setting preserve the same behavior.
+time: 2026-10-19T13:02:00.000000000+00:00

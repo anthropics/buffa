@@ -493,20 +493,17 @@ impl DynamicMessage {
 
     /// Clear every set member of oneof `oi` except `keep_number`.
     fn clear_other_oneof_members(&mut self, oi: u16, keep_number: u32) {
-        let md = self.message_descriptor();
-        let Some(o) = md.oneofs.get(oi as usize) else {
+        // Borrow through `pool` so the field map can be mutated separately.
+        let md = self.pool.message(self.msg_idx);
+        let Some(oneof) = md.oneofs.get(oi as usize) else {
             return;
         };
-        // Collect the numbers to clear without holding the descriptor borrow.
-        let to_clear: alloc::vec::Vec<u32> = o
-            .field_indices
-            .iter()
-            .filter_map(|&fi| md.fields.get(fi as usize))
-            .map(|f| f.number)
-            .filter(|&n| n != keep_number)
-            .collect();
-        for n in to_clear {
-            self.fields.remove(&n);
+        for &field_idx in &oneof.field_indices {
+            if let Some(field) = md.fields.get(field_idx as usize) {
+                if field.number != keep_number {
+                    self.fields.remove(&field.number);
+                }
+            }
         }
     }
 
