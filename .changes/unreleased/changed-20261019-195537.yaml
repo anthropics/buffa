@@ -1,0 +1,3 @@
+kind: Changed
+body: '**Avoid zero-filling the allocation when decoding unknown length-delimited fields.** Payload bytes are copied directly into the final buffer, including when input spans chunks.'
+time: 2026-10-19T19:55:37.008737+02:00
