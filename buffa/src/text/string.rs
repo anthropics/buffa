@@ -298,15 +298,23 @@ pub fn escape_str<W: Write + ?Sized>(s: &str, w: &mut W) -> core::fmt::Result {
     w.write_char('"')?;
     // The common case for long text fields needs no escaping. Check bytes
     // first so we can write the whole UTF-8 string through one call.
-    if s.len() >= 16
-        && !s
+    let mut remaining = s;
+    if remaining.len() >= 16 {
+        if let Some(first_escape) = remaining
             .bytes()
-            .any(|b| b == b'"' || b == b'\\' || b < 0x20 || b == 0x7F)
-    {
-        w.write_str(s)?;
-        return w.write_char('"');
+            .position(|b| b == b'"' || b == b'\\' || b < 0x20 || b == 0x7F)
+        {
+            // These escaped bytes are ASCII, so this index is a UTF-8 boundary.
+            if first_escape > 0 {
+                w.write_str(&remaining[..first_escape])?;
+            }
+            remaining = &remaining[first_escape..];
+        } else {
+            w.write_str(remaining)?;
+            return w.write_char('"');
+        }
     }
-    for c in s.chars() {
+    for c in remaining.chars() {
         match c {
             '"' => w.write_str("\\\"")?,
             '\\' => w.write_str("\\\\")?,
@@ -588,9 +596,12 @@ mod tests {
 
     #[test]
     fn escape_str_long_string_with_escapes_still_roundtrips() {
-        let input = "A long string with an embedded quote \" and newline\n plus a backslash\\";
+        let input = format!(
+            "{} with an embedded quote \" and newline\n plus a backslash\\",
+            "café 😀 ".repeat(4)
+        );
         let mut out = String::new();
-        escape_str(input, &mut out).unwrap();
+        escape_str(&input, &mut out).unwrap();
         assert_eq!(unescape_str(&out).unwrap(), input);
         assert!(out.contains("\\n"));
         assert!(out.contains("\\\""));
