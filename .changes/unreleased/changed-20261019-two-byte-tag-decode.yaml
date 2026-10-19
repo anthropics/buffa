@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **Faster decoding for two-byte protobuf field tags.** Contiguous tags for field numbers 16–2047 now bypass the generic varint decoder. One-byte and longer tags, fragmented buffers, and malformed-input validation retain their existing behavior.
+time: 2026-10-19T12:33:00.000000000+00:00
