@@ -544,9 +544,9 @@ pub const fn varint_len(value: u64) -> usize {
 ///
 /// # Errors
 ///
-/// Returns an error for truncated fields, malformed varints, lengths that
-/// cannot fit in `usize`, mismatched or unexpected end-group tags, or groups
-/// nested beyond [`RECURSION_LIMIT`](crate::RECURSION_LIMIT).
+/// Returns an error for truncated fields, malformed nested tags or varints,
+/// lengths that cannot fit in `usize`, mismatched or unexpected end-group
+/// tags, or groups nested beyond [`RECURSION_LIMIT`](crate::RECURSION_LIMIT).
 #[inline]
 pub fn skip_field(tag: Tag, buf: &mut impl Buf) -> Result<(), DecodeError> {
     skip_field_depth(tag, buf, crate::RECURSION_LIMIT)
