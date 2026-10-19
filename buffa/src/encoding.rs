@@ -544,8 +544,9 @@ pub const fn varint_len(value: u64) -> usize {
 ///
 /// # Errors
 ///
-/// Returns an error if the buffer is too short, if a length-delimited payload
-/// length overflows `usize`, or if the wire type is a group.
+/// Returns an error for truncated fields, malformed varints, lengths that
+/// cannot fit in `usize`, mismatched or unexpected end-group tags, or groups
+/// nested beyond [`RECURSION_LIMIT`](crate::RECURSION_LIMIT).
 #[inline]
 pub fn skip_field(tag: Tag, buf: &mut impl Buf) -> Result<(), DecodeError> {
     skip_field_depth(tag, buf, crate::RECURSION_LIMIT)
@@ -1166,6 +1167,27 @@ mod tests {
         let mut buf: &[u8] = &data;
         assert_eq!(skip_field(tag, &mut buf), Ok(()));
         assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn test_skip_field_depth_limits_nested_groups() {
+        // StartGroup(1) is already consumed. The payload has a nested group
+        // with field number 2, followed by the closing tag for field 1.
+        let mut payload = Vec::new();
+        Tag::new(2, WireType::StartGroup).encode(&mut payload);
+        Tag::new(2, WireType::EndGroup).encode(&mut payload);
+        Tag::new(1, WireType::EndGroup).encode(&mut payload);
+
+        let tag = Tag::new(1, WireType::StartGroup);
+        let mut limited = payload.as_slice();
+        assert_eq!(
+            skip_field_depth(tag, &mut limited, 1),
+            Err(DecodeError::RecursionLimitExceeded)
+        );
+
+        let mut sufficient = payload.as_slice();
+        assert_eq!(skip_field_depth(tag, &mut sufficient, 2), Ok(()));
+        assert!(sufficient.is_empty());
     }
 
     #[test]

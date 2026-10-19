@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Correct the `skip_field` documentation for protobuf groups**. It already skips well-formed group fields, rejects malformed delimiters, and enforces the recursion limit. The error description incorrectly claimed group fields were unsupported.
+time: 2026-10-19T13:48:00+02:00
