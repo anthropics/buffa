@@ -74,7 +74,8 @@ fn for_edition(edition: Edition) -> ResolvedFeatures {
         // source-retained features (enforce_naming_style, default_symbol_visibility)
         // which protoc enforces and strips before the descriptor reaches a plugin.
         // From a runtime perspective 2023 and 2024 are permanently equivalent.
-        Edition::EDITION_2023 | Edition::EDITION_2024 => ResolvedFeatures::edition_2023_defaults(),
+        Edition::EDITION_2023 => ResolvedFeatures::edition_2023_defaults(),
+        Edition::EDITION_2024 => ResolvedFeatures::edition_2024_defaults(),
         // EDITION_UNSTABLE and the *_TEST_ONLY editions are intentionally not
         // supported; fall back to 2023 defaults so experimental descriptors
         // at least decode rather than panic.

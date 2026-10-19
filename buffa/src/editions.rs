@@ -121,6 +121,14 @@ impl ResolvedFeatures {
         }
     }
 
+    /// Default features for Edition 2024.
+    ///
+    /// Edition 2024's new naming-style and symbol-visibility options are
+    /// source-retained, so its runtime defaults match Edition 2023.
+    pub fn edition_2024_defaults() -> Self {
+        Self::edition_2023_defaults()
+    }
+
     /// Features that replicate proto2 behavior.
     pub fn proto2_defaults() -> Self {
         Self {
@@ -143,5 +151,22 @@ impl ResolvedFeatures {
             message_encoding: MessageEncoding::LengthPrefixed,
             json_format: JsonFormat::Allow,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn edition_2024_runtime_defaults_match_2023() {
+        let defaults = ResolvedFeatures::edition_2024_defaults();
+        assert_eq!(defaults, ResolvedFeatures::edition_2023_defaults());
+        assert_eq!(defaults.field_presence, FieldPresence::Explicit);
+        assert_eq!(defaults.enum_type, EnumType::Open);
+        assert_eq!(defaults.repeated_field_encoding, RepeatedFieldEncoding::Packed);
+        assert_eq!(defaults.utf8_validation, Utf8Validation::Verify);
+        assert_eq!(defaults.message_encoding, MessageEncoding::LengthPrefixed);
+        assert_eq!(defaults.json_format, JsonFormat::Allow);
     }
 }

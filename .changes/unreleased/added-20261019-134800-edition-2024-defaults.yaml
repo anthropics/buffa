@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`ResolvedFeatures::edition_2024_defaults()` exposes the Edition 2024 runtime feature defaults.** Edition 2024 shares Edition 2023's runtime defaults; its additional naming and visibility options are source-retained.
+time: 2026-10-19T13:48:00+02:00
