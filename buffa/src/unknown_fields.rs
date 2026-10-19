@@ -52,7 +52,7 @@ impl UnknownFields {
 
     /// Retain only the fields for which the predicate returns `true`.
     ///
-    /// Other fields keep their original order.
+    /// The remaining fields keep their original order.
     pub fn retain(&mut self, f: impl FnMut(&UnknownField) -> bool) {
         self.fields.retain(f);
     }
@@ -406,13 +406,14 @@ mod tests {
         let mut fields: UnknownFields = [
             varint_field(10, 1),
             keep.clone(),
+            fixed32_field(10, 0x5678),
             varint_field(10, 2),
             nested.clone(),
         ]
         .into_iter()
         .collect();
 
-        assert_eq!(fields.remove_number(10), 2);
+        assert_eq!(fields.remove_number(10), 3);
         assert_eq!(fields.iter().cloned().collect::<Vec<_>>(), vec![keep, nested]);
         assert_eq!(fields.remove_number(10), 0);
         assert_eq!(fields.remove_number(12), 1);
