@@ -227,7 +227,9 @@ pub fn count_varints(payload: &[u8]) -> usize {
     let mut chunks = payload.chunks_exact(8);
     let mut count = 0usize;
     for chunk in &mut chunks {
-        let block: [u8; 8] = chunk.try_into().expect("chunks_exact(8) yields eight bytes");
+        let block: [u8; 8] = chunk
+            .try_into()
+            .expect("chunks_exact(8) yields eight bytes");
         count += ((!u64::from_ne_bytes(block)) & HIGH_BITS).count_ones() as usize;
     }
     count + chunks.remainder().iter().filter(|&&b| b < 0x80).count()
@@ -1855,8 +1857,8 @@ mod tests {
             .collect();
         for offset in 0..8 {
             for len in [
-                0, 1, 7, 8, 9, 55, 56, 57, 62, 63, 64, 65, 71, 72, 73, 127, 128, 129,
-                255, 256, 1023, 1024, 2048,
+                0, 1, 7, 8, 9, 55, 56, 57, 62, 63, 64, 65, 71, 72, 73, 127, 128, 129, 255, 256,
+                1023, 1024, 2048,
             ] {
                 let data = &source[offset..offset + len];
                 let scalar = data.iter().filter(|&&b| b < 0x80).count();
