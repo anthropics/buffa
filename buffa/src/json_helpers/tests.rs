@@ -434,6 +434,33 @@ fn bytes_deserializes_all_base64_dialects() {
 }
 
 #[test]
+fn bytes_decoder_matches_previous_fallback_for_invalid_and_valid_input() {
+    use base64::Engine as _;
+
+    let inputs = [
+        "", "Zg==", "Zg", "Zg=", "/w==", "_w==", "_w", "-w", "-_", "++//", "--__",
+        "A", "A=", "A===", "?", "-?", "a+/a", "a-_a", "a+_a", "a-_+",
+        "AA==AA", "A=\t", "////_", "é",
+    ];
+    for input in inputs {
+        let previous = STANDARD_LENIENT
+            .decode(input)
+            .or_else(|std_err| URL_SAFE_LENIENT.decode(input).map_err(|_| std_err));
+        assert_eq!(decode_base64(input), previous, "input {input:?}");
+    }
+}
+
+#[test]
+fn bytes_decoder_large_url_safe_payload() {
+    use base64::Engine as _;
+
+    let payload = [0xfb, 0xff, 0xff].repeat(4096);
+    let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&payload);
+    assert!(encoded.contains('-') && encoded.contains('_'));
+    assert_eq!(decode_base64(&encoded).unwrap(), payload);
+}
+
+#[test]
 fn bytes_roundtrip_empty() {
     let json = serde_json::to_string(&SerdeBytes(vec![])).unwrap();
     let val: SerdeBytes = serde_json::from_str(&json).unwrap();
