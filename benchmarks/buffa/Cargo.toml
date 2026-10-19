@@ -17,6 +17,7 @@ buffa-smolstr = { path = "../../examples/buffa-smolstr", features = ["serde"], o
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bytes = "1"
+base64 = "0.22"
 smallvec = { version = "1", features = ["serde"], optional = true }
 
 [build-dependencies]
@@ -43,6 +44,8 @@ iso = []
 # `encode_sink` gates the sink-comparison bench (`task bench-encode-sink`) out of
 # the default run for the same reason: its IDs must not enter saved baselines.
 encode_sink = []
+# Opt-in microbenchmark, kept out of published history baselines.
+json_base64 = []
 
 [[bench]]
 name = "protobuf"
@@ -124,3 +127,8 @@ required-features = ["iso", "column_batch"]
 name = "encode_sink"
 harness = false
 required-features = ["encode_sink", "api_response", "log_record", "google_message1", "media_frame"]
+
+[[bench]]
+name = "json_base64"
+harness = false
+required-features = ["json_base64"]
