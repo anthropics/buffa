@@ -19,9 +19,10 @@
 //
 // or `task bench-encode-sink`, which runs both and keeps their criterion
 // results in separate directories.
+use buffa::encode_sink::Rope;
 use buffa::{Message, MessageView, ViewEncode};
-use bytes::{BufMut, BytesMut};
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use bytes::{BufMut, Bytes, BytesMut};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 use bench_buffa::bench::__buffa::view::LogRecordView;
 use bench_buffa::bench::{ApiResponse, LogRecord, MediaFrame};
@@ -174,7 +175,89 @@ fn view_sinks(c: &mut Criterion) {
     g.finish();
 }
 
+/// Isolate Rope::len from message encode. All segments have the same size,
+/// while their count varies, exposing any O(segments) scan.
+/// Construction is outside the timed loop; keep the shared Bytes alive.
+fn rope_len(c: &mut Criterion) {
+    use buffa::encode_sink::EncodeSink;
+
+    let mut group = c.benchmark_group("encode_sink/rope_len");
+    let payload = Bytes::from(vec![0xA5; 128]);
+
+    for segment_count in [1, 64, 1024] {
+        let mut rope = Rope::with_min_segment(64);
+        for _ in 0..segment_count {
+            rope.put_shared(payload.clone());
+        }
+        rope.put_slice(b"tail");
+        assert_eq!(rope.len(), segment_count * payload.len() + 4);
+
+        group.bench_with_input(
+            BenchmarkId::from_parameter(segment_count),
+            &rope,
+            |b, rope| b.iter(|| black_box(black_box(rope).len())),
+        );
+    }
+    group.finish();
+}
+
+/// Guard against accounting overhead on the actual encoding path.
+fn rope_writes(c: &mut Criterion) {
+    use buffa::encode_sink::EncodeSink;
+
+    let mut group = c.benchmark_group("encode_sink/rope_write");
+    let payload = Bytes::from(vec![0x5A; 128]);
+
+    group.bench_function("small_bytes", |b| {
+        b.iter(|| {
+            let mut rope = Rope::with_min_segment(64);
+            for _ in 0..128 {
+                rope.put_u8(1);
+            }
+            black_box(rope);
+        });
+    });
+
+    group.bench_function("shared_segments", |b| {
+        b.iter(|| {
+            let mut rope = Rope::with_min_segment(64);
+            for _ in 0..32 {
+                rope.put_shared(payload.clone());
+            }
+            black_box(rope);
+        });
+    });
+    group.finish();
+}
+
+/// Synthetic streaming workload: append a shared segment and inspect
+/// the total length after each append. Measures the benefit against the
+/// extra bookkeeping cost in the same timed operation.
+fn rope_append_and_check_len(c: &mut Criterion) {
+    use buffa::encode_sink::EncodeSink;
+
+    let mut group = c.benchmark_group("encode_sink/rope_append_and_len");
+    let payload = Bytes::from(vec![0xA5; 128]);
+
+    for segment_count in [16, 128, 1024] {
+        group.bench_function(segment_count.to_string(), |b| {
+            b.iter(|| {
+                let mut rope = Rope::with_min_segment(64);
+                for _ in 0..segment_count {
+                    rope.put_shared(payload.clone());
+                    black_box(rope.len());
+                }
+                black_box(rope);
+            });
+        });
+    }
+    group.finish();
+}
+
 fn run(c: &mut Criterion) {
+    rope_len(c);
+    rope_writes(c);
+    rope_append_and_check_len(c);
     // Tag-dense shapes, where writes per byte of output are highest: string-heavy
     // (many short length-delimited fields), nested/mixed, and dense small
     // scalars.
