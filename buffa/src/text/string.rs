@@ -28,7 +28,8 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::fmt::Write;
 
-// Only scan the initial run; repeated scans add overhead to escape-heavy strings.
+// Copy only the plain prefix at the start of each literal. Scanning after each
+// escape adds overhead to escape-heavy strings.
 const BULK_COPY_MIN_RUN: usize = 32;
 
 /// Error returned by [`unescape`] and [`unescape_str`].
