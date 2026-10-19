@@ -758,6 +758,11 @@ pub mod codecs {
                     }
                 }
                 fn decode_packed(bytes: &[u8], out: &mut Vec<$ty>) {
+                    // Full elements are known from the wire length. Avoid
+                    // repeated Vec growth for long packed extension fields.
+                    if bytes.len() >= 64 {
+                        out.reserve(bytes.len() / 4);
+                    }
                     let mut buf = bytes;
                     while buf.remaining() >= 4 {
                         let $d = buf.get_u32_le();
@@ -817,9 +822,9 @@ pub mod codecs {
                     }
                 }
                 fn decode_packed(bytes: &[u8], out: &mut Vec<$ty>) {
-                    // Ignore any incomplete trailing chunk when sizing the
-                    // vector, matching the existing decoding loop.
-                    out.reserve(bytes.len() / 8);
+                    if bytes.len() >= 128 {
+                        out.reserve(bytes.len() / 8);
+                    }
                     let mut buf = bytes;
                     while buf.remaining() >= 8 {
                         let $d = buf.get_u64_le();
@@ -1159,7 +1164,10 @@ pub mod codecs {
             if value.is_empty() {
                 return Ok(());
             }
-            let mut buf = Vec::new();
+            // Each packed scalar needs at least one wire byte. Keep a minimum
+            // capacity of eight bytes for tiny vectors, then use that lower
+            // bound for larger vectors.
+            let mut buf = Vec::with_capacity(value.len().max(8));
             for v in &value {
                 C::encode_packed(v, &mut buf);
             }
@@ -1966,6 +1974,91 @@ mod tests {
         c.set_extension(&E, vec![-1_i64, 0, i64::MAX]);
         assert_eq!(c.unknown.len(), 1);
         assert_eq!(c.extension(&E), vec![-1_i64, 0, i64::MAX]);
+    }
+
+    #[test]
+    fn packed_fixed_width_extenders_append_only_complete_elements() {
+        for count in [0usize, 1, 15, 16, 17, 1024] {
+            let words32: Vec<u32> = (0..count).map(|i| 0xbf80_0000u32 + i as u32).collect();
+            let mut bytes32 = Vec::with_capacity(count * 4 + 3);
+            for &word in &words32 {
+                bytes32.extend_from_slice(&word.to_le_bytes());
+            }
+            bytes32.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
+
+            let mut fixed32 = vec![7u32];
+            Fixed32::decode_packed(&bytes32, &mut fixed32);
+            assert_eq!(fixed32[0], 7);
+            assert_eq!(&fixed32[1..], words32.as_slice());
+
+            let mut sfixed32 = Vec::new();
+            Sfixed32::decode_packed(&bytes32, &mut sfixed32);
+            assert_eq!(sfixed32.len(), count);
+            for (actual, &expected) in sfixed32.iter().zip(&words32) {
+                assert_eq!(*actual as u32, expected);
+            }
+
+            let mut floats = Vec::new();
+            Float::decode_packed(&bytes32, &mut floats);
+            assert_eq!(floats.len(), count);
+            for (actual, &expected) in floats.iter().zip(&words32) {
+                assert_eq!(actual.to_bits(), expected);
+            }
+
+            let words64: Vec<u64> = (0..count)
+                .map(|i| 0xbff0_0000_0000_0000u64 + i as u64)
+                .collect();
+            let mut bytes64 = Vec::with_capacity(count * 8 + 7);
+            for &word in &words64 {
+                bytes64.extend_from_slice(&word.to_le_bytes());
+            }
+            bytes64.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7]);
+
+            let mut fixed64 = vec![9u64];
+            Fixed64::decode_packed(&bytes64, &mut fixed64);
+            assert_eq!(fixed64[0], 9);
+            assert_eq!(&fixed64[1..], words64.as_slice());
+
+            let mut sfixed64 = Vec::new();
+            Sfixed64::decode_packed(&bytes64, &mut sfixed64);
+            assert_eq!(sfixed64.len(), count);
+            for (actual, &expected) in sfixed64.iter().zip(&words64) {
+                assert_eq!(*actual as u64, expected);
+            }
+
+            let mut doubles = Vec::new();
+            Double::decode_packed(&bytes64, &mut doubles);
+            assert_eq!(doubles.len(), count);
+            for (actual, &expected) in doubles.iter().zip(&words64) {
+                assert_eq!(actual.to_bits(), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn packed_fixed_width_extension_accepts_mixed_records() {
+        const E: Extension<PackedRepeated<Fixed32>> = Extension::new(1, CARRIER);
+        let mut c = Carrier::default();
+        c.unknown.push(fixed32(1, 9));
+        c.unknown.push(ld(1, vec![10, 0, 0, 0, 11, 0, 0, 0, 0xee]));
+        c.unknown.push(varint(1, 99)); // wrong wire type
+        c.unknown.push(fixed32(1, 12));
+        assert_eq!(c.extension(&E), vec![9, 10, 11, 12]);
+    }
+
+    #[test]
+    fn packed_extension_encodes_large_scalar_vectors() {
+        const FIXED: Extension<PackedRepeated<Fixed32>> = Extension::new(1, CARRIER);
+        const VARINT: Extension<PackedRepeated<Int32>> = Extension::new(2, CARRIER);
+        let mut c = Carrier::default();
+        let fixed: Vec<u32> = (0..1024).collect();
+        let varint: Vec<i32> = (0..1024).collect();
+
+        c.set_extension(&FIXED, fixed.clone());
+        c.set_extension(&VARINT, varint.clone());
+        assert_eq!(c.extension(&FIXED), fixed);
+        assert_eq!(c.extension(&VARINT), varint);
+        assert_eq!(c.unknown.len(), 2);
     }
 
     // ── MessageCodec ────────────────────────────────────────────────────────
