@@ -1,4 +1,4 @@
 kind: Changed
 body: |-
-    Textproto unescaping now copies ordinary byte runs in bulk instead of appending every byte individually, reducing vector growth for long string and bytes literals.
+    Long plain runs at the start of a textproto string literal are copied in bulk, reducing vector growth for long string and bytes literals.
 time: 2026-10-19T14:33:00+02:00

@@ -28,6 +28,9 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::fmt::Write;
 
+// Only scan the initial run; repeated scans add overhead to escape-heavy strings.
+const BULK_COPY_MIN_RUN: usize = 32;
+
 /// Error returned by [`unescape`] and [`unescape_str`].
 ///
 /// Its `Display` text is the [`BadEscape`](Self::BadEscape) string, or
@@ -74,6 +77,22 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
             None => return Err(UnescapeError::BadEscape("unterminated string")),
         };
         s = &s[1..];
+        if s.len() > BULK_COPY_MIN_RUN {
+            if let Some(&first) = s.first() {
+                if first != quote && first != b'\\' && first != b'\n' && first != 0 {
+                    // Long strings without escapes are common. Copy the first
+                    // plain run once, then let the parser handle its boundary.
+                    let end = s
+                        .iter()
+                        .position(|&b| b == quote || b == b'\\' || b == b'\n' || b == 0)
+                        .unwrap_or(s.len());
+                    if end >= BULK_COPY_MIN_RUN {
+                        out.extend_from_slice(&s[..end]);
+                        s = &s[end..];
+                    }
+                }
+            }
+        }
         loop {
             match s.first() {
                 None => return Err(UnescapeError::BadEscape("unterminated string")),
@@ -156,15 +175,9 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
                         _ => return Err(UnescapeError::BadEscape("unrecognised escape sequence")),
                     }
                 }
-                Some(_) => {
-                    // Copy uninterrupted plain bytes in bulk. Escape parsing
-                    // is byte-oriented, so UTF-8 needs no special handling.
-                    let end = s
-                        .iter()
-                        .position(|&b| b == quote || b == b'\\' || b == b'\n' || b == 0)
-                        .unwrap_or(s.len());
-                    out.extend_from_slice(&s[..end]);
-                    s = &s[end..];
+                Some(&c) => {
+                    out.push(c);
+                    s = &s[1..];
                 }
             }
         }
@@ -361,11 +374,30 @@ mod tests {
 
     #[test]
     fn unescape_bulk_plain_run_keeps_newline_error() {
-        let raw = alloc::format!("\"{}\n\"", "x".repeat(512));
-        assert_eq!(
-            unescape(&raw),
-            Err(UnescapeError::BadEscape("raw newline/NUL in string literal"))
-        );
+        for special in ['\n', '\0'] {
+            let raw = alloc::format!("\"{}{special}\"", "x".repeat(512));
+            assert_eq!(
+                unescape(&raw),
+                Err(UnescapeError::BadEscape(
+                    "raw newline/NUL in string literal"
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn unescape_bulk_threshold_keeps_adjacent_escapes() {
+        for plain_len in [
+            BULK_COPY_MIN_RUN - 1,
+            BULK_COPY_MIN_RUN,
+            BULK_COPY_MIN_RUN + 1,
+        ] {
+            let first = "x".repeat(plain_len);
+            let last = "y".repeat(64);
+            let raw = alloc::format!("\"{first}\\n{last}\"");
+            let expected = alloc::format!("{first}\n{last}");
+            assert_eq!(unescape(&raw).unwrap(), expected.as_bytes());
+        }
     }
 
     #[test]
