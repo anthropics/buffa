@@ -438,9 +438,30 @@ fn bytes_decoder_matches_previous_fallback_for_invalid_and_valid_input() {
     use base64::Engine as _;
 
     let inputs = [
-        "", "Zg==", "Zg", "Zg=", "/w==", "_w==", "_w", "-w", "-_", "++//", "--__",
-        "A", "A=", "A===", "?", "-?", "a+/a", "a-_a", "a+_a", "a-_+",
-        "AA==AA", "A=\t", "////_", "é",
+        "",
+        "Zg==",
+        "Zg",
+        "Zg=",
+        "/w==",
+        "_w==",
+        "_w",
+        "-w",
+        "-_",
+        "++//",
+        "--__",
+        "A",
+        "A=",
+        "A===",
+        "?",
+        "-?",
+        "a+/a",
+        "a-_a",
+        "a+_a",
+        "a-_+",
+        "AA==AA",
+        "A=\t",
+        "////_",
+        "é",
     ];
     for input in inputs {
         let previous = STANDARD_LENIENT
