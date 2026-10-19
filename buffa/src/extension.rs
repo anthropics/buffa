@@ -416,7 +416,7 @@ pub trait ExtensionSet {
         let mut staged = UnknownFields::default();
         C::try_encode(ext.number, value, &mut staged)?;
         let fields = self.unknown_fields_mut();
-        fields.retain(|f| f.number != ext.number);
+        fields.remove_number(ext.number);
         for f in staged {
             fields.push(f);
         }
@@ -445,7 +445,7 @@ pub trait ExtensionSet {
     #[track_caller]
     fn clear_extension<C: ExtensionCodec>(&mut self, ext: &Extension<C>) {
         assert_extendee(ext, Self::PROTO_FQN);
-        self.unknown_fields_mut().retain(|f| f.number != ext.number);
+        self.unknown_fields_mut().remove_number(ext.number);
     }
 
     /// Read a singular extension value, returning the proto2 `[default = ...]`
