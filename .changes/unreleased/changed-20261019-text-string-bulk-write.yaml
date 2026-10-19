@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    Textproto string encoding now writes long UTF-8 strings without escapes in one chunk instead of calling the writer for every character.
+time: 2026-10-19T13:48:00+02:00
