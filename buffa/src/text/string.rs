@@ -156,9 +156,15 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
                         _ => return Err(UnescapeError::BadEscape("unrecognised escape sequence")),
                     }
                 }
-                Some(&c) => {
-                    out.push(c);
-                    s = &s[1..];
+                Some(_) => {
+                    // Copy uninterrupted plain bytes in bulk. Escape parsing
+                    // is byte-oriented, so UTF-8 needs no special handling.
+                    let end = s
+                        .iter()
+                        .position(|&b| b == quote || b == b'\\' || b == b'\n' || b == 0)
+                        .unwrap_or(s.len());
+                    out.extend_from_slice(&s[..end]);
+                    s = &s[end..];
                 }
             }
         }
@@ -340,6 +346,25 @@ mod tests {
         assert_eq!(
             alloc::format!("{}", unescape(r#""\xzz""#).unwrap_err()),
             r"invalid \x escape"
+        );
+    }
+
+    #[test]
+    fn unescape_bulk_copies_long_plain_runs() {
+        let first = "café 😀 ".repeat(256);
+        let second = "abc\"xyz".repeat(256);
+        let raw = alloc::format!("\"{first}\\n\" '{second}'");
+        let expected = alloc::format!("{first}\n{second}");
+        assert_eq!(unescape(&raw).unwrap(), expected.as_bytes());
+        assert_eq!(unescape_str(&raw).unwrap(), expected);
+    }
+
+    #[test]
+    fn unescape_bulk_plain_run_keeps_newline_error() {
+        let raw = alloc::format!("\"{}\n\"", "x".repeat(512));
+        assert_eq!(
+            unescape(&raw),
+            Err(UnescapeError::BadEscape("raw newline/NUL in string literal"))
         );
     }
 
