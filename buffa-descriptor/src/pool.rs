@@ -2050,12 +2050,8 @@ impl DescriptorPool {
         // Enums don't need a second pass — they have no cross-references —
         // so we can't fully link them here either, because feature resolution
         // walks the message hierarchy. Push a placeholder.
-        self.enums.push(EnumDescriptor {
-            full_name: fqn,
-            values: Vec::new(),
-            enum_type: EnumType::Open,
-            options: None,
-        });
+        self.enums
+            .push(EnumDescriptor::new(fqn, Vec::new(), EnumType::Open, None));
         self.enum_file.push(file_idx);
         Ok(())
     }
@@ -2520,12 +2516,12 @@ impl DescriptorPool {
                 options: clone_options(&v.options),
             });
         }
-        self.enums[idx.0 as usize] = EnumDescriptor {
-            full_name: fqn,
+        self.enums[idx.0 as usize] = EnumDescriptor::new(
+            fqn,
             values,
-            enum_type: enum_features.enum_type,
-            options: clone_options(&e.options),
-        };
+            enum_features.enum_type,
+            clone_options(&e.options),
+        );
         Ok(())
     }
 

@@ -121,6 +121,11 @@ harness = false
 required-features = ["iso", "column_batch"]
 
 [[bench]]
+name = "enum_lookup"
+harness = false
+required-features = ["iso"]
+
+[[bench]]
 name = "encode_sink"
 harness = false
 required-features = ["encode_sink", "api_response", "log_record", "google_message1", "media_frame"]
