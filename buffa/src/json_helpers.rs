@@ -1720,18 +1720,13 @@ impl serde::Serialize for Base64Wrapper<'_> {
 /// lenient trailing-bit and padding handling.
 pub(crate) fn decode_base64(v: &str) -> Result<alloc::vec::Vec<u8>, base64::DecodeError> {
     use base64::Engine as _;
-    let mut decoded = alloc::vec::Vec::new();
-    STANDARD_LENIENT
-        .decode_vec(v, &mut decoded)
-        .or_else(|std_err| {
-            // The standard engine may have written a prefix before failing.
-            // Reuse its allocation for URL-safe input without keeping that prefix.
-            decoded.clear();
-            URL_SAFE_LENIENT
-                .decode_vec(v, &mut decoded)
-                .map_err(|_| std_err)
-        })?;
-    Ok(decoded)
+    if v.bytes().any(|byte| matches!(byte, b'-' | b'_')) {
+        URL_SAFE_LENIENT
+            .decode(v)
+            .or_else(|_| STANDARD_LENIENT.decode(v))
+    } else {
+        STANDARD_LENIENT.decode(v)
+    }
 }
 
 // ── Option<T> wrappers for proto2 optional scalar fields ─────────────────────

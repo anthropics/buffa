@@ -437,6 +437,9 @@ fn bytes_deserializes_all_base64_dialects() {
 fn bytes_decoder_matches_previous_fallback_for_invalid_and_valid_input() {
     use base64::Engine as _;
 
+    // The former standard-first decoder writes this prefix before its URL-safe
+    // retry. Keep the case in parity coverage for the direct URL-safe path.
+    let partial_prefix = format!("{}-w", "A".repeat(32));
     let inputs = [
         "",
         "Zg==",
@@ -462,6 +465,7 @@ fn bytes_decoder_matches_previous_fallback_for_invalid_and_valid_input() {
         "A=\t",
         "////_",
         "é",
+        partial_prefix.as_str(),
     ];
     for input in inputs {
         let previous = STANDARD_LENIENT
