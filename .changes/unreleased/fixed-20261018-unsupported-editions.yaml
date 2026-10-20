@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **DescriptorPool rejects unsupported protobuf editions** (#634). Unrecognized and reserved edition values now return UnsupportedEdition instead of silently using the edition 2023 feature defaults.
+time: 2026-10-18T17:53:00+02:00
