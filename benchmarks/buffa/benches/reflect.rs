@@ -39,8 +39,10 @@ use buffa_descriptor::{DescriptorPool, FieldKind, MessageIndex, SingularKind};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 
 use bench_buffa::bench::{
-    AnalyticsEvent, AnalyticsEventView, ApiResponse, ApiResponseView, LogRecord, LogRecordView,
+    AnalyticsEvent, AnalyticsEventView, ApiResponse, ApiResponseView, ColumnBatch, LogRecord,
+    LogRecordView, PackedTile,
 };
+use bench_buffa::bench::__buffa::view::{ColumnBatchView, PackedTileView};
 use bench_buffa::benchmarks::BenchmarkDataset;
 use bench_buffa::proto3::{GoogleMessage1, GoogleMessage1View};
 
@@ -356,11 +358,39 @@ fn benchmark_google_message1(c: &mut Criterion) {
     );
 }
 
+fn benchmark_packed_tile(c: &mut Criterion) {
+    bench_message::<PackedTile>(
+        c,
+        "reflect/PackedTile",
+        "bench.PackedTile",
+        bench_buffa::bench::__buffa::reflect::descriptor_pool(),
+        include_bytes!("../../datasets/packed_tile.pb"),
+        |p| vtable_decode_only::<PackedTileView<'_>>(p),
+        |p| vtable_read_one::<PackedTileView<'_>>(p),
+        |p| vtable_read_all::<PackedTileView<'_>>(p),
+    );
+}
+
+fn benchmark_column_batch(c: &mut Criterion) {
+    bench_message::<ColumnBatch>(
+        c,
+        "reflect/ColumnBatch",
+        "bench.ColumnBatch",
+        bench_buffa::bench::__buffa::reflect::descriptor_pool(),
+        include_bytes!("../../datasets/column_batch.pb"),
+        |p| vtable_decode_only::<ColumnBatchView<'_>>(p),
+        |p| vtable_read_one::<ColumnBatchView<'_>>(p),
+        |p| vtable_read_all::<ColumnBatchView<'_>>(p),
+    );
+}
+
 criterion_group!(
     benches,
     benchmark_api_response,
     benchmark_log_record,
     benchmark_analytics_event,
     benchmark_google_message1,
+    benchmark_packed_tile,
+    benchmark_column_batch,
 );
 criterion_main!(benches);

@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **Reflective binary decoding avoids temporary payload copies.** DynamicMessage now parses length-delimited nested messages, map entries, and packed scalar lists directly from bounded input buffers instead of allocating a copy of each payload.
+time: 2026-10-20T17:00:00.000000000+00:00
