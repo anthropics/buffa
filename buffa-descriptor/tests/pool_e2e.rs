@@ -5055,7 +5055,7 @@ mod extension_field_names {
         let err = DescriptorPool::new(set(None, false, json_name)).unwrap_err();
         assert!(matches!(
             err,
-            PoolError::InvalidJsonName { field, name } if field == "flag" && name == "bad\0name"
+            PoolError::InvalidJsonName { field, name, .. } if field == "flag" && name == "bad\0name"
         ));
     }
 

@@ -256,6 +256,15 @@ impl ReservedRanges {
     }
 }
 
+/// Why a field's JSON name is invalid.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InvalidJsonNameReason {
+    /// The JSON name contains a NUL character.
+    ContainsNul,
+    /// A non-extension field's JSON name looks like an extension key (`[name]`).
+    ExtensionKey,
+}
+
 /// Errors that can occur while building a [`DescriptorPool`].
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -343,13 +352,16 @@ pub enum PoolError {
     DuplicateFieldNumber { message: String, number: u32 },
     /// Two fields in one message claim the same proto or JSON name.
     DuplicateFieldName { message: String, name: String },
-    /// A field's JSON name contains NUL, or the JSON name of a field that is
-    /// not an extension starts with `[` and ends with `]`. A JSON parser reads
-    /// such a key as the name of an extension.
+    /// A field's JSON name is invalid. `reason` distinguishes NUL characters
+    /// from non-extension names shaped like extension keys.
     ///
     /// The bracket rule is off for a message that sets the
     /// `deprecated_legacy_json_field_conflicts` option, as it is in protoc.
-    InvalidJsonName { field: String, name: String },
+    InvalidJsonName {
+        field: String,
+        name: String,
+        reason: InvalidJsonNameReason,
+    },
     /// A field refers to a oneof declaration that does not exist in its
     /// containing message.
     InvalidOneofIndex {
@@ -786,15 +798,14 @@ impl core::fmt::Display for PoolError {
                     "message {message} declares field name {name:?} more than once"
                 )
             }
-            Self::InvalidJsonName { field, name } => {
-                if name.contains('\0') {
-                    write!(f, "field {field} has JSON name {name:?} containing NUL")
-                } else {
-                    write!(
-                        f,
-                        "field {field} has JSON name {name:?}, which has the form of an extension key"
-                    )
-                }
+            Self::InvalidJsonName { field, name, reason } => {
+                let explanation = match reason {
+                    InvalidJsonNameReason::ContainsNul => " containing NUL",
+                    InvalidJsonNameReason::ExtensionKey => {
+                        ", which has the form of an extension key"
+                    }
+                };
+                write!(f, "field {field} has JSON name {name:?}{explanation}")
             }
             Self::RepeatedFieldWithDefault { field } => {
                 write!(f, "repeated field {field} declares a default value")
@@ -3067,10 +3078,18 @@ impl DescriptorPool {
         });
         let looks_like_extension_key =
             checks_json_name_form && json_name.starts_with('[') && json_name.ends_with(']');
-        if json_name.contains('\0') || looks_like_extension_key {
+        let invalid_reason = if json_name.contains('\0') {
+            Some(InvalidJsonNameReason::ContainsNul)
+        } else if looks_like_extension_key {
+            Some(InvalidJsonNameReason::ExtensionKey)
+        } else {
+            None
+        };
+        if let Some(reason) = invalid_reason {
             return Err(PoolError::InvalidJsonName {
                 field: field_fqn,
                 name: json_name,
+                reason,
             });
         }
 
