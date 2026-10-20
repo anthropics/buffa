@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`UnknownFields::remove_number` removes all top-level records for one field number**, returning the number removed. Other records keep their order and nested group fields are unaffected. Extension replacement and clearing use the same helper.
+time: 2026-10-19T14:04:20+02:00

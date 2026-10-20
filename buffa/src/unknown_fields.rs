@@ -52,11 +52,23 @@ impl UnknownFields {
 
     /// Retain only the fields for which the predicate returns `true`.
     ///
-    /// Used by [`ExtensionSet::set_extension`](crate::ExtensionSet::set_extension)
-    /// and [`clear_extension`](crate::ExtensionSet::clear_extension) to remove
-    /// prior occurrences at a given field number.
+    /// The remaining fields keep their original order.
     pub fn retain(&mut self, f: impl FnMut(&UnknownField) -> bool) {
         self.fields.retain(f);
+    }
+
+    /// Removes every top-level record with the given field number.
+    ///
+    /// A number may appear more than once on the wire, potentially with
+    /// different wire types. All matching records are removed, while other
+    /// records keep their original order. Fields inside an unknown group are
+    /// not traversed.
+    ///
+    /// Returns the number of records removed.
+    pub fn remove_number(&mut self, number: u32) -> usize {
+        let before = self.fields.len();
+        self.fields.retain(|field| field.number != number);
+        before - self.fields.len()
     }
 
     /// Compute the encoded size of all unknown fields.
@@ -385,6 +397,29 @@ mod tests {
                 varint_field(7, 4),
             ]
         );
+    }
+
+    #[test]
+    fn test_remove_number_removes_duplicates_without_touching_nested_groups() {
+        let nested = group_field(3, [varint_field(10, 99)].into_iter().collect());
+        let keep = fixed32_field(12, 0x1234);
+        let mut fields: UnknownFields = [
+            varint_field(10, 1),
+            keep.clone(),
+            fixed32_field(10, 0x5678),
+            varint_field(10, 2),
+            nested.clone(),
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(fields.remove_number(10), 3);
+        assert_eq!(fields.iter().cloned().collect::<Vec<_>>(), vec![keep, nested]);
+        assert_eq!(fields.remove_number(10), 0);
+        assert_eq!(fields.remove_number(12), 1);
+        assert_eq!(fields.remove_number(3), 1);
+        assert!(fields.is_empty());
+        assert_eq!(fields.remove_number(10), 0);
     }
 
     // ── encoded_len vs write_to consistency ──────────────────────────────
