@@ -123,7 +123,15 @@ impl Tag {
         // field numbers; valid field numbers fit in 29 bits so the result
         // always fits in 32 bits when the field number is in range.
         let value = ((self.field_number as u64) << 3) | (self.wire_type as u64);
-        encode_varint(value, buf);
+        if value < 0x80 {
+            buf.put_u8(value as u8);
+        } else if value < 0x4000 {
+            // Fields 16–2047 use two-byte tags. Batch the two sink writes
+            // without adding branches to general-purpose scalar encoding.
+            buf.put_slice(&[(value as u8) | 0x80, (value >> 7) as u8]);
+        } else {
+            encode_varint(value, buf);
+        }
     }
 
     /// Decode a tag from a buffer.
@@ -863,6 +871,38 @@ mod tests {
             assert_eq!(buf.len(), varint_len(v), "varint_len mismatch for {v}");
             let decoded = decode_varint(&mut buf.as_slice()).unwrap();
             assert_eq!(v, decoded, "roundtrip failed for {v}");
+        }
+    }
+
+    #[test]
+    fn test_encode_tag_matches_generic_varint() {
+        let wire_types = [
+            WireType::Varint,
+            WireType::Fixed64,
+            WireType::LengthDelimited,
+            WireType::StartGroup,
+            WireType::EndGroup,
+            WireType::Fixed32,
+        ];
+        let mut field_numbers = vec![1, 15, 16, 127, 2047, 2048, 262143, 262144, MAX_FIELD_NUMBER];
+        let mut seed = 0x1234_5678u32;
+        for _ in 0..10_000 {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            field_numbers.push(1 + (seed % MAX_FIELD_NUMBER));
+        }
+        for field_number in field_numbers {
+            for &wire_type in &wire_types {
+                let tag = Tag::new(field_number, wire_type);
+                let mut expected = Vec::new();
+                encode_varint(
+                    ((field_number as u64) << 3) | wire_type as u64,
+                    &mut expected,
+                );
+                let mut actual = Vec::new();
+                tag.encode(&mut actual);
+                assert_eq!(actual, expected, "field {field_number}, wire {wire_type:?}");
+                assert_eq!(Tag::decode(&mut actual.as_slice()), Ok(tag));
+            }
         }
     }
 
