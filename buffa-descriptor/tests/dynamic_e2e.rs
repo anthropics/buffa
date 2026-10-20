@@ -1196,6 +1196,36 @@ fn iter_set_fields_items_outlive_the_iteration() {
 }
 
 #[test]
+fn replacing_oneof_members_clears_all_siblings() {
+    let p = pool();
+    let oneof_idx = p.message_index("reflect.test.OneOf").unwrap();
+    let inner_idx = p.message_index("reflect.test.Inner").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(&p), oneof_idx);
+
+    // Exercise scalar, string, message, and scalar updates through both APIs.
+    msg.set(p.message(oneof_idx).field(1).unwrap(), Value::I32(7));
+    msg.merge(&[0x12, 0x03, b'o', b'l', b'd']).unwrap();
+    assert!(msg.field_by_number(1).is_none());
+    assert_eq!(msg.field_by_number(2), Some(&Value::String("old".into())));
+
+    // Set the message member, then replace it through the wire decoder.
+    let mut inner = DynamicMessage::new(Arc::clone(&p), inner_idx);
+    inner.set(
+        p.message(inner_idx).field(1).unwrap(),
+        Value::String("old-id".into()),
+    );
+    msg.set(p.message(oneof_idx).field(3).unwrap(), Value::Message(inner));
+    assert!(msg.field_by_number(2).is_none());
+    assert!(msg.field_by_number(3).is_some());
+
+    msg.merge(&[0x08, 0x2A]).unwrap();
+    assert_eq!(msg.field_by_number(1), Some(&Value::I32(42)));
+    assert!(msg.field_by_number(2).is_none());
+    assert!(msg.field_by_number(3).is_none());
+    assert_eq!(msg.encode_to_vec(), vec![0x08, 0x2A]);
+}
+
+#[test]
 fn which_oneof_resolves_set_member() {
     let p = pool();
     let oneof_idx = p.message_index("reflect.test.OneOf").unwrap();

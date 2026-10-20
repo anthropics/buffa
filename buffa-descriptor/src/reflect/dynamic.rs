@@ -493,20 +493,17 @@ impl DynamicMessage {
 
     /// Clear every set member of oneof `oi` except `keep_number`.
     fn clear_other_oneof_members(&mut self, oi: u16, keep_number: u32) {
-        let md = self.message_descriptor();
-        let Some(o) = md.oneofs.get(oi as usize) else {
+        // Borrow through `pool` so the field map can be mutated separately.
+        let md = self.pool.message(self.msg_idx);
+        let Some(oneof) = md.oneofs.get(oi as usize) else {
             return;
         };
-        // Collect the numbers to clear without holding the descriptor borrow.
-        let to_clear: alloc::vec::Vec<u32> = o
-            .field_indices
-            .iter()
-            .filter_map(|&fi| md.fields.get(fi as usize))
-            .map(|f| f.number)
-            .filter(|&n| n != keep_number)
-            .collect();
-        for n in to_clear {
-            self.fields.remove(&n);
+        for &field_idx in &oneof.field_indices {
+            if let Some(field) = md.fields.get(field_idx as usize) {
+                if field.number != keep_number {
+                    self.fields.remove(&field.number);
+                }
+            }
         }
     }
 
@@ -2880,6 +2877,31 @@ mod tests {
         assert!(decode(&one_level, 1).is_ok());
         // Depth 0 still admits a flat message: `{ name: "n" }`.
         assert!(decode(&[0x0A, 0x01, b'n'], 0).is_ok());
+    }
+
+    #[test]
+    fn clearing_oneof_siblings_preserves_selected_and_unrelated_fields() {
+        use alloc::sync::Arc;
+        use crate::reflect::Value;
+        use crate::DescriptorPool;
+
+        let fds = include_bytes!("../../tests/protos/reflect_test.fds");
+        let pool = Arc::new(DescriptorPool::decode(fds).unwrap());
+        let oneof_idx = pool.message_index("reflect.test.OneOf").unwrap();
+        let inner_idx = pool.message_index("reflect.test.Inner").unwrap();
+        let mut msg = DynamicMessage::new(Arc::clone(&pool), oneof_idx);
+
+        // Start from a conflicting field map to check that both siblings go.
+        msg.insert_value(1, Value::I32(7));
+        msg.insert_value(2, Value::String("stale".into()));
+        msg.insert_value(3, Value::Message(DynamicMessage::new(pool, inner_idx)));
+        msg.insert_value(99, Value::I32(99));
+
+        msg.clear_other_oneof_members(0, 3);
+        assert!(msg.field_by_number(1).is_none());
+        assert!(msg.field_by_number(2).is_none());
+        assert!(matches!(msg.field_by_number(3), Some(Value::Message(_))));
+        assert_eq!(msg.field_by_number(99), Some(&Value::I32(99)));
     }
 
     #[test]
