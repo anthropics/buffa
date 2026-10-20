@@ -23,6 +23,7 @@ std = [
     "serde?/std",
     "serde_json?/std",
     "smoothutf8?/simdutf8",
+    "memchr?/std",
 ]
 # Replace `core::str::from_utf8` at the decode hot path with `smoothutf8`
 # (portable, formally verified, `no_std`). With `std` also on, smoothutf8's
@@ -42,7 +43,7 @@ json = [
     "hashbrown/serde",
 ]
 arbitrary = ["dep:arbitrary"]
-text = []
+text = ["dep:memchr"]
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }
@@ -50,6 +51,7 @@ base64 = { workspace = true, optional = true }
 bytes = { workspace = true }
 foldhash = { workspace = true }
 hashbrown = { workspace = true }
+memchr = { version = "2.8", default-features = false, optional = true }
 once_cell = { workspace = true, features = ["alloc"] }
 rustversion = { workspace = true }
 serde = { workspace = true, optional = true }

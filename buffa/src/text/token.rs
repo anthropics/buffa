@@ -1049,6 +1049,19 @@ fn lex_string_run(s: &[u8]) -> Option<usize> {
         let quote = *s.get(i)?;
         debug_assert!(quote == b'"' || quote == b'\'');
         i += 1;
+        // Scan long plain spans using memchr's fast byte search. A second
+        // search for NUL is required because memchr3 covers only three bytes.
+        // Short literals and everything after an escape use the original
+        // byte loop, avoiding repeated searches on escape-dense strings.
+        if s.len() - i >= 32 {
+            let rest = &s[i..];
+            let end = memchr::memchr3(quote, b'\\', b'\n', rest).unwrap_or(rest.len());
+            let first_nul = memchr::memchr(0, &rest[..end]);
+            i += first_nul.unwrap_or(end);
+            if end == rest.len() && first_nul.is_none() {
+                return None;
+            }
+        }
         loop {
             match s.get(i)? {
                 &c if c == quote => {
@@ -1098,6 +1111,34 @@ mod tests {
     }
 
     // ── whole-input tokenization ────────────────────────────────────────────
+
+    #[test]
+    fn lex_string_run_long_literal_boundaries() {
+        // Exercise both sides of the bulk-scan threshold, UTF-8, escaping,
+        // adjacent literals, and malformed input after a long plain prefix.
+        for width in [0, 1, 7, 8, 9, 31, 32, 33, 512] {
+            let payload = "🦀".repeat(width);
+
+            let adjacent = alloc::format!("\"{payload}\" # comment\n '{payload}'");
+            assert_eq!(lex_string_run(adjacent.as_bytes()), Some(adjacent.len()));
+
+            let escaped_quote = alloc::format!("\"{payload}\\\"tail\"");
+            assert_eq!(
+                lex_string_run(escaped_quote.as_bytes()),
+                Some(escaped_quote.len())
+            );
+
+            let invalid = [
+                alloc::format!("\"{payload}\n\""),
+                alloc::format!("\"{payload}\0\""),
+                alloc::format!("\"{payload}\\"),
+                alloc::format!("\"{payload}"),
+            ];
+            for raw in invalid {
+                assert_eq!(lex_string_run(raw.as_bytes()), None, "{raw:?}");
+            }
+        }
+    }
 
     #[test]
     fn tokenize_simple_field() {
