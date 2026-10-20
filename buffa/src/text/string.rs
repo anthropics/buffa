@@ -28,6 +28,10 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::fmt::Write;
 
+// Copy only the plain prefix at the start of each literal. Scanning after each
+// escape adds overhead to escape-heavy strings.
+const BULK_COPY_MIN_RUN: usize = 32;
+
 /// Error returned by [`unescape`] and [`unescape_str`].
 ///
 /// Its `Display` text is the [`BadEscape`](Self::BadEscape) string, or
@@ -74,6 +78,22 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
             None => return Err(UnescapeError::BadEscape("unterminated string")),
         };
         s = &s[1..];
+        if s.len() > BULK_COPY_MIN_RUN {
+            if let Some(&first) = s.first() {
+                if first != quote && first != b'\\' && first != b'\n' && first != 0 {
+                    // Long strings without escapes are common. Copy the first
+                    // plain run once, then let the parser handle its boundary.
+                    let end = s
+                        .iter()
+                        .position(|&b| b == quote || b == b'\\' || b == b'\n' || b == 0)
+                        .unwrap_or(s.len());
+                    if end >= BULK_COPY_MIN_RUN {
+                        out.extend_from_slice(&s[..end]);
+                        s = &s[end..];
+                    }
+                }
+            }
+        }
         loop {
             match s.first() {
                 None => return Err(UnescapeError::BadEscape("unterminated string")),
@@ -341,6 +361,44 @@ mod tests {
             alloc::format!("{}", unescape(r#""\xzz""#).unwrap_err()),
             r"invalid \x escape"
         );
+    }
+
+    #[test]
+    fn unescape_bulk_copies_long_plain_runs() {
+        let first = "café 😀 ".repeat(256);
+        let second = "abc\"xyz".repeat(256);
+        let raw = alloc::format!("\"{first}\\n\" '{second}'");
+        let expected = alloc::format!("{first}\n{second}");
+        assert_eq!(unescape(&raw).unwrap(), expected.as_bytes());
+        assert_eq!(unescape_str(&raw).unwrap(), expected);
+    }
+
+    #[test]
+    fn unescape_bulk_plain_run_keeps_newline_error() {
+        for special in ['\n', '\0'] {
+            let raw = alloc::format!("\"{}{special}\"", "x".repeat(512));
+            assert_eq!(
+                unescape(&raw),
+                Err(UnescapeError::BadEscape(
+                    "raw newline/NUL in string literal"
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn unescape_bulk_threshold_keeps_adjacent_escapes() {
+        for plain_len in [
+            BULK_COPY_MIN_RUN - 1,
+            BULK_COPY_MIN_RUN,
+            BULK_COPY_MIN_RUN + 1,
+        ] {
+            let first = "x".repeat(plain_len);
+            let last = "y".repeat(64);
+            let raw = alloc::format!("\"{first}\\n{last}\"");
+            let expected = alloc::format!("{first}\n{last}");
+            assert_eq!(unescape(&raw).unwrap(), expected.as_bytes());
+        }
     }
 
     #[test]
