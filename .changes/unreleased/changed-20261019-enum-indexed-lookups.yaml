@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    Descriptor reflection uses indexed enum lookups for larger enums, avoiding repeated linear scans while preserving value order and first-declared aliases.
+time: 2026-10-19T14:34:00+02:00

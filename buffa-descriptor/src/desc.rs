@@ -456,6 +456,18 @@ impl OneofDescriptor {
     }
 }
 
+/// Use indexed lookups only when an enum is large enough to offset index
+/// construction during descriptor linking.
+#[cfg(feature = "reflect")]
+const ENUM_INDEX_THRESHOLD: usize = 128;
+
+#[cfg(feature = "reflect")]
+#[derive(Clone, Debug)]
+struct EnumLookupIndex {
+    by_number: Vec<usize>,
+    by_name: Vec<usize>,
+}
+
 /// A linked enum descriptor.
 ///
 /// Constructed only by [`DescriptorPool`](crate::DescriptorPool); not
@@ -464,12 +476,46 @@ impl OneofDescriptor {
 pub struct EnumDescriptor {
     pub(crate) full_name: String,
     pub(crate) values: Vec<EnumValueDescriptor>,
+    #[cfg(feature = "reflect")]
+    lookup: Option<Box<EnumLookupIndex>>,
     pub(crate) enum_type: EnumType,
     /// Raw `EnumOptions`, boxed (`None` when the enum declares none).
     pub(crate) options: Option<Box<EnumOptions>>,
 }
 
 impl EnumDescriptor {
+    /// Build a linked enum and, with reflection enabled, lookup indices
+    /// without changing declaration order. Numeric ordering breaks ties by
+    /// original position so aliases stay first-wins.
+    #[cfg(feature = "reflect")]
+    pub(crate) fn new(
+        full_name: String,
+        values: Vec<EnumValueDescriptor>,
+        enum_type: EnumType,
+        options: Option<Box<EnumOptions>>,
+    ) -> Self {
+        let lookup = if values.len() >= ENUM_INDEX_THRESHOLD {
+            let mut numbers: Vec<usize> = (0..values.len()).collect();
+            numbers.sort_unstable_by_key(|&i| (values[i].number, i));
+            let mut names: Vec<usize> = (0..values.len()).collect();
+            names.sort_unstable_by(|&a, &b| values[a].name.cmp(&values[b].name));
+            Some(Box::new(EnumLookupIndex {
+                by_number: numbers,
+                by_name: names,
+            }))
+        } else {
+            None
+        };
+        Self {
+            full_name,
+            values,
+            #[cfg(feature = "reflect")]
+            lookup,
+            enum_type,
+            options,
+        }
+    }
+
     /// Fully-qualified proto name without leading dot.
     #[inline]
     #[must_use]
@@ -506,14 +552,34 @@ impl EnumDescriptor {
     ///
     /// If the enum has aliases (`allow_alias = true`), returns the first
     /// declared value with that number.
+    #[inline]
     #[must_use]
     pub fn value(&self, number: i32) -> Option<&EnumValueDescriptor> {
+        #[cfg(feature = "reflect")]
+        if let Some(index) = self.lookup.as_deref() {
+            let pos = index
+                .by_number
+                .partition_point(|&i| self.values[i].number < number);
+            return index
+                .by_number
+                .get(pos)
+                .and_then(|&i| (self.values[i].number == number).then_some(&self.values[i]));
+        }
         self.values.iter().find(|v| v.number == number)
     }
 
     /// Look up a value by its proto name.
+    #[inline]
     #[must_use]
     pub fn value_by_name(&self, name: &str) -> Option<&EnumValueDescriptor> {
+        #[cfg(feature = "reflect")]
+        if let Some(index) = self.lookup.as_deref() {
+            return index
+                .by_name
+                .binary_search_by(|&i| self.values[i].name.as_str().cmp(name))
+                .ok()
+                .map(|pos| &self.values[index.by_name[pos]]);
+        }
         self.values.iter().find(|v| v.name == name)
     }
 }
@@ -907,25 +973,30 @@ mod tests {
 
     #[test]
     fn enum_value_lookup() {
+        let full_name = "test.Color".into();
+        let values = alloc::vec![
+            EnumValueDescriptor {
+                name: "RED".into(),
+                number: 0,
+                options: None,
+            },
+            EnumValueDescriptor {
+                name: "GREEN".into(),
+                number: 1,
+                options: None,
+            },
+            EnumValueDescriptor {
+                name: "ALIAS_RED".into(),
+                number: 0,
+                options: None,
+            },
+        ];
+        #[cfg(feature = "reflect")]
+        let e = EnumDescriptor::new(full_name, values, EnumType::Open, None);
+        #[cfg(not(feature = "reflect"))]
         let e = EnumDescriptor {
-            full_name: "test.Color".into(),
-            values: alloc::vec![
-                EnumValueDescriptor {
-                    name: "RED".into(),
-                    number: 0,
-                    options: None,
-                },
-                EnumValueDescriptor {
-                    name: "GREEN".into(),
-                    number: 1,
-                    options: None,
-                },
-                EnumValueDescriptor {
-                    name: "ALIAS_RED".into(),
-                    number: 0,
-                    options: None,
-                },
-            ],
+            full_name,
+            values,
             enum_type: EnumType::Open,
             options: None,
         };
@@ -934,6 +1005,61 @@ mod tests {
         assert!(e.value(99).is_none());
         assert_eq!(e.value_by_name("GREEN").unwrap().number, 1);
         assert!(e.value_by_name("BLUE").is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "reflect")]
+    fn indexed_enum_lookup_preserves_order_and_aliases() {
+        for len in [
+            0,
+            1,
+            ENUM_INDEX_THRESHOLD - 1,
+            ENUM_INDEX_THRESHOLD,
+            ENUM_INDEX_THRESHOLD + 1,
+        ] {
+            // Reverse numeric order deliberately, and create an alias at the
+            // end to ensure the first declaration wins after sorting.
+            let mut values: Vec<_> = (0..len)
+                .map(|i| EnumValueDescriptor {
+                    name: alloc::format!("VALUE_{i:03}"),
+                    number: (len - i) as i32,
+                    options: None,
+                })
+                .collect();
+            if len > 1 {
+                values[0].number = i32::MAX;
+                values[len - 1].number = values[0].number;
+            }
+            if len > 2 {
+                values[1].number = i32::MIN;
+            }
+            let has_options = len == 1 || len == ENUM_INDEX_THRESHOLD;
+            let options = has_options.then(|| Box::new(EnumOptions::default()));
+            let e = EnumDescriptor::new("test.Large".into(), values, EnumType::Open, options);
+            assert_eq!(e.values().len(), len);
+            assert_eq!(e.options().is_some(), has_options);
+            assert_eq!(e.lookup.is_some(), len >= ENUM_INDEX_THRESHOLD);
+            for value in e.values() {
+                let expected = e
+                    .values()
+                    .iter()
+                    .find(|v| v.number == value.number)
+                    .unwrap();
+                assert_eq!(e.value(value.number).unwrap().name(), expected.name());
+                assert_eq!(
+                    e.value_by_name(value.name()).unwrap().number(),
+                    value.number()
+                );
+            }
+            assert!(e.value(-1).is_none());
+            assert!(e.value_by_name("MISSING").is_none());
+            if len > 1 {
+                assert_eq!(e.value(i32::MAX).unwrap().name(), "VALUE_000");
+            }
+            if len > 2 {
+                assert_eq!(e.value(i32::MIN).unwrap().name(), "VALUE_001");
+            }
+        }
     }
 
     #[test]
