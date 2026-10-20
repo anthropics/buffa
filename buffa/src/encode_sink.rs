@@ -510,16 +510,22 @@ impl Rope {
         self.segments
     }
 
-    /// Copy the rope out into one contiguous [`Bytes`].
+    /// Return the rope's contents as one contiguous [`Bytes`].
     ///
-    /// For consumers that need contiguous output after all — this performs
-    /// the copies the rope avoided, so prefer
-    /// [`into_segments`](Self::into_segments) wherever the consumer can
-    /// take a segment sequence. (Named distinctly from
-    /// [`Buf::copy_to_bytes`], which consumes a length-bounded prefix; this
-    /// is a non-consuming full copy.)
+    /// When there is exactly one finalized segment and no pending tail, this
+    /// clones its reference-counted handle without copying the bytes. The
+    /// returned value can share the original segment's backing allocation.
+    /// Otherwise the segments and tail are copied into one buffer. Prefer
+    /// [`into_segments`](Self::into_segments) when the consumer accepts
+    /// segmented output.
+    ///
+    /// Unlike [`Buf::copy_to_bytes`], this does not consume the source.
     #[must_use]
     pub fn to_contiguous_bytes(&self) -> Bytes {
+        if self.tail.is_empty() && self.segments.len() == 1 {
+            return self.segments[0].clone();
+        }
+
         let mut out = Vec::with_capacity(self.len());
         for segment in &self.segments {
             out.extend_from_slice(segment);
@@ -861,6 +867,59 @@ mod tests {
         rope.put_u64_le(0x0102_0304_0506_0708);
 
         assert_eq!(&rope.to_contiguous_bytes()[..], &contiguous[..]);
+    }
+
+    #[test]
+    fn single_shared_segment_to_contiguous_bytes_does_not_copy() {
+        let payload = Bytes::from(crate::alloc::vec![0xA5; 128]);
+        let payload_ptr = payload.as_ptr();
+        let mut rope = Rope::with_min_segment(64);
+        rope.put_shared(payload.clone());
+
+        let result = rope.to_contiguous_bytes();
+        assert!(core::ptr::eq(result.as_ptr(), payload_ptr));
+        assert_eq!(result.as_ref(), payload.as_ref());
+
+        // The output must stay valid after both the rope and input are gone.
+        drop(rope);
+        drop(payload);
+        assert_eq!(result.as_ref(), &[0xA5; 128]);
+    }
+
+    #[test]
+    fn backed_single_segment_to_contiguous_bytes_preserves_slice() {
+        let backing = Bytes::from(crate::alloc::vec![0x6B; 256]);
+        let selected = &backing[32..160];
+        let selected_ptr = selected.as_ptr();
+        let mut rope = Rope::with_min_segment(64).with_backing(backing.clone());
+        rope.put_slice(selected);
+
+        let result = rope.to_contiguous_bytes();
+        assert!(core::ptr::eq(result.as_ptr(), selected_ptr));
+        assert_eq!(result.as_ref(), &[0x6B; 128]);
+    }
+
+    #[test]
+    fn to_contiguous_bytes_copies_when_tail_or_multiple_segments_remain() {
+        let payload = Bytes::from_static(b"shared data");
+        let mut with_tail = Rope::with_min_segment(4);
+        with_tail.put_shared(payload.clone());
+        with_tail.put_slice(b"!");
+        let result = with_tail.to_contiguous_bytes();
+        assert_eq!(result.as_ref(), b"shared data!");
+        assert!(!core::ptr::eq(result.as_ptr(), payload.as_ptr()));
+
+        let mut multi = Rope::with_min_segment(4);
+        multi.put_shared(payload.clone());
+        multi.put_shared(Bytes::from_static(b"second"));
+        let result = multi.to_contiguous_bytes();
+        assert_eq!(result.as_ref(), b"shared datasecond");
+        assert!(!core::ptr::eq(result.as_ptr(), payload.as_ptr()));
+
+        let mut tail_only = Rope::with_min_segment(64);
+        tail_only.put_slice(b"small");
+        assert_eq!(tail_only.to_contiguous_bytes().as_ref(), b"small");
+        assert!(Rope::new().to_contiguous_bytes().is_empty());
     }
 
     /// `RopeBuf` walks the segments in order and honors partial advances.

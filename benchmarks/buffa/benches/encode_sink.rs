@@ -19,9 +19,10 @@
 //
 // or `task bench-encode-sink`, which runs both and keeps their criterion
 // results in separate directories.
+use buffa::encode_sink::Rope;
 use buffa::{Message, MessageView, ViewEncode};
-use bytes::{BufMut, BytesMut};
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use bytes::{BufMut, Bytes, BytesMut};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 use bench_buffa::bench::__buffa::view::LogRecordView;
 use bench_buffa::bench::{ApiResponse, LogRecord, MediaFrame};
@@ -174,7 +175,46 @@ fn view_sinks(c: &mut Criterion) {
     g.finish();
 }
 
+/// Isolates Rope's contiguous conversion from protobuf encoding. The
+/// multi-segment and tail cases guard against an expensive regression when
+/// the zero-copy single-segment case does not apply.
+fn rope_contiguous(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rope_contiguous");
+    for &size in &[4 * 1024usize, 1024 * 1024] {
+        let payload = Bytes::from(vec![0xA5; size]);
+
+        let mut single = Rope::with_min_segment(64);
+        buffa::encode_sink::EncodeSink::put_shared(&mut single, payload.clone());
+
+        let half = size / 2;
+        let mut multi = Rope::with_min_segment(64);
+        buffa::encode_sink::EncodeSink::put_shared(&mut multi, payload.slice(..half));
+        buffa::encode_sink::EncodeSink::put_shared(&mut multi, payload.slice(half..));
+
+        let mut tail_only = Rope::with_min_segment(usize::MAX);
+        buffa::encode_sink::EncodeSink::put_slice(&mut tail_only, &payload);
+
+        group.throughput(Throughput::Bytes(size as u64));
+        group.bench_with_input(
+            BenchmarkId::new("single_shared", size),
+            &single,
+            |b, rope| b.iter(|| black_box(rope.to_contiguous_bytes())),
+        );
+        group.bench_with_input(BenchmarkId::new("two_shared", size), &multi, |b, rope| {
+            b.iter(|| black_box(rope.to_contiguous_bytes()))
+        });
+        group.bench_with_input(
+            BenchmarkId::new("tail_only", size),
+            &tail_only,
+            |b, rope| b.iter(|| black_box(rope.to_contiguous_bytes())),
+        );
+    }
+    group.finish();
+}
+
 fn run(c: &mut Criterion) {
+    rope_contiguous(c);
+
     // Tag-dense shapes, where writes per byte of output are highest: string-heavy
     // (many short length-delimited fields), nested/mixed, and dense small
     // scalars.
