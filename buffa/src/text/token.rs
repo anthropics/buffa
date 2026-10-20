@@ -302,20 +302,11 @@ impl<'a> Tokenizer<'a> {
     /// whitespace or `#`-to-EOL comments.
     fn consume(&mut self, n: usize) {
         self.cursor += n;
-        loop {
-            match self.rest().first() {
-                Some(&c) if is_textproto_ws(c) => self.cursor += 1,
-                Some(b'#') => {
-                    // Skip to end of line (or end of input).
-                    let rest = self.rest();
-                    match rest.iter().position(|&b| b == b'\n') {
-                        Some(i) => self.cursor += i + 1,
-                        None => self.cursor = self.input.len(),
-                    }
-                }
-                _ => break,
-            }
-        }
+        // Skip a run of trivia in one pass rather than rebuilding rest()
+        // after each whitespace byte. Also keeps lexing and tokenizing in
+        // sync on comments, vertical tabs and form feeds.
+        let rest = self.rest();
+        self.cursor += rest.len() - consume_ws(rest).len();
     }
 
     /// If the next byte is `c`, consume it (and trailing whitespace) and return true.
@@ -999,8 +990,14 @@ pub(super) fn number_for_parse<'a>(raw: &'a str, num: &LexNumber) -> alloc::borr
 /// Consume leading whitespace and `#`-to-EOL comments.
 pub(super) fn consume_ws(mut s: &[u8]) -> &[u8] {
     loop {
+        // One slice scan for the entire whitespace run. The common no-trivia
+        // case still checks only the first byte.
+        let whitespace = s
+            .iter()
+            .position(|&b| !is_textproto_ws(b))
+            .unwrap_or(s.len());
+        s = &s[whitespace..];
         match s.first() {
-            Some(&c) if is_textproto_ws(c) => s = &s[1..],
             Some(b'#') => match s.iter().position(|&b| b == b'\n') {
                 Some(i) => s = &s[i + 1..],
                 None => return &[],
@@ -1083,6 +1080,35 @@ fn lex_string_run(s: &[u8]) -> Option<usize> {
 mod tests {
     use super::*;
     use alloc::vec::Vec;
+
+    #[test]
+    fn consume_ws_long_whitespace_and_comment_runs() {
+        let mut input = b" \t\r\n\x0b\x0c".repeat(1024);
+        input.extend_from_slice(b"#");
+        input.extend_from_slice(&b"x".repeat(4096));
+        input.extend_from_slice(b"\n\t # second\r\nfield: 1");
+        assert_eq!(consume_ws(&input), b"field: 1");
+        assert_eq!(consume_ws(b""), b"");
+        assert_eq!(consume_ws(b"field: 1"), b"field: 1");
+        assert_eq!(consume_ws(b" \t # unterminated"), b"");
+    }
+
+    #[test]
+    fn tokenizer_skips_large_trivia_runs_without_losing_tokens() {
+        let mut input = alloc::string::String::from(" \t\r\n\x0b\x0c");
+        input.push_str(&" ".repeat(8192));
+        input.push('#');
+        input.push_str(&"x".repeat(2048));
+        input.push_str("\n\tfield: 42");
+        let tokens = drain(&input).unwrap();
+        assert_eq!(
+            tokens,
+            alloc::vec![
+                (TokenKind::Name, "field"),
+                (TokenKind::Scalar, "42"),
+            ]
+        );
+    }
 
     /// Drain a tokenizer, collecting (kind, raw) pairs until Eof.
     fn drain(input: &str) -> Result<Vec<(TokenKind, &str)>, ParseError> {

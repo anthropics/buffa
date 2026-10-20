@@ -43,6 +43,8 @@ iso = []
 # `encode_sink` gates the sink-comparison bench (`task bench-encode-sink`) out of
 # the default run for the same reason: its IDs must not enter saved baselines.
 encode_sink = []
+# Opt-in text tokenizer microbench, excluded from saved protobuf baselines.
+text_trivia = ["buffa/text"]
 
 [[bench]]
 name = "protobuf"
@@ -124,3 +126,8 @@ required-features = ["iso", "column_batch"]
 name = "encode_sink"
 harness = false
 required-features = ["encode_sink", "api_response", "log_record", "google_message1", "media_frame"]
+
+[[bench]]
+name = "text_trivia"
+harness = false
+required-features = ["text_trivia"]
