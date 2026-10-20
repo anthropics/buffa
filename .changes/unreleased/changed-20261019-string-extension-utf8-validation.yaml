@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **String extension decoding validates UTF-8 before copying its payload.** Malformed length-delimited records no longer allocate a full-sized String before returning None. Valid values and last-record-wins behavior are unchanged.
+time: 2026-10-19T13:48:00+02:00

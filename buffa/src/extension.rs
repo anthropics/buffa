@@ -885,7 +885,11 @@ pub mod codecs {
         type Value = String;
         fn decode_one(data: &UnknownFieldData) -> Option<String> {
             match data {
-                UnknownFieldData::LengthDelimited(bytes) => String::from_utf8(bytes.clone()).ok(),
+                UnknownFieldData::LengthDelimited(bytes) => {
+                    // Reject invalid UTF-8 before allocating a String for the payload.
+                    // A malformed extension may contain a large byte buffer.
+                    core::str::from_utf8(bytes).ok().map(String::from)
+                }
                 _ => None,
             }
         }
@@ -1710,6 +1714,16 @@ mod tests {
         const E: Extension<StringCodec> = Extension::new(1, CARRIER);
         let mut c = Carrier::default();
         c.unknown.push(ld(1, vec![0xFF, 0xFE]));
+        assert_eq!(c.extension(&E), None);
+    }
+
+    #[test]
+    fn string_large_invalid_utf8_is_none() {
+        const E: Extension<StringCodec> = Extension::new(1, CARRIER);
+        let mut payload = vec![b'x'; 256 * 1024];
+        payload.push(0xFF);
+        let mut c = Carrier::default();
+        c.unknown.push(ld(1, payload));
         assert_eq!(c.extension(&E), None);
     }
 
