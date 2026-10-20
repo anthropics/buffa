@@ -62,6 +62,36 @@ impl Timestamp {
         }
     }
 
+    /// Create a [`Timestamp`] from milliseconds since the Unix epoch.
+    ///
+    /// Uses floor division so negative offsets have non-negative nanoseconds.
+    /// For example, -1 millisecond is represented as `seconds = -1` and
+    /// `nanos = 999_000_000`, not as a negative nanosecond field.
+    ///
+    /// This accepts the full `i64` millisecond range. Like [`from_unix`](Self::from_unix),
+    /// it does not restrict the result to the ProtoJSON year range (0001-9999).
+    pub fn from_unix_millis(millis: i64) -> Self {
+        Self::from_unix(
+            millis.div_euclid(1_000),
+            (millis.rem_euclid(1_000) * 1_000_000) as i32,
+        )
+    }
+
+    /// Create a [`Timestamp`] from microseconds since the Unix epoch.
+    ///
+    /// Negative values use floor division, keeping the nanosecond field in
+    /// `[0, 999_999_999]`. For example, -1 microsecond becomes
+    /// `seconds = -1`, `nanos = 999_999_000`.
+    ///
+    /// Accepts the full `i64` microsecond range. As with [`from_unix`](Self::from_unix),
+    /// this does not validate the ProtoJSON year range (0001-9999).
+    pub fn from_unix_micros(micros: i64) -> Self {
+        Self::from_unix(
+            micros.div_euclid(1_000_000),
+            (micros.rem_euclid(1_000_000) * 1_000) as i32,
+        )
+    }
+
     /// Create a [`Timestamp`] from a Unix epoch offset, returning `None` if
     /// `nanos` is outside `[0, 999_999_999]`.
     pub fn from_unix_checked(seconds: i64, nanos: i32) -> Option<Self> {
@@ -331,6 +361,74 @@ mod tests {
         let ts = Timestamp::from_unix(0, 0);
         assert_eq!(ts.seconds, 0);
         assert_eq!(ts.nanos, 0);
+    }
+
+    #[test]
+    fn from_unix_millis_normalizes_pre_epoch_offsets() {
+        for (offset, seconds, nanos) in [
+            (-1_501, -2, 499_000_000),
+            (-1_000, -1, 0),
+            (-999, -1, 1_000_000),
+            (-1, -1, 999_000_000),
+            (0, 0, 0),
+            (1, 0, 1_000_000),
+            (999, 0, 999_000_000),
+            (1_000, 1, 0),
+            (1_501, 1, 501_000_000),
+        ] {
+            let ts = Timestamp::from_unix_millis(offset);
+            assert_eq!((ts.seconds, ts.nanos), (seconds, nanos), "offset: {offset}");
+        }
+    }
+
+    #[test]
+    fn from_unix_micros_normalizes_pre_epoch_offsets() {
+        for (offset, seconds, nanos) in [
+            (-1_000_001, -2, 999_999_000),
+            (-1_000_000, -1, 0),
+            (-999_999, -1, 1_000),
+            (-1, -1, 999_999_000),
+            (0, 0, 0),
+            (1, 0, 1_000),
+            (999_999, 0, 999_999_000),
+            (1_000_000, 1, 0),
+            (1_000_001, 1, 1_000),
+        ] {
+            let ts = Timestamp::from_unix_micros(offset);
+            assert_eq!((ts.seconds, ts.nanos), (seconds, nanos), "offset: {offset}");
+        }
+    }
+
+    #[test]
+    fn from_unix_subsecond_extremes_roundtrip() {
+        for offset in [i64::MIN, i64::MAX] {
+            let millis = Timestamp::from_unix_millis(offset);
+            assert!((0..=NANOS_MAX).contains(&millis.nanos));
+            assert_eq!(
+                i128::from(millis.seconds) * 1_000 + i128::from(millis.nanos) / 1_000_000,
+                i128::from(offset)
+            );
+
+            let micros = Timestamp::from_unix_micros(offset);
+            assert!((0..=NANOS_MAX).contains(&micros.nanos));
+            assert_eq!(
+                i128::from(micros.seconds) * 1_000_000 + i128::from(micros.nanos) / 1_000,
+                i128::from(offset)
+            );
+        }
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn from_unix_negative_subsecond_formats_as_rfc3339() {
+        assert_eq!(
+            serde_json::to_string(&Timestamp::from_unix_millis(-1)).unwrap(),
+            r#""1969-12-31T23:59:59.999Z""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Timestamp::from_unix_micros(-1)).unwrap(),
+            r#""1969-12-31T23:59:59.999999Z""#
+        );
     }
 
     #[test]
