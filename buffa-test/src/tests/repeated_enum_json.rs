@@ -43,6 +43,30 @@ fn custom_list_enum_fields_json_roundtrip() {
 }
 
 #[test]
+fn custom_list_open_enum_rejects_null_elements() {
+    for ignore_unknown_enum_values in [false, true] {
+        let opts = buffa::json::JsonParseOptions::new()
+            .ignore_unknown_enum_values(ignore_unknown_enum_values);
+        buffa::json::with_json_parse_options(&opts, || {
+            for json in [
+                r#"{"open":[null]}"#,
+                r#"{"open":["OPEN_RED",null]}"#,
+                r#"{"open":[null,"PURPLE"]}"#,
+            ] {
+                assert!(
+                    serde_json::from_str::<Palette>(json).is_err(),
+                    "Palette accepted {json}, lenient={ignore_unknown_enum_values}"
+                );
+                assert!(
+                    serde_json::from_str::<Swatch>(json).is_err(),
+                    "Swatch accepted {json}, lenient={ignore_unknown_enum_values}"
+                );
+            }
+        });
+    }
+}
+
+#[test]
 fn custom_list_enum_fields_null_is_empty() {
     let msg: Palette = serde_json::from_str(r#"{"open":null,"closed":null}"#).unwrap();
     assert!(msg.open.is_empty());
