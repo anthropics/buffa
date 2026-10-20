@@ -30,8 +30,8 @@ use core::fmt::Write;
 
 /// Error returned by [`unescape`] and [`unescape_str`].
 ///
-/// Its `Display` text is the [`BadEscape`](Self::BadEscape) string, or
-/// `unescaped bytes are not valid UTF-8`.
+/// Its `Display` text is the [`BadEscape`](Self::BadEscape) reason and byte
+/// offset, or `unescaped bytes are not valid UTF-8`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum UnescapeError {
     /// The unescaped bytes are not valid UTF-8. Only produced by
@@ -39,9 +39,26 @@ pub enum UnescapeError {
     #[error("unescaped bytes are not valid UTF-8")]
     InvalidUtf8,
     /// A malformed escape sequence or structural problem in the literal.
-    /// The string describes the specific failure.
-    #[error("{0}")]
-    BadEscape(&'static str),
+    ///
+    /// `offset` is a byte index into the token `raw` passed to
+    /// [`unescape`] / [`unescape_str`], pointing at the
+    /// start of the offending escape (the `\`) when applicable, or at the
+    /// byte where the structural rule failed otherwise.
+    #[error("{reason} (byte {offset})")]
+    BadEscape {
+        /// Human-readable failure (same strings as before this field existed).
+        reason: &'static str,
+        /// Byte offset into the literal token `raw`.
+        offset: usize,
+    },
+}
+
+#[inline]
+fn bad_escape(raw_len: usize, at: usize, reason: &'static str) -> UnescapeError {
+    UnescapeError::BadEscape {
+        reason,
+        offset: at.min(raw_len),
+    }
 }
 
 /// Unescape a textproto string token — one or more adjacent quoted literals —
@@ -59,7 +76,9 @@ pub enum UnescapeError {
 /// literal, and on the first malformed escape or unterminated literal.
 pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
     let mut out = Vec::new();
+    let raw_len = raw.len();
     let mut s = raw.as_bytes();
+    let at = |s: &[u8]| raw_len - s.len();
     loop {
         // Each iteration consumes one quoted literal. Every iteration after
         // the first starts at a quote (checked at the bottom of the loop), so
@@ -67,29 +86,34 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
         let quote = match s.first() {
             Some(&quote @ (b'"' | b'\'')) => quote,
             Some(_) => {
-                return Err(UnescapeError::BadEscape(
+                return Err(bad_escape(
+                    raw_len,
+                    at(s),
                     "string literal must start with a quote",
                 ));
             }
-            None => return Err(UnescapeError::BadEscape("unterminated string")),
+            None => return Err(bad_escape(raw_len, at(s), "unterminated string")),
         };
         s = &s[1..];
         loop {
             match s.first() {
-                None => return Err(UnescapeError::BadEscape("unterminated string")),
+                None => return Err(bad_escape(raw_len, at(s), "unterminated string")),
                 Some(&c) if c == quote => {
                     s = &s[1..];
                     break;
                 }
                 Some(b'\n') | Some(0) => {
-                    return Err(UnescapeError::BadEscape(
+                    return Err(bad_escape(
+                        raw_len,
+                        at(s),
                         "raw newline/NUL in string literal",
                     ));
                 }
                 Some(b'\\') => {
+                    let escape_at = at(s);
                     s = &s[1..];
                     let Some(&esc) = s.first() else {
-                        return Err(UnescapeError::BadEscape("unterminated escape"));
+                        return Err(bad_escape(raw_len, escape_at, "unterminated escape"));
                     };
                     s = &s[1..];
                     match esc {
@@ -116,7 +140,11 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
                                 }
                             }
                             if v > 0xFF {
-                                return Err(UnescapeError::BadEscape("octal escape out of range"));
+                                return Err(bad_escape(
+                                    raw_len,
+                                    escape_at,
+                                    "octal escape out of range",
+                                ));
                             }
                             out.push(v as u8);
                         }
@@ -124,7 +152,7 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
                             // 1–2 hex digits.
                             let (v, consumed) = take_hex(s, 2);
                             if consumed == 0 {
-                                return Err(UnescapeError::BadEscape("invalid \\x escape"));
+                                return Err(bad_escape(raw_len, escape_at, "invalid \\x escape"));
                             }
                             s = &s[consumed..];
                             out.push(v as u8);
@@ -132,28 +160,36 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
                         b'u' => {
                             let (cp, n) = take_hex(s, 4);
                             if n != 4 {
-                                return Err(UnescapeError::BadEscape("invalid \\u escape"));
+                                return Err(bad_escape(raw_len, escape_at, "invalid \\u escape"));
                             }
                             s = &s[4..];
                             // Textproto's \u is BMP-only — surrogate codepoints are
                             // rejected outright (no UTF-16 pair recombination). For
                             // non-BMP, use \U00010437 etc.
                             if (0xD800..0xE000).contains(&cp) {
-                                return Err(UnescapeError::BadEscape(
+                                return Err(bad_escape(
+                                    raw_len,
+                                    escape_at,
                                     "\\u escape is surrogate; use \\U for non-BMP",
                                 ));
                             }
-                            push_utf8(&mut out, cp)?;
+                            push_utf8(&mut out, cp, escape_at)?;
                         }
                         b'U' => {
                             let (cp, n) = take_hex(s, 8);
                             if n != 8 {
-                                return Err(UnescapeError::BadEscape("invalid \\U escape"));
+                                return Err(bad_escape(raw_len, escape_at, "invalid \\U escape"));
                             }
                             s = &s[8..];
-                            push_utf8(&mut out, cp)?;
+                            push_utf8(&mut out, cp, escape_at)?;
                         }
-                        _ => return Err(UnescapeError::BadEscape("unrecognised escape sequence")),
+                        _ => {
+                            return Err(bad_escape(
+                                raw_len,
+                                escape_at,
+                                "unrecognised escape sequence",
+                            ));
+                        }
                     }
                 }
                 Some(&c) => {
@@ -168,7 +204,9 @@ pub fn unescape(raw: &str) -> Result<Vec<u8>, UnescapeError> {
         match s.first() {
             Some(b'"' | b'\'') => {}
             Some(_) => {
-                return Err(UnescapeError::BadEscape(
+                return Err(bad_escape(
+                    raw_len,
+                    at(s),
                     "unexpected content after string literal",
                 ));
             }
@@ -244,8 +282,11 @@ fn take_hex(s: &[u8], max: usize) -> (u32, usize) {
 
 /// Push the UTF-8 encoding of `cp` onto `out`.
 #[inline]
-fn push_utf8(out: &mut Vec<u8>, cp: u32) -> Result<(), UnescapeError> {
-    let c = char::from_u32(cp).ok_or(UnescapeError::BadEscape("invalid unicode code point"))?;
+fn push_utf8(out: &mut Vec<u8>, cp: u32, escape_at: usize) -> Result<(), UnescapeError> {
+    let c = char::from_u32(cp).ok_or(UnescapeError::BadEscape {
+        reason: "invalid unicode code point",
+        offset: escape_at,
+    })?;
     let mut buf = [0u8; 4];
     out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
     Ok(())
@@ -339,7 +380,7 @@ mod tests {
         );
         assert_eq!(
             alloc::format!("{}", unescape(r#""\xzz""#).unwrap_err()),
-            r"invalid \x escape"
+            r"invalid \x escape (byte 1)"
         );
     }
 
@@ -395,18 +436,30 @@ mod tests {
 
     #[test]
     fn unescape_rejects_content_outside_quotes() {
-        for (input, reason) in [
-            ("", "unterminated string"),
-            ("hello", "string literal must start with a quote"),
-            (" hello", "string literal must start with a quote"),
-            (" \"hello\"", "string literal must start with a quote"),
-            ("\"a\" b", "unexpected content after string literal"),
-            ("\"\" hello", "unexpected content after string literal"),
-            ("\"a\" # c\n b", "unexpected content after string literal"),
+        for (input, reason, offset) in [
+            ("", "unterminated string", 0),
+            ("hello", "string literal must start with a quote", 0),
+            (" hello", "string literal must start with a quote", 0),
+            (" \"hello\"", "string literal must start with a quote", 0),
+            ("\"a\" b", "unexpected content after string literal", 4),
+            ("\"\" hello", "unexpected content after string literal", 3),
+            (
+                "\"a\" # c\n b",
+                "unexpected content after string literal",
+                9,
+            ),
         ] {
-            let want = UnescapeError::BadEscape(reason);
-            assert_eq!(unescape(input), Err(want), "input: {input:?}");
-            assert_eq!(unescape_str(input), Err(want), "input: {input:?}");
+            let got = unescape(input).unwrap_err();
+            let UnescapeError::BadEscape {
+                reason: r,
+                offset: off,
+            } = got
+            else {
+                panic!("input: {input:?}");
+            };
+            assert_eq!(r, reason, "input: {input:?}");
+            assert_eq!(off, offset, "input: {input:?}");
+            assert_eq!(unescape_str(input).unwrap_err(), got, "input: {input:?}");
         }
     }
 
@@ -506,10 +559,30 @@ mod tests {
     #[test]
     fn unescape_uppercase_hex_requires_a_digit() {
         for input in [r#""\X""#, r#"'\Xg'"#, r#""\X-1""#] {
-            let expected = UnescapeError::BadEscape("invalid \\x escape");
-            assert_eq!(unescape(input), Err(expected), "input: {input:?}");
-            assert_eq!(unescape_str(input), Err(expected), "input: {input:?}");
+            let err = unescape(input).unwrap_err();
+            assert_eq!(
+                err,
+                UnescapeError::BadEscape {
+                    reason: "invalid \\x escape",
+                    offset: 1,
+                },
+                "input: {input:?}"
+            );
+            assert_eq!(unescape_str(input).unwrap_err(), err, "input: {input:?}");
         }
+    }
+
+    #[test]
+    fn bad_escape_offset_in_second_concatenated_literal() {
+        let input = "\"abc\"\n  \"def\\q\"";
+        let err = unescape_str(input).unwrap_err();
+        assert_eq!(
+            err,
+            UnescapeError::BadEscape {
+                reason: "unrecognised escape sequence",
+                offset: input.find('\\').unwrap(),
+            }
+        );
     }
 
     // ── escape ──────────────────────────────────────────────────────────────
