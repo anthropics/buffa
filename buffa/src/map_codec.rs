@@ -1114,32 +1114,15 @@ where
         return Ok(());
     }
 
-    let entry_limit = buf.remaining() - entry_len;
-    let mut val_status = MapValueDecodeStatus::Known;
-    while buf.remaining() > entry_limit {
-        let entry_tag = Tag::decode(buf)?;
-        match entry_tag.field_number() {
-            1 => {
-                check_wire_type(entry_tag, KC::WIRE_TYPE)?;
-                KC::merge(&mut key, buf, ctx)?;
-            }
-            2 => {
-                check_wire_type(entry_tag, VC::WIRE_TYPE)?;
-                val_status = VC::merge(&mut val, buf, ctx)?;
-            }
-            _ => {
-                skip_field_depth(entry_tag, buf, ctx.depth())?;
-            }
-        }
-    }
-    if buf.remaining() != entry_limit {
-        let remaining = buf.remaining();
-        if remaining > entry_limit {
-            buf.advance(remaining - entry_limit);
-        } else {
-            return Err(DecodeError::UnexpectedEof);
-        }
-    }
+    // Decode from a view limited to this entry. Length-delimited keys and
+    // values otherwise see the rest of the parent message and can consume
+    // bytes past the entry before the arithmetic boundary check notices.
+    // Erase the inner buffer type before taking the limit so recursive map
+    // message types do not grow `Take`'s type at each level. `Take` delegates
+    // `copy_to_bytes`, preserving zero-copy decoding from `Bytes` inputs.
+    let input: &mut dyn Buf = buf;
+    let mut entry = input.take(entry_len);
+    let val_status = merge_entry_contents::<KC, VC>(&mut key, &mut val, &mut entry, ctx)?;
     if matches!(val_status, MapValueDecodeStatus::Known) {
         map.storage_insert(key, val);
     }
@@ -1461,6 +1444,92 @@ mod tests {
             merge_entry::<Str, Int32, _>(&mut map, &mut &wire[..], DecodeContext::new(10, &limit))
                 .unwrap_err();
         assert!(matches!(err, DecodeError::UnexpectedEof));
+    }
+
+    #[test]
+    fn malformed_entry_does_not_consume_bytes_after_entry() {
+        // The key's string length extends past this 3-byte entry. The four
+        // following bytes belong to the surrounding message and must not be
+        // consumed as part of the malformed key.
+        let wire = [0x03, 0x0a, 0x05, b'a', b'b', b'c', b'd', b'e'];
+        fn check(mut buf: impl Buf) {
+            let mut map: Map<String, i32> = Map::default();
+            let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+
+            let err =
+                merge_entry::<Str, Int32, _>(&mut map, &mut buf, DecodeContext::new(10, &limit))
+                    .unwrap_err();
+
+            assert!(matches!(err, DecodeError::UnexpectedEof));
+            assert!(map.is_empty());
+            let remaining = buf.copy_to_bytes(buf.remaining());
+            assert!(
+                remaining.ends_with(b"bcde"),
+                "remaining bytes: {remaining:?}"
+            );
+        }
+
+        // Both contiguous and split input must leave the following message
+        // bytes intact.
+        check(wire.as_slice());
+        check((&wire[..2]).chain(&wire[2..]));
+    }
+
+    #[test]
+    fn malformed_unknown_entry_field_does_not_consume_bytes_after_entry() {
+        // An unknown length-delimited field inside the entry claims bytes from
+        // the surrounding message. Skipping it must still respect the entry
+        // boundary.
+        let wire = [0x03, 0x1a, 0x05, b'a', b'b', b'c', b'd', b'e'];
+        fn check(mut buf: impl Buf) {
+            let mut map: Map<String, i32> = Map::default();
+            let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+
+            let err =
+                merge_entry::<Str, Int32, _>(&mut map, &mut buf, DecodeContext::new(10, &limit))
+                    .unwrap_err();
+
+            assert!(matches!(err, DecodeError::UnexpectedEof));
+            assert!(map.is_empty());
+            let remaining = buf.copy_to_bytes(buf.remaining());
+            assert!(
+                remaining.ends_with(b"bcde"),
+                "remaining bytes: {remaining:?}"
+            );
+        }
+
+        check(wire.as_slice());
+        check((&wire[..2]).chain(&wire[2..]));
+    }
+
+    #[test]
+    fn malformed_message_value_does_not_consume_bytes_after_entry() {
+        // The map entry ends after two bytes of its message value, but the
+        // value's length prefix claims a payload that reaches into later
+        // parent fields.
+        let wire = [0x04, 0x12, 0x05, 0x08, 0x01, 0x08, 0x02, 0x08, 0x03];
+        fn check(mut buf: impl Buf) {
+            let mut map: Map<i32, crate::__doctest_fixtures::Person> = Map::default();
+            let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+
+            let err = merge_entry::<Int32, Msg<crate::__doctest_fixtures::Person>, _>(
+                &mut map,
+                &mut buf,
+                DecodeContext::new(10, &limit),
+            )
+            .unwrap_err();
+
+            assert!(matches!(err, DecodeError::UnexpectedEof));
+            assert!(map.is_empty());
+            let remaining = buf.copy_to_bytes(buf.remaining());
+            assert!(
+                remaining.ends_with(&[0x08, 0x02, 0x08, 0x03]),
+                "remaining bytes: {remaining:?}"
+            );
+        }
+
+        check(wire.as_slice());
+        check((&wire[..3]).chain(&wire[3..]));
     }
 
     #[test]
