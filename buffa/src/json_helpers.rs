@@ -1416,7 +1416,20 @@ pub mod bytes {
     /// Takes `&[u8]` so both `Vec<u8>` and `bytes::Bytes` fields are
     /// accepted via deref coercion at the `#[serde(with = ...)]` call site.
     pub fn serialize<S: Serializer>(value: &[u8], s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&STANDARD.encode(value))
+        // Common small bytes fields do not need a temporary heap-allocated
+        // String. 192 input bytes produce at most 256 base64 bytes, including
+        // padding. Keep the original allocation path for larger payloads.
+        if value.len() <= 192 {
+            let mut encoded = [0u8; 256];
+            let len = STANDARD
+                .encode_slice(value, &mut encoded)
+                .map_err(serde::ser::Error::custom)?;
+            let encoded = core::str::from_utf8(&encoded[..len])
+                .map_err(serde::ser::Error::custom)?;
+            s.serialize_str(encoded)
+        } else {
+            s.serialize_str(&STANDARD.encode(value))
+        }
     }
 
     /// Deserialize from a base64-encoded string (or JSON `null` → empty).

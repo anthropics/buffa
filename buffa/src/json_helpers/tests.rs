@@ -418,6 +418,23 @@ fn bytes_serializes_as_base64() {
 }
 
 #[test]
+fn bytes_base64_stack_boundary_matches_standard_engine() {
+    use base64::Engine as _;
+
+    for len in [0, 1, 2, 3, 16, 47, 48, 191, 192, 193, 194, 1024] {
+        let value: Vec<u8> = (0..len)
+            .map(|i| (i as u8).wrapping_mul(47).wrapping_add(199))
+            .collect();
+        let expected = STANDARD.encode(&value);
+        let encoded = serde_json::to_string(&SerdeBytes(value.clone())).unwrap();
+        assert_eq!(encoded, alloc::format!("\"{expected}\""), "len={len}");
+
+        let decoded: SerdeBytes = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.0, value, "len={len}");
+    }
+}
+
+#[test]
 fn bytes_deserializes_all_base64_dialects() {
     // All three dialects decode to the same bytes.
     const EXPECTED: &[u8] = &[0xde, 0xad, 0xbe, 0xef];
