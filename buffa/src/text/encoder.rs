@@ -68,6 +68,11 @@ pub struct TextEncoder<'a> {
     /// [`write_repeated_extension`](Self::write_repeated_extension) writes it
     /// again before each element after the first.
     ext_name: Option<&'static str>,
+    /// Set while
+    /// [`write_repeated_scalar_extension`](Self::write_repeated_scalar_extension)
+    /// writes a `[a, b]` list: `true` before the first element. Scalar
+    /// writers then write the list separator instead of `": "`.
+    scalar_list: Option<bool>,
 }
 
 impl<'a> TextEncoder<'a> {
@@ -81,6 +86,7 @@ impl<'a> TextEncoder<'a> {
             emit_unknown: false,
             last: Last::Open,
             ext_name: None,
+            scalar_list: None,
         }
     }
 
@@ -95,6 +101,7 @@ impl<'a> TextEncoder<'a> {
             emit_unknown: false,
             last: Last::Open,
             ext_name: None,
+            scalar_list: None,
         }
     }
 
@@ -246,6 +253,37 @@ impl<'a> TextEncoder<'a> {
             }
             (None, _) | (Some(_), []) => self.write_message_list(messages),
         }
+    }
+
+    /// Write the elements of a repeated scalar or enum extension, after the
+    /// caller has written the extension's bracketed name once.
+    ///
+    /// The same two forms as
+    /// [`write_repeated_extension`](Self::write_repeated_extension): one
+    /// `[full_name]: value` entry per element when
+    /// [`write_extension_fields`](Self::write_extension_fields) wrote the
+    /// name, and one `: [a, b]` list otherwise or when there are no elements.
+    pub(crate) fn write_repeated_scalar_extension<T>(
+        &mut self,
+        values: &[T],
+        mut write: impl FnMut(&mut Self, &T) -> core::fmt::Result,
+    ) -> core::fmt::Result {
+        debug_assert!(self.ext_name.is_none() || self.last == Last::Name);
+        if let (Some(name), [first, rest @ ..]) = (self.ext_name, values) {
+            write(self, first)?;
+            for value in rest {
+                self.write_extension_name(name)?;
+                write(self, value)?;
+            }
+            return Ok(());
+        }
+        self.prepare(Last::Value)?;
+        self.w.write_str(": [")?;
+        self.scalar_list = Some(true);
+        let written = values.iter().try_for_each(|value| write(self, value));
+        self.scalar_list = None;
+        written?;
+        self.w.write_char(']')
     }
 
     fn write_message_list<M: super::TextFormat>(&mut self, messages: &[M]) -> core::fmt::Result {
@@ -473,14 +511,30 @@ impl<'a> TextEncoder<'a> {
 
     // ── scalar writers ──────────────────────────────────────────────────────
 
+    /// Write what comes before a scalar value: `": "` after a field name, or
+    /// `", "` between the elements of a scalar list.
+    fn begin_scalar(&mut self) -> core::fmt::Result {
+        match self.scalar_list {
+            None => {
+                self.prepare(Last::Value)?;
+                self.w.write_str(": ")
+            }
+            Some(true) => {
+                self.scalar_list = Some(false);
+                Ok(())
+            }
+            Some(false) => self.w.write_str(", "),
+        }
+    }
+
     /// Write an `i32` value with a `": "` prefix.
     ///
     /// # Errors
     ///
     /// Propagates [`core::fmt::Error`] from the underlying writer.
     pub fn write_i32(&mut self, v: i32) -> core::fmt::Result {
-        self.prepare(Last::Value)?;
-        write!(self.w, ": {v}")
+        self.begin_scalar()?;
+        write!(self.w, "{v}")
     }
 
     /// Write an `i64` value with a `": "` prefix.
@@ -489,8 +543,8 @@ impl<'a> TextEncoder<'a> {
     ///
     /// Propagates [`core::fmt::Error`] from the underlying writer.
     pub fn write_i64(&mut self, v: i64) -> core::fmt::Result {
-        self.prepare(Last::Value)?;
-        write!(self.w, ": {v}")
+        self.begin_scalar()?;
+        write!(self.w, "{v}")
     }
 
     /// Write a `u32` value with a `": "` prefix.
@@ -499,8 +553,8 @@ impl<'a> TextEncoder<'a> {
     ///
     /// Propagates [`core::fmt::Error`] from the underlying writer.
     pub fn write_u32(&mut self, v: u32) -> core::fmt::Result {
-        self.prepare(Last::Value)?;
-        write!(self.w, ": {v}")
+        self.begin_scalar()?;
+        write!(self.w, "{v}")
     }
 
     /// Write a `u64` value with a `": "` prefix.
@@ -509,8 +563,8 @@ impl<'a> TextEncoder<'a> {
     ///
     /// Propagates [`core::fmt::Error`] from the underlying writer.
     pub fn write_u64(&mut self, v: u64) -> core::fmt::Result {
-        self.prepare(Last::Value)?;
-        write!(self.w, ": {v}")
+        self.begin_scalar()?;
+        write!(self.w, "{v}")
     }
 
     /// Write an `f32` value as the shortest decimal that reads back as the
@@ -525,8 +579,7 @@ impl<'a> TextEncoder<'a> {
     ///
     /// Propagates [`core::fmt::Error`] from the underlying writer.
     pub fn write_f32(&mut self, v: f32) -> core::fmt::Result {
-        self.prepare(Last::Value)?;
-        self.w.write_str(": ")?;
+        self.begin_scalar()?;
         if v.is_finite() {
             let mut digits = F32Digits::new();
             if write!(digits, "{v}").is_ok() {
@@ -549,8 +602,7 @@ impl<'a> TextEncoder<'a> {
     ///
     /// Propagates [`core::fmt::Error`] from the underlying writer.
     pub fn write_f64(&mut self, v: f64) -> core::fmt::Result {
-        self.prepare(Last::Value)?;
-        self.w.write_str(": ")?;
+        self.begin_scalar()?;
         write_float(self.w, v)
     }
 
@@ -560,8 +612,8 @@ impl<'a> TextEncoder<'a> {
     ///
     /// Propagates [`core::fmt::Error`] from the underlying writer.
     pub fn write_bool(&mut self, v: bool) -> core::fmt::Result {
-        self.prepare(Last::Value)?;
-        self.w.write_str(if v { ": true" } else { ": false" })
+        self.begin_scalar()?;
+        self.w.write_str(if v { "true" } else { "false" })
     }
 
     /// Write a `string` value as a quoted literal. UTF-8 codepoints pass
@@ -571,8 +623,7 @@ impl<'a> TextEncoder<'a> {
     ///
     /// Propagates [`core::fmt::Error`] from the underlying writer.
     pub fn write_string(&mut self, v: &str) -> core::fmt::Result {
-        self.prepare(Last::Value)?;
-        self.w.write_str(": ")?;
+        self.begin_scalar()?;
         escape_str(v, self.w)
     }
 
@@ -583,8 +634,7 @@ impl<'a> TextEncoder<'a> {
     ///
     /// Propagates [`core::fmt::Error`] from the underlying writer.
     pub fn write_bytes(&mut self, v: &[u8]) -> core::fmt::Result {
-        self.prepare(Last::Value)?;
-        self.w.write_str(": ")?;
+        self.begin_scalar()?;
         escape_bytes(v, self.w)
     }
 
@@ -594,8 +644,7 @@ impl<'a> TextEncoder<'a> {
     ///
     /// Propagates [`core::fmt::Error`] from the underlying writer.
     pub fn write_enum_name(&mut self, name: &str) -> core::fmt::Result {
-        self.prepare(Last::Value)?;
-        self.w.write_str(": ")?;
+        self.begin_scalar()?;
         self.w.write_str(name)
     }
 

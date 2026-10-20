@@ -227,9 +227,8 @@ pub type AnyTextMergeFn =
 
 /// Registry entry for a single extension field's textproto conversion.
 ///
-/// Carries fn-ptrs for the `[pkg.ext] { ... }` bracket syntax. Covers
-/// message- and group-typed extensions, singular and repeated. Scalar and
-/// enum extensions have no text entry.
+/// Carries fn-ptrs for the `[pkg.ext] { ... }` and `[pkg.ext]: value`
+/// bracket syntax. Covers extensions of every type, singular and repeated.
 #[cfg(feature = "text")]
 pub struct TextExtEntry {
     /// Field number on the extendee.
@@ -705,10 +704,264 @@ fn oversized_message_error() -> crate::text::ParseError {
 }
 
 // ── Text extension converters (codegen points TextExtEntry fields here) ────
-//
-// Message- and group-typed extensions only, singular and repeated. Scalar
-// text helpers would mirror the JSON ones in `extension_registry::helpers`;
-// deferred until a use case appears.
+
+/// An extension codec whose values are written and read as one textproto
+/// scalar: the number, bool, string and bytes codecs in
+/// [`codecs`](crate::extension::codecs), and [`EnumText`] for enums.
+///
+/// [`scalar_encode_text`] and [`scalar_merge_text`] (and their `repeated_`
+/// forms) are generic over it.
+#[cfg(feature = "text")]
+pub trait TextScalarCodec: crate::extension::codecs::SingularCodec {
+    /// Write `value` after a field name, as the matching
+    /// [`TextEncoder`](crate::text::TextEncoder) `write_*` method does.
+    ///
+    /// # Errors
+    ///
+    /// Propagates [`core::fmt::Error`] from the underlying writer.
+    fn write_text(value: &Self::Value, enc: &mut crate::text::TextEncoder<'_>)
+        -> core::fmt::Result;
+
+    /// Read one value, as the matching
+    /// [`TextDecoder`](crate::text::TextDecoder) `read_*` method does.
+    ///
+    /// # Errors
+    ///
+    /// Returns a parse error for a missing or invalid value.
+    fn read_text(
+        dec: &mut crate::text::TextDecoder<'_>,
+    ) -> Result<Self::Value, crate::text::ParseError>;
+}
+
+#[cfg(feature = "text")]
+macro_rules! text_scalar_codec {
+    ($($codec:ident: $write:ident, $read:ident;)*) => {$(
+        impl TextScalarCodec for crate::extension::codecs::$codec {
+            fn write_text(
+                value: &Self::Value,
+                enc: &mut crate::text::TextEncoder<'_>,
+            ) -> core::fmt::Result {
+                enc.$write(*value)
+            }
+
+            fn read_text(
+                dec: &mut crate::text::TextDecoder<'_>,
+            ) -> Result<Self::Value, crate::text::ParseError> {
+                dec.$read()
+            }
+        }
+    )*};
+}
+
+#[cfg(feature = "text")]
+text_scalar_codec! {
+    Int32: write_i32, read_i32;
+    Sint32: write_i32, read_i32;
+    Sfixed32: write_i32, read_i32;
+    Int64: write_i64, read_i64;
+    Sint64: write_i64, read_i64;
+    Sfixed64: write_i64, read_i64;
+    Uint32: write_u32, read_u32;
+    Fixed32: write_u32, read_u32;
+    Uint64: write_u64, read_u64;
+    Fixed64: write_u64, read_u64;
+    Float: write_f32, read_f32;
+    Double: write_f64, read_f64;
+    Bool: write_bool, read_bool;
+}
+
+#[cfg(feature = "text")]
+impl TextScalarCodec for crate::extension::codecs::StringCodec {
+    fn write_text(
+        value: &alloc::string::String,
+        enc: &mut crate::text::TextEncoder<'_>,
+    ) -> core::fmt::Result {
+        enc.write_string(value)
+    }
+
+    fn read_text(
+        dec: &mut crate::text::TextDecoder<'_>,
+    ) -> Result<alloc::string::String, crate::text::ParseError> {
+        Ok(dec.read_string()?.into_owned())
+    }
+}
+
+#[cfg(feature = "text")]
+impl TextScalarCodec for crate::extension::codecs::BytesCodec {
+    fn write_text(
+        value: &alloc::vec::Vec<u8>,
+        enc: &mut crate::text::TextEncoder<'_>,
+    ) -> core::fmt::Result {
+        enc.write_bytes(value)
+    }
+
+    fn read_text(
+        dec: &mut crate::text::TextDecoder<'_>,
+    ) -> Result<alloc::vec::Vec<u8>, crate::text::ParseError> {
+        dec.read_bytes()
+    }
+}
+
+/// Textproto encode for a singular scalar, string or bytes extension: write
+/// the last record that decodes as `C`, as [`ExtensionSet::extension`] reads
+/// it.
+///
+/// Codegen emits
+/// `text_encode: ::buffa::type_registry::scalar_encode_text::<Int32>` (with
+/// the extension's codec) in the `TextExtEntry` const of such an extension
+/// when `generate_text` is on. When no record decodes, the value is the
+/// type's default, as [`message_encode_text`] writes an empty message.
+///
+/// # Errors
+///
+/// Propagates [`core::fmt::Error`] from the underlying writer.
+///
+/// [`ExtensionSet::extension`]: crate::ExtensionSet::extension
+#[cfg(feature = "text")]
+pub fn scalar_encode_text<C>(
+    n: u32,
+    f: &crate::unknown_fields::UnknownFields,
+    enc: &mut crate::text::TextEncoder<'_>,
+) -> core::fmt::Result
+where
+    C: TextScalarCodec,
+    C::Value: Default,
+{
+    let value = f
+        .iter()
+        .rev()
+        .filter(|field| field.number == n)
+        .find_map(|field| C::decode_one(&field.data))
+        .unwrap_or_default();
+    C::write_text(&value, enc)
+}
+
+/// Textproto merge for a singular scalar, string or bytes extension: read one
+/// value and return its record.
+///
+/// # Errors
+///
+/// Returns a parse error for a missing or invalid value.
+#[cfg(feature = "text")]
+pub fn scalar_merge_text<C: TextScalarCodec>(
+    dec: &mut crate::text::TextDecoder<'_>,
+    n: u32,
+) -> Result<alloc::vec::Vec<crate::unknown_fields::UnknownField>, crate::text::ParseError> {
+    Ok(alloc::vec![scalar_record::<C>(dec, n)?])
+}
+
+/// Textproto encode for a repeated scalar, string or bytes extension, packed
+/// or not: one `[full_name]: value` entry per element, in wire order.
+///
+/// Called directly, after a name the caller wrote, it writes the elements as
+/// one list value, `: [a, b]`, as [`repeated_message_encode_text`] does. With
+/// no elements the value is `: []`.
+///
+/// # Errors
+///
+/// Propagates [`core::fmt::Error`] from the underlying writer.
+#[cfg(feature = "text")]
+pub fn repeated_scalar_encode_text<C: TextScalarCodec>(
+    n: u32,
+    f: &crate::unknown_fields::UnknownFields,
+    enc: &mut crate::text::TextEncoder<'_>,
+) -> core::fmt::Result {
+    use crate::extension::codecs::Repeated;
+    use crate::extension::ExtensionCodec;
+    enc.write_repeated_scalar_extension(&Repeated::<C>::decode(n, f), |enc, value| {
+        C::write_text(value, enc)
+    })
+}
+
+/// Textproto merge for a repeated scalar, string or bytes extension. Accepts
+/// a list or a single value and returns one record per element, unpacked.
+///
+/// # Errors
+///
+/// Returns a parse error for invalid text or an exceeded decode budget.
+#[cfg(feature = "text")]
+pub fn repeated_scalar_merge_text<C: TextScalarCodec>(
+    dec: &mut crate::text::TextDecoder<'_>,
+    n: u32,
+) -> Result<alloc::vec::Vec<crate::unknown_fields::UnknownField>, crate::text::ParseError> {
+    let mut records = alloc::vec::Vec::new();
+    dec.read_repeated_scalar_into(&mut records, |dec| scalar_record::<C>(dec, n))?;
+    Ok(records)
+}
+
+#[cfg(feature = "text")]
+fn scalar_record<C: TextScalarCodec>(
+    dec: &mut crate::text::TextDecoder<'_>,
+    n: u32,
+) -> Result<crate::unknown_fields::UnknownField, crate::text::ParseError> {
+    let value = C::read_text(dec)?;
+    Ok(crate::unknown_fields::UnknownField {
+        number: n,
+        data: C::try_encode_one(&value).map_err(|_| oversized_message_error())?,
+    })
+}
+
+/// The values of an enum extension, as the scalar text helpers read and
+/// write them: codegen emits
+/// `scalar_encode_text::<::buffa::type_registry::EnumText<E, CLOSED>>` and
+/// the other three for an enum extension when `generate_text` is on.
+///
+/// A value is written as its variant name, or as its number when `E` has no
+/// variant for it. When `CLOSED` is true, text holds only the variants of
+/// `E`, as for a closed enum field: a value with no variant is skipped on
+/// encode, as a record that does not decode is, and its number is rejected
+/// on merge.
+#[cfg(feature = "text")]
+pub struct EnumText<E, const CLOSED: bool>(core::marker::PhantomData<fn() -> E>);
+
+#[cfg(feature = "text")]
+impl<E: crate::Enumeration, const CLOSED: bool> crate::extension::codecs::SingularCodec
+    for EnumText<E, CLOSED>
+{
+    type Value = i32;
+
+    fn decode_one(data: &crate::unknown_fields::UnknownFieldData) -> Option<i32> {
+        crate::extension::codecs::EnumI32::decode_one(data)
+            .filter(|&value| !CLOSED || E::from_i32(value).is_some())
+    }
+
+    fn decode_packed(bytes: &[u8], out: &mut alloc::vec::Vec<i32>) {
+        let start = out.len();
+        crate::extension::codecs::EnumI32::decode_packed(bytes, out);
+        if CLOSED {
+            let decoded = out.split_off(start);
+            out.extend(
+                decoded
+                    .into_iter()
+                    .filter(|&value| E::from_i32(value).is_some()),
+            );
+        }
+    }
+
+    fn try_encode_one(
+        value: &i32,
+    ) -> Result<crate::unknown_fields::UnknownFieldData, crate::EncodeError> {
+        crate::extension::codecs::EnumI32::try_encode_one(value)
+    }
+}
+
+#[cfg(feature = "text")]
+impl<E: crate::Enumeration, const CLOSED: bool> TextScalarCodec for EnumText<E, CLOSED> {
+    fn write_text(value: &i32, enc: &mut crate::text::TextEncoder<'_>) -> core::fmt::Result {
+        match E::from_i32(*value) {
+            Some(variant) => enc.write_enum_name(variant.proto_name()),
+            None => enc.write_enum_number(*value),
+        }
+    }
+
+    fn read_text(dec: &mut crate::text::TextDecoder<'_>) -> Result<i32, crate::text::ParseError> {
+        if CLOSED {
+            Ok(dec.read_closed_enum_by_name::<E>()?.to_i32())
+        } else {
+            dec.read_enum_by_name::<E>()
+        }
+    }
+}
 
 /// Textproto encode for a repeated message extension: write each element as
 /// its own `[full_name] { ... }` entry, in wire order.
@@ -1251,6 +1504,130 @@ mod tests {
                 encode(60, &fields, &mut enc).unwrap();
                 assert_eq!(s, "[x]: [{\n  n: 1\n}, {\n  n: 2\n}]", "{name}");
             }
+        }
+
+        #[test]
+        fn repeated_scalar_helpers_write_a_list_after_a_name_the_caller_wrote() {
+            use crate::extension::codecs::{Float, Int32, StringCodec};
+
+            fn encode_after_name(
+                encode: impl FnOnce(&mut crate::text::TextEncoder<'_>) -> core::fmt::Result,
+            ) -> alloc::string::String {
+                let mut s = alloc::string::String::new();
+                let mut enc = crate::text::TextEncoder::new(&mut s);
+                enc.write_extension_name("x").unwrap();
+                encode(&mut enc).unwrap();
+                // A field after the list gets the usual separators back.
+                enc.write_field_name("y").unwrap();
+                enc.write_i32(1).unwrap();
+                s
+            }
+
+            let mut dec = crate::text::TextDecoder::new("f: [1, -2]");
+            dec.read_field_name().unwrap();
+            let ints = fields_from(repeated_scalar_merge_text::<Int32>(&mut dec, 60).unwrap());
+            assert_eq!(
+                encode_after_name(|enc| repeated_scalar_encode_text::<Int32>(60, &ints, enc)),
+                "[x]: [1, -2] y: 1"
+            );
+            assert_eq!(
+                encode_after_name(|enc| repeated_scalar_encode_text::<Int32>(61, &ints, enc)),
+                "[x]: [] y: 1"
+            );
+
+            let mut dec = crate::text::TextDecoder::new(r#"f: ["a\"", ""] g: [0.5, inf]"#);
+            dec.read_field_name().unwrap();
+            let mut records = repeated_scalar_merge_text::<StringCodec>(&mut dec, 60).unwrap();
+            dec.read_field_name().unwrap();
+            records.extend(repeated_scalar_merge_text::<Float>(&mut dec, 61).unwrap());
+            let fields = fields_from(records);
+            assert_eq!(
+                encode_after_name(|enc| repeated_scalar_encode_text::<StringCodec>(
+                    60, &fields, enc
+                )),
+                r#"[x]: ["a\"", ""] y: 1"#
+            );
+            assert_eq!(
+                encode_after_name(|enc| repeated_scalar_encode_text::<Float>(61, &fields, enc)),
+                "[x]: [0.5, inf] y: 1"
+            );
+        }
+
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+        enum Level {
+            Low = 1,
+            High = 2,
+        }
+
+        impl crate::Enumeration for Level {
+            fn from_i32(v: i32) -> Option<Self> {
+                match v {
+                    1 => Some(Level::Low),
+                    2 => Some(Level::High),
+                    _ => None,
+                }
+            }
+            fn to_i32(&self) -> i32 {
+                *self as i32
+            }
+            fn proto_name(&self) -> &'static str {
+                match self {
+                    Level::Low => "LOW",
+                    Level::High => "HIGH",
+                }
+            }
+            fn from_proto_name(name: &str) -> Option<Self> {
+                match name {
+                    "LOW" => Some(Level::Low),
+                    "HIGH" => Some(Level::High),
+                    _ => None,
+                }
+            }
+        }
+
+        #[test]
+        fn enum_text_drops_values_without_a_variant_only_when_closed() {
+            use crate::extension::codecs::{EnumI32, PackedRepeated};
+            use crate::extension::ExtensionCodec;
+
+            let mut fields = UnknownFields::new();
+            PackedRepeated::<EnumI32>::encode(60, alloc::vec![1, 9, 2], &mut fields);
+            type Encode =
+                fn(u32, &UnknownFields, &mut crate::text::TextEncoder<'_>) -> core::fmt::Result;
+            for (encode, expected) in [
+                (
+                    repeated_scalar_encode_text::<EnumText<Level, false>> as Encode,
+                    "[x]: [LOW, 9, HIGH]",
+                ),
+                (
+                    repeated_scalar_encode_text::<EnumText<Level, true>>,
+                    "[x]: [LOW, HIGH]",
+                ),
+            ] {
+                let mut s = alloc::string::String::new();
+                let mut enc = crate::text::TextEncoder::new(&mut s);
+                enc.write_extension_name("x").unwrap();
+                encode(60, &fields, &mut enc).unwrap();
+                assert_eq!(s, expected);
+            }
+
+            let mut dec = crate::text::TextDecoder::new("f: [HIGH, 9]");
+            dec.read_field_name().unwrap();
+            let records =
+                repeated_scalar_merge_text::<EnumText<Level, false>>(&mut dec, 60).unwrap();
+            assert_eq!(
+                records
+                    .iter()
+                    .map(|r| &r.data)
+                    .collect::<alloc::vec::Vec<_>>(),
+                [&UnknownFieldData::Varint(2), &UnknownFieldData::Varint(9)]
+            );
+
+            let mut dec = crate::text::TextDecoder::new("f: [HIGH, 9]");
+            dec.read_field_name().unwrap();
+            let err =
+                repeated_scalar_merge_text::<EnumText<Level, true>>(&mut dec, 60).unwrap_err();
+            assert_eq!(err.kind, crate::text::ParseErrorKind::UnknownEnumValue);
         }
 
         /// Installs a global registry that holds [`REPEATED_HELPERS`] at

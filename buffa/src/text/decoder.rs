@@ -745,8 +745,8 @@ impl<'a> TextDecoder<'a> {
     /// `text_merge` consumes the value and produces unknown-field records at
     /// the extension's field number.
     ///
-    /// Repeated message and group entries accept a message list or a single
-    /// message value and produce one record per element.
+    /// Repeated entries accept a list or a single value and produce one
+    /// record per element.
     ///
     /// # Errors
     ///

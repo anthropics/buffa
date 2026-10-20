@@ -30,7 +30,7 @@ use crate::CodeGenError;
 ///
 /// Returns the generated tokens plus two lists of registry const identifiers
 /// emitted in the same scope: JSON entries (all types except `TYPE_GROUP`)
-/// and text entries (message/group only).
+/// and text entries (all types).
 pub(crate) fn generate_extensions(
     ctx: &CodeGenContext,
     extensions: &[FieldDescriptorProto],
@@ -95,7 +95,7 @@ fn generate_one(
             quote! { ::buffa::extension::codecs::Repeated<#inner_codec> }
         }
     } else {
-        inner_codec
+        inner_codec.clone()
     };
 
     // Proto2 `[default = ...]`. The proto spec only allows defaults on singular
@@ -159,9 +159,8 @@ fn generate_one(
     // Registry entries are feature-split into two separate consts. JSON
     // entries cover every type except TYPE_GROUP (proto3 JSON form
     // undefined — groups are a proto2-only legacy construct). Text entries
-    // cover message/group only (the conformance-exercised `[pkg.ext] { ... }`
-    // form). The two consts are independent: a group gets a text entry but
-    // no JSON entry; a scalar gets a JSON entry but no text entry.
+    // cover every type. The two consts are independent: a group gets a text
+    // entry but no JSON entry.
     let gates = ctx.config.feature_gates();
     let (json_const, json_ident) = if ctx.config.generate_json {
         match json_helper_tokens(ctx, field, ty, repeated, current_package, nesting)? {
@@ -211,7 +210,17 @@ fn generate_one(
     };
 
     let (text_const, text_ident) = if ctx.config.generate_text {
-        match text_helper_tokens(ctx, field, ty, repeated, current_package, nesting)? {
+        let field_features = crate::features::resolve_field(ctx, field, features);
+        match text_helper_tokens(
+            ctx,
+            field,
+            ty,
+            repeated,
+            &inner_codec,
+            &field_features,
+            current_package,
+            nesting,
+        )? {
             Some((te, tm)) => {
                 let ident = format_ident!("__{}_TEXT_EXT", const_ident);
                 let tokens = crate::feature_gates::cfg_block(
@@ -473,15 +482,27 @@ fn json_helper_tokens(
 /// Map a message/group extension to its `type_registry` text helper pair, the
 /// `repeated_*` pair when `repeated` is set. Returns `None` for scalars and
 /// enums, which have no text helpers.
+#[allow(clippy::too_many_arguments)]
 fn text_helper_tokens(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
     ty: Type,
     repeated: bool,
+    inner_codec: &TokenStream,
+    features: &ResolvedFeatures,
     current_package: &str,
     nesting: usize,
 ) -> Result<Option<(TokenStream, TokenStream)>, CodeGenError> {
     let h = quote! { ::buffa::type_registry };
+    // Scalars and enums share the scalar helpers. An enum's codec carries
+    // the Rust enum, for its names, and whether it is closed.
+    let scalar_codec = if ty == Type::TYPE_ENUM {
+        let enum_ty = resolve_type_path(ctx, field, current_package, nesting, "enum")?;
+        let closed = crate::message::is_closed_enum(features);
+        quote! { #h::EnumText<#enum_ty, #closed> }
+    } else {
+        inner_codec.clone()
+    };
     let (kind, encode, merge) = match (ty, repeated) {
         (Type::TYPE_MESSAGE, false) => ("message", "message_encode_text", "message_merge_text"),
         (Type::TYPE_MESSAGE, true) => (
@@ -495,7 +516,18 @@ fn text_helper_tokens(
             "repeated_group_encode_text",
             "repeated_group_merge_text",
         ),
-        _ => return Ok(None),
+        (_, false) => {
+            return Ok(Some((
+                quote! { #h::scalar_encode_text::<#scalar_codec> },
+                quote! { #h::scalar_merge_text::<#scalar_codec> },
+            )))
+        }
+        (_, true) => {
+            return Ok(Some((
+                quote! { #h::repeated_scalar_encode_text::<#scalar_codec> },
+                quote! { #h::repeated_scalar_merge_text::<#scalar_codec> },
+            )))
+        }
     };
     let msg_ty = resolve_type_path(ctx, field, current_package, nesting, kind)?;
     let encode = format_ident!("{encode}");
@@ -788,7 +820,7 @@ mod tests {
         );
         // Binary Extension const still present.
         assert!(tokens.contains("Sint32"), "{tokens}");
-        // Scalar extensions don't get text entries (message/group only).
+        // No text entry: `gen_with` turns `generate_text` off.
         assert!(!tokens.contains("TextExtEntry"), "{tokens}");
     }
 
@@ -967,6 +999,82 @@ mod tests {
                     expected.contains(&helper),
                     "{ty:?} {label:?} {helper}: {tokens}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn text_helpers_for_scalars_name_the_codec() {
+        let cases = [
+            (
+                Label::LABEL_OPTIONAL,
+                ["scalar_encode_text", "scalar_merge_text"],
+            ),
+            (
+                Label::LABEL_REPEATED,
+                ["repeated_scalar_encode_text", "repeated_scalar_merge_text"],
+            ),
+        ];
+        for (label, helpers) in cases {
+            let (tokens, _, text_id) = gen_text(Type::TYPE_SINT64, label);
+            assert_eq!(text_id.as_deref(), Some("__EXT_TEXT_EXT"), "{label:?}");
+            for helper in helpers {
+                let path = format!(
+                    ":: buffa :: type_registry :: {helper} :: < :: buffa :: extension :: codecs :: Sint64 >"
+                );
+                assert!(tokens.contains(&path), "{label:?} {helper}: {tokens}");
+            }
+        }
+    }
+
+    /// Run `generate_one` with text on for an extension of the enum
+    /// `.my.pkg.Level`, declared in a file of the given syntax.
+    fn gen_enum_text(syntax: &str, label: Label) -> String {
+        let files = [FileDescriptorProto {
+            name: Some("test.proto".into()),
+            package: Some("my.pkg".into()),
+            syntax: Some(syntax.into()),
+            enum_type: vec![crate::generated::descriptor::EnumDescriptorProto {
+                name: Some("Level".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+        let config = CodeGenConfig {
+            generate_text: true,
+            ..Default::default()
+        };
+        let ctx = CodeGenContext::new(&files, &config, &[]);
+        let features = ResolvedFeatures::proto2_defaults();
+        let mut field = ext_field("ext", 50007, Type::TYPE_ENUM);
+        field.type_name = Some(".my.pkg.Level".to_string());
+        field.label = Some(label);
+        generate_one(&ctx, &field, "my.pkg", 0, &features, "my.pkg")
+            .unwrap()
+            .unwrap()
+            .0
+            .to_string()
+    }
+
+    #[test]
+    fn text_helpers_for_enums_follow_the_enum_closedness() {
+        for (syntax, closed) in [("proto2", true), ("proto3", false)] {
+            let codec = format!(":: buffa :: type_registry :: EnumText < Level , {closed} >");
+            for label in [Label::LABEL_OPTIONAL, Label::LABEL_REPEATED] {
+                let prefix = if label == Label::LABEL_REPEATED {
+                    "repeated_"
+                } else {
+                    ""
+                };
+                let tokens = gen_enum_text(syntax, label);
+                for helper in ["scalar_encode_text", "scalar_merge_text"] {
+                    let path =
+                        format!(":: buffa :: type_registry :: {prefix}{helper} :: < {codec} >");
+                    assert!(
+                        tokens.contains(&path),
+                        "{syntax} {label:?} {helper}: {tokens}"
+                    );
+                }
             }
         }
     }
