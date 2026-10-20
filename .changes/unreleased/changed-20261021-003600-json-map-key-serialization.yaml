@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    ProtoJSON serialization of maps with non-string keys now writes keys without allocating temporary strings.
+time: 2026-10-21T00:36:00+02:00

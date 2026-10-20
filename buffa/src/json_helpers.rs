@@ -337,7 +337,7 @@ pub mod proto_map {
     /// its internal buffer. For `K = String`, this is still one copy (into
     /// serde_json's buffer) but avoids the intermediate `String` allocation
     /// that `.to_string()` would create.
-    struct DisplayKey<'a, K: ?Sized>(&'a K);
+    pub(super) struct DisplayKey<'a, K: ?Sized>(pub(super) &'a K);
     impl<K: Display + ?Sized> serde::Serialize for DisplayKey<'_, K> {
         #[inline]
         fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
@@ -1640,8 +1640,8 @@ pub mod bytes_key_bytes_val_map {
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::string_key_map")]`.
 pub mod string_key_map {
+    use super::proto_map::DisplayKey;
     use crate::map_codec::MapStorage;
-    use alloc::string::ToString;
     use core::fmt::Display;
     use core::str::FromStr;
     use serde::{Deserializer, Serializer};
@@ -1656,7 +1656,7 @@ pub mod string_key_map {
         use serde::ser::SerializeMap;
         let mut map = s.serialize_map(Some(value.storage_len()))?;
         for (k, v) in value.storage_iter() {
-            map.serialize_entry(&k.to_string(), v)?;
+            map.serialize_entry(&DisplayKey(k), v)?;
         }
         map.end()
     }
