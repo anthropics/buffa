@@ -1,0 +1,5 @@
+kind: Changed
+body: |-
+    **ProtoJSON bytes parsing skips a failed standard-alphabet pass for URL-safe input.**
+    URL-safe strings go straight to the matching decoder.
+time: 2026-10-19T16:38:03+02:00

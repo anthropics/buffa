@@ -23,6 +23,31 @@ fn run(c: &mut Criterion) {
     benchmark_decode::<MediaFrame>(c, "buffa/media_frame", data);
     benchmark_json::<MediaFrame>(c, "buffa/media_frame", data);
     let ds = load_dataset(data);
+    let many_small = MediaFrame {
+        chunks: vec![vec![0xfb]; 1024],
+        ..MediaFrame::default()
+    };
+    let many_small_standard = serde_json::to_string(&many_small).unwrap();
+    assert_eq!(many_small_standard.matches("+w==").count(), 1024);
+    let many_small_url_safe = many_small_standard.replace("+w==", "-w==");
+    assert_eq!(many_small_standard.len(), many_small_url_safe.len());
+    let decoded: MediaFrame = serde_json::from_str(&many_small_url_safe).unwrap();
+    assert_eq!(decoded.chunks, many_small.chunks);
+    let mut small_group =
+        c.benchmark_group("buffa/media_frame/protojson_bytes_fallback/many_small_chunks");
+    small_group.throughput(Throughput::Elements(many_small.chunks.len() as u64));
+    small_group.bench_function("standard_base64", |b| {
+        b.iter(|| {
+            criterion::black_box(serde_json::from_str::<MediaFrame>(&many_small_standard).unwrap());
+        })
+    });
+    small_group.bench_function("url_safe_padded", |b| {
+        b.iter(|| {
+            criterion::black_box(serde_json::from_str::<MediaFrame>(&many_small_url_safe).unwrap());
+        })
+    });
+    small_group.finish();
+
     let bytes = total_payload_bytes(&ds);
     let mut g = c.benchmark_group("buffa/media_frame");
     g.throughput(Throughput::Bytes(bytes));
