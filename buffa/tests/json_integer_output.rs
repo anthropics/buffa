@@ -16,7 +16,16 @@ struct Unsigned {
 
 #[test]
 fn signed_int64_serializes_as_quoted_decimal() {
-    for value in [i64::MIN, -9_223_372_036_854_775_807, -1, 0, 1, 127, 128, i64::MAX] {
+    for value in [
+        i64::MIN,
+        -9_223_372_036_854_775_807,
+        -1,
+        0,
+        1,
+        127,
+        128,
+        i64::MAX,
+    ] {
         let json = serde_json::to_string(&Signed { value }).unwrap();
         assert_eq!(json, format!(r#"{{"value":"{value}"}}"#));
     }

@@ -37,8 +37,6 @@ pub mod wkt;
 
 use buffered::BufferedValue;
 
-use alloc::string::ToString;
-
 // ── Lenient base64 engines ──────────────────────────────────────────────────
 //
 // The pre-built `general_purpose` engines reject non-zero trailing bits.
