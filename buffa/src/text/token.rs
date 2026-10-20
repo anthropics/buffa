@@ -1103,10 +1103,7 @@ mod tests {
         let tokens = drain(&input).unwrap();
         assert_eq!(
             tokens,
-            alloc::vec![
-                (TokenKind::Name, "field"),
-                (TokenKind::Scalar, "42"),
-            ]
+            alloc::vec![(TokenKind::Name, "field"), (TokenKind::Scalar, "42"),]
         );
     }
 
