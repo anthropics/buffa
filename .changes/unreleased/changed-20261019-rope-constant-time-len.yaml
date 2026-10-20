@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`Rope::len()` now runs in constant time.** For messages with many borrowed or shared output segments, repeated length checks no longer rescan every segment; the pending tail is still included in the reported byte count.
+time: 2026-10-19T19:25:00+02:00

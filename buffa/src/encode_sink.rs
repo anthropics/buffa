@@ -422,6 +422,8 @@ pub const DEFAULT_MIN_SEGMENT: usize = 4 * 1024;
 pub struct Rope {
     /// Finalized segments, in output order.
     segments: Vec<Bytes>,
+    /// Sum of finalized segment lengths; tail bytes are counted on demand.
+    segment_bytes: usize,
     /// Accumulator for writes below the segment threshold.
     tail: BytesMut,
     /// Buffer that borrowed slices may point into (view encoding); a slice
@@ -456,6 +458,7 @@ impl Rope {
     pub fn with_min_segment(min_segment: usize) -> Self {
         Self {
             segments: Vec::new(),
+            segment_bytes: 0,
             tail: BytesMut::new(),
             backing: None,
             min_segment: min_segment.max(1),
@@ -482,10 +485,10 @@ impl Rope {
         self
     }
 
-    /// Total byte length across all segments and the tail.
+    /// Total byte length across all segments and the tail, in O(1) time.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.segments.iter().map(Bytes::len).sum::<usize>() + self.tail.len()
+        self.segment_bytes + self.tail.len()
     }
 
     /// Whether the rope contains no bytes.
@@ -531,6 +534,7 @@ impl Rope {
     /// Move the accumulated tail into the segment list.
     fn flush_tail(&mut self) {
         if !self.tail.is_empty() {
+            self.segment_bytes += self.tail.len();
             self.segments.push(self.tail.split().freeze());
         }
     }
@@ -558,6 +562,7 @@ impl EncodeSink for Rope {
                 .and_then(|b| crate::view::try_slice_ref(b, src))
             {
                 self.flush_tail();
+                self.segment_bytes += segment.len();
                 self.segments.push(segment);
                 return;
             }
@@ -579,6 +584,7 @@ impl EncodeSink for Rope {
     fn put_shared(&mut self, bytes: Bytes) {
         if bytes.len() >= self.min_segment {
             self.flush_tail();
+            self.segment_bytes += bytes.len();
             self.segments.push(bytes);
         } else {
             self.tail.extend_from_slice(&bytes);
@@ -726,6 +732,37 @@ mod tests {
     /// `Rope::default()` must behave exactly like `Rope::new()` — the
     /// hand-written impl exists because a derived `Default` would zero
     /// `min_segment`, bypassing the clamp and permitting empty segments.
+    #[test]
+    fn rope_len_tracks_tail_and_spliced_segments() {
+        let backing = Bytes::from_static(b"0123456789");
+        let mut rope = Rope::with_min_segment(4).with_backing(backing.clone());
+        assert_eq!(rope.len(), 0);
+
+        rope.put_u8(b'!');
+        rope.put_slice(b"ab");
+        rope.put_shared(Bytes::from_static(b"c"));
+        assert_eq!(rope.len(), 4);
+
+        // The tail is flushed before a borrowed, zero-copy segment.
+        rope.put_slice(&backing[2..8]);
+        assert_eq!(rope.len(), 10);
+
+        rope.put_shared(Bytes::from_static(b"longer"));
+        assert_eq!(rope.len(), 16);
+
+        rope.put_u32_le(7);
+        rope.put_u64_le(9);
+        rope.put_slice(b"unbacked");
+        rope.put_shared(Bytes::new());
+        rope.put_slice(b"");
+        assert_eq!(rope.len(), 36);
+        assert_eq!(rope.to_contiguous_bytes().len(), rope.len());
+
+        let expected = rope.len();
+        let segments = rope.into_segments();
+        assert_eq!(segments.iter().map(Bytes::len).sum::<usize>(), expected);
+    }
+
     #[test]
     fn default_matches_new() {
         let mut rope = Rope::default();
