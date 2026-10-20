@@ -296,7 +296,25 @@ pub fn escape_bytes<W: Write + ?Sized>(bytes: &[u8], w: &mut W) -> core::fmt::Re
 /// Propagates [`core::fmt::Error`] from the underlying writer.
 pub fn escape_str<W: Write + ?Sized>(s: &str, w: &mut W) -> core::fmt::Result {
     w.write_char('"')?;
-    for c in s.chars() {
+    // The common case for long text fields needs no escaping. Check bytes
+    // first so we can write the whole UTF-8 string through one call.
+    let mut remaining = s;
+    if remaining.len() >= 16 {
+        if let Some(first_escape) = remaining
+            .bytes()
+            .position(|b| b == b'"' || b == b'\\' || b < 0x20 || b == 0x7F)
+        {
+            // These escaped bytes are ASCII, so this index is a UTF-8 boundary.
+            if first_escape > 0 {
+                w.write_str(&remaining[..first_escape])?;
+            }
+            remaining = &remaining[first_escape..];
+        } else {
+            w.write_str(remaining)?;
+            return w.write_char('"');
+        }
+    }
+    for c in remaining.chars() {
         match c {
             '"' => w.write_str("\\\"")?,
             '\\' => w.write_str("\\\\")?,
@@ -548,6 +566,46 @@ mod tests {
         let mut out = String::new();
         escape_str("\x01\x7F", &mut out).unwrap();
         assert_eq!(out, r#""\001\177""#);
+    }
+
+    #[test]
+    fn escape_str_writes_long_plain_utf8_as_one_chunk() {
+        struct CountingWriter {
+            text: String,
+            writes: usize,
+        }
+
+        impl core::fmt::Write for CountingWriter {
+            fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                self.writes += 1;
+                self.text.push_str(s);
+                Ok(())
+            }
+        }
+
+        let input = "A long plain UTF-8 string with café and 😀";
+        let mut writer = CountingWriter {
+            text: String::new(),
+            writes: 0,
+        };
+        escape_str(input, &mut writer).unwrap();
+        assert_eq!(writer.text, alloc::format!("\"{input}\""));
+        // One write for each quote, one for all the string contents.
+        assert_eq!(writer.writes, 3);
+    }
+
+    #[test]
+    fn escape_str_long_string_with_escapes_still_roundtrips() {
+        let input = format!(
+            "{} with an embedded quote \" and newline\n plus a backslash\\",
+            "café 😀 ".repeat(4)
+        );
+        let mut out = String::new();
+        escape_str(&input, &mut out).unwrap();
+        assert_eq!(unescape_str(&out).unwrap(), input);
+        assert!(out.contains("\\n"));
+        assert!(out.contains("\\\""));
+        assert!(out.contains("\\\\"));
     }
 
     #[test]
