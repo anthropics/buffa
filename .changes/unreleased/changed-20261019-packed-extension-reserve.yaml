@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **Reduce allocations in packed extension encoding and decoding.** Packed extension encoding starts with a conservative one-byte-per-element output capacity, and large fixed-width packed decoders reserve space for complete elements before appending. Incomplete trailing bytes retain their existing behavior.
+time: 2026-10-19T18:46:00.000000000+00:00
