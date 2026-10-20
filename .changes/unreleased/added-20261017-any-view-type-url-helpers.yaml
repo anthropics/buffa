@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`AnyView::type_name`, `is_message`, `is_type`, `unpack_message` and `unpack_if`** (#734, closes #643). A handler that holds a decoded `AnyView` can test and unpack the packed type without converting to an `Any` or splitting `type_url` by hand. They follow the rules of the `Any` methods of the same names, including a `type_url` without a `/` read as a bare full name. They read the borrowed `type_url` and `value` without copying them, and `type_name()` returns an `Option<&'a str>` that borrows from the decoded buffer, not from the view. `unpack_message` and `unpack_if` decode an owned message; for a view of the payload, check `is_message::<FooView>()` and pass `value` to `FooView::decode_view`.
+time: 2026-10-17T12:00:00+08:00
