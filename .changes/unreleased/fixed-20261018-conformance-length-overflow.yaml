@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Conformance request parser rejects oversized length-delimited fields.** The declared protobuf length is checked against the remaining bytes before converting to usize, preventing wrapped lengths from accepting malformed requests on 32-bit platforms.
+time: 2026-10-18T16:59:00+02:00
