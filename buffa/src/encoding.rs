@@ -778,8 +778,26 @@ pub fn decode_unknown_field(
             if buf.remaining() < len {
                 return Err(DecodeError::UnexpectedEof);
             }
-            let mut data = alloc::vec![0u8; len];
-            buf.copy_to_slice(&mut data);
+            // Copy into the final allocation directly. Zero-filling a Vec and
+            // then overwriting it doubles the memory writes for large unknown
+            // length-delimited fields.
+            let mut data = alloc::vec::Vec::with_capacity(len);
+            if buf.chunk().len() >= len {
+                data.extend_from_slice(&buf.chunk()[..len]);
+                buf.advance(len);
+            } else {
+                // A Buf can split the payload across chunks (Chain, RopeBuf).
+                // Keep one allocation and copy each segment exactly once.
+                while data.len() < len {
+                    let chunk = buf.chunk();
+                    let n = chunk.len().min(len - data.len());
+                    if n == 0 {
+                        return Err(DecodeError::UnexpectedEof);
+                    }
+                    data.extend_from_slice(&chunk[..n]);
+                    buf.advance(n);
+                }
+            }
             UnknownFieldData::LengthDelimited(data)
         }
         WireType::StartGroup => {
@@ -1410,6 +1428,66 @@ mod tests {
             .unwrap_or_else(|e| panic!("decode failed for tag {:?}: {e}", case.tag));
             assert_eq!(got.number, case.tag.field_number());
             assert_eq!(got.data, case.expected, "tag {:?}", case.tag);
+        }
+    }
+
+    #[test]
+    fn test_decode_unknown_length_delimited_contiguous_and_fragmented() {
+        use crate::unknown_fields::UnknownFieldData;
+
+        let tag = Tag::new(11, WireType::LengthDelimited);
+        for len in [0usize, 1, 31, 64, 65, 128, 4096, 65_536] {
+            let payload: Vec<u8> = (0..len).map(|i| (i as u8).wrapping_mul(37)).collect();
+            let mut encoded = Vec::new();
+            encode_varint(len as u64, &mut encoded);
+            encoded.extend_from_slice(&payload);
+
+            // Do not consume bytes after the declared payload length.
+            let mut framed = encoded.clone();
+            framed.extend_from_slice(&[0xde, 0xad]);
+            let mut contiguous = framed.as_slice();
+            let decoded = decode_unknown_field(
+                tag,
+                &mut contiguous,
+                crate::test_ctx(crate::RECURSION_LIMIT),
+            )
+            .unwrap();
+            assert_eq!(
+                decoded.data,
+                UnknownFieldData::LengthDelimited(payload.clone())
+            );
+            assert_eq!(contiguous, &[0xde, 0xad]);
+
+            // Include a split inside the length prefix as well as the
+            // payload, and empty chunks on either side of the split.
+            for split in [0, 1, encoded.len() / 2, encoded.len()] {
+                let (left, right) = encoded.split_at(split);
+                let mut chained = left.chain(right);
+                let decoded = decode_unknown_field(
+                    tag,
+                    &mut chained,
+                    crate::test_ctx(crate::RECURSION_LIMIT),
+                )
+                .unwrap();
+                assert_eq!(
+                    decoded.data,
+                    UnknownFieldData::LengthDelimited(payload.clone()),
+                    "len={len}, split={split}"
+                );
+                assert_eq!(chained.remaining(), 0, "len={len}, split={split}");
+            }
+
+            // A field can cross more than two backing chunks.
+            let first = encoded.len() / 3;
+            let second = encoded.len() * 2 / 3;
+            let mut three = (&encoded[..first])
+                .chain(&encoded[first..second])
+                .chain(&encoded[second..]);
+            let decoded =
+                decode_unknown_field(tag, &mut three, crate::test_ctx(crate::RECURSION_LIMIT))
+                    .unwrap();
+            assert_eq!(decoded.data, UnknownFieldData::LengthDelimited(payload));
+            assert_eq!(three.remaining(), 0);
         }
     }
 
