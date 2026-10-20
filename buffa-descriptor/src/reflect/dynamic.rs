@@ -19,6 +19,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::iter::FusedIterator;
 
+use crate::desc::FieldDefault;
 use crate::{
     DescriptorPool, EnumIndex, FieldDescriptor, FieldKind, MessageDescriptor, MessageIndex,
     ScalarType, SingularKind,
@@ -1779,7 +1780,11 @@ impl ReflectMessage for DynamicMessage {
         );
         match self.fields.get(&field.number()) {
             Some(v) => v.as_ref(),
-            None => default_value_ref(field.kind, &self.pool),
+            None => default_value_ref(
+                self.field_or_extension(field.number())
+                    .expect("a message field descriptor must resolve in its pool"),
+                &self.pool,
+            ),
         }
     }
 
@@ -1855,7 +1860,11 @@ impl ReflectMessage for EmptyMessage<'_> {
             "FieldDescriptor passed to get() is not a member of {}",
             self.message_descriptor().full_name,
         );
-        default_value_ref(field.kind, self.pool)
+        default_value_ref(
+            resolve_field_or_extension(self.pool, self.msg_idx, field.number())
+                .expect("a message field descriptor must resolve in its pool"),
+            self.pool,
+        )
     }
 
     fn has(&self, field: &FieldDescriptor) -> bool {
@@ -2473,14 +2482,35 @@ pub(super) fn default_scalar_value(s: ScalarType) -> Value {
 /// statically-allocated empties; scalars are inline. Message-typed singulars
 /// are an [`EmptyMessage`] borrowing `pool`, so no absent-field read
 /// allocates or changes the pool's reference count.
-fn default_value_ref(kind: FieldKind, pool: &Arc<DescriptorPool>) -> ValueRef<'_> {
+fn default_value_ref<'a>(
+    field: &'a FieldDescriptor,
+    pool: &'a Arc<DescriptorPool>,
+) -> ValueRef<'a> {
     // `Vec::new()` and `MapValue::new()` are both `const fn`, so both
     // empties are real `static`s — no leak pattern, no `OnceLock`, no
     // unsafe. The `&dyn ReflectList`/`&dyn ReflectMap` coercions are
     // unsizing casts on shared statics.
     static EMPTY_LIST: Vec<Value> = Vec::new();
     static EMPTY_MAP: MapValue = MapValue::new();
-    match kind {
+    if let Some(default) = field.explicit_default() {
+        return match default {
+            FieldDefault::F64(value) => ValueRef::F64(*value),
+            FieldDefault::F32(value) => ValueRef::F32(*value),
+            FieldDefault::I64(value) => ValueRef::I64(*value),
+            FieldDefault::U64(value) => ValueRef::U64(*value),
+            FieldDefault::I32(value) => ValueRef::I32(*value),
+            FieldDefault::U32(value) => ValueRef::U32(*value),
+            FieldDefault::Bool(value) => ValueRef::Bool(*value),
+            FieldDefault::String(value) => ValueRef::String(value.as_str()),
+            FieldDefault::Bytes(value) => ValueRef::Bytes(value.as_slice()),
+            FieldDefault::EnumName(_) => {
+                unreachable!("enum defaults are resolved when the pool is linked")
+            }
+            FieldDefault::EnumNumber(value) => ValueRef::EnumNumber(*value),
+        };
+    }
+
+    match field.kind {
         FieldKind::Singular(SingularKind::Scalar(s)) => default_scalar_ref(s),
         FieldKind::Singular(SingularKind::Enum(eidx)) => {
             // Linked enums are nonempty; their first declared value is the default.
