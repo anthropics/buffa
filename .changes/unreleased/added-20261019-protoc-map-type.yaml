@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **The protoc plugin accepts `map_type` and `map_type_in` options.** Buf and protoc users can choose `BTreeMap` globally or by protobuf field path for deterministic map encoding without using buffa-build.
+time: 2026-10-19T01:13:00+02:00

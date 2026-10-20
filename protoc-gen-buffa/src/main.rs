@@ -21,7 +21,7 @@ use buffa_codegen::generated::compiler::code_generator_response::File as CodeGen
 use buffa_codegen::generated::compiler::CodeGeneratorResponse;
 use buffa_codegen::generated::descriptor::Edition;
 
-use buffa_codegen::{CodeGenConfig, CodecStrategy, EnumTypeOverride, FeatureOverride};
+use buffa_codegen::{CodeGenConfig, CodecStrategy, EnumTypeOverride, FeatureOverride, MapRepr};
 
 const HELP: &str = "\
 protoc-gen-buffa — protoc plugin for generating Rust code with buffa.
@@ -357,6 +357,24 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     .unboxed_oneof_fields
                     .push(normalize_unbox_oneof_path(value.trim())?);
             }
+            // Select the owned map container globally or for matching field
+            // paths. Later matching rules win, just as in buffa-build.
+            "map_type" => codegen
+                .map_fields
+                .push((".".to_string(), parse_map_repr(value)?)),
+            "map_type_in" => {
+                let (path, repr) = value.rsplit_once('=').ok_or_else(|| {
+                    format!(
+                        "invalid map_type_in format '{value}', expected \
+                         'map_type_in=<proto_path>=<repr>' \
+                         (e.g. 'map_type_in=.my.pkg.Msg.labels=btree_map')"
+                    )
+                })?;
+                codegen.map_fields.push((
+                    normalize_proto_path(path.trim(), "map_type_in")?,
+                    parse_map_repr(repr)?,
+                ));
+            }
             // `codec_strategy=table` generates the binary `Message` impl of
             // each message the table can handle from a static table and shared
             // interpreters (default `unrolled`). Path-scoped rules use the repeatable
@@ -531,6 +549,16 @@ fn parse_codec_strategy(value: &str) -> Result<CodecStrategy, String> {
         "table" => Ok(CodecStrategy::Table),
         other => Err(format!(
             "invalid codec strategy '{other}', expected 'unrolled' or 'table'"
+        )),
+    }
+}
+
+fn parse_map_repr(value: &str) -> Result<MapRepr, String> {
+    match value.trim() {
+        "hash_map" => Ok(MapRepr::HashMap),
+        "btree_map" => Ok(MapRepr::BTreeMap),
+        other => Err(format!(
+            "invalid map type '{other}', expected 'hash_map' or 'btree_map'"
         )),
     }
 }
@@ -836,6 +864,63 @@ mod tests {
             assert!(err.contains("unbox_oneof_in rules"), "{params:?}: {err}");
             assert!(err.contains("non-empty proto path"), "{params:?}: {err}");
         }
+    }
+
+    #[test]
+    fn map_type_sets_global_default_and_path_rules_are_repeatable() {
+        assert!(parse_config("").unwrap().codegen.map_fields.is_empty());
+
+        let config = parse_config(
+            "map_type=btree_map,map_type_in=pkg.Msg.labels=hash_map,\
+             map_type_in= .pkg.Other. =btree_map,\
+             map_type_in=.pkg.Msg.labels=btree_map",
+        )
+        .unwrap();
+        assert_eq!(
+            config.codegen.map_fields,
+            vec![
+                (".".to_string(), MapRepr::BTreeMap),
+                (".pkg.Msg.labels".to_string(), MapRepr::HashMap),
+                (".pkg.Other".to_string(), MapRepr::BTreeMap),
+                (".pkg.Msg.labels".to_string(), MapRepr::BTreeMap),
+            ],
+        );
+
+        assert_eq!(
+            parse_config("map_type=hash_map").unwrap().codegen.map_fields,
+            vec![(".".to_string(), MapRepr::HashMap)],
+        );
+        assert_eq!(
+            parse_config("map_type_in=.=btree_map")
+                .unwrap()
+                .codegen
+                .map_fields,
+            vec![(".".to_string(), MapRepr::BTreeMap)],
+        );
+    }
+
+    #[test]
+    fn map_type_rejects_unknown_representations_and_bad_rules() {
+        for params in [
+            "map_type=btree",
+            "map_type=BTREE_MAP",
+            "map_type_in=.pkg.Msg.labels=custom",
+            "map_type_in=.pkg.Msg.labels=",
+        ] {
+            let err = parse_err(params);
+            assert!(
+                err.contains("expected 'hash_map' or 'btree_map'"),
+                "{params:?}: {err}"
+            );
+        }
+
+        let err = parse_err("map_type_in=.pkg.Msg.labels");
+        assert!(
+            err.contains("map_type_in=<proto_path>=<repr>"),
+            "{err}"
+        );
+        let err = parse_err("map_type_in==btree_map");
+        assert!(err.contains("non-empty proto path"), "{err}");
     }
 
     #[test]
