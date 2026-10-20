@@ -128,25 +128,30 @@ impl Tag {
 
     /// Decode a tag from a buffer.
     ///
-    /// Single-byte tags (field numbers 1–15, any wire type) are validated
-    /// straight from the first byte, without the `Result<u64, _>` that
-    /// [`decode_varint`] returns. A longer tag continues in
-    /// `decode_varint_multibyte`, so the one-byte check is not repeated.
+    /// Single-byte tags (field numbers 1–15) and contiguous two-byte tags
+    /// (field numbers 16–2047) bypass the general varint decoder. Longer
+    /// tags and fragmented buffers use the existing fallback.
     #[inline]
     pub fn decode(buf: &mut impl Buf) -> Result<Self, DecodeError> {
-        // Fast path: one-byte tag. Covers field numbers 1–15 with any
-        // wire type (bits 0-2 = wire type, bits 3-6 = field number, bit 7
-        // clear). For protos that keep frequently-used fields in the 1–15
-        // range — which the style guides recommend — this is the only
-        // branch the decode loop ever takes.
-        if let Some(&first) = buf.chunk().first() {
+        let chunk = buf.chunk();
+        if let Some(&first) = chunk.first() {
             if first < 0x80 {
                 buf.advance(1);
                 return Self::from_raw_u32(u32::from(first));
             }
+
+            // The second byte terminates a two-byte tag when its
+            // continuation bit is clear. Both bytes are in this chunk.
+            if let Some(&second) = chunk.get(1) {
+                if second < 0x80 {
+                    let value = u32::from(first & 0x7f) | (u32::from(second) << 7);
+                    buf.advance(2);
+                    return Self::from_raw_u32(value);
+                }
+            }
         }
 
-        // Multi-byte tag (field number ≥ 16).
+        // Longer tags and tags split across chunks use the general decoder.
         let value = decode_varint_multibyte(buf)?;
         // A tag value above u32::MAX implies a field number above 2^29 – 1
         // (the protobuf maximum), since the lower three bits carry the wire
@@ -1032,9 +1037,9 @@ mod tests {
     }
 
     #[test]
-    fn test_tag_field_16_takes_slow_path() {
-        // Field number 16 with wire type 0 encodes as [0x80, 0x01] — two
-        // bytes, so it should take the multi-byte path via decode_varint_multibyte.
+    fn test_tag_field_16_uses_two_byte_fast_path() {
+        // Field number 16 with wire type 0 encodes as [0x80, 0x01] and
+        // is the smallest field number that takes the two-byte fast path.
         let tag = Tag::new(16, WireType::Varint);
         let mut buf = Vec::new();
         tag.encode(&mut buf);
@@ -1042,6 +1047,41 @@ mod tests {
         let decoded = Tag::decode(&mut buf.as_slice()).unwrap();
         assert_eq!(decoded.field_number(), 16);
         assert_eq!(decoded.wire_type(), WireType::Varint);
+    }
+
+    #[test]
+    fn test_tag_two_byte_fast_path_matches_generic_decoder() {
+        // Exhaust all 16,384 two-byte sequences, including non-canonical
+        // encodings, invalid wire types, and field number zero. The suffix
+        // verifies that both decoders consume exactly the same two bytes.
+        for first in 0x80u8..=0xff {
+            for second in 0x00u8..=0x7f {
+                let bytes = [first, second, 0x08];
+                let mut fast_buf = bytes.as_slice();
+                let actual = Tag::decode(&mut fast_buf);
+
+                let mut reference_buf = bytes.as_slice();
+                let raw = decode_varint(&mut reference_buf).unwrap();
+                let expected = Tag::from_raw_u32(raw as u32);
+
+                assert_eq!(actual, expected, "tag {first:#04x} {second:#04x}");
+                assert_eq!(fast_buf, reference_buf);
+                assert_eq!(fast_buf, &[0x08]);
+            }
+        }
+    }
+
+    #[test]
+    fn test_tag_two_byte_fallback_across_chunks() {
+        // A two-byte tag split across Buf chunks must still decode.
+        let head: &[u8] = &[0x80];
+        let tail: &[u8] = &[0x01];
+        let mut fragmented = head.chain(tail);
+        assert_eq!(
+            Tag::decode(&mut fragmented),
+            Ok(Tag::new(16, WireType::Varint))
+        );
+        assert_eq!(fragmented.remaining(), 0);
     }
 
     #[test]
