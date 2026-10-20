@@ -36,6 +36,7 @@ fast-utf8 = ["dep:smoothutf8"]
 json = [
     "dep:serde",
     "dep:base64",
+    "dep:itoa",
     "dep:serde_json",
     "serde/alloc",
     "serde/derive",
@@ -50,6 +51,7 @@ base64 = { workspace = true, optional = true }
 bytes = { workspace = true }
 foldhash = { workspace = true }
 hashbrown = { workspace = true }
+itoa = { workspace = true, optional = true }
 once_cell = { workspace = true, features = ["alloc"] }
 rustversion = { workspace = true }
 serde = { workspace = true, optional = true }
@@ -61,3 +63,7 @@ thiserror = { workspace = true }
 # The JSON buffering tests need `serde_json::Value` to parse the string under
 # its private `RawValue` key: see `buffa/src/json_helpers/buffered.rs`.
 serde_json = { workspace = true, features = ["raw_value"] }
+
+[[example]]
+name = "json_int64_bench"
+required-features = ["json"]

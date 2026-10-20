@@ -81,6 +81,7 @@ dependencies = [
  "bytes",
  "foldhash",
  "hashbrown 0.15.5",
+ "itoa",
  "once_cell",
  "rustversion",
  "serde",

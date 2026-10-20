@@ -37,8 +37,6 @@ pub mod wkt;
 
 use buffered::BufferedValue;
 
-use alloc::string::ToString;
-
 // ── Lenient base64 engines ──────────────────────────────────────────────────
 //
 // The pre-built `general_purpose` engines reject non-zero trailing bits.
@@ -1174,7 +1172,10 @@ int_serde_module!(
     doc = "Serde with-module for `i64` fields encoded as a quoted decimal string.\n\n\
            Proto JSON also accepts unquoted integers and float notation.\n\n\
            Use with `#[serde(with = \"::buffa::json_helpers::int64\")]`.",
-    serialize_body = |v, s| s.serialize_str(&v.to_string()),
+    serialize_body = |v, s| {
+        let mut buffer = itoa::Buffer::new();
+        s.serialize_str(buffer.format(*v))
+    },
     expecting = "an i64 as a quoted decimal string, integer, float, or null",
     visit_i64_body = |v: i64, _exp| Ok(v),
     visit_u64_body = |v, _exp| {
@@ -1200,7 +1201,10 @@ int_serde_module!(
     doc = "Serde with-module for `u64` fields encoded as a quoted decimal string.\n\n\
            Proto JSON also accepts unquoted integers and float notation.\n\n\
            Use with `#[serde(with = \"::buffa::json_helpers::uint64\")]`.",
-    serialize_body = |v, s| s.serialize_str(&v.to_string()),
+    serialize_body = |v, s| {
+        let mut buffer = itoa::Buffer::new();
+        s.serialize_str(buffer.format(*v))
+    },
     expecting = "a u64 as a quoted decimal string, integer, float, or null",
     visit_i64_body = |v, _exp| {
         u64::try_from(v).map_err(|_| {
