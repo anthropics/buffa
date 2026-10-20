@@ -266,14 +266,14 @@ impl<K: ReflectMapKey + Ord, V: ReflectElement> ReflectMap for MapView<'_, K, V>
         // Distinct-key count, matching the bridge path (`MapValue` dedups at
         // construction). `MapView` preserves duplicate wire entries, so a raw
         // `iter().count()` would over-count and diverge from `MapValue::len`.
-        // This sorts an index vector on every call; `is_empty` below avoids
-        // that for the common emptiness check.
+        // For at most six entries, `len_unique` counts directly. Larger maps
+        // sort borrowed keys without restoring wire order.
         self.len_unique()
     }
 
     fn is_empty(&self) -> bool {
-        // Deduplication never empties a non-empty entry list, so the raw
-        // count decides this without the sort `len` pays for.
+        // Any raw entry implies at least one distinct key, so this check
+        // avoids counting unique keys.
         self.iter().next().is_none()
     }
 

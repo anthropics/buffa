@@ -2290,9 +2290,13 @@ impl<'a, K, V> MapView<'a, K, V> {
             .map(move |i| &entries[i])
     }
 
-    /// Count of distinct keys (`iter_unique().len()`). Same cost as
-    /// [`iter_unique`](Self::iter_unique); a caller that needs both should
-    /// call `iter_unique` once and take its `len()`.
+    /// Count distinct map keys, matching `iter_unique().len()`.
+    ///
+    /// For small maps, a bounded scan avoids allocating a temporary vector.
+    /// Larger maps sort key references once, without restoring wire order,
+    /// which is only necessary when returning entries from `iter_unique`.
+    /// If both the count and entries are needed, call `iter_unique` once
+    /// and use the iterator's `len()`.
     ///
     /// # Panics
     ///
@@ -2302,7 +2306,30 @@ impl<'a, K, V> MapView<'a, K, V> {
     where
         K: Ord,
     {
-        last_occurrence_indices(&self.entries).len()
+        let entries = &self.entries;
+        // Map fields with a handful of entries are common. A short scan
+        // avoids the allocation and sorting overhead of the index vector.
+        // Compare with Ord, as iter_unique does (not PartialEq).
+        if entries.len() <= 6 {
+            let mut count = 0;
+            for (i, (key, _)) in entries.iter().enumerate() {
+                if !entries[i + 1..]
+                    .iter()
+                    .any(|(later, _)| later.cmp(key).is_eq())
+                {
+                    count += 1;
+                }
+            }
+            return count;
+        }
+
+        // Only a count is needed: sort borrowed keys instead of indices,
+        // then drop equal neighbors. iter_unique must sort survivors back
+        // into wire order, but this path has no such requirement.
+        let mut keys: alloc::vec::Vec<&K> = entries.iter().map(|(key, _)| key).collect();
+        keys.sort_unstable();
+        keys.dedup_by(|a, b| (*a).cmp(*b).is_eq());
+        keys.len()
     }
 }
 
@@ -3792,6 +3819,25 @@ mod tests {
         let mv = MapView::<&str, i32>::default();
         assert_eq!(mv.len_unique(), 0);
         assert_eq!(mv.iter_unique().count(), 0);
+    }
+
+    #[test]
+    fn map_view_len_unique_matches_iter_unique_at_small_and_large_sizes() {
+        // Cover the allocation-free path, both sides of the cutoff, and
+        // larger maps with interleaved duplicate and distinct keys.
+        for size in [0usize, 1, 2, 3, 5, 6, 7, 8, 9, 32, 257, 4096] {
+            for distinct in [1usize, 2, 3, 5, 7, 17, 64] {
+                let entries: alloc::vec::Vec<_> = (0..size)
+                    .map(|i| (((i * 11) % distinct) as i32, i))
+                    .collect();
+                let mv = MapView::new(entries);
+                assert_eq!(
+                    mv.len_unique(),
+                    mv.iter_unique().len(),
+                    "size {size}, distinct {distinct}"
+                );
+            }
+        }
     }
 
     /// A key that counts how many times it is compared, so the dedup's

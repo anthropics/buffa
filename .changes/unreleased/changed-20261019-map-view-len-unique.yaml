@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    Counting distinct MapView keys and reflective map lengths now avoids temporary allocations for small maps and unnecessary index sorting for larger maps.
+time: 2026-10-19T15:02:00+02:00
