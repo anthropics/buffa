@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`buffa-codegen`: accept pre-escaped raw identifiers in Rust type paths.** A valid path segment such as `r#type` in an `extern_path` mapping no longer panics during tokenization; unescaped keywords continue to be escaped automatically.
+time: 2026-10-19T12:00:00+02:00

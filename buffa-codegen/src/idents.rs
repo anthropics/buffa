@@ -24,6 +24,7 @@ use quote::{format_ident, quote};
 /// [`make_field_ident`], which suffixes them with `_`.
 ///
 /// Leading `::` (absolute path, e.g. `"::buffa::Message"`) is preserved.
+/// Already-escaped raw identifiers (`r#type`) are preserved as well.
 ///
 /// # Panics
 ///
@@ -48,7 +49,9 @@ pub fn rust_path_to_tokens(path: &str) -> TokenStream {
     let segments: Vec<Ident> = rest
         .split("::")
         .map(|seg| {
-            if is_rust_keyword(seg) && can_be_raw_ident(seg) {
+            if let Some(raw) = seg.strip_prefix("r#") {
+                Ident::new_raw(raw, Span::call_site())
+            } else if is_rust_keyword(seg) && can_be_raw_ident(seg) {
                 Ident::new_raw(seg, Span::call_site())
             } else {
                 Ident::new(seg, Span::call_site())
@@ -322,6 +325,18 @@ mod tests {
         assert_eq!(
             rust_path_to_tokens("google::type::LatLng").to_string(),
             "google :: r#type :: LatLng"
+        );
+    }
+
+    #[test]
+    fn rust_path_already_raw_escaped() {
+        assert_eq!(
+            rust_path_to_tokens("::api::r#type::r#async").to_string(),
+            ":: api :: r#type :: r#async"
+        );
+        assert_eq!(
+            rust_path_to_tokens("crate::r#custom::Item").to_string(),
+            "crate :: r#custom :: Item"
         );
     }
 
