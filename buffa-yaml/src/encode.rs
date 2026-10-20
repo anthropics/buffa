@@ -20,6 +20,23 @@ where
     serde_norway::to_string(msg).map_err(Error::from_carrier)
 }
 
+/// Serialize a protobuf message directly to a UTF-8 YAML byte vector.
+///
+/// This is the byte-vector counterpart to [`to_string`], using the same
+/// protobuf JSON mapping without requiring the caller to create a writer.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if the message cannot be serialized.
+pub fn to_vec<M>(msg: &M) -> Result<Vec<u8>, Error>
+where
+    M: Message + serde::Serialize,
+{
+    let mut bytes = Vec::new();
+    serde_norway::to_writer(&mut bytes, msg).map_err(Error::from_carrier)?;
+    Ok(bytes)
+}
+
 /// Serialize a protobuf message to a YAML byte stream.
 ///
 /// Follows the same encoding rules as [`to_string`].
@@ -60,6 +77,23 @@ where
     V: MessageView<'a> + serde::Serialize,
 {
     serde_norway::to_string(view).map_err(Error::from_carrier)
+}
+
+/// Serialize a zero-copy message view directly to a UTF-8 YAML byte vector.
+///
+/// Produces the same bytes as [`to_string_view`] does after UTF-8 encoding,
+/// using the protobuf JSON mapping for generated view types.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if the view cannot be serialized.
+pub fn to_vec_view<'a, V>(view: &V) -> Result<Vec<u8>, Error>
+where
+    V: MessageView<'a> + serde::Serialize,
+{
+    let mut bytes = Vec::new();
+    serde_norway::to_writer(&mut bytes, view).map_err(Error::from_carrier)?;
+    Ok(bytes)
 }
 
 /// Serialize a zero-copy message view to a YAML byte stream.

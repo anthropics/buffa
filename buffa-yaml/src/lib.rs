@@ -57,7 +57,7 @@ mod encode;
 mod error;
 
 pub use decode::{from_reader, from_slice, from_str};
-pub use encode::{to_string, to_string_view, to_writer, to_writer_view};
+pub use encode::{to_string, to_string_view, to_vec, to_vec_view, to_writer, to_writer_view};
 pub use error::{Error, Location};
 
 #[cfg(test)]
@@ -373,6 +373,21 @@ mod tests {
     }
 
     #[test]
+    fn to_vec_matches_string_and_round_trips() {
+        use buffa_test::json_types::Scalar;
+        let msg = Scalar {
+            int64_val: i64::MAX,
+            string_val: "café".into(),
+            bytes_val: vec![0, 0xFF],
+            ..Default::default()
+        };
+        let yaml = to_vec(&msg).expect("to_vec");
+        assert_eq!(yaml, to_string(&msg).expect("to_string").into_bytes());
+        let decoded: Scalar = from_slice(&yaml).expect("from_slice");
+        assert_eq!(decoded, msg);
+    }
+
+    #[test]
     fn from_reader_mirrors_from_str() {
         use buffa_test::json_types::Scalar;
         let msg = Scalar {
@@ -475,6 +490,24 @@ mod tests {
         let mut buf = Vec::new();
         to_writer_view(&mut buf, &view).expect("to_writer_view");
         assert_eq!(String::from_utf8(buf).expect("utf8"), expected);
+    }
+
+    #[test]
+    fn to_vec_view_matches_owned_and_round_trips() {
+        use buffa::{Message as _, MessageView as _};
+        use buffa_test::view_json::{Scalars, ScalarsView};
+        let msg = Scalars {
+            i64: i64::MAX,
+            s: "view café".into(),
+            by: vec![0, 0xFF],
+            ..Default::default()
+        };
+        let wire = msg.encode_to_vec();
+        let view = ScalarsView::decode_view(&wire).expect("decode_view");
+        let yaml = to_vec_view(&view).expect("to_vec_view");
+        assert_eq!(yaml, to_vec(&msg).expect("to_vec"));
+        let decoded: Scalars = from_slice(&yaml).expect("from_slice");
+        assert_eq!(decoded, msg);
     }
 
     // ── YAML-specific scalar resolution ──────────────────────────────────────
