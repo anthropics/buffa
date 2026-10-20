@@ -535,8 +535,7 @@ impl DynamicMessage {
                 if buf.remaining() < len {
                     return Err(DecodeError::UnexpectedEof);
                 }
-                let mut sub = buf.copy_to_bytes(len);
-                existing.merge_buf(&mut sub, ctx)
+                parse_length_delimited(buf, len, |sub| existing.merge_buf(sub, ctx))
             }
             WireType::StartGroup => existing.merge_group(buf, tag.field_number(), ctx),
             wt => Err(DecodeError::WireTypeMismatch {
@@ -604,16 +603,16 @@ impl DynamicMessage {
                     });
                 list.reserve(additional);
             }
-            // Take a sub-buffer of `len` bytes and decode elements from it.
-            let mut packed = buf.copy_to_bytes(len);
-            while packed.has_remaining() {
-                // Charged, unlike the generated decoder: that exemption is
-                // sized for a `Vec<i32>`, and this store is a `Vec<Value>`.
-                // See `DecodeContext::register_element_memory`.
-                ctx.register_element_memory(core::mem::size_of::<Value>())?;
-                list.push(decode_packed_element(elem, number, &mut packed)?);
-            }
-            return Ok(());
+            return parse_length_delimited(buf, len, |packed| {
+                while packed.has_remaining() {
+                    // Charged, unlike the generated decoder: that exemption is
+                    // sized for a `Vec<i32>`, and this store is a `Vec<Value>`.
+                    // See `DecodeContext::register_element_memory`.
+                    ctx.register_element_memory(core::mem::size_of::<Value>())?;
+                    list.push(decode_packed_element(elem, number, packed)?);
+                }
+                Ok(())
+            });
         }
         // Unpacked: decode one element. We need to be careful not to alias
         // self.pool and self.fields, so for nested messages we collect what
@@ -647,18 +646,20 @@ impl DynamicMessage {
             if buf.remaining() < len {
                 return Err(DecodeError::UnexpectedEof);
             }
-            let mut packed = buf.copy_to_bytes(len);
-            while packed.has_remaining() {
-                let raw = decode_int32(&mut packed)?;
-                if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
-                    // Same charge `merge_list_field` applies; this is a
-                    // parallel implementation of the same work.
-                    ctx.register_element_memory(core::mem::size_of::<Value>())?;
-                    self.push_closed_enum_list_value(number, raw);
-                } else {
-                    self.record_unknown_enum(number, raw, ctx)?;
+            parse_length_delimited(buf, len, |packed| {
+                while packed.has_remaining() {
+                    let raw = decode_int32(packed)?;
+                    if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
+                        // Same charge `merge_list_field` applies; this is a
+                        // parallel implementation of the same work.
+                        ctx.register_element_memory(core::mem::size_of::<Value>())?;
+                        self.push_closed_enum_list_value(number, raw);
+                    } else {
+                        self.record_unknown_enum(number, raw, ctx)?;
+                    }
                 }
-            }
+                Ok(())
+            })?;
         } else {
             let raw = decode_int32(buf)?;
             if self.enum_value_is_known(eidx, Some(EnumType::Closed), raw) {
@@ -713,78 +714,79 @@ impl DynamicMessage {
         if buf.remaining() < len {
             return Err(DecodeError::UnexpectedEof);
         }
-        let mut entry = buf.copy_to_bytes(len);
-        let mut key: Option<MapKey> = None;
-        let mut value: Option<Value> = None;
-        while entry.has_remaining() {
-            let entry_tag = Tag::decode(&mut entry)?;
-            match entry_tag.field_number() {
-                1 => {
-                    // Key and value tags must carry the wire type of the
-                    // declared type, as in the owned map codec. That includes a
-                    // message value, which unlike an ordinary message field
-                    // cannot use the legacy group encoding.
-                    check_wire_type(entry_tag, map_key_wire_type(key_ty))?;
-                    key = Some(decode_map_key(key_ty, entry_tag, &mut entry)?);
-                }
-                2 => {
-                    check_wire_type(entry_tag, singular_wire_type(value_kind, false))?;
-                    // No `descend()` for the entry itself. A message-typed
-                    // value descends once inside `decode_element_no_alias`,
-                    // and that single level is what the owned decoder
-                    // (`map_codec`) and the view decoder each spend on a
-                    // message-valued map entry. Charging a second one here
-                    // would make this decoder reject map nesting the other
-                    // two accept, which the infallible
-                    // `ReflectMessage::to_dynamic` cannot report.
-                    match &mut value {
-                        // Proto merge semantics, as in the owned map codec: a
-                        // repeated message value within one entry merges into
-                        // the message decoded so far rather than replacing it.
-                        // (Only reachable for a message-kind value — the kind
-                        // is fixed per field.) The `descend` here mirrors the
-                        // one inside `decode_element_no_alias`, so every
-                        // occurrence decodes at the same depth.
-                        Some(Value::Message(existing)) => {
-                            Self::merge_message_wire(
-                                existing,
-                                entry_tag,
-                                &mut entry,
-                                ctx.descend()?,
-                            )?;
-                        }
-                        // First occurrence, or any scalar/enum value (last wins).
-                        _ => {
-                            value =
-                                Some(self.decode_element_no_alias(
-                                    value_kind, entry_tag, &mut entry, ctx,
-                                )?);
+        parse_length_delimited(buf, len, |entry| {
+            let mut key: Option<MapKey> = None;
+            let mut value: Option<Value> = None;
+            while entry.has_remaining() {
+                let entry_tag = Tag::decode(entry)?;
+                match entry_tag.field_number() {
+                    1 => {
+                        // Key and value tags must carry the wire type of the
+                        // declared type, as in the owned map codec. That includes a
+                        // message value, which unlike an ordinary message field
+                        // cannot use the legacy group encoding.
+                        check_wire_type(entry_tag, map_key_wire_type(key_ty))?;
+                        key = Some(decode_map_key(key_ty, entry_tag, entry)?);
+                    }
+                    2 => {
+                        check_wire_type(entry_tag, singular_wire_type(value_kind, false))?;
+                        // No `descend()` for the entry itself. A message-typed
+                        // value descends once inside `decode_element_no_alias`,
+                        // and that single level is what the owned decoder
+                        // (`map_codec`) and the view decoder each spend on a
+                        // message-valued map entry. Charging a second one here
+                        // would make this decoder reject map nesting the other
+                        // two accept, which the infallible
+                        // `ReflectMessage::to_dynamic` cannot report.
+                        match &mut value {
+                            // Proto merge semantics, as in the owned map codec: a
+                            // repeated message value within one entry merges into
+                            // the message decoded so far rather than replacing it.
+                            // (Only reachable for a message-kind value — the kind
+                            // is fixed per field.) The `descend` here mirrors the
+                            // one inside `decode_element_no_alias`, so every
+                            // occurrence decodes at the same depth.
+                            Some(Value::Message(existing)) => {
+                                Self::merge_message_wire(
+                                    existing,
+                                    entry_tag,
+                                    entry,
+                                    ctx.descend()?,
+                                )?;
+                            }
+                            // First occurrence, or any scalar/enum value (last wins).
+                            _ => {
+                                value =
+                                    Some(self.decode_element_no_alias(
+                                        value_kind, entry_tag, entry, ctx,
+                                    )?);
+                            }
                         }
                     }
+                    _ => skip_field_depth(entry_tag, entry, ctx.depth())?,
                 }
-                _ => skip_field_depth(entry_tag, &mut entry, ctx.depth())?,
             }
-        }
-        let k = key.unwrap_or_else(|| default_map_key(key_ty));
-        let v = value.unwrap_or_else(|| default_value(value_kind, &self.pool));
-        ctx.register_element_memory(
-            core::mem::size_of::<MapKey>() + core::mem::size_of::<Value>(),
-        )?;
-        match self
-            .fields
-            .entry(number)
-            .or_insert_with(|| Value::Map(MapValue::new()))
-        {
-            Value::Map(m) => {
-                m.push_unsorted(k, v);
+            let k = key.unwrap_or_else(|| default_map_key(key_ty));
+            let v = value.unwrap_or_else(|| default_value(value_kind, &self.pool));
+            ctx.register_element_memory(
+                core::mem::size_of::<MapKey>() + core::mem::size_of::<Value>(),
+            )?;
+            match self
+                .fields
+                .entry(number)
+                .or_insert_with(|| Value::Map(MapValue::new()))
+            {
+                Value::Map(m) => {
+                    m.push_unsorted(k, v);
+                }
+                other => {
+                    let mut m = MapValue::new();
+                    m.push_unsorted(k, v);
+                    *other = Value::Map(m);
+                }
             }
-            other => {
-                let mut m = MapValue::new();
-                m.push_unsorted(k, v);
-                *other = Value::Map(m);
-            }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn merge_closed_enum_map_field(
@@ -910,8 +912,7 @@ impl DynamicMessage {
                 if buf.remaining() < len {
                     return Err(DecodeError::UnexpectedEof);
                 }
-                let mut sub = buf.copy_to_bytes(len);
-                nested.merge_buf(&mut sub, ctx)
+                parse_length_delimited(buf, len, |sub| nested.merge_buf(sub, ctx))
             }
             WireType::StartGroup => nested.merge_group(buf, tag.field_number(), ctx),
             _ => Err(DecodeError::WireTypeMismatch {
@@ -2824,6 +2825,33 @@ fn tag_len(field_number: u32, wt: WireType) -> usize {
     uint64_encoded_len(((field_number as u64) << 3) | (wt as u64))
 }
 
+/// Parse a length-delimited payload without copying if the next buffer chunk
+/// contains it all. A fragmented payload falls back to the existing copy.
+///
+/// Using a slice in both cases also keeps recursive message decoding on the
+/// same concrete buffer type. Passing a nested Take<B> directly to the decoder
+/// would recursively instantiate Take<Take<B>> and overflow rustc.
+#[inline]
+fn parse_length_delimited<R>(
+    buf: &mut impl Buf,
+    len: usize,
+    parse: impl FnOnce(&mut &[u8]) -> R,
+) -> R {
+    // All callers have checked that the input has at least len bytes.
+    let chunk = buf.chunk();
+    if chunk.len() >= len {
+        let mut payload = &chunk[..len];
+        let result = parse(&mut payload);
+        // Match copy_to_bytes semantics even when parsing returned an error.
+        buf.advance(len);
+        result
+    } else {
+        let bytes = buf.copy_to_bytes(len);
+        let mut payload = bytes.as_ref();
+        parse(&mut payload)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::DynamicMessage;
@@ -2834,6 +2862,107 @@ mod tests {
     // tested directly (the e2e encode paths are covered in
     // `tests/dynamic_e2e.rs`, and the shared guard's own boundary in
     // `buffa::message`).
+
+    #[test]
+    fn bounded_payloads_match_contiguous_decode_across_buffer_splits() {
+        use alloc::sync::Arc;
+        use alloc::vec::Vec;
+        use buffa::bytes::Buf;
+        use buffa::encoding::{encode_varint, Tag, WireType};
+        use buffa::DecodeContext;
+        use core::cell::Cell;
+
+        use crate::DescriptorPool;
+
+        fn write_delimited(buf: &mut Vec<u8>, number: u32, payload: &[u8]) {
+            Tag::new(number, WireType::LengthDelimited).encode(buf);
+            encode_varint(payload.len() as u64, buf);
+            buf.extend_from_slice(payload);
+        }
+
+        let pool = Arc::new(
+            DescriptorPool::decode(include_bytes!("../../tests/protos/reflect_test.fds")).unwrap(),
+        );
+        let idx = pool.message_index("reflect.test.Containers").unwrap();
+        let mut wire = Vec::new();
+
+        let mut packed = Vec::new();
+        encode_varint(1, &mut packed);
+        encode_varint(300, &mut packed);
+        write_delimited(&mut wire, 1, &packed);
+
+        let mut scalar_map_entry = Vec::new();
+        write_delimited(&mut scalar_map_entry, 1, b"key");
+        Tag::new(2, WireType::Varint).encode(&mut scalar_map_entry);
+        encode_varint(7, &mut scalar_map_entry);
+        write_delimited(&mut wire, 3, &scalar_map_entry);
+
+        let mut nested = Vec::new();
+        write_delimited(&mut nested, 1, b"nested");
+        Tag::new(2, WireType::Varint).encode(&mut nested);
+        encode_varint(42, &mut nested);
+        write_delimited(&mut wire, 5, &nested);
+        write_delimited(&mut wire, 8, &nested);
+
+        let mut message_map_entry = Vec::new();
+        Tag::new(1, WireType::Varint).encode(&mut message_map_entry);
+        encode_varint(9, &mut message_map_entry);
+        write_delimited(&mut message_map_entry, 2, &nested);
+        write_delimited(&mut wire, 4, &message_map_entry);
+
+        write_delimited(&mut wire, 99, b"unknown");
+
+        let expected = DynamicMessage::decode(Arc::clone(&pool), idx, &wire).unwrap();
+        for split in 0..=wire.len() {
+            let mut fragmented = (&wire[..split]).chain(&wire[split..]);
+            let options = buffa::DecodeOptions::new();
+            let unknown_fields = Cell::new(options.unknown_field_limit());
+            let element_memory = Cell::new(options.element_memory_limit());
+            let ctx = DecodeContext::new(options.recursion_limit(), &unknown_fields)
+                .with_element_memory(&element_memory);
+            let mut actual = DynamicMessage::new(Arc::clone(&pool), idx);
+            actual.merge_buf(&mut fragmented, ctx).unwrap();
+            assert_eq!(actual, expected, "split at {split}");
+            assert_eq!(fragmented.remaining(), 0, "split at {split}");
+        }
+    }
+
+    #[test]
+    fn bounded_payloads_reject_malformed_data_across_buffer_splits() {
+        use alloc::sync::Arc;
+        use buffa::bytes::Buf;
+        use buffa::DecodeContext;
+        use core::cell::Cell;
+
+        use crate::DescriptorPool;
+
+        let pool = Arc::new(
+            DescriptorPool::decode(include_bytes!("../../tests/protos/reflect_test.fds")).unwrap(),
+        );
+        let idx = pool.message_index("reflect.test.Containers").unwrap();
+        // Incomplete varints inside a packed list, map key, and nested message.
+        for wire in [
+            &[0x0a, 0x01, 0x80][..],
+            &[0x1a, 0x01, 0x0a][..],
+            &[0x2a, 0x01, 0x80][..],
+        ] {
+            let expected = DynamicMessage::decode(Arc::clone(&pool), idx, wire).unwrap_err();
+            for split in 0..=wire.len() {
+                let mut fragmented = (&wire[..split]).chain(&wire[split..]);
+                let options = buffa::DecodeOptions::new();
+                let unknown_fields = Cell::new(options.unknown_field_limit());
+                let element_memory = Cell::new(options.element_memory_limit());
+                let ctx = DecodeContext::new(options.recursion_limit(), &unknown_fields)
+                    .with_element_memory(&element_memory);
+                let mut actual = DynamicMessage::new(Arc::clone(&pool), idx);
+                assert_eq!(
+                    actual.merge_buf(&mut fragmented, ctx),
+                    Err(expected.clone()),
+                    "split at {split}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn checked_encode_size_boundary() {
