@@ -375,7 +375,7 @@ impl ProtoString for CompactStr {
 
 When migrating generic code that relied on `S: ProtoString` to imply `From<&str>`, use `S::copy_from_str(value)` or add an explicit conversion bound. Regenerate custom-string views before using a representation without the old bound. Hand-written users of `json_helpers::proto_string::deserialize` now need `ProtoString`, not just the two `From` conversions; implement the trait or provide a separate deserializer.
 
-If you see a `ProtoString` / `ProtoBytes` bound error pointing at *generated* code, your newtype may be missing the trait implementation or a supertrait — check `from_wire` and the full bound list (`Clone + PartialEq + Default + Debug + Send + Sync`, `Deref`, `AsRef`, and `From<String>` / `From<Vec<u8>>`). If instead you see an *orphan-rule* error (`E0117` / `E0210`) in generated code mentioning `ReflectElement` or `ReflectMapKey`, you used a **foreign** custom type as a `repeated` element or `map` key/value under vtable reflection — wrap it in a crate-local newtype (see the `map`/`repeated` key points below).
+If you see a `ProtoString` / `ProtoBytes` bound error pointing at *generated* code, your newtype may be missing the trait implementation or a supertrait — check `from_wire` and the full bound list (`Clone + PartialEq + Default + Debug + Send + Sync`, `Deref`, `AsRef`, and `From<String>` / `From<Vec<u8>>`). If instead you see an *orphan-rule* error (`E0117` / `E0210`) in generated code mentioning `ReflectElement` or `ReflectMapKey`, you used a **foreign** custom type as a `repeated` element or `map` key/value under vtable reflection; one mentioning `ProtoElemJson` means a foreign custom `bytes` type in one of those positions under JSON. Wrap it in a crate-local newtype (see the `map`/`repeated` key points below).
 
 Key points:
 
@@ -386,7 +386,7 @@ Key points:
 - **A custom string needs no `Arbitrary` impl.** Under `generate_arbitrary`, codegen attaches a generic builder to a custom string field (singular, optional, repeated or oneof) and to a `map` field with a custom string key or value. The builder makes a `String` and converts it through `From<String>`.
 - **JSON of a custom string with explicit presence (proto3 or proto2 `optional`, and the edition 2023 default), in a `repeated` field, in a oneof, or in a `map`,** serializes through the element's native `serde`, so such a newtype must implement `Serialize` / `Deserialize` (`buffa-smolstr`'s `serde` feature does this, and a `buffa-remote-derive` newtype gets them from `#[buffa(remote = ..., serde)]`). A singular string field with implicit presence, or a proto2 `required` one, uses buffa's `proto_string` with-module and needs no `serde` impl.
 - **A custom string used as a `map` key needs `Hash + Eq`** (for the default / `HashMap` container) or `Ord` (for `map_type(BTreeMap)`). The bound is enforced at the generated map field type, so a missing impl is a clear compile error at that field.
-- **A custom type used as a `repeated` element, or as a `map` key/value, must be crate-local.** Codegen emits per-element `ReflectElement` (vtable reflection), `ReflectMapKey` (vtable, for a custom `string` map key), and base64 `ProtoElemJson` (JSON, bytes only) impls for it, which the orphan rule forbids for a foreign type — a local newtype satisfies this. Singular / optional / oneof uses have no such restriction.
+- **A custom type used as a `repeated` element, or as a `map` key/value, must be crate-local under vtable reflection, and under JSON when it is a `bytes` type.** Codegen emits per-element `ReflectElement` (vtable reflection), `ReflectMapKey` (vtable, for a custom `string` map key), and base64 `ProtoElemJson` (JSON, bytes only) impls for it, which the orphan rule forbids for a foreign type; a local newtype satisfies this. A build with neither emits none of these impls. Singular / optional / oneof uses have no such restriction.
 
 `string_type` / `bytes_type` are `buffa-build` / `buffa-codegen` options only — there is no `protoc-gen-buffa` plugin equivalent yet.
 
@@ -2574,11 +2574,13 @@ Two Cargo notes:
   feature, and generated reflection requires `std` (the embedded pool sits
   behind a `std::sync::OnceLock`).
 - Messages that embed well-known types reflect end to end when `buffa-types`
-  is built with its `reflect` feature. A custom
+  is built with its `reflect` feature. Under vtable reflection (what
+  `generate_reflection(true)` selects), a custom
   [string/bytes representation](#string-and-bytes-field-representations) used as
-  a `repeated` element gets its `ReflectElement` impl emitted by codegen and so
-  must be a crate-local type (the orphan rule forbids it for a foreign type);
-  singular/optional/oneof uses need nothing extra.
+  a `repeated` element or as a `map` key or value gets its `ReflectElement` (or,
+  for a `string` map key, `ReflectMapKey`) impl emitted by codegen and so must
+  be a crate-local type (the orphan rule forbids it for a foreign type); bridge
+  reflection and singular/optional/oneof uses need nothing extra.
 
 For the cost of reflection relative to the generated codec — and when to
 prefer views instead — see the [README's reflection

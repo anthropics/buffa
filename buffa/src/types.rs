@@ -1335,11 +1335,14 @@ pub fn string_encoded_len(value: &str) -> usize {
 /// The requirements below depend on where the custom string appears. See the user
 /// guide's "String and bytes field representations" section for the full table.
 ///
-/// - **Must be crate-local.** A custom type in a `repeated` element or `map`
-///   slot needs codegen-emitted `ReflectElement` / `ReflectMapKey` impls (for
-///   vtable reflection), which the orphan rule permits only when the type is
-///   local to the generating crate. A *foreign* custom type in those positions
-///   fails to compile — wrap it in a crate-local newtype.
+/// - **Under vtable reflection, must be crate-local.** A custom type in a
+///   `repeated` element or `map` slot needs codegen-emitted `ReflectElement` /
+///   `ReflectMapKey` impls for vtable reflection, which the orphan rule permits
+///   only when the type is local to the generating crate. A *foreign* custom
+///   type in those positions fails to compile in that mode; wrap it in a
+///   crate-local newtype. Without vtable reflection (bridge reflection
+///   included) codegen emits neither impl, so a foreign type works in those
+///   positions too.
 /// - **JSON needs native `serde` outside non-optional singular fields.** A custom
 ///   string in an optional, repeated, map, or oneof field uses its own `serde`,
 ///   so it must implement
@@ -1568,14 +1571,18 @@ pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
 ///
 /// # Limitations
 ///
-/// - **`repeated` elements and `map<K, bytes>` values must be crate-local.** A
-///   custom type used as the element of a `repeated` field — or as a
-///   `map<K, bytes>` value — needs codegen-emitted `ReflectElement` (vtable) and
-///   base64 `ProtoElemJson` (JSON) impls, which the orphan rule permits only when
-///   the type is local to the generating crate. A *foreign* custom type in that
-///   position fails to compile — wrap it in a crate-local newtype. Singular,
-///   optional, and oneof uses work with a foreign type directly. (A custom
-///   `bytes` map value is honored just like the built-in `bytes::Bytes`; only the
+/// - **With JSON generation or vtable reflection, `repeated` elements and
+///   `map<K, bytes>` values must be crate-local.** A custom type used as the
+///   element of a `repeated` field, or as a `map<K, bytes>` value, needs a
+///   codegen-emitted base64 `ProtoElemJson` impl when codegen generates JSON
+///   (`generate_json`) and a `ReflectElement` impl under vtable reflection,
+///   which the orphan rule permits only when the type is local to the
+///   generating crate. A *foreign* custom type in that position fails to
+///   compile in such a build; wrap it in a crate-local newtype. A build with
+///   neither (bridge reflection included) emits no such impl and accepts a
+///   foreign type in those positions, and singular, optional, and oneof uses
+///   work with a foreign type directly in any build. (A custom `bytes` map
+///   value is honored just like the built-in `bytes::Bytes`; only the
 ///   `map<bytes, bytes>` carve-out keeps `Vec<u8>` values.)
 /// - **No `Arbitrary` impl required.** Under the `arbitrary` feature codegen
 ///   attaches a generic builder, so a custom type needs no native
@@ -1837,11 +1844,16 @@ pub fn decode_bytes_to<B: ProtoBytes>(buf: &mut impl Buf) -> Result<B, DecodeErr
 ///   serde derive unconditionally — for example `connectrpc` bounds its handler
 ///   and client message types on `Serialize` / `DeserializeOwned` even when JSON
 ///   is never used at runtime — so a custom collection used through such a
-///   framework must be serde-capable regardless.
+///   framework must be serde-capable regardless. A `buffa-remote-derive`
+///   newtype gets these impls from `#[buffa(remote = ..., serde)]`, which
+///   forwards to the remote collection's own impls.
 /// - **`arbitrary`:** under the `arbitrary` feature a collection must implement
 ///   `arbitrary::Arbitrary` (trivially derivable on a newtype). Not needed on
 ///   a field whose element is a custom string type or a non-default bytes
-///   type: generated code builds that field through `From<Vec<T>>`.
+///   type: generated code builds that field through `From<Vec<T>>`. A
+///   `buffa-remote-derive` newtype gets the impl from
+///   `#[buffa(remote = ..., arbitrary)]`, which needs no `Arbitrary` impl on
+///   the remote collection.
 ///
 /// # Examples
 ///

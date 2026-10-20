@@ -568,10 +568,15 @@ pub enum BytesRepr {
     ///
     /// # Limitations
     ///
-    /// - A *foreign* custom type used as a `repeated` element fails to compile
-    ///   (the emitted `ReflectElement` / `ProtoElemJson` impls violate the
-    ///   orphan rule). Wrap it in a crate-local newtype for that case; singular
-    ///   / optional / oneof uses work with a foreign type directly.
+    /// - With [`generate_json`](CodeGenConfig::generate_json) or
+    ///   [`generate_reflection_vtable`](CodeGenConfig::generate_reflection_vtable)
+    ///   (vtable reflection, which `buffa_build`'s `generate_reflection(true)`
+    ///   selects), a *foreign* custom type used as a `repeated` element fails
+    ///   to compile (the emitted `ProtoElemJson` / `ReflectElement` impls
+    ///   violate the orphan rule). Wrap it in a crate-local newtype for that
+    ///   case. Singular / optional / oneof uses work with a foreign type
+    ///   directly, and with neither setting (bridge reflection included), a
+    ///   foreign type works as a `repeated` element too.
     /// - A `Custom` rule applies to `map<K, bytes>` values, as
     ///   [`Bytes`](BytesRepr::Bytes) does. With `generate_json` or
     ///   `generate_reflection_vtable`, codegen emits `ProtoElemJson` /
@@ -670,7 +675,14 @@ pub enum MapRepr {
     ///   listed on that trait's docs (the canonical list). JSON and `arbitrary`
     ///   now work for every proto map key/value type regardless of the container.
     ///   The buffa-provided [`BTreeMap`](MapRepr::BTreeMap) already satisfies every
-    ///   bound, so prefer it unless you need a specific foreign map.
+    ///   bound, so prefer it unless you need a specific foreign map. A
+    ///   `buffa-remote-derive` newtype over a foreign map gets the serde impls
+    ///   from `#[buffa(remote = ..., serde)]`, which forward to the remote
+    ///   map's own (so it must implement serde, usually through its crate's
+    ///   `serde` feature), and the `Arbitrary` impl from the `arbitrary` key,
+    ///   which needs nothing from the remote map. The `MapStorage` derive does
+    ///   not generate `Default`, `FromIterator<(K, V)>` or `ReflectMap`; write
+    ///   those by hand.
     Custom(String),
 }
 
@@ -930,7 +942,14 @@ pub enum RepeatedRepr {
     ///   `buffa_descriptor`'s `ReflectList` (a `Vec`-backed newtype can delegate
     ///   to the inner `Vec<T>: ReflectList`). Under JSON it must implement
     ///   `serde::Serialize` / `Deserialize`; under the `arbitrary` feature,
-    ///   `arbitrary::Arbitrary` (derivable on a newtype).
+    ///   `arbitrary::Arbitrary` (derivable on a newtype). A
+    ///   `buffa-remote-derive` newtype gets the serde impls from
+    ///   `#[buffa(remote = ..., serde)]`, which forward to the remote
+    ///   collection's own (so it must implement serde, usually through its
+    ///   crate's `serde` feature), and the `Arbitrary` impl from the
+    ///   `arbitrary` key, which needs nothing from the remote collection. The
+    ///   `ProtoList` derive does not generate `Default` or `ReflectList`; write
+    ///   those by hand.
     /// - A `repeated <self-type>` field becomes `Collection<Self>`, so the
     ///   collection must be heap-backed; an inline collection (`SmallVec<[Self;
     ///   N]>`) would be infinitely sized and fail to compile.

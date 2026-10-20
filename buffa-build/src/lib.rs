@@ -1185,10 +1185,15 @@ impl Config {
     ///
     /// A **custom** `bytes` representation
     /// ([`bytes_type_custom`](Self::bytes_type_custom)) is honored for
-    /// `map<K, bytes>` values too, the same as the built-in `Bytes` — but a
-    /// custom map value (like a custom `repeated` element) must be a crate-local
-    /// type, since codegen emits its `ReflectElement` / `ProtoElemJson` impls
-    /// (the orphan rule forbids them for a foreign type).
+    /// `map<K, bytes>` values too, the same as the built-in `Bytes`. With
+    /// [`generate_json`](Self::generate_json) or vtable reflection
+    /// ([`generate_reflection(true)`](Self::generate_reflection), or
+    /// [`reflect_mode`](Self::reflect_mode) with [`ReflectMode::VTable`]), a
+    /// custom map value (like a custom `repeated` element) must be a
+    /// crate-local type, since codegen emits a `ProtoElemJson` impl for it
+    /// under JSON and a `ReflectElement` impl under vtable reflection (the
+    /// orphan rule forbids them for a foreign type). A build with neither,
+    /// including one with bridge reflection, accepts a foreign type.
     ///
     /// [`strict_utf8_mapping`]: Self::strict_utf8_mapping
     ///
@@ -1273,11 +1278,17 @@ impl Config {
     ///
     /// # Limitations
     ///
-    /// - A **foreign** custom type used as a `repeated` element — or a
-    ///   `map<K, bytes>` value — fails to compile: codegen emits
-    ///   `ReflectElement` / `ProtoElemJson` impls for it, which the orphan rule
-    ///   forbids for a foreign type. Wrap it in a crate-local newtype for those
-    ///   cases; singular / optional / oneof uses work directly.
+    /// - With [`generate_json`](Self::generate_json) or vtable reflection
+    ///   ([`generate_reflection(true)`](Self::generate_reflection), or
+    ///   [`reflect_mode`](Self::reflect_mode) with [`ReflectMode::VTable`]), a
+    ///   **foreign** custom type used as a `repeated` element or a
+    ///   `map<K, bytes>` value fails to compile: codegen emits a
+    ///   `ProtoElemJson` impl for it under JSON and a `ReflectElement` impl
+    ///   under vtable reflection, which the orphan rule forbids for a foreign
+    ///   type. Wrap it in a crate-local newtype for those cases. Singular /
+    ///   optional / oneof uses work directly, as does every use in a build with
+    ///   neither (bridge reflection, [`ReflectMode::Bridge`], emits no such
+    ///   impl).
     /// - A `Custom` rule **does** apply to `map<K, bytes>` values (honored like
     ///   the built-in [`BytesRepr::Bytes`]); only the `map<bytes, bytes>`
     ///   carve-out keeps `Vec<u8>` values.
@@ -1411,9 +1422,11 @@ impl Config {
     ///
     /// # Limitations
     ///
-    /// - Under vtable reflection ([`reflect_mode`](Self::reflect_mode) with
-    ///   `ReflectMode::VTable`), a **foreign** custom type used as a `repeated`
-    ///   element or as a `map` key or value fails to compile: codegen emits a
+    /// - Under vtable reflection
+    ///   ([`generate_reflection(true)`](Self::generate_reflection), or
+    ///   [`reflect_mode`](Self::reflect_mode) with [`ReflectMode::VTable`]), a
+    ///   **foreign** custom type used as a `repeated` element or as a `map` key
+    ///   or value fails to compile: codegen emits a
     ///   `ReflectElement` or `ReflectMapKey` impl for it, which the orphan rule
     ///   forbids for a foreign type. Wrap it in a crate-local newtype for
     ///   those cases; singular / optional / oneof uses work directly.
@@ -1561,7 +1574,13 @@ impl Config {
     ///   `FromIterator` / `ReflectMap` / serde / `arbitrary` bounds documented on
     ///   `buffa::map_codec::MapStorage` (the canonical list). JSON and
     ///   `arbitrary` work for every proto map key/value type regardless of the
-    ///   container.
+    ///   container. A `buffa-remote-derive` newtype gets the serde impls from
+    ///   `#[buffa(remote = ..., serde)]`, which forward to the remote map's own
+    ///   (so it must implement serde, usually through its crate's `serde`
+    ///   feature), and the `Arbitrary` impl from the `arbitrary` key, which
+    ///   needs nothing from the remote map. The `MapStorage` derive does not
+    ///   generate `Default`, `FromIterator<(K, V)>` or `ReflectMap`; write those
+    ///   by hand.
     /// - A path that does not parse as a Rust type is reported as a codegen
     ///   error from [`compile`](Self::compile).
     #[must_use]
@@ -1797,8 +1816,14 @@ impl Config {
     ///   `buffa_descriptor`'s `ReflectList` (not derivable, but a `Vec`-backed
     ///   newtype can delegate to the inner `Vec<T>`). Under JSON it must
     ///   implement `serde::Serialize` / `Deserialize`; under `generate_arbitrary`,
-    ///   `arbitrary::Arbitrary` (derivable on a newtype). See `buffa::ProtoList`
-    ///   for a worked newtype example.
+    ///   `arbitrary::Arbitrary` (derivable on a newtype). A
+    ///   `buffa-remote-derive` newtype gets the serde impls from
+    ///   `#[buffa(remote = ..., serde)]`, which forward to the remote
+    ///   collection's own (so it must implement serde, usually through its
+    ///   crate's `serde` feature), and the `Arbitrary` impl from the
+    ///   `arbitrary` key, which needs nothing from the remote collection. The
+    ///   `ProtoList` derive does not generate `Default` or `ReflectList`; write
+    ///   those by hand. See `buffa::ProtoList` for a worked newtype example.
     #[must_use]
     pub fn repeated_type_custom_in(self, template: &str, paths: &[impl AsRef<str>]) -> Self {
         self.repeated_type_in(RepeatedRepr::Custom(template.to_string()), paths)
