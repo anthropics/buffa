@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`Struct` gains `keys()`, `values()` and `values_mut()`**. These methods provide direct no-allocation iteration over field names and values, including mutable values, in unspecified order.
+time: 2026-10-19T01:13:00+02:00
