@@ -1,0 +1,3 @@
+kind: Changed
+body: Use faster duplicate checks when parsing dynamic JSON messages with many fields.
+time: 2026-10-19T00:26:56+02:00
