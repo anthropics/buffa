@@ -396,6 +396,77 @@ where
 
 // ── Real binary ──────────────────────────────────────────────────────────
 
+// A clean EOF before the frame header ends the conformance stream. Once even
+// one header byte arrives, the remaining three are mandatory.
+fn read_frame_length(reader: &mut impl std::io::Read) -> std::io::Result<Option<u32>> {
+    use std::io::ErrorKind;
+
+    let mut prefix = [0u8; 4];
+    loop {
+        match reader.read(&mut prefix[..1]) {
+            Ok(0) => return Ok(None),
+            Ok(_) => break,
+            Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    reader.read_exact(&mut prefix[1..])?;
+    Ok(Some(u32::from_le_bytes(prefix)))
+}
+
+#[cfg(test)]
+mod frame_tests {
+    use super::read_frame_length;
+    use std::io::{self, Read};
+
+    #[test]
+    fn clean_eof_and_complete_headers() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&0x8000_0000u32.to_le_bytes());
+
+        let mut reader = bytes.as_slice();
+        assert_eq!(read_frame_length(&mut reader).unwrap(), Some(0));
+        assert_eq!(read_frame_length(&mut reader).unwrap(), Some(0x8000_0000));
+        assert_eq!(read_frame_length(&mut reader).unwrap(), None);
+    }
+
+    #[test]
+    fn partial_header_is_not_clean_eof() {
+        let bytes = [0x12, 0x34, 0x56];
+        for width in 1..=3 {
+            let mut reader = &bytes[..width];
+            let error = read_frame_length(&mut reader).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof, "width={width}");
+        }
+    }
+
+    #[test]
+    fn interrupted_initial_read_is_retried() {
+        struct InterruptOnce<'a> {
+            input: &'a [u8],
+            interrupted: bool,
+        }
+
+        impl Read for InterruptOnce<'_> {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                if !self.interrupted {
+                    self.interrupted = true;
+                    return Err(io::ErrorKind::Interrupted.into());
+                }
+                self.input.read(buf)
+            }
+        }
+
+        let bytes = 0x1234_5678u32.to_le_bytes();
+        let mut reader = InterruptOnce {
+            input: &bytes,
+            interrupted: false,
+        };
+        assert_eq!(read_frame_length(&mut reader).unwrap(), Some(0x1234_5678));
+    }
+}
+
 #[cfg(not(no_protos))]
 fn main() {
     use std::io::{self, Read, Write};
@@ -410,13 +481,11 @@ fn main() {
     let mut stdout = stdout.lock();
 
     loop {
-        let mut len_buf = [0u8; 4];
-        match stdin.read_exact(&mut len_buf) {
-            Ok(()) => {}
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+        let len = match read_frame_length(&mut stdin) {
+            Ok(Some(len)) => len as usize,
+            Ok(None) => break,
             Err(e) => panic!("stdin read error: {e}"),
-        }
-        let len = u32::from_le_bytes(len_buf) as usize;
+        };
 
         let mut req_bytes = vec![0u8; len];
         stdin.read_exact(&mut req_bytes).expect("read request body");

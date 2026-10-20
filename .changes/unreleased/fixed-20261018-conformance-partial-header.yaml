@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Conformance runner detects truncated request length headers.** A clean EOF still ends the input stream, but receiving only one to three bytes of a four-byte header now reports an input error instead of silently skipping a request.
+time: 2026-10-18T12:05:00.000000Z
