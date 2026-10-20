@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **Count packed varint view elements a word at a time for large fields.** The view decoder still reserves the exact number of elements, but counts the terminator bits eight bytes at a time for long packed payloads. Small fields keep their scalar counter.
+time: 2026-10-19T16:27:00.000000000+00:00

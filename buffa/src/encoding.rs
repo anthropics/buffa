@@ -215,7 +215,24 @@ pub fn encode_varint(mut value: u64, buf: &mut impl EncodeSink) {
 #[must_use]
 #[inline]
 pub fn count_varints(payload: &[u8]) -> usize {
-    payload.iter().filter(|&&b| b < 0x80).count()
+    // Tiny packed fields are common. Avoid the chunk iterator and popcount
+    // setup for them so their existing fast path stays unchanged.
+    if payload.len() < 64 {
+        return payload.iter().filter(|&&b| b < 0x80).count();
+    }
+
+    // Every zero high bit terminates one varint. Count eight terminators per
+    // machine word, without decoding the values or depending on byte order.
+    const HIGH_BITS: u64 = 0x8080_8080_8080_8080;
+    let mut chunks = payload.chunks_exact(8);
+    let mut count = 0usize;
+    for chunk in &mut chunks {
+        let block: [u8; 8] = chunk
+            .try_into()
+            .expect("chunks_exact(8) yields eight bytes");
+        count += ((!u64::from_ne_bytes(block)) & HIGH_BITS).count_ones() as usize;
+    }
+    count + chunks.remainder().iter().filter(|&&b| b < 0x80).count()
 }
 
 /// Drive a well-formed packed varint payload element-by-element with the
@@ -1829,6 +1846,33 @@ mod tests {
         // Truncated final varint (no terminator) under-counts by one, not over.
         assert_eq!(count_varints(&[0x80, 0x80]), 0);
         assert_eq!(count_varints(&[0x05, 0x80]), 1);
+    }
+
+    #[test]
+    fn test_count_varints_wordwise_matches_scalar_at_boundaries() {
+        // Exercise every tail length, the small-payload cutoff, and unaligned
+        // input with a mix of continuation and terminal bytes.
+        let source: Vec<u8> = (0..2064)
+            .map(|i| ((i * 73) ^ (i >> 3) ^ (i << 1)) as u8)
+            .collect();
+        for offset in 0..8 {
+            for len in [
+                0, 1, 7, 8, 9, 55, 56, 57, 62, 63, 64, 65, 71, 72, 73, 127, 128, 129, 255, 256,
+                1023, 1024, 2048,
+            ] {
+                let data = &source[offset..offset + len];
+                let scalar = data.iter().filter(|&&b| b < 0x80).count();
+                assert_eq!(count_varints(data), scalar, "offset={offset}, len={len}");
+            }
+        }
+
+        for byte in [0x00, 0x7f, 0x80, 0xff] {
+            for len in 0..130 {
+                let data = vec![byte; len];
+                let expected = if byte < 0x80 { len } else { 0 };
+                assert_eq!(count_varints(&data), expected, "byte={byte:#x}, len={len}");
+            }
+        }
     }
 
     // --- 32-bit specific tests ---
