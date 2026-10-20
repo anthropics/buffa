@@ -61,3 +61,8 @@ thiserror = { workspace = true }
 # The JSON buffering tests need `serde_json::Value` to parse the string under
 # its private `RawValue` key: see `buffa/src/json_helpers/buffered.rs`.
 serde_json = { workspace = true, features = ["raw_value"] }
+
+# Standalone A/B benchmark for protobuf field-tag writes.
+[[bench]]
+name = "tag_encoding"
+harness = false
