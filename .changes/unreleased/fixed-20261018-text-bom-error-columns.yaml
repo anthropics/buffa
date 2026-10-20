@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Textproto errors report the correct column with a leading UTF-8 BOM.** The tokenizer skipped the BOM when reading the file, but its diagnostic positions counted it as a visible column.
+time: 2026-10-18T13:12:00Z

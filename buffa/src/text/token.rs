@@ -227,7 +227,9 @@ impl<'a> Tokenizer<'a> {
 
     /// Convert a byte offset into the input into a 1-based (line, column).
     ///
-    /// Column counts Unicode scalar values, not bytes. A `pos` past the end
+    /// Column counts Unicode scalar values, not bytes. A leading UTF-8 BOM
+    /// is skipped, so it does not count toward the first line's columns.
+    /// A `pos` past the end
     /// of the input gives the position just after the last character. An
     /// offset inside a UTF-8 character is treated as that character's start.
     ///
@@ -241,7 +243,13 @@ impl<'a> Tokenizer<'a> {
         let before = &self.input[..pos];
         let line = before.bytes().filter(|&b| b == b'\n').count() as u32 + 1;
         let line_start = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
-        let col = before[line_start..].chars().count() as u32 + 1;
+        let line_text = &before[line_start..];
+        let line_text = if line_start == 0 {
+            line_text.strip_prefix('\u{FEFF}').unwrap_or(line_text)
+        } else {
+            line_text
+        };
+        let col = line_text.chars().count() as u32 + 1;
         (line, col)
     }
 
@@ -1691,6 +1699,27 @@ mod tests {
         assert_eq!(t.line_col(2), (1, 2));
         assert_eq!(t.line_col(3), (1, 2));
         assert_eq!(t.line_col(4), (1, 3));
+    }
+
+    #[test]
+    fn line_col_ignores_leading_bom() {
+        let t = Tokenizer::new("\u{FEFF}a: 1\nb");
+        for pos in 0..=3 {
+            assert_eq!(t.line_col(pos), (1, 1), "pos: {pos}");
+        }
+        assert_eq!(t.line_col(4), (1, 2));
+        assert_eq!(t.line_col(5), (1, 3));
+        assert_eq!(t.line_col(8), (2, 1));
+        assert_eq!(t.line_col(9), (2, 2));
+
+        let err = drain("\u{FEFF}?").unwrap_err();
+        assert_eq!((err.line, err.col), (1, 1));
+    }
+
+    #[test]
+    fn line_col_only_ignores_bom_at_start_of_input() {
+        let t = Tokenizer::new("a:\n\u{FEFF}?");
+        assert_eq!(t.line_col(6), (2, 2));
     }
 
     #[test]
