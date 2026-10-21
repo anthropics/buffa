@@ -45,6 +45,7 @@ pub(crate) mod reflect_owned;
 pub(crate) mod reflect_view;
 pub(crate) mod table_codec;
 pub(crate) mod table_plan;
+pub(crate) mod type_inference;
 pub(crate) mod view;
 
 use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDescriptorProto};
@@ -3340,6 +3341,10 @@ fn warn_excluded_refs_msg(
 ///   [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
 ///   or if `shared_descriptor_pool_root` or an `exclude_packages` entry is
 ///   malformed.
+/// - [`CodeGenError::Other`] if a field or extension anywhere in
+///   `file_descriptors`, generated or not, has a non-empty `type_name` and
+///   no `type`, and `type_name` names no message or enum in the set. When
+///   it names one, the field takes `TYPE_MESSAGE` or `TYPE_ENUM` from it.
 /// - [`CodeGenError::SharedCorpusContextMismatch`] if
 ///   [`CodeGenConfig::shared_corpus_context`] was built from a different
 ///   corpus or different rules than this call uses.
@@ -3475,6 +3480,13 @@ pub fn generate_with_diagnostics(
             )
         };
     let files_to_generate: &[String] = &effective_files_to_generate;
+
+    // A field with `type_name` set and `type` unset gets its type here,
+    // before the feature overrides and every generation path read it, so
+    // none of them takes the unset `type` as `TYPE_DOUBLE`. Usually a
+    // borrow, since protoc always sets `type`.
+    let inferred = type_inference::infer_field_types(file_descriptors)?;
+    let file_descriptors: &[FileDescriptorProto] = inferred.as_deref().unwrap_or(file_descriptors);
 
     // Feature overrides are applied by mutating the descriptor set up front,
     // so every downstream consumer — feature resolution, all generation
@@ -3708,10 +3720,10 @@ pub fn generate_with_diagnostics(
         validate_shared_root_name(file_descriptors, files_to_generate)?;
     }
 
-    // `file_descriptors` is the override-applied set (rebound above). The
-    // default path embeds it directly; shared mode embeds nothing here and
-    // leaves the single copy to the front-end, which must reproduce the same
-    // overrides via `encode_descriptor_set`. On the plugin path — where the
+    // `file_descriptors` is the type-inferred, override-applied set (rebound
+    // above). The default path embeds it directly; shared mode embeds nothing
+    // here and leaves the single copy to the front-end, which must reproduce
+    // the same transforms via `encode_descriptor_set`. On the plugin path — where the
     // packaging plugin can't see the override options — that combination is
     // rejected up front (see `protoc-gen-buffa`).
     let fds_bytes = if config.generate_reflection && !config.shared_descriptor_pool {
@@ -3937,7 +3949,15 @@ impl SharedCorpusContext {
         files: &[generated::descriptor::FileDescriptorProto],
         config: &CodeGenConfig,
     ) -> Self {
-        let msg_index = oneof::message_index(files);
+        // `generate` reads the descriptors with every field type it can infer
+        // filled in, so the corpus is kept and compared in that form. A set
+        // that cannot be inferred is kept as given; `generate` rejects it
+        // before it compares.
+        let files = type_inference::infer_field_types(files)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| files.to_vec());
+        let msg_index = oneof::message_index(&files);
         let unboxed_oneof_variants = oneof::resolve_unboxed_variants(
             &msg_index,
             &config.unboxed_oneof_fields,
@@ -3950,7 +3970,7 @@ impl SharedCorpusContext {
         );
         let comment_map = files.iter().flat_map(comments::fqn_comments).collect();
         Self {
-            files: std::sync::Arc::new(files.to_vec()),
+            files: std::sync::Arc::new(files),
             unboxed_oneof_fields: std::sync::Arc::new(config.unboxed_oneof_fields.clone()),
             pointer_fields: std::sync::Arc::new(config.pointer_fields.clone()),
             unboxed_oneof_variants: std::sync::Arc::new(unboxed_oneof_variants),
@@ -4028,15 +4048,20 @@ pub fn encode_descriptor_set(
     file_descriptors: &[generated::descriptor::FileDescriptorProto],
     feature_overrides: &[(String, FeatureOverride)],
 ) -> Vec<u8> {
-    // `generate` applies feature overrides to the descriptors up front and the
-    // default (non-shared) path embeds *that* override-applied set, so the
-    // embedded reflection descriptors match the generated code. Shared mode
-    // skips `generate`'s encode, so any front-end computing the shared copy
-    // here must apply the same transform — otherwise the shared pool reports
-    // un-overridden features (e.g. an `open_enums_in` enum still closed) and
-    // disagrees with the code. Pass the same `feature_overrides` the codegen
-    // config carries; `&[]` when none are configured (the common case, a
-    // borrow with no clone).
+    // `generate` infers missing field types and applies feature overrides to
+    // the descriptors up front, and the default (non-shared) path embeds
+    // *that* set, so the embedded reflection descriptors match the generated
+    // code. Shared mode skips `generate`'s encode, so any front-end computing
+    // the shared copy here must apply the same transforms — otherwise the
+    // shared pool reports un-overridden features (e.g. an `open_enums_in`
+    // enum still closed) and disagrees with the code. Pass the same
+    // `feature_overrides` the codegen config carries; `&[]` when none are
+    // configured (the common case, a borrow with no clone). A set whose types
+    // cannot be inferred is encoded as given: `generate` rejects it.
+    let inferred = type_inference::infer_field_types(file_descriptors)
+        .ok()
+        .flatten();
+    let file_descriptors = inferred.as_deref().unwrap_or(file_descriptors);
     let overridden =
         feature_overrides::apply_feature_overrides(file_descriptors, feature_overrides);
     let files = overridden.as_ref().map_or(file_descriptors, |o| &o.files);
