@@ -17,8 +17,15 @@ impl ::core::fmt::Debug for FileOptions {
     }
 }
 impl FileOptions {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/buffa.ext.FileOptions";
@@ -249,8 +256,15 @@ impl ::core::fmt::Debug for MessageOptions {
     }
 }
 impl MessageOptions {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/buffa.ext.MessageOptions";
@@ -481,8 +495,15 @@ impl ::core::fmt::Debug for FieldOptions {
     }
 }
 impl FieldOptions {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/buffa.ext.FieldOptions";
@@ -713,8 +734,15 @@ impl ::core::fmt::Debug for OneofOptions {
     }
 }
 impl OneofOptions {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/buffa.ext.OneofOptions";
@@ -945,8 +973,15 @@ impl ::core::fmt::Debug for EnumOptions {
     }
 }
 impl EnumOptions {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/buffa.ext.EnumOptions";
@@ -1177,8 +1212,15 @@ impl ::core::fmt::Debug for EnumValueOptions {
     }
 }
 impl EnumValueOptions {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/buffa.ext.EnumValueOptions";

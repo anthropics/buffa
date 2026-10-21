@@ -1441,6 +1441,49 @@ fn test_type_url_top_level_with_package() {
 }
 
 #[test]
+fn test_type_url_doc_leads_with_the_any_message_helpers() {
+    // #621: `Any::unpack_if` compares the whole URL, prefix included, so the
+    // doc points at `pack_message` / `unpack_message` first.
+    let mut file = proto3_file("person.proto");
+    file.package = Some("my.company".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Person".to_string()),
+        ..Default::default()
+    });
+    let files = generate(
+        &[file],
+        &["person.proto".to_string()],
+        &CodeGenConfig::default(),
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    let doc: Vec<&str> = content
+        .lines()
+        .map(str::trim)
+        .take_while(|line| !line.starts_with("pub const TYPE_URL"))
+        .collect();
+    let start = doc
+        .iter()
+        .rposition(|l| !l.starts_with("///"))
+        .expect("an item precedes the TYPE_URL doc");
+    let doc = doc[start + 1..].join("\n");
+    for want in [
+        "[`::buffa::MessageName::TYPE_URL`]",
+        "`Any::pack_message`, which packs under this URL",
+        "`Any::unpack_message`, which matches the message's full name",
+        "prefix included, so it returns `Ok(None)`",
+        "Format: `type.googleapis.com/<fully.qualified.TypeName>`",
+    ] {
+        assert!(doc.contains(want), "TYPE_URL doc lacks {want:?}:\n{doc}");
+    }
+    let pack_message = doc.find("Any::pack_message").unwrap();
+    let unpack_if = doc
+        .find("Any::unpack_if")
+        .expect("names the explicit-URL form");
+    assert!(pack_message < unpack_if, "the helpers come first:\n{doc}");
+}
+
+#[test]
 fn test_type_url_top_level_no_package() {
     let mut file = proto3_file("root.proto");
     file.message_type.push(DescriptorProto {

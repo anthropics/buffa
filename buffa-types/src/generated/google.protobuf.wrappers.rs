@@ -20,8 +20,15 @@ impl ::core::fmt::Debug for DoubleValue {
     }
 }
 impl DoubleValue {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.DoubleValue";
@@ -254,8 +261,15 @@ impl ::core::fmt::Debug for FloatValue {
     }
 }
 impl FloatValue {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.FloatValue";
@@ -489,8 +503,15 @@ impl ::core::fmt::Debug for Int64Value {
     }
 }
 impl Int64Value {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Int64Value";
@@ -724,8 +745,15 @@ impl ::core::fmt::Debug for UInt64Value {
     }
 }
 impl UInt64Value {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UInt64Value";
@@ -959,8 +987,15 @@ impl ::core::fmt::Debug for Int32Value {
     }
 }
 impl Int32Value {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.Int32Value";
@@ -1194,8 +1229,15 @@ impl ::core::fmt::Debug for UInt32Value {
     }
 }
 impl UInt32Value {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.UInt32Value";
@@ -1429,8 +1471,15 @@ impl ::core::fmt::Debug for BoolValue {
     }
 }
 impl BoolValue {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.BoolValue";
@@ -1664,8 +1713,15 @@ impl ::core::fmt::Debug for StringValue {
     }
 }
 impl StringValue {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.StringValue";
@@ -1899,8 +1955,15 @@ impl ::core::fmt::Debug for BytesValue {
     }
 }
 impl BytesValue {
-    /// Protobuf type URL for this message, for use with `Any::pack` and
-    /// `Any::unpack_if`.
+    /// Protobuf type URL for this message, the same as
+    /// [`::buffa::MessageName::TYPE_URL`].
+    ///
+    /// Most callers want `Any::pack_message`, which packs under this URL,
+    /// and `Any::unpack_message`, which matches the message's full name
+    /// under any prefix (`Any` is in `buffa_types`). `Any::pack` and
+    /// `Any::unpack_if` take a URL argument; `unpack_if` compares the
+    /// whole URL, prefix included, so it returns `Ok(None)` for this
+    /// message packed under another prefix.
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/google.protobuf.BytesValue";
