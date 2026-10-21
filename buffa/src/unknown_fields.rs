@@ -45,6 +45,11 @@ impl UnknownFields {
         self.fields.iter()
     }
 
+    /// Returns a mutable iterator over the recorded unknown fields.
+    pub fn iter_mut(&mut self) -> core::slice::IterMut<'_, UnknownField> {
+        self.fields.iter_mut()
+    }
+
     /// Removes all recorded unknown fields.
     pub fn clear(&mut self) {
         self.fields.clear();
@@ -109,6 +114,15 @@ impl<'a> IntoIterator for &'a UnknownFields {
 
     fn into_iter(self) -> Self::IntoIter {
         self.fields.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut UnknownFields {
+    type Item = &'a mut UnknownField;
+    type IntoIter = core::slice::IterMut<'a, UnknownField>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.fields.iter_mut()
     }
 }
 
@@ -350,6 +364,45 @@ mod tests {
             count += 1;
         }
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_iter_mut_preserves_order_and_duplicates() {
+        let mut fields: UnknownFields = [
+            varint_field(1, 10),
+            ld_field(2, vec![1, 2]),
+            varint_field(1, 20),
+        ]
+        .into_iter()
+        .collect();
+
+        for field in fields.iter_mut() {
+            field.number += 10;
+        }
+        assert_eq!(
+            fields.into_iter().collect::<Vec<_>>(),
+            vec![
+                varint_field(11, 10),
+                ld_field(12, vec![1, 2]),
+                varint_field(11, 20),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_into_iter_by_mut_ref() {
+        let mut fields: UnknownFields = [varint_field(1, 3), varint_field(2, 4)]
+            .into_iter()
+            .collect();
+        for field in &mut fields {
+            if let UnknownFieldData::Varint(value) = &mut field.data {
+                *value += 1;
+            }
+        }
+        assert_eq!(
+            fields.into_iter().collect::<Vec<_>>(),
+            vec![varint_field(1, 4), varint_field(2, 5)]
+        );
     }
 
     #[test]
