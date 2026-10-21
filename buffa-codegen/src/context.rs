@@ -749,6 +749,17 @@ impl<'a> CodeGenContext<'a> {
         ))
     }
 
+    /// [`field_rename_note`](Self::field_rename_note) as doc attributes that
+    /// follow a member's own doc after a blank line, for each member named
+    /// after the field: the owned and view struct fields and the owned
+    /// view's accessor. Empty when the name was not adjusted.
+    pub(crate) fn field_rename_doc(&self, name: &str, number: i32) -> proc_macro2::TokenStream {
+        match self.field_rename_note(name, number) {
+            Some(note) => quote::quote! { #[doc = ""] #[doc = #note] },
+            None => proc_macro2::TokenStream::new(),
+        }
+    }
+
     /// Doc note for a oneof that the keyword-escape plan renamed; `None` for
     /// every other oneof.
     pub(crate) fn oneof_rename_note(&self, name: &str) -> Option<String> {

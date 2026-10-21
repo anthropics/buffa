@@ -49,6 +49,19 @@ pub(super) fn joined(files: &[GeneratedFile]) -> String {
         .join("\n")
 }
 
+/// The text of the top-level item whose line starts with `header` (for
+/// example `pub struct MsgView<'a>`), up to its closing brace at column 0.
+pub(super) fn item_text<'c>(content: &'c str, header: &str) -> &'c str {
+    let start = content
+        .find(&format!("\n{header}"))
+        .unwrap_or_else(|| panic!("no line starting `{header}` in: {content}"));
+    let item = &content[start + 1..];
+    let end = item
+        .find("\n}\n")
+        .unwrap_or_else(|| panic!("`{header}` does not close: {item}"));
+    &item[..end]
+}
+
 mod comments;
 mod custom_attributes;
 mod debug_redact;
