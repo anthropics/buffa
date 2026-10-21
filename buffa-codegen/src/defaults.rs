@@ -163,8 +163,7 @@ pub fn parse_default_value(
 /// default must survive the representation change. Returns `Ok(None)`
 /// everywhere else, so ordinary open-enum output is untouched. The required
 /// gate lives here (not in callers) so every surface that consults this —
-/// owned `Default`, `clear()`, view `Default`, reflection `has()` — agrees by
-/// construction.
+/// owned `Default`, `clear()`, view `Default` — agrees by construction.
 ///
 /// Extern (`extern_path`) enums are not in the compilation set, so their
 /// first declared value is unknown; an opened extern required enum field

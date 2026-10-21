@@ -658,3 +658,65 @@ fn test_view_required_group_presence_uses_is_set() {
     assert!(view.has_item(), "present required group must report true");
     assert_eq!(view.item.x, Some(5));
 }
+
+// ── Required-field presence on owned reflection (#627) ──────────────────
+
+#[test]
+fn test_owned_reflect_has_required_fields_at_type_defaults() {
+    // The owned encoder writes a required field whatever its value, so
+    // `ReflectMessage::has` reports it set even at the type default, as the
+    // `DynamicMessage` built from the same message does.
+    use crate::proto2::{RequiredDefaults, WithDefaults, WithRequiredGroup};
+    use buffa_descriptor::reflect::{ReflectMessage, Reflectable};
+
+    fn check(owned: &dyn ReflectMessage, numbers: &[u32], set: bool) {
+        let dynamic = owned.to_dynamic();
+        let mut visited = Vec::new();
+        owned.for_each_set(&mut |field, _| visited.push(field.number()));
+        let md = owned.message_descriptor();
+        for &number in numbers {
+            let field = md.field(number).unwrap();
+            assert_eq!(owned.has(field), set, "field {number}");
+            assert_eq!(dynamic.has(field), set, "dynamic field {number}");
+            assert_eq!(
+                visited.contains(&number),
+                set,
+                "for_each_set field {number}"
+            );
+        }
+    }
+
+    let with_defaults = WithDefaults {
+        name: String::new(),
+        id: 0,
+        ..Default::default()
+    };
+    check(&*with_defaults.reflect(), &[13, 14], true);
+
+    // One required field of every scalar type, the enum included, each at
+    // the value its type's `has` test used to treat as unset.
+    let mut zeroed = RequiredDefaults::default();
+    zeroed.count = 0;
+    zeroed.label.clear();
+    zeroed.magic.clear();
+    zeroed.on = false;
+    zeroed.u = 0;
+    zeroed.i64v = 0;
+    zeroed.u64v = 0;
+    zeroed.f = 0.0;
+    zeroed.d_inf = 0.0;
+    zeroed.d_ninf = 0.0;
+    zeroed.d_nan = 0.0;
+    zeroed.level = Default::default();
+    zeroed.s32 = 0;
+    zeroed.s64 = 0;
+    zeroed.fx32 = 0;
+    zeroed.fx64 = 0;
+    zeroed.sfx32 = 0;
+    zeroed.sfx64 = 0;
+    let all: Vec<u32> = (1..=18).collect();
+    check(&*zeroed.reflect(), &all, true);
+
+    // A required group keeps message presence: unset until it is set.
+    check(&*WithRequiredGroup::default().reflect(), &[1], false);
+}
