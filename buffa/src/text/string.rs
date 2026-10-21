@@ -263,7 +263,24 @@ fn push_utf8(out: &mut Vec<u8>, cp: u32) -> Result<(), UnescapeError> {
 /// Propagates [`core::fmt::Error`] from the underlying writer.
 pub fn escape_bytes<W: Write + ?Sized>(bytes: &[u8], w: &mut W) -> core::fmt::Result {
     w.write_char('"')?;
-    for &b in bytes {
+    // Most bytes fields are printable ASCII. Write a long initial run in one
+    // call instead of invoking the formatter for every byte. Do not scan
+    // after an escape: binary and escape-heavy inputs keep the old path.
+    let mut remaining = bytes;
+    if bytes.len() >= 32 {
+        let plain_end = bytes
+            .iter()
+            .position(|&b| !(0x20..=0x7E).contains(&b) || b == b'"' || b == b'\\')
+            .unwrap_or(bytes.len());
+        if plain_end >= 32 {
+            // SAFETY: every byte before plain_end is printable ASCII, as
+            // checked above, so this prefix is valid UTF-8.
+            let plain = unsafe { core::str::from_utf8_unchecked(&bytes[..plain_end]) };
+            w.write_str(plain)?;
+            remaining = &bytes[plain_end..];
+        }
+    }
+    for &b in remaining {
         match b {
             b'"' => w.write_str("\\\"")?,
             b'\\' => w.write_str("\\\\")?,
@@ -533,6 +550,35 @@ mod tests {
             let mut out = String::new();
             escape_bytes(input, &mut out).unwrap();
             assert_eq!(out, want, "input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn escape_bytes_bulk_plain_ascii_boundaries() {
+        for len in [0, 15, 31, 32, 33, 127, 128, 4096] {
+            let input = alloc::vec![b'a'; len];
+            let mut out = String::new();
+            escape_bytes(&input, &mut out).unwrap();
+            assert_eq!(out, alloc::format!("\"{}\"", "a".repeat(len)));
+        }
+    }
+
+    #[test]
+    fn escape_bytes_bulk_prefix_with_escapes() {
+        let suffix = b"\"\\\n\x00\x7f\x80\xff";
+        for prefix_len in [0, 1, 31, 32, 33, 4096] {
+            let mut input = alloc::vec![b'p'; prefix_len];
+            input.extend_from_slice(suffix);
+            let mut out = String::new();
+            escape_bytes(&input, &mut out).unwrap();
+            assert_eq!(
+                out,
+                alloc::format!(
+                    "\"{}{}\"",
+                    "p".repeat(prefix_len),
+                    r#"\"\\\n\000\177\200\377"#
+                )
+            );
         }
     }
 
