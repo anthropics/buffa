@@ -152,8 +152,23 @@ impl<'a> TextEncoder<'a> {
     }
 
     fn write_indent(&mut self) -> core::fmt::Result {
-        for _ in 0..self.depth {
-            self.w.write_str("  ")?;
+        // The original short loop is cheaper at the common shallow depths.
+        if self.depth < 8 {
+            for _ in 0..self.depth {
+                self.w.write_str("  ")?;
+            }
+            return Ok(());
+        }
+
+        // Batch deeper nesting levels to avoid repeated formatter dispatches.
+        const SPACES: &str = "                                                                ";
+        let mut levels = self.depth;
+        while levels >= 32 {
+            self.w.write_str(SPACES)?;
+            levels -= 32;
+        }
+        if levels > 0 {
+            self.w.write_str(&SPACES[..levels as usize * 2])?;
         }
         Ok(())
     }
@@ -679,6 +694,107 @@ fn is_bracket_safe_url_byte(b: u8) -> bool {
 mod tests {
     use super::*;
     use alloc::string::String;
+
+    #[test]
+    fn pretty_indent_batches_writes_and_preserves_output() {
+        for depth in [0, 1, 2, 31, 32, 33, 64, 65, 128, 1_000] {
+            let mut output = String::new();
+            let mut encoder = TextEncoder::new_pretty(&mut output);
+            encoder.depth = depth;
+            encoder.write_indent().unwrap();
+            assert_eq!(output, " ".repeat(depth as usize * 2), "depth={depth}");
+        }
+
+        struct CountingWriter {
+            output: String,
+            calls: usize,
+        }
+        impl core::fmt::Write for CountingWriter {
+            fn write_str(&mut self, value: &str) -> core::fmt::Result {
+                self.calls += 1;
+                self.output.push_str(value);
+                Ok(())
+            }
+        }
+        let mut writer = CountingWriter {
+            output: String::new(),
+            calls: 0,
+        };
+        let mut encoder = TextEncoder::new_pretty(&mut writer);
+        encoder.depth = 65;
+        encoder.write_indent().unwrap();
+        assert_eq!(writer.output, " ".repeat(130));
+        assert_eq!(writer.calls, 3);
+
+        struct RejectingWriter;
+        impl core::fmt::Write for RejectingWriter {
+            fn write_str(&mut self, _: &str) -> core::fmt::Result {
+                Err(core::fmt::Error)
+            }
+        }
+        let mut writer = RejectingWriter;
+        let mut encoder = TextEncoder::new_pretty(&mut writer);
+        encoder.depth = 1;
+        assert!(encoder.write_indent().is_err());
+    }
+
+    /// Opt-in A/B microbenchmark against the pre-change loop. Run with:
+    /// cargo test -p buffa --features text --release \
+    ///     bench_pretty_indent_batching -- --ignored --nocapture
+    #[test]
+    #[cfg(feature = "std")]
+    #[ignore = "performance benchmark; run explicitly in release mode"]
+    fn bench_pretty_indent_batching() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        fn sample(depth: u32, optimized: bool, iterations: usize) -> f64 {
+            let mut output = String::with_capacity(depth as usize * 2);
+            let start = Instant::now();
+            for _ in 0..iterations {
+                output.clear();
+                let mut encoder = TextEncoder::new_pretty(&mut output);
+                encoder.depth = black_box(depth);
+                if optimized {
+                    encoder.write_indent().unwrap();
+                } else {
+                    // The original implementation, using the same TextEncoder
+                    // and fmt::Write dispatch as the optimized version.
+                    for _ in 0..encoder.depth {
+                        encoder.w.write_str("  ").unwrap();
+                    }
+                }
+                black_box(&output);
+            }
+            start.elapsed().as_secs_f64() * 1e9 / iterations as f64
+        }
+
+        const SAMPLES: usize = 7;
+        const ITERATIONS: usize = 1_000_000;
+        println!("BENCH units=ns/indent iterations={ITERATIONS} samples={SAMPLES} median");
+        for depth in [0, 1, 2, 3, 4, 8, 16, 32, 64, 128] {
+            let mut before = [0.0f64; SAMPLES];
+            let mut after = [0.0f64; SAMPLES];
+            for i in 0..SAMPLES {
+                // Alternate AB/BA to limit bias from changing runner load.
+                if i % 2 == 0 {
+                    before[i] = sample(depth, false, ITERATIONS);
+                    after[i] = sample(depth, true, ITERATIONS);
+                } else {
+                    after[i] = sample(depth, true, ITERATIONS);
+                    before[i] = sample(depth, false, ITERATIONS);
+                }
+            }
+            before.sort_by(f64::total_cmp);
+            after.sort_by(f64::total_cmp);
+            let old_ns = before[SAMPLES / 2];
+            let new_ns = after[SAMPLES / 2];
+            println!(
+                "BENCH depth={depth} before={old_ns:.3} after={new_ns:.3} speedup={:.3}x",
+                old_ns / new_ns
+            );
+        }
+    }
 
     #[test]
     fn bracket_safe_url_bytes() {
