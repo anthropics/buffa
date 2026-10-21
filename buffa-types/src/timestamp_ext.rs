@@ -96,6 +96,9 @@ impl TryFrom<Timestamp> for std::time::SystemTime {
     /// Returns [`TimestampError::InvalidNanos`] if `nanos` is outside
     /// `[0, 999_999_999]`, or [`TimestampError::Overflow`] if the result
     /// does not fit in a [`std::time::SystemTime`].
+    ///
+    /// This conversion does not check whether `seconds` is within the
+    /// protobuf `Timestamp` range of years 0001–9999.
     fn try_from(ts: Timestamp) -> Result<Self, Self::Error> {
         Self::try_from(&ts)
     }
@@ -124,6 +127,9 @@ impl TryFrom<&Timestamp> for std::time::SystemTime {
     /// Returns [`TimestampError::InvalidNanos`] if `nanos` is outside
     /// `[0, 999_999_999]`, or [`TimestampError::Overflow`] if the result
     /// does not fit in a [`std::time::SystemTime`].
+    ///
+    /// This conversion does not check whether `seconds` is within the
+    /// protobuf `Timestamp` range of years 0001–9999.
     fn try_from(ts: &Timestamp) -> Result<Self, Self::Error> {
         if ts.nanos < 0 || ts.nanos > NANOS_MAX {
             return Err(TimestampError::InvalidNanos);
@@ -171,6 +177,13 @@ impl From<std::time::SystemTime> for Timestamp {
     /// side of the epoch. A time more than `i64::MAX` seconds after the epoch
     /// converts to `i64::MAX` seconds and keeps its nanoseconds. A time
     /// earlier than `i64::MIN` seconds converts to (`i64::MIN`, `0`).
+    ///
+    /// # Warning: Timestamp valid range
+    ///
+    /// The protobuf `Timestamp` spec restricts valid values to years
+    /// 0001–9999. A `SystemTime` outside that range still converts, but the
+    /// result is outside the valid `Timestamp` range and JSON serialization
+    /// (`json` feature) rejects it.
     fn from(t: std::time::SystemTime) -> Self {
         match t.duration_since(std::time::UNIX_EPOCH) {
             Ok(d) => Self {
@@ -404,6 +417,16 @@ mod tests {
         let st: std::time::SystemTime = ts.clone().try_into().unwrap();
         let ts2: Timestamp = st.into();
         assert_eq!(ts, ts2);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn systemtime_roundtrip_outside_protobuf_year_range() {
+        // Year 10000 is outside the protobuf Timestamp range, but fits in
+        // SystemTime on the supported test platforms.
+        let ts = Timestamp::from_unix_secs(253_402_300_800);
+        let st = std::time::SystemTime::try_from(&ts).unwrap();
+        assert_eq!(Timestamp::from(st), ts);
     }
 
     #[cfg(feature = "std")]
