@@ -6,7 +6,7 @@ use crate::google::protobuf::Duration;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum DurationError {
     /// The duration is negative and cannot be represented as [`core::time::Duration`].
-    #[error("negative protobuf Duration cannot be converted to std::time::Duration")]
+    #[error("negative protobuf Duration cannot be converted to core::time::Duration")]
     NegativeDuration,
     /// The `nanos` field is outside its valid range, or its sign is inconsistent
     /// with the `seconds` field.
@@ -289,6 +289,14 @@ mod tests {
         };
         let result: Result<core::time::Duration, _> = neg.try_into();
         assert_eq!(result, Err(DurationError::NegativeDuration));
+    }
+
+    #[test]
+    fn negative_duration_error_names_core_duration_type() {
+        assert_eq!(
+            DurationError::NegativeDuration.to_string(),
+            "negative protobuf Duration cannot be converted to core::time::Duration"
+        );
     }
 
     #[test]
