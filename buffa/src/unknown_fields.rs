@@ -1,6 +1,7 @@
 //! Unknown field preservation for round-trip fidelity.
 
 use crate::encode_sink::EncodeSink;
+use crate::encoding::MAX_FIELD_NUMBER;
 use alloc::vec::Vec;
 
 /// A collection of unknown fields encountered during decoding.
@@ -60,11 +61,20 @@ impl UnknownFields {
     }
 
     /// Compute the encoded size of all unknown fields.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any field number is outside `[1, MAX_FIELD_NUMBER]`.
     pub fn encoded_len(&self) -> usize {
         self.fields.iter().map(|f| f.encoded_len()).sum()
     }
 
     /// Re-encode all unknown fields to `buf` in their original wire format.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any field number is outside `[1, MAX_FIELD_NUMBER]`.
+    /// The sink may already contain partial output if this happens for a nested field.
     pub fn write_to(&self, buf: &mut impl EncodeSink) {
         for field in &self.fields {
             field.write_to(buf);
@@ -143,20 +153,31 @@ impl FromIterator<UnknownField> for UnknownFields {
 /// A single unknown field (field number + wire data).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct UnknownField {
+    /// Valid protobuf field number in the inclusive range `1..=MAX_FIELD_NUMBER`.
     pub number: u32,
     pub data: UnknownFieldData,
 }
 
 impl UnknownField {
     /// Compute the encoded size of this field (tag + data).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `number` is outside `1..=MAX_FIELD_NUMBER`.
     pub fn encoded_len(&self) -> usize {
+        assert_valid_field_number(self.number);
         let tag_len =
             crate::encoding::varint_len(((self.number as u64) << 3) | self.data.wire_type_value());
         tag_len + self.data.encoded_len(self.number)
     }
 
     /// Re-encode this field (tag + data) to `buf` in its original wire format.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `number` is outside `1..=MAX_FIELD_NUMBER`.
     pub fn write_to(&self, buf: &mut impl EncodeSink) {
+        assert_valid_field_number(self.number);
         use crate::encoding::encode_varint;
         let tag_value = ((self.number as u64) << 3) | self.data.wire_type_value();
         encode_varint(tag_value, buf);
@@ -175,6 +196,14 @@ impl UnknownField {
             }
         }
     }
+}
+
+#[inline]
+fn assert_valid_field_number(number: u32) {
+    assert!(
+        (1..=MAX_FIELD_NUMBER).contains(&number),
+        "field number must be in [1, {MAX_FIELD_NUMBER}], got {number}"
+    );
 }
 
 /// The wire data for an unknown field.
@@ -469,6 +498,61 @@ mod tests {
         let mut buf = alloc::vec::Vec::new();
         fields.write_to(&mut buf);
         assert_eq!(buf.len(), claimed);
+    }
+
+    #[test]
+    fn invalid_field_numbers_are_rejected_when_sizing() {
+        for number in [0, MAX_FIELD_NUMBER + 1] {
+            assert!(
+                std::panic::catch_unwind(|| varint_field(number, 1).encoded_len()).is_err(),
+                "field number {number} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_field_numbers_are_rejected_when_writing() {
+        for number in [0, MAX_FIELD_NUMBER + 1] {
+            let mut buf = Vec::new();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                varint_field(number, 1).write_to(&mut buf);
+            }));
+            assert!(result.is_err(), "field number {number} should be rejected");
+        }
+    }
+
+    #[test]
+    fn invalid_field_numbers_are_rejected_inside_groups() {
+        let mut children = UnknownFields::new();
+        children.push(varint_field(0, 1));
+        assert!(
+            std::panic::catch_unwind(|| group_field(1, children.clone()).encoded_len()).is_err()
+        );
+
+        let mut buf = Vec::new();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            group_field(1, children).write_to(&mut buf);
+        }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn reserved_wire_field_numbers_remain_valid() {
+        use crate::encoding::{FIRST_RESERVED_FIELD_NUMBER, LAST_RESERVED_FIELD_NUMBER};
+
+        for number in [
+            FIRST_RESERVED_FIELD_NUMBER,
+            LAST_RESERVED_FIELD_NUMBER,
+            MAX_FIELD_NUMBER,
+        ] {
+            let field = varint_field(number, 42);
+            assert_len_matches_write(field.clone());
+
+            let mut wire = Vec::new();
+            field.write_to(&mut wire);
+            let expected = core::iter::once(field).collect::<UnknownFields>();
+            assert_eq!(UnknownFields::decode_from_slice(&wire).unwrap(), expected);
+        }
     }
 
     // ── decode_from_slice ────────────────────────────────────────────────
