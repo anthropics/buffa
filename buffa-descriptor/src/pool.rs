@@ -461,7 +461,10 @@ pub enum PoolError {
     /// number 2. Each must be optional, and the key type must be an integer
     /// type, `bool`, or `string` (see [`ScalarType::is_valid_map_key`]).
     /// The entry must not contain extensions, extension ranges, nested
-    /// messages, or enums.
+    /// messages, or enums. Like protoc, the pool does not check whether the
+    /// `key` or `value` field is a oneof member or declares a default, so a
+    /// proto2 entry with either is accepted, although protobuf-go rejects
+    /// both.
     ///
     /// `message` is the full name of the map field that uses the entry, and
     /// the entry message is the field's type. A field whose type is a map
@@ -2038,13 +2041,28 @@ impl DescriptorPool {
         &self.extensions[idx.0 as usize]
     }
 
-    /// The original `FileDescriptorProto`s the pool was built from.
+    /// The original `FileDescriptorProto`s the pool was built from, each as
+    /// it was added.
+    ///
+    /// Linking does not write back into these protos. A field whose `type`
+    /// is unset takes its kind from what its `type_name` resolves to, while
+    /// the returned proto still has `type` unset, and a `type_name` written
+    /// without its leading dot stays as written. Read a field's resolved kind
+    /// and features, such as presence and packing, from [`FieldDescriptor`],
+    /// and follow its kind to the [`MessageDescriptor`] or [`EnumDescriptor`]
+    /// for the resolved type name. protoc and protobuf-go write the resolved
+    /// type back when they turn a linked descriptor into a proto, and their
+    /// output always sets `type` and a fully qualified `type_name`. So this
+    /// matters only for hand-built descriptors: a gRPC reflection client or
+    /// a code generator given these protos receives them as they were added.
     #[must_use]
     pub fn files(&self) -> &[FileDescriptorProto] {
         &self.files
     }
 
     /// Look up a `FileDescriptorProto` by filename.
+    ///
+    /// The proto is returned as it was added; see [`files`](Self::files).
     #[must_use]
     pub fn file_by_name(&self, name: &str) -> Option<&FileDescriptorProto> {
         let idx = *self.file_by_name.get(name)?;
@@ -2058,6 +2076,8 @@ impl DescriptorPool {
     /// nested), enum values, services, methods (`pkg.Service.Method`), and
     /// extensions — every symbol kind a reflection client queries. `O(log n)`
     /// over the symbol index.
+    ///
+    /// The proto is returned as it was added; see [`files`](Self::files).
     #[must_use]
     pub fn file_containing_symbol(&self, full_name: &str) -> Option<&FileDescriptorProto> {
         let name = full_name.strip_prefix('.').unwrap_or(full_name);

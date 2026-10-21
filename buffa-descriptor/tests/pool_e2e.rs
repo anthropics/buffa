@@ -1659,6 +1659,59 @@ fn type_name_infers_missing_message_and_enum_types() {
     assert_eq!(holder.field(2).unwrap().presence(), FieldPresence::Implicit);
 }
 
+/// `files()`, `file_by_name()` and `file_containing_symbol()` return a file
+/// exactly as it was added: linking resolves an unset `type` and a
+/// `type_name` without its leading dot, but writes neither back (#642).
+#[test]
+fn file_accessors_return_the_proto_as_added() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let file = FileDescriptorProto {
+        name: Some("as-added.proto".into()),
+        package: Some("as_added".into()),
+        syntax: Some("proto3".into()),
+        message_type: vec![
+            DescriptorProto {
+                name: Some("Target".into()),
+                ..Default::default()
+            },
+            DescriptorProto {
+                name: Some("Holder".into()),
+                field: vec![typeless_field(
+                    "target",
+                    1,
+                    Label::LABEL_OPTIONAL,
+                    "as_added.Target",
+                )],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    let pool = DescriptorPool::new(FileDescriptorSet {
+        file: vec![file.clone()],
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert_eq!(
+        pool.message_by_name("as_added.Holder")
+            .unwrap()
+            .field(1)
+            .unwrap()
+            .kind(),
+        FieldKind::Singular(SingularKind::Message(
+            pool.message_index("as_added.Target").unwrap()
+        ))
+    );
+    assert_eq!(pool.files(), std::slice::from_ref(&file));
+    assert_eq!(pool.file_by_name("as-added.proto"), Some(&file));
+    assert_eq!(pool.file_containing_symbol("as_added.Holder"), Some(&file));
+}
+
 /// Only a non-empty `type_name` starts the inference: a field with `type`
 /// unset and nothing to resolve links as `double`, the proto default.
 #[test]
