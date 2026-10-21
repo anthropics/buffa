@@ -92,6 +92,13 @@ impl From<core::time::Duration> for Duration {
     /// Durations whose `as_secs()` exceeds `i64::MAX` (~292 billion years) are
     /// saturated to `i64::MAX` seconds rather than wrapping, which would produce
     /// an incorrect negative value.
+    ///
+    /// # Warning: protobuf `Duration` range
+    ///
+    /// The protobuf spec limits `Duration.seconds` to ±315,576,000,000. This
+    /// conversion does not enforce that smaller limit. Values outside it can
+    /// still be encoded in binary, but JSON serialization (`json` feature)
+    /// rejects them.
     fn from(d: core::time::Duration) -> Self {
         Self {
             // Saturate at i64::MAX rather than wrapping for extremely large durations.
@@ -528,6 +535,15 @@ mod tests {
             let back: Duration = serde_json::from_str(&json).unwrap();
             assert_eq!(back.seconds, 0);
             assert_eq!(back.nanos, 0);
+        }
+
+        #[test]
+        fn core_duration_proto_json_seconds_boundary() {
+            let at_limit: Duration = core::time::Duration::from_secs(315_576_000_000).into();
+            assert!(serde_json::to_string(&at_limit).is_ok());
+
+            let above_limit: Duration = core::time::Duration::from_secs(315_576_000_001).into();
+            assert!(serde_json::to_string(&above_limit).is_err());
         }
 
         #[test]
