@@ -168,6 +168,7 @@ impl<'a> Tokenizer<'a> {
     /// Look at the next token without consuming it.
     ///
     /// The result is cached: repeated `peek()` calls do not re-parse.
+    /// A failed peek leaves the cursor and nesting state unchanged too.
     ///
     /// # Errors
     ///
@@ -191,13 +192,14 @@ impl<'a> Tokenizer<'a> {
         let save_cursor = self.cursor;
         let save_depth = self.open_depth;
         let save_last = self.last_kind;
-        let tok = self.parse_next()?;
+        let result = self.parse_next();
         let new_last = self.last_kind;
         let new_cursor = self.cursor;
-        // Restore — `read()` commits from the cache.
+        // Restore even on failure; `read()` commits successful peeks from the cache.
         self.cursor = save_cursor;
         self.open_depth = save_depth;
         self.last_kind = save_last;
+        let tok = result?;
         self.peeked = Some((tok, new_last, new_cursor));
         Ok(tok)
     }
@@ -1631,6 +1633,34 @@ mod tests {
         assert_eq!(r.raw, "a");
         let next = t.read().unwrap();
         assert_eq!(next.raw, "1");
+    }
+
+    #[test]
+    fn failed_peek_preserves_position_and_parser_state() {
+        for (input, consumed) in [
+            ("   @", 0usize),
+            ("a: 1, # comment\n@", 2),
+            ("a: 1; @", 2),
+            ("m { a: 1, @ }", 4),
+        ] {
+            let mut t = Tokenizer::new(input);
+            for _ in 0..consumed {
+                t.read().unwrap();
+            }
+            let cursor = t.cursor;
+            let depth = t.open_depth;
+            let last_kind = t.last_kind;
+            let expected = ParseErrorKind::UnexpectedToken {
+                expected: "field name",
+            };
+            let err = t.peek().unwrap_err();
+            assert_eq!(err.kind, expected, "input: {input:?}");
+            assert_eq!(t.cursor, cursor, "input: {input:?}");
+            assert_eq!(t.open_depth, depth, "input: {input:?}");
+            assert!(t.last_kind == last_kind, "input: {input:?}");
+            assert_eq!(t.peek().unwrap_err(), err, "input: {input:?}");
+            assert_eq!(t.read().unwrap_err(), err, "input: {input:?}");
+        }
     }
 
     #[test]

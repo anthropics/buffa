@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Failed textproto lookahead no longer advances the tokenizer state.** When an invalid token followed whitespace, a comment, comma, or semicolon, `Tokenizer::peek()` could consume the preceding input before returning an error. Peeking now restores its cursor, nesting depth, and parser state on both success and failure, so retrying or calling `read()` sees the original input.
+time: 2026-10-18T00:16:00+02:00
