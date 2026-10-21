@@ -1331,6 +1331,50 @@ fn uint32_deserialize_table() {
 // ── string_key_map ───────────────────────────────────────────────────
 
 #[derive(serde::Serialize, serde::Deserialize)]
+struct SerdeBoundaryKeyMap(#[serde(with = "string_key_map")] std::collections::BTreeMap<i64, i32>);
+
+#[test]
+fn string_key_map_preserves_signed_integer_boundaries() {
+    let mut map = std::collections::BTreeMap::new();
+    map.insert(i64::MIN, 1);
+    map.insert(0, 2);
+    map.insert(i64::MAX, 3);
+    let json = serde_json::to_string(&SerdeBoundaryKeyMap(map)).unwrap();
+    assert_eq!(
+        json,
+        r#"{"-9223372036854775808":1,"0":2,"9223372036854775807":3}"#
+    );
+    let roundtrip: SerdeBoundaryKeyMap = serde_json::from_str(&json).unwrap();
+    assert_eq!(roundtrip.0[&i64::MIN], 1);
+    assert_eq!(roundtrip.0[&0], 2);
+    assert_eq!(roundtrip.0[&i64::MAX], 3);
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct EscapedDisplayKey(&'static str);
+
+impl core::fmt::Display for EscapedDisplayKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+#[derive(serde::Serialize)]
+struct SerdeDisplayKeyMap(
+    #[serde(with = "string_key_map")] std::collections::BTreeMap<EscapedDisplayKey, i32>,
+);
+
+#[test]
+fn string_key_map_escapes_displayed_keys() {
+    let mut map = std::collections::BTreeMap::new();
+    map.insert(EscapedDisplayKey("quote\"slash\\\n猫"), 7);
+    assert_eq!(
+        serde_json::to_string(&SerdeDisplayKeyMap(map)).unwrap(),
+        r#"{"quote\"slash\\\n猫":7}"#
+    );
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 struct SerdeStringKeyMap(
     #[serde(with = "string_key_map")] std::collections::HashMap<i32, alloc::string::String>,
 );
