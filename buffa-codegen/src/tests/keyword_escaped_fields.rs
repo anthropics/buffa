@@ -368,14 +368,23 @@ fn renamed_members_carry_a_doc_note_and_the_warning_names_them() {
     .expect("generation succeeds");
     let content = joined(&files);
 
-    assert!(
-        content.contains("`super_`, the usual Rust name of this field,"),
-        "{content}"
-    );
-    assert!(
-        content.contains("`self_`, the usual Rust name of this oneof,"),
-        "{content}"
-    );
+    // The view struct and the owned view's accessors use the same adjusted
+    // names as the owned struct, so they carry the same notes.
+    for header in [
+        "pub struct Collision {",
+        "pub struct CollisionView<'a>",
+        "impl CollisionOwnedView {",
+    ] {
+        let item = item_text(&content, header);
+        assert!(
+            item.contains("`super_`, the usual Rust name of this field,"),
+            "{item}"
+        );
+        assert!(
+            item.contains("`self_`, the usual Rust name of this oneof,"),
+            "{item}"
+        );
+    }
     let [warning] = warnings.as_slice() else {
         panic!("one warning: {warnings:?}");
     };
@@ -385,4 +394,61 @@ fn renamed_members_carry_a_doc_note_and_the_warning_names_them() {
         text.contains("adjusted: `self` → `self__`, `super` → `super__`"),
         "{text}"
     );
+}
+
+#[test]
+fn every_struct_and_owned_view_accessor_carries_the_rename_note() {
+    let key = make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+    let value = make_field("value", 2, Label::LABEL_OPTIONAL, Type::TYPE_INT32);
+    let entry = DescriptorProto {
+        name: Some("SuperEntry".to_string()),
+        field: vec![key, value],
+        options: MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    };
+    let mut map = make_field("super", 1, Label::LABEL_REPEATED, Type::TYPE_MESSAGE);
+    map.type_name = Some(".pkg.Collision.SuperEntry".to_string());
+    let mut choice = regular_field("choice", 3);
+    choice.oneof_index = Some(0);
+    let mut file = file_with_members(
+        vec![
+            map,
+            regular_field("super_", 2),
+            regular_field("self_", 4),
+            choice,
+        ],
+        &["self"],
+    );
+    file.message_type[0].nested_type.push(entry);
+    let files = generate(
+        &[file],
+        &["keyword_names.proto".to_string()],
+        &CodeGenConfig {
+            lazy_views: true,
+            ..Default::default()
+        },
+    )
+    .expect("generation succeeds");
+    let content = joined(&files);
+
+    for header in [
+        "pub struct Collision {",
+        "pub struct CollisionView<'a>",
+        "pub struct CollisionLazyView<'a>",
+        "impl CollisionOwnedView {",
+    ] {
+        let item = item_text(&content, header);
+        assert!(
+            item.contains("`super_`, the usual Rust name of this field,"),
+            "{item}"
+        );
+        assert!(
+            item.contains("`self_`, the usual Rust name of this oneof,"),
+            "{item}"
+        );
+    }
 }

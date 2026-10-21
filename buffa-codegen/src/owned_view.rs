@@ -138,12 +138,14 @@ pub(crate) fn generate_owned_view_wrapper(
             proto_fqn,
             &ctx.type_map,
         );
+        let rename_note = ctx.field_rename_doc(field_name, number);
         // The accessor is another way to read the view's field, so it carries
         // the field's marker, and a guard for its own read of that field.
         let deprecated_attr = crate::view::view_field_deprecated_attr(ctx, field, &field_fqn)
             .map(|deprecated| quote! { #deprecated #[allow(deprecated)] });
         accessors.push(quote! {
             #doc
+            #rename_note
             #deprecated_attr
             #[must_use]
             pub fn #ident(&self) -> #ret_ty {
@@ -183,8 +185,12 @@ pub(crate) fn generate_owned_view_wrapper(
             quote! {}
         };
         let doc = format!(" Oneof `{oneof_name}`.");
+        let rename_note = ctx
+            .oneof_rename_note(oneof_name)
+            .map(|note| quote! { #[doc = ""] #[doc = #note] });
         accessors.push(quote! {
             #[doc = #doc]
+            #rename_note
             #[must_use]
             pub fn #ident(
                 &self,

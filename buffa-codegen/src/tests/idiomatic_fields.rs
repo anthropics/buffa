@@ -191,12 +191,24 @@ fn adjusted_field_gets_doc_note() {
         field: vec![string_field("user_name", 11), string_field("userName", 12)],
         ..Default::default()
     });
-    let files = generate(&[file], &["s.proto".to_string()], &fields_config()).unwrap();
+    let config = CodeGenConfig {
+        lazy_views: true,
+        ..fields_config()
+    };
+    let files = generate(&[file], &["s.proto".to_string()], &config).unwrap();
     let c = joined(&files);
-    assert!(
-        c.contains("adjusted to `user_name_f12`"),
-        "adjusted field carries a doc note: {c}"
-    );
+    for header in [
+        "pub struct Msg {",
+        "pub struct MsgView<'a>",
+        "pub struct MsgLazyView<'a>",
+        "impl MsgOwnedView {",
+    ] {
+        let item = item_text(&c, header);
+        assert!(
+            item.contains("adjusted to `user_name_f12`"),
+            "adjusted field carries a doc note: {item}"
+        );
+    }
 }
 
 #[test]

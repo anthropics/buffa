@@ -2075,10 +2075,7 @@ fn generate_field(
     // the enum-alias doc note). Empty in the common (non-collision) case
     // and always empty with the flag off. Non-snake fallback names are
     // covered by the struct-level `message_non_snake_attr`.
-    let rename_note = match ctx.field_rename_note(field_name, field_number) {
-        Some(note) => quote! { #[doc = ""] #[doc = #note] },
-        None => quote! {},
-    };
+    let rename_note = ctx.field_rename_doc(field_name, field_number);
     let tokens = quote! {
         #doc
         #rename_note

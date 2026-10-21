@@ -721,10 +721,12 @@ fn view_struct_field(
             proto_fqn,
             &ctx.type_map,
         );
+        let rename_note = ctx.field_rename_doc(field_name, number);
         let map_ty = view_map_type(scope, msg, field, &quote! { 'a })?;
         let deprecated_attr = view_field_deprecated_attr(ctx, field, &field_fqn);
         let tokens = quote! {
             #doc
+            #rename_note
             #deprecated_attr
             pub #ident: #map_ty,
         };
@@ -767,9 +769,11 @@ fn view_struct_field(
         rust_type
     };
 
+    let rename_note = ctx.field_rename_doc(field_name, number);
     let deprecated_attr = view_field_deprecated_attr(ctx, field, &field_fqn);
     let tokens = quote! {
         #doc
+        #rename_note
         #deprecated_attr
         pub #ident: #struct_ty,
     };
@@ -1057,7 +1061,11 @@ pub(crate) fn oneof_view_struct_fields(
         } else {
             quote! {}
         };
+        let rename_note = ctx
+            .oneof_rename_note(oneof_name)
+            .map(|note| quote! { #[doc = #note] });
         let tokens = quote! {
+            #rename_note
             pub #field_ident: ::core::option::Option<#view_oneof_prefix #enum_ident #generics>,
         };
         out.push((tokens, field_ident));

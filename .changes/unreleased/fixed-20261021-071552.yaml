@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**A renamed field or oneof carries its rename note on the view structs and the `FooOwnedView` accessors too, not only on the owned struct** (#791, part of #631). When `idiomatic_field_names` adds an `_f<n>` suffix to a field, or a keyword member whose escaped name (`self_`) is taken becomes `self__`, the owned struct''s field explains the adjusted name in its rustdoc. The view and lazy view fields and the `FooOwnedView` accessors have the same name and now carry the same note.'
+time: 2026-10-21T07:15:52.8132706+02:00

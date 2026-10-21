@@ -587,6 +587,7 @@ fn lazy_struct_field(
     let is_repeated = field.label.unwrap_or_default() == Label::LABEL_REPEATED;
     let field_fqn = format!("{}.{}", proto_fqn, field_name);
     let proto_comment = ctx.comment(&field_fqn);
+    let rename_note = ctx.field_rename_doc(field_name, number);
 
     if is_repeated && is_map_field(msg, field) {
         let tag_line = format!("Field {number}: `{field_name}` (map)");
@@ -599,7 +600,7 @@ fn lazy_struct_field(
         let map_ty = view_map_type(scope, msg, field, &quote! { 'a })?;
         let deprecated_attr = crate::view::view_field_deprecated_attr(ctx, field, &field_fqn);
         return Ok(Some((
-            quote! { #doc #deprecated_attr pub #ident: #map_ty, },
+            quote! { #doc #rename_note #deprecated_attr pub #ident: #map_ty, },
             ident,
             crate::message::is_debug_redacted(field),
         )));
@@ -639,7 +640,7 @@ fn lazy_struct_field(
 
     let deprecated_attr = crate::view::view_field_deprecated_attr(ctx, field, &field_fqn);
     Ok(Some((
-        quote! { #doc #deprecated_attr pub #ident: #rust_type, },
+        quote! { #doc #rename_note #deprecated_attr pub #ident: #rust_type, },
         ident,
         crate::message::is_debug_redacted(field),
     )))
