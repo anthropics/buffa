@@ -133,6 +133,15 @@ fn generate_message_with_nesting(
             message_name: proto_fqn.to_string(),
         });
     }
+    // Its items live only in `__buffa_unknown_fields`, which the MessageSet
+    // snippets in `generate_message_impl` read and write unconditionally, so
+    // a MessageSet that drops unknown fields could hold no data and its
+    // generated impls would name a field the struct does not have.
+    if is_message_set && !ctx.preserve_unknown_fields(proto_fqn) {
+        return Err(CodeGenError::MessageSetWithoutUnknownFields {
+            message_name: proto_fqn.to_string(),
+        });
+    }
 
     // Nested enums — prefixed simple name, emitted inside the message's
     // module.

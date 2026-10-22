@@ -1025,6 +1025,12 @@ impl Config {
     /// MessageSet is a legacy Google-internal wire format. Default: `false`
     /// (such messages produce a codegen error). Set to `true` only when
     /// compiling protos that interoperate with old Google-internal services.
+    ///
+    /// A MessageSet stores its items as unknown fields, so each MessageSet
+    /// message must also preserve them: with
+    /// [`preserve_unknown_fields(false)`](Self::preserve_unknown_fields),
+    /// add a [`preserve_unknown_fields_in`](Self::preserve_unknown_fields_in)
+    /// rule for it, or codegen fails.
     #[must_use]
     pub fn allow_message_set(mut self, enabled: bool) -> Self {
         self.codegen_config.allow_message_set = enabled;

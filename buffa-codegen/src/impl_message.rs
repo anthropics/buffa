@@ -504,8 +504,9 @@ pub fn generate_message_impl(
     // MessageSet wire format: each LengthDelimited unknown field (i.e. each
     // extension payload) is wrapped in a group-at-field-1 Item on the wire,
     // but stored flat as `{number: type_id, data: LD(payload)}`. The gate
-    // check (`CodeGenConfig::allow_message_set`) is in `message.rs`; by the
-    // time we're here, the flag is set or the option was absent.
+    // checks (`CodeGenConfig::allow_message_set`, and that the message
+    // preserves unknown fields) are in `message.rs`; by the time we're here,
+    // both hold or the option was absent.
     let is_message_set = msg
         .options
         .as_option()

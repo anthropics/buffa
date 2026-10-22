@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **A MessageSet message that does not preserve unknown fields is a codegen error instead of generated code that does not compile** (#623). A MessageSet stores its items only as unknown fields, so with `allow_message_set(true)` and unknown-field preservation off for the message, its generated `compute_size`, `write_to` and `merge_field` named a `__buffa_unknown_fields` field the struct did not have (and `write_to` wrote to `buf` while its parameter was `_buf`). Codegen now returns `CodeGenError::MessageSetWithoutUnknownFields` naming the message; turn preservation on for it, for example with `preserve_unknown_fields_in(&[".pkg.MySet"])` when it is off globally.
+time: 2026-10-18T18:30:00.000000000+05:30

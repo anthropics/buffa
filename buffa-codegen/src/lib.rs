@@ -1472,6 +1472,11 @@ pub struct CodeGenConfig {
     /// When `false` (the default), encountering such a message is a codegen
     /// error — the flag exists to make MessageSet use explicit, since the
     /// format is obsolete outside of interop with very old Google protos.
+    ///
+    /// A MessageSet stores its items as unknown fields, so each MessageSet
+    /// message must also preserve them (see
+    /// [`preserve_unknown_fields`](Self::preserve_unknown_fields)); one that
+    /// does not is a codegen error.
     pub allow_message_set: bool,
     /// Whether to emit `impl buffa::text::TextFormat` on generated message
     /// structs for textproto (human-readable text format) encoding/decoding.
@@ -5708,6 +5713,20 @@ pub enum CodeGenError {
          wire format — set allow_message_set(true) if this is intentional"
     )]
     MessageSetNotSupported { message_name: String },
+    /// The input contains a message with `option message_set_wire_format = true`
+    /// that does not preserve unknown fields
+    /// ([`CodeGenConfig::preserve_unknown_fields`] and
+    /// [`CodeGenConfig::preserve_unknown_fields_in`] resolve to `false` for it).
+    ///
+    /// A MessageSet has no regular fields: its items are stored only as
+    /// unknown fields, so without that store the type could hold no data.
+    #[error(
+        "message '{message_name}' uses `option message_set_wire_format = true` \
+         but does not preserve unknown fields; a MessageSet stores its items as \
+         unknown fields, so enable preserve_unknown_fields for it, for example \
+         with a preserve_unknown_fields_in rule for '.{message_name}'"
+    )]
+    MessageSetWithoutUnknownFields { message_name: String },
     /// A custom attribute string configured via [`CodeGenConfig::type_attributes`],
     /// [`CodeGenConfig::field_attributes`], [`CodeGenConfig::message_attributes`],
     /// [`CodeGenConfig::enum_attributes`], [`CodeGenConfig::oneof_attributes`],

@@ -631,3 +631,100 @@ fn test_message_and_group_fields_encode_through_as_option() {
         "the bound value must be sized and written: {content}"
     );
 }
+
+fn message_set_file() -> FileDescriptorProto {
+    let mut file = proto2_file("msgset.proto");
+    file.package = Some("demo".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Set".to_string()),
+        extension_range: vec![
+            crate::generated::descriptor::descriptor_proto::ExtensionRange {
+                start: Some(4),
+                end: Some(536_870_912),
+                ..Default::default()
+            },
+        ],
+        options: MessageOptions {
+            message_set_wire_format: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    });
+    file
+}
+
+#[test]
+fn test_message_set_without_unknown_fields_is_rejected() {
+    // A MessageSet stores its items only as unknown fields, so dropping them
+    // would leave a type that holds nothing and impls that name a missing
+    // `__buffa_unknown_fields` field (#623).
+    let config = CodeGenConfig {
+        allow_message_set: true,
+        preserve_unknown_fields: false,
+        ..CodeGenConfig::default()
+    };
+    let err = generate(
+        &[message_set_file()],
+        &["msgset.proto".to_string()],
+        &config,
+    )
+    .expect_err("a MessageSet that drops unknown fields must not generate");
+    assert!(
+        matches!(
+            err,
+            CodeGenError::MessageSetWithoutUnknownFields { ref message_name }
+                if message_name == "demo.Set"
+        ),
+        "unexpected error: {err:?}"
+    );
+    let msg = err.to_string();
+    assert!(msg.contains("'demo.Set'"), "{msg}");
+    assert!(
+        msg.contains("preserve_unknown_fields_in rule for '.demo.Set'"),
+        "{msg}"
+    );
+
+    // A path rule that turns preservation back off for the message is
+    // rejected the same way.
+    let config = CodeGenConfig {
+        allow_message_set: true,
+        preserve_unknown_fields_in: vec![(".demo.Set".to_string(), false)],
+        ..CodeGenConfig::default()
+    };
+    assert!(matches!(
+        generate(
+            &[message_set_file()],
+            &["msgset.proto".to_string()],
+            &config
+        ),
+        Err(CodeGenError::MessageSetWithoutUnknownFields { .. })
+    ));
+}
+
+#[test]
+fn test_message_set_kept_by_a_path_rule_generates_with_its_store() {
+    // With preservation off globally, a rule for the MessageSet alone is
+    // enough: the message keeps its unknown-field store.
+    let config = CodeGenConfig {
+        allow_message_set: true,
+        preserve_unknown_fields: false,
+        preserve_unknown_fields_in: vec![(".demo.Set".to_string(), true)],
+        ..CodeGenConfig::default()
+    };
+    let files = generate(
+        &[message_set_file()],
+        &["msgset.proto".to_string()],
+        &config,
+    )
+    .expect("a MessageSet that preserves unknown fields should generate");
+    let content = &joined(&files);
+    assert!(
+        content.contains("pub __buffa_unknown_fields:"),
+        "the MessageSet struct must keep its unknown-field store: {content}"
+    );
+    assert!(
+        content.contains("::buffa::message_set::merge_item"),
+        "the MessageSet merge must unwrap items: {content}"
+    );
+}
