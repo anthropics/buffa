@@ -1,6 +1,7 @@
 //! `CodeGenWarning::FieldTypeRuleMatchedNothing`: a `bytes_fields`,
-//! `string_fields`, `map_fields` or `repeated_fields` rule that matches no
-//! field of a generated message.
+//! `string_fields`, `map_fields`, `repeated_fields`, `pointer_fields` or
+//! `unboxed_oneof_fields` rule that matches no field (or, for the last two,
+//! oneof variant) of a generated message.
 
 use super::*;
 
@@ -330,4 +331,170 @@ fn the_warning_names_the_buffa_build_methods() {
         ),
         "{dependency}"
     );
+}
+
+/// Package `ptr.test`:
+///
+/// ```proto
+/// message Node {
+///   Leaf child = 1;
+///   oneof body { Leaf small = 2; string note = 3; }
+/// }
+/// message Leaf { string tag = 1; }
+/// ```
+fn pointer_file() -> FileDescriptorProto {
+    let leaf_field = |name: &str, number: i32| FieldDescriptorProto {
+        type_name: Some(".ptr.test.Leaf".to_string()),
+        ..make_field(name, number, Label::LABEL_OPTIONAL, Type::TYPE_MESSAGE)
+    };
+    let in_body = |mut field: FieldDescriptorProto| {
+        field.oneof_index = Some(0);
+        field
+    };
+    let node = DescriptorProto {
+        name: Some("Node".to_string()),
+        field: vec![
+            leaf_field("child", 1),
+            in_body(leaf_field("small", 2)),
+            in_body(make_field(
+                "note",
+                3,
+                Label::LABEL_OPTIONAL,
+                Type::TYPE_STRING,
+            )),
+        ],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("body".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let leaf = DescriptorProto {
+        name: Some("Leaf".to_string()),
+        field: vec![make_field(
+            "tag",
+            1,
+            Label::LABEL_OPTIONAL,
+            Type::TYPE_STRING,
+        )],
+        ..Default::default()
+    };
+
+    let mut file = proto3_file("ptr.proto");
+    file.package = Some("ptr.test".to_string());
+    file.message_type = vec![node, leaf];
+    file
+}
+
+fn generate_pointer_file(config: &CodeGenConfig) -> (String, Vec<(&'static str, String, bool)>) {
+    let (files, warnings) =
+        generate_with_diagnostics(&[pointer_file()], &["ptr.proto".to_string()], config)
+            .expect("should generate");
+    (joined(&files), inert_rules(warnings))
+}
+
+#[test]
+fn pointer_and_unboxed_oneof_rules_are_checked() {
+    let config = CodeGenConfig {
+        pointer_fields: vec![
+            (".ptr.test.Node.child".to_string(), PointerRepr::Box),
+            (".ptr.test.Node.body.small".to_string(), PointerRepr::Box),
+            (".ptr.test.Node.chld".to_string(), PointerRepr::Box),
+        ],
+        unboxed_oneof_fields: vec![
+            ".".to_string(),
+            ".ptr.test.Node.body".to_string(),
+            ".ptr.test.Node.body.small".to_string(),
+            // The oneof name left out.
+            ".ptr.test.Node.small".to_string(),
+            // A plain field: these rules only apply to oneof variants.
+            ".ptr.test.Node.child".to_string(),
+        ],
+        ..Default::default()
+    };
+
+    assert_eq!(
+        generate_pointer_file(&config).1,
+        [
+            ("pointer_fields", ".ptr.test.Node.chld".to_string(), false),
+            (
+                "unboxed_oneof_fields",
+                ".ptr.test.Node.child".to_string(),
+                false
+            ),
+            (
+                "unboxed_oneof_fields",
+                ".ptr.test.Node.small".to_string(),
+                false
+            ),
+        ]
+    );
+}
+
+/// As [`a_rule_the_generator_applies_does_not_warn`], for the two lists that
+/// address a oneof member as `.pkg.Msg.oneof.member`.
+#[test]
+fn a_pointer_or_unbox_rule_the_generator_applies_does_not_warn() {
+    let pointer = |rule: &str| {
+        generate_pointer_file(&CodeGenConfig {
+            pointer_fields: vec![(
+                rule.to_string(),
+                PointerRepr::Custom("::my::SBox<*>".to_string()),
+            )],
+            ..Default::default()
+        })
+    };
+    for rule in [".ptr.test.Node.child", ".ptr.test.Node.body.small"] {
+        let (code, inert) = pointer(rule);
+        assert!(
+            code.contains("::my::SBox"),
+            "{rule} did not change a generated type"
+        );
+        assert!(inert.is_empty(), "{rule} warned: {inert:?}");
+    }
+    let (code, inert) = pointer(".ptr.test.Node.small");
+    assert!(!code.contains("::my::SBox"));
+    assert_eq!(
+        inert,
+        [("pointer_fields", ".ptr.test.Node.small".to_string(), false)]
+    );
+
+    let (boxed, _) = generate_pointer_file(&CodeGenConfig::default());
+    let unbox = |rule: &str| {
+        generate_pointer_file(&CodeGenConfig {
+            unboxed_oneof_fields: vec![rule.to_string()],
+            ..Default::default()
+        })
+    };
+    let (code, inert) = unbox(".ptr.test.Node.body.small");
+    assert_ne!(code, boxed, "the rule did not change a generated type");
+    assert!(inert.is_empty(), "warned: {inert:?}");
+    let (code, inert) = unbox(".ptr.test.Node.small");
+    assert_eq!(code, boxed);
+    assert_eq!(
+        inert,
+        [(
+            "unboxed_oneof_fields",
+            ".ptr.test.Node.small".to_string(),
+            false
+        )]
+    );
+}
+
+#[test]
+fn the_unboxed_oneof_warning_shows_the_variant_path() {
+    let message = CodeGenWarning::FieldTypeRuleMatchedNothing {
+        rule: ".my.pkg.Msg.small".to_string(),
+        option: "unboxed_oneof_fields",
+        matches_ungenerated: false,
+    }
+    .to_string();
+    assert!(
+        message.starts_with(
+            "unboxed_oneof_fields rule '.my.pkg.Msg.small' (buffa-build: unbox_oneof_in) \
+             matched no oneof variant of a generated message"
+        ),
+        "{message}"
+    );
+    assert!(message.contains("'.my.pkg.Msg.oneof.member'"), "{message}");
 }
