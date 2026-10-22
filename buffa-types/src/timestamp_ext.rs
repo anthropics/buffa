@@ -91,6 +91,9 @@ impl TryFrom<Timestamp> for std::time::SystemTime {
 
     /// Convert a protobuf [`Timestamp`] to a [`std::time::SystemTime`].
     ///
+    /// `nanos` is rounded down to the platform's `SystemTime` resolution:
+    /// 100 ns on Windows, 1 ns on Unix.
+    ///
     /// # Errors
     ///
     /// Returns [`TimestampError::InvalidNanos`] if `nanos` is outside
@@ -107,6 +110,9 @@ impl TryFrom<&Timestamp> for std::time::SystemTime {
 
     /// Convert a borrowed protobuf [`Timestamp`] to a
     /// [`std::time::SystemTime`], leaving the message in place.
+    ///
+    /// `nanos` is rounded down to the platform's `SystemTime` resolution:
+    /// 100 ns on Windows, 1 ns on Unix.
     ///
     /// # Examples
     ///
@@ -351,7 +357,14 @@ mod tests {
         let ts = Timestamp::from_unix(1_700_000_000, 123_456_789);
         let st: std::time::SystemTime = ts.clone().try_into().unwrap();
         let ts2: Timestamp = st.into();
-        assert_eq!(ts, ts2);
+        // Windows `SystemTime` counts 100 ns intervals, so the conversion
+        // drops the last two digits of `nanos` there.
+        let nanos = if cfg!(windows) {
+            123_456_700
+        } else {
+            123_456_789
+        };
+        assert_eq!(ts2, Timestamp::from_unix(1_700_000_000, nanos));
     }
 
     #[cfg(feature = "std")]

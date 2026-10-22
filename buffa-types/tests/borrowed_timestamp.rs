@@ -2,10 +2,16 @@
 
 use buffa_types::{Timestamp, TimestampError};
 
+/// The step a `std::time::SystemTime` counts in: 100 ns on Windows, 1 ns on
+/// Unix.
+#[cfg(feature = "std")]
+const SYSTEM_TIME_RESOLUTION_NANOS: i32 = if cfg!(windows) { 100 } else { 1 };
+
 /// Converts a range of timestamps by reference: each success converts back to
-/// the same `Timestamp`, each failure is `Overflow`, and the by-value
+/// the same `Timestamp`, with `nanos` rounded down to a multiple of
+/// `resolution_nanos`, each failure is `Overflow`, and the by-value
 /// conversion agrees. Out-of-range `nanos` is `InvalidNanos`.
-fn assert_matches_owned<T>()
+fn assert_matches_owned<T>(resolution_nanos: i32)
 where
     T: TryFrom<Timestamp, Error = TimestampError>
         + for<'a> TryFrom<&'a Timestamp, Error = TimestampError>
@@ -32,7 +38,11 @@ where
                 "{timestamp:?}"
             );
             match T::try_from(&timestamp) {
-                Ok(converted) => assert_eq!(Timestamp::from(converted), timestamp),
+                Ok(converted) => assert_eq!(
+                    Timestamp::from(converted),
+                    Timestamp::from_unix(seconds, nanos - nanos % resolution_nanos),
+                    "{timestamp:?}"
+                ),
                 Err(err) => assert_eq!(err, TimestampError::Overflow, "{timestamp:?}"),
             }
         }
@@ -56,7 +66,7 @@ where
 #[cfg(feature = "std")]
 #[test]
 fn borrowed_system_time_matches_owned_conversion_and_errors() {
-    assert_matches_owned::<std::time::SystemTime>();
+    assert_matches_owned::<std::time::SystemTime>(SYSTEM_TIME_RESOLUTION_NANOS);
 }
 
 #[cfg(feature = "std")]
@@ -73,7 +83,7 @@ fn borrowed_system_time_handles_fractional_pre_epoch_instants() {
 #[cfg(feature = "chrono")]
 #[test]
 fn borrowed_chrono_matches_owned_conversion_and_errors() {
-    assert_matches_owned::<chrono::DateTime<chrono::Utc>>();
+    assert_matches_owned::<chrono::DateTime<chrono::Utc>>(1);
 }
 
 #[cfg(feature = "chrono")]
@@ -110,7 +120,7 @@ fn borrowed_chrono_handles_target_boundaries() {
 #[cfg(feature = "jiff")]
 #[test]
 fn borrowed_jiff_matches_owned_conversion_and_errors() {
-    assert_matches_owned::<jiff::Timestamp>();
+    assert_matches_owned::<jiff::Timestamp>(1);
 }
 
 #[cfg(feature = "jiff")]
