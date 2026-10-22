@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Warn when a custom attribute rule matches no generated target** (#697). All six attribute lists report the list and proto path for each unmatched entry, including typos and oneof variant paths used with `oneof_struct_field_attribute`. Generated Rust and malformed-attribute validation are unchanged.
+time: 2026-10-15T19:32:57.937901+00:00

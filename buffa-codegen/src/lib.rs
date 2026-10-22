@@ -1517,7 +1517,9 @@ pub struct CodeGenConfig {
     /// `"#[derive(serde::Serialize)]"`). [`generate`] returns
     /// [`CodeGenError::InvalidCustomAttribute`] for any other string, an
     /// empty one included. The same rule holds for the five attribute lists
-    /// below.
+    /// below. A valid rule matching no generated target produces
+    /// [`CodeGenWarning::CustomAttributeRuleMatchedNothing`] through
+    /// [`generate_with_diagnostics`]; [`generate`] discards warnings.
     ///
     /// When using a custom `serde::Serialize` derive, follow the requirements
     /// documented by `buffa_build::Config::type_attribute`: disable
@@ -2484,6 +2486,20 @@ pub enum CodeGenWarning {
         /// so, in place of the path hint.
         matches_ungenerated: bool,
     },
+    /// A custom attribute rule matched no target emitted by this generation
+    /// call. Usually a typo, the wrong attribute list, a oneof variant path
+    /// instead of its struct-field path, or a rule for an ungenerated import.
+    ///
+    /// Each list has its own target set; view families, synthetic map-entry
+    /// messages and synthetic optional oneofs do not create matches.
+    /// One diagnostic is returned per unmatched list entry, duplicates included.
+    #[non_exhaustive]
+    CustomAttributeRuleMatchedNothing {
+        /// The rule's path as configured.
+        rule: String,
+        /// The attribute list in [`CodeGenConfig`], e.g. `"field_attributes"`.
+        option: &'static str,
+    },
     /// A [`codec_strategy_in`](CodeGenConfig::codec_strategy_in) rule matched no
     /// message being generated, so it changed nothing. Usually a typo, a field
     /// path instead of a message path, or a rule for a package mapped through
@@ -2570,6 +2586,12 @@ impl core::fmt::Display for CodeGenWarning {
                      `.generate_json(true)`; plugin: `json=true`)"
                 )
             }
+            Self::CustomAttributeRuleMatchedNothing { rule, option } => write!(
+                f,
+                "{option} rule `{rule}` matched no generated target; check the proto \
+                 path and the attribute list's target kind (only generated owned \
+                 types, fields and oneof variants receive custom attributes)"
+            ),
             Self::LazyViewsRequireViews => {
                 write!(
                     f,
@@ -3750,6 +3772,7 @@ pub fn generate_with_diagnostics(
         )?;
     }
 
+    ctx.warn_unmatched_custom_attributes();
     Ok((output, ctx.take_warnings()))
 }
 

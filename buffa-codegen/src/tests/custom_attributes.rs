@@ -879,3 +879,327 @@ fn test_no_custom_attributes_by_default() {
         "no serde attrs without custom config: {content}"
     );
 }
+
+#[test]
+fn test_unmatched_custom_attributes_warn_for_each_list_without_changing_output() {
+    let file = two_oneof_messages_file();
+    let names = ["oneofs.proto".to_string()];
+    let baseline = generate(
+        std::slice::from_ref(&file),
+        &names,
+        &CodeGenConfig::default(),
+    )
+    .expect("baseline generates");
+    let rule = vec![(".pkg.Mesage.secret".to_string(), MARKER.to_string())];
+    let config = CodeGenConfig {
+        type_attributes: rule.clone(),
+        message_attributes: rule.clone(),
+        enum_attributes: rule.clone(),
+        oneof_attributes: rule.clone(),
+        field_attributes: rule.clone(),
+        oneof_struct_field_attributes: rule,
+        ..CodeGenConfig::default()
+    };
+    let (files, warnings) = generate_with_diagnostics(&[file], &names, &config).unwrap();
+    assert_eq!(files.len(), baseline.len());
+    for (actual, expected) in files.iter().zip(&baseline) {
+        assert_eq!(actual.name, expected.name);
+        assert_eq!(
+            actual.content, expected.content,
+            "inert rules must not change generated Rust"
+        );
+    }
+    assert_eq!(warnings.len(), 6, "each list must warn: {warnings:?}");
+    for (warning, option) in warnings.iter().zip([
+        "type_attributes",
+        "message_attributes",
+        "enum_attributes",
+        "oneof_attributes",
+        "field_attributes",
+        "oneof_struct_field_attributes",
+    ]) {
+        assert!(matches!(
+            warning,
+            CodeGenWarning::CustomAttributeRuleMatchedNothing { rule, option: actual }
+                if *actual == option && rule == ".pkg.Mesage.secret"
+        ));
+        let text = warning.to_string();
+        assert!(
+            text.contains(option) && text.contains(".pkg.Mesage.secret"),
+            "{text}"
+        );
+    }
+}
+
+fn custom_rule_config(option: &str, paths: &[&str]) -> CodeGenConfig {
+    let mut config = CodeGenConfig::default();
+    let rules = paths
+        .iter()
+        .map(|p| (p.to_string(), MARKER.to_string()))
+        .collect();
+    match option {
+        "type_attributes" => config.type_attributes = rules,
+        "message_attributes" => config.message_attributes = rules,
+        "enum_attributes" => config.enum_attributes = rules,
+        "oneof_attributes" => config.oneof_attributes = rules,
+        "field_attributes" => config.field_attributes = rules,
+        "oneof_struct_field_attributes" => config.oneof_struct_field_attributes = rules,
+        _ => panic!("unknown list {option}"),
+    }
+    config
+}
+
+fn attribute_warning_texts(file: FileDescriptorProto, config: &CodeGenConfig) -> Vec<String> {
+    let name = file.name.clone().unwrap();
+    let (_, warnings) = generate_with_diagnostics(&[file], &[name], config).unwrap();
+    warnings.into_iter().map(|w| w.to_string()).collect()
+}
+
+#[test]
+fn test_custom_attribute_warnings_respect_each_lists_generated_target_kind() {
+    let mut file = two_oneof_messages_file();
+    file.message_type[1].nested_type[0]
+        .enum_type
+        .push(EnumDescriptorProto {
+            name: Some("Status".to_string()),
+            value: vec![enum_value("UNKNOWN", 0)],
+            ..Default::default()
+        });
+    let cases: &[(&str, &[&str], &[&str])] = &[
+        (
+            "type_attributes",
+            &[
+                ".",
+                ".pkg",
+                ".pkg.Msg",
+                ".pkg.Outer.Inner",
+                ".pkg.Outer.Inner.Status",
+                ".pkg.Msg.payload",
+            ],
+            &[".pkg.Msg.id", ".pkg.Msg.payload.a", ".pkg.MsgView"],
+        ),
+        (
+            "message_attributes",
+            &[".", ".pkg", ".pkg.Msg", ".pkg.Outer.Inner"],
+            &[".pkg.Outer.Inner.Status", ".pkg.Msg.payload", ".pkg.Msg.id"],
+        ),
+        (
+            "enum_attributes",
+            &[".", ".pkg", ".pkg.Outer.Inner.Status"],
+            &[".pkg.Msg", ".pkg.Msg.payload", ".pkg.Msg.id"],
+        ),
+        (
+            "oneof_attributes",
+            &[".", ".pkg", ".pkg.Msg.payload", ".pkg.Outer.Inner.payload"],
+            &[
+                ".pkg.Msg.id",
+                ".pkg.Msg.payload.a",
+                ".pkg.Outer.Inner.Status",
+            ],
+        ),
+        (
+            "field_attributes",
+            &[
+                ".",
+                ".pkg",
+                ".pkg.Msg.id",
+                ".pkg.Msg.payload.a",
+                ".pkg.Outer.Inner.payload.b",
+            ],
+            &[
+                ".pkg.Msg.a",
+                ".pkg.Msg.pay",
+                ".pkg.MsgView.id",
+                ".pkg.Outer.Inner.Status.UNKNOWN",
+            ],
+        ),
+        (
+            "oneof_struct_field_attributes",
+            &[".", ".pkg", ".pkg.Msg.payload", ".pkg.Outer.Inner.payload"],
+            &[".pkg.Msg.id", ".pkg.Msg.payload.a", ".pkg.Msg.pay", ".pk"],
+        ),
+    ];
+    for &(option, live, inert) in cases {
+        let paths: Vec<_> = live.iter().chain(inert).copied().collect();
+        let warnings = attribute_warning_texts(file.clone(), &custom_rule_config(option, &paths));
+        assert_eq!(warnings.len(), inert.len(), "{option}: {warnings:?}");
+        for (text, path) in warnings.iter().zip(inert) {
+            assert!(text.contains(option) && text.contains(path), "{text}");
+        }
+    }
+}
+
+#[test]
+fn test_custom_attribute_warnings_preserve_duplicate_entries_and_rule_order() {
+    let config = custom_rule_config(
+        "field_attributes",
+        &[
+            ".pkg.Nope.z",
+            ".pkg.Msg.id",
+            ".pkg.Nope.a",
+            ".pkg.Nope.z",
+            ".pkg.Msg.id",
+        ],
+    );
+    let warnings = attribute_warning_texts(two_oneof_messages_file(), &config);
+    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    for (text, path) in warnings
+        .iter()
+        .zip([".pkg.Nope.z", ".pkg.Nope.a", ".pkg.Nope.z"])
+    {
+        assert!(text.contains(path), "{text}");
+    }
+}
+
+#[test]
+fn test_custom_attribute_rules_match_across_generated_files_and_import_collection() {
+    let first = two_oneof_messages_file();
+    let mut second = proto3_file("second.proto");
+    second.package = Some("other".to_string());
+    second
+        .message_type
+        .push(oneof_message("Second", "payload", &["a"]));
+    let names = ["oneofs.proto".to_string(), "second.proto".to_string()];
+    for idiomatic in [false, true] {
+        let config = CodeGenConfig {
+            idiomatic_imports: idiomatic,
+            file_per_package: idiomatic,
+            ..custom_rule_config(
+                "field_attributes",
+                &[".other.Second.payload.a", ".pkg.Msg.id", "."],
+            )
+        };
+        let (_, warnings) =
+            generate_with_diagnostics(&[first.clone(), second.clone()], &names, &config).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+}
+
+#[test]
+fn test_custom_attribute_rules_do_not_match_imported_excluded_or_extern_types() {
+    let kept = two_oneof_messages_file();
+    let mut dep = kept.clone();
+    dep.name = Some("dep.proto".to_string());
+    dep.package = Some("dep".to_string());
+    dep.enum_type.push(EnumDescriptorProto {
+        name: Some("Status".to_string()),
+        value: vec![enum_value("UNKNOWN", 0)],
+        ..Default::default()
+    });
+    for option in [
+        "type_attributes",
+        "message_attributes",
+        "enum_attributes",
+        "oneof_attributes",
+        "field_attributes",
+        "oneof_struct_field_attributes",
+    ] {
+        for mode in ["imported", "excluded", "extern"] {
+            let mut config = custom_rule_config(option, &[".dep"]);
+            let mut names = vec!["oneofs.proto".to_string()];
+            if mode == "excluded" {
+                names.push("dep.proto".to_string());
+            }
+            if mode == "excluded" {
+                config.exclude_packages.push("dep".to_string());
+            }
+            if mode == "extern" {
+                config
+                    .extern_paths
+                    .push((".dep".to_string(), "::foreign".to_string()));
+            }
+            let (_, warnings) =
+                generate_with_diagnostics(&[kept.clone(), dep.clone()], &names, &config).unwrap();
+            assert_eq!(warnings.len(), 1, "{option} {mode}: {warnings:?}");
+            let text = warnings[0].to_string();
+            assert!(text.contains(option) && text.contains(".dep"), "{text}");
+        }
+    }
+}
+
+#[test]
+fn test_custom_attribute_rules_do_not_match_synthetic_oneofs_or_map_entries() {
+    let mut file = two_oneof_messages_file();
+    let msg = &mut file.message_type[0];
+    msg.oneof_decl.push(OneofDescriptorProto {
+        name: Some("_note".to_string()),
+        ..Default::default()
+    });
+    let mut note = make_field("note", 50, Label::LABEL_OPTIONAL, Type::TYPE_STRING);
+    note.oneof_index = Some(1);
+    note.proto3_optional = Some(true);
+    msg.field.push(note);
+    msg.nested_type.push(DescriptorProto {
+        name: Some("EntriesEntry".to_string()),
+        field: vec![
+            make_field("key", 1, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+            make_field("value", 2, Label::LABEL_OPTIONAL, Type::TYPE_INT32),
+        ],
+        options: MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    });
+    msg.field.push(FieldDescriptorProto {
+        type_name: Some(".pkg.Msg.EntriesEntry".to_string()),
+        ..make_field("entries", 51, Label::LABEL_REPEATED, Type::TYPE_MESSAGE)
+    });
+    for (option, paths) in [
+        (
+            "type_attributes",
+            vec![".pkg.Msg.EntriesEntry", ".pkg.Msg._note"],
+        ),
+        ("message_attributes", vec![".pkg.Msg.EntriesEntry"]),
+        ("oneof_attributes", vec![".pkg.Msg._note"]),
+        ("oneof_struct_field_attributes", vec![".pkg.Msg._note"]),
+        (
+            "field_attributes",
+            vec![".pkg.Msg.EntriesEntry.key", ".pkg.Msg._note.note"],
+        ),
+    ] {
+        let warnings = attribute_warning_texts(file.clone(), &custom_rule_config(option, &paths));
+        assert_eq!(warnings.len(), paths.len(), "{option}: {warnings:?}");
+    }
+    assert!(attribute_warning_texts(
+        file,
+        &custom_rule_config("field_attributes", &[".pkg.Msg.note", ".pkg.Msg.entries"])
+    )
+    .is_empty());
+}
+
+#[test]
+fn test_explicitly_generated_extern_mapped_types_count_as_attribute_matches() {
+    // extern_path changes reference resolution, not requested-file emission.
+    let config = CodeGenConfig {
+        extern_paths: vec![(".pkg".to_string(), "::foreign".to_string())],
+        ..custom_rule_config("message_attributes", &[".pkg.Msg"])
+    };
+    let (files, warnings) = generate_with_diagnostics(
+        &[two_oneof_messages_file()],
+        &["oneofs.proto".to_string()],
+        &config,
+    )
+    .unwrap();
+    assert!(joined(&files).contains("clippy::pedantic"));
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn test_custom_attribute_root_rule_warns_when_no_targets_are_generated() {
+    for option in [
+        "type_attributes",
+        "message_attributes",
+        "enum_attributes",
+        "oneof_attributes",
+        "field_attributes",
+        "oneof_struct_field_attributes",
+    ] {
+        let config = custom_rule_config(option, &["."]);
+        let (files, warnings) = generate_with_diagnostics(&[], &[], &config).unwrap();
+        assert!(files.is_empty());
+        assert_eq!(warnings.len(), 1, "{option}: {warnings:?}");
+        assert!(warnings[0].to_string().contains(option));
+    }
+}

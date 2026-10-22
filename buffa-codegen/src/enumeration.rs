@@ -6,7 +6,7 @@ use crate::generated::descriptor::EnumDescriptorProto;
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
-use crate::context::CodeGenContext;
+use crate::context::{CodeGenContext, CustomAttributeKind};
 use crate::features::ResolvedFeatures;
 use crate::CodeGenError;
 
@@ -370,14 +370,8 @@ pub fn generate_enum(
             crate::comments::doc_attrs_resolved(ctx.comment(proto_fqn), proto_fqn, &ctx.type_map);
         quote! { #base #idiomatic_doc_note }
     };
-    let custom_type_attrs = crate::context::CodeGenContext::matching_attributes(
-        &ctx.config.type_attributes,
-        proto_fqn,
-    )?;
-    let custom_enum_attrs = crate::context::CodeGenContext::matching_attributes(
-        &ctx.config.enum_attributes,
-        proto_fqn,
-    )?;
+    let custom_type_attrs = ctx.matching_attributes(CustomAttributeKind::Type, proto_fqn)?;
+    let custom_enum_attrs = ctx.matching_attributes(CustomAttributeKind::Enum, proto_fqn)?;
 
     // A `skip_debug` rule naming the enum leaves `Debug` to the consuming
     // crate.
