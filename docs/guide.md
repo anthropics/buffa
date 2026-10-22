@@ -202,9 +202,11 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.generate_json(bool)` | `false` | Generate serde Serialize/Deserialize for proto3 JSON |
 | `.generate_text(bool)` | `false` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
 | `.deny_unknown_json_fields(bool)` | `false` | Reject unknown keys when parsing JSON instead of ignoring them; see [Unknown fields in JSON](#unknown-fields-in-json) |
-| `.deny_unknown_json_fields_in(&[...])` | — | Reject unknown JSON keys for matching messages and the messages nested in them (proto-path prefixes), on top of the global setting. Rules can only enable |
+| `.deny_unknown_json_fields_in(&[...])` | — | Enable strict JSON for matching messages (proto-path prefixes); enable-only shorthand |
+| `.deny_unknown_json_fields_in_with(enabled, &[...])` | — | Enable or disable strict JSON for matching messages; last match wins — use to exempt `.demo.Legacy` from a `.demo` rule |
 | `.preserve_unknown_fields(bool)` | `true` | Preserve unknown fields for round-trip fidelity |
-| `.preserve_unknown_fields_in(&[...])` | — | Re-enable unknown-field preservation for matching messages and the messages nested in them (proto-path prefixes). Pair with `.preserve_unknown_fields(false)` to keep the memory savings globally while selected types still round-trip; see [Path-scoped re-enable](#path-scoped-re-enable) |
+| `.preserve_unknown_fields_in(&[...])` | — | Enable preservation for matching messages (enable-only); pair with `.preserve_unknown_fields(false)` for selective re-enable |
+| `.preserve_unknown_fields_in_with(enabled, &[...])` | — | Enable or disable preservation for matching messages; last match wins — use to turn preservation off for one type while the global default stays on |
 | `.override_feature_in(path, feature)` | — | Apply a path-scoped editions feature override to the compiled descriptors — for protos you cannot modify; see [Enums](#enumvaluet--type-safe-open-enums) for the `enum_type` override's semantics |
 | `.open_enums_in(&[...])` | — | Shorthand for `override_feature_in(path, FeatureOverride::EnumType(EnumTypeOverride::Open))` per path: treat matching closed enums (or closed enum fields) as open in generated Rust (`EnumValue<E>`) |
 | `.generate_with_setters(bool)` | `true` | Emit `with_<name>()` builder-style setters for explicit-presence fields |
@@ -640,9 +642,11 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `json=true` | Generate serde Serialize/Deserialize for proto3 JSON |
 | `text=true` | Generate `impl buffa::text::TextFormat` for textproto encoding/decoding |
 | `unknown_fields=false` | Disable unknown field preservation |
-| `unknown_fields_in=<path>` | Re-enable unknown-field preservation for matching messages and the messages nested in them. Repeatable; same proto-path prefix matching as `open_enums_in`; see [Path-scoped re-enable](#path-scoped-re-enable) |
+| `unknown_fields_in=<path>` | Enable unknown-field preservation for matching messages (bare path). Repeatable; see [Path-scoped re-enable](#path-scoped-re-enable) |
+| `unknown_fields_in=<path>=false` | Disable preservation for matching messages when a broader rule is on (last match wins). Same prefix matching as bare `unknown_fields_in` |
 | `deny_unknown_json_fields=true` | Reject unknown keys when parsing JSON instead of ignoring them; without `json=true` it changes nothing and the plugin prints a warning. See [Unknown fields in JSON](#unknown-fields-in-json) |
-| `deny_unknown_json_fields_in=<path>` | Reject unknown JSON keys for matching messages and the messages nested in them; rules can only enable, and need `json=true` like the global option. Repeatable; same proto-path prefix matching as `unknown_fields_in`. See [Unknown fields in JSON](#unknown-fields-in-json) |
+| `deny_unknown_json_fields_in=<path>` | Enable strict JSON for matching messages (bare path); needs `json=true`. Repeatable; see [Unknown fields in JSON](#unknown-fields-in-json) |
+| `deny_unknown_json_fields_in=<path>=false` | Exempt matching messages from a broader strict-JSON rule (last match wins) |
 | `skip_debug=<path>` | Omit the generated `Debug` impl for matching messages (with their oneof enums) and for enums named exactly, so the crate can write its own. A matched enum needs a hand-written impl to compile. Repeatable; message paths use the same proto-path prefix matching as `unknown_fields_in`. See [`skip_debug` and hand-written `Debug`](#skip_debug-and-hand-written-debug) |
 | `arbitrary=true` | Emit `#[derive(arbitrary::Arbitrary)]` for fuzzing |
 | `gate_impls=true` | Wrap json/views/text impls in `#[cfg(feature = ...)]` for library crates whose generated code is a public dependency surface (default: emitted unconditionally) |
@@ -2692,10 +2696,10 @@ buffa_build::Config::new()
 - A rule covers the message it names **and every message nested inside it**:
   `.wa.CallLogRecord` also covers `.wa.CallLogRecord.Participant`. A rule
   naming a nested message does not cover its enclosing message.
-- Rules are enable-only and independent of the order of the
-  `.preserve_unknown_fields(...)` call. The builder cannot exclude a nested
-  message from a rule that names its parent; `CodeGenConfig` accepts disabling
-  entries, and the last matching entry wins.
+- Rules are independent of the order of the `.preserve_unknown_fields(...)`
+  call. Use `.preserve_unknown_fields_in_with(false, …)` or plugin
+  `unknown_fields_in=<path>=false` to carve out a nested message from a
+  broader rule; the last matching entry wins.
 - Preservation is per message *type*, not per value graph. A preserved
   message's sub-messages keep their own unknown fields only if their types are
   covered too, so list every type on the re-encode path.
