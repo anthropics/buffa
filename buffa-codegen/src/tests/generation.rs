@@ -2533,14 +2533,9 @@ fn editions_delimited_message_encoding() {
     );
 
     // Field 2 (lp_child): explicit LENGTH_PREFIXED → regular message encoding.
-    // prettyplease wraps Tag::new across lines for this field number, so
-    // check the decode arm instead (wire-type check on the next lines).
     assert!(
-        content.contains(
-            "2u32 => {\n                ::buffa::encoding::check_wire_type(\n                    \
-             tag,\n                    ::buffa::encoding::WireType::LengthDelimited,"
-        ),
-        "lp_child should decode as length-delimited: {content}"
+        content.contains("(2u32, ::buffa::encoding::WireType::LengthDelimited) =>"),
+        "lp_child should dispatch only length-delimited records: {content}"
     );
     // And it should NOT have a StartGroup encode for field 2.
     assert!(

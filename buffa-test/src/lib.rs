@@ -1358,3 +1358,25 @@ pub mod xti {
         "/cross_package_idiomatic/_include.rs"
     ));
 }
+
+/// Wire compatibility fixtures, preserving and dropping unknown fields.
+#[cfg(has_table_codec)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod wcu {
+    buffa::include_proto!("wcu");
+}
+#[cfg(has_table_codec)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod wct {
+    buffa::include_proto!("wct");
+}
+#[cfg(has_table_codec)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod wdu {
+    buffa::include_proto!("wdu");
+}
+#[cfg(has_table_codec)]
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod wdt {
+    buffa::include_proto!("wdt");
+}

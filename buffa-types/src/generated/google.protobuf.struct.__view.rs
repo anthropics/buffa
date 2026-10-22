@@ -50,8 +50,8 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
         #[allow(unused_variables)]
         let view = self;
         let mut cur = cur;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -451,8 +451,8 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
         #[allow(unused_variables)]
         let view = self;
         let mut cur = cur;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -463,7 +463,7 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
                     ),
                 );
             }
-            2u32 => {
+            (2u32, ::buffa::encoding::WireType::Fixed64) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Fixed64,
@@ -474,7 +474,7 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
                     ),
                 );
             }
-            3u32 => {
+            (3u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -485,7 +485,7 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
                     ),
                 );
             }
-            4u32 => {
+            (4u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -496,7 +496,7 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
                     ),
                 );
             }
-            5u32 => {
+            (5u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -527,7 +527,7 @@ impl<'a> ::buffa::MessageView<'a> for ValueView<'a> {
                     );
                 }
             }
-            6u32 => {
+            (6u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -1087,8 +1087,8 @@ impl<'a> ::buffa::MessageView<'a> for ListValueView<'a> {
         #[allow(unused_variables)]
         let view = self;
         let mut cur = cur;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,

@@ -6,7 +6,7 @@ use super::*;
 use crate::alloc::{collections::BTreeMap, string::String, vec, vec::Vec};
 use crate::bytes::Buf;
 use crate::encoding::{
-    check_wire_type, decode_unknown_field, encode_varint, skip_field_depth, Tag, WireType,
+    decode_unknown_field, encode_varint, skip_field_depth, Tag, WireType,
 };
 use crate::map_codec::{
     self, BytesVec, ClosedEnum, Double, Fixed32, Fixed64, Int32, Int64, OpenEnum, Sint32, Sint64,
@@ -270,8 +270,9 @@ impl Message for Reference {
     ) -> Result<(), DecodeError> {
         let m = &mut self.0;
         let number = tag.field_number();
-        if (1..=9).contains(&number) || number == 300 {
-            check_wire_type(tag, WireType::LengthDelimited)?;
+        if tag.wire_type() != WireType::LengthDelimited {
+            m.unknown.push(decode_unknown_field(tag, buf, ctx)?);
+            return Ok(());
         }
         match number {
             1 => map_codec::merge_entry::<Str, Int32, _>(&mut m.by_name, buf, ctx),
@@ -329,8 +330,7 @@ impl Message for ReferenceLossy {
         buf: &mut impl Buf,
         ctx: DecodeContext<'_>,
     ) -> Result<(), DecodeError> {
-        if tag.field_number() == 3 {
-            check_wire_type(tag, WireType::LengthDelimited)?;
+        if tag.field_number() == 3 && tag.wire_type() == WireType::LengthDelimited {
             map_codec::merge_entry::<Uint64, ClosedEnum<Color>, _>(&mut self.0.closed, buf, ctx)
         } else {
             skip_field_depth(tag, buf, ctx.depth())
@@ -604,12 +604,19 @@ fn a_message_value_with_nested_messages_decodes() {
 
 #[test]
 fn a_wrong_wire_type_inside_an_entry_is_an_error() {
-    // Key of a string map as a varint; value of an int map as length-delimited.
+    // Inner key/value records retain their strict wire-type contract.
     for entry in [vf(1, 1), ld(2, b"x"), cat(&[&ld(1, b"k"), &ld(2, b"x")])] {
-        assert!(assert_same(&ld(1, &entry)).is_err());
+        assert!(matches!(assert_same(&ld(1, &entry)), Err(DecodeError::WireTypeMismatch { .. })));
     }
-    // The entry itself as a varint.
-    assert!(assert_same(&vf(1, 1)).is_err());
+}
+
+#[test]
+fn a_wrong_wire_type_for_the_outer_map_is_unknown() {
+    let wire = vf(1, 1);
+    let msg = assert_same(&wire).unwrap();
+    assert!(msg.by_name.is_empty());
+    assert_eq!(msg.unknown.iter().count(), 1);
+    assert_eq!(msg.encode_to_vec(), wire);
 }
 
 #[test]

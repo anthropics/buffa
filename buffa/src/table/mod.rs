@@ -291,6 +291,13 @@ macro_rules! define_kind {
                 }
             }
 
+            /// Additional packed/unpacked forms of repeated numeric fields.
+            fn accepts_repeated_wire(self, wire: WireType) -> bool {
+                match self {
+                    $(Kind::$name => define_kind!(@accept $fam $ty $card wire),)*
+                }
+            }
+
             /// Whether the entry carries an index into the table's aux array.
             const fn aux_kind(self) -> Option<AuxKind> {
                 match self {
@@ -364,6 +371,19 @@ macro_rules! define_kind {
     (@wire Oneof $ty:ident $card:ident) => {
         panic!("a oneof member's wire type is its payload kind's, so build its entry with `Entry::oneof_member`")
     };
+    (@accept Scalar $ty:ident REPEATED $wire:ident) => {
+        $wire == <$ty as Sc>::WIRE || $wire == WireType::LengthDelimited
+    };
+    (@accept Scalar $ty:ident PACKED $wire:ident) => {
+        define_kind!(@accept Scalar $ty REPEATED $wire)
+    };
+    (@accept Enum $ty:ident REPEATED $wire:ident) => {
+        $wire == WireType::Varint || $wire == WireType::LengthDelimited
+    };
+    (@accept Enum $ty:ident PACKED $wire:ident) => {
+        define_kind!(@accept Enum $ty REPEATED $wire)
+    };
+    (@accept $fam:ident $ty:ident $card:ident $wire:ident) => { false };
     // The members of a oneof have no cardinality of their own.
     (@card ONEOF) => { IMPLICIT };
     (@card LEADER) => { IMPLICIT };
@@ -545,6 +565,12 @@ impl Entry {
             Kind::OneofFollower
         };
         e
+    }
+
+    /// Test before accessing a field slot, including changing a oneof variant.
+    fn wire_type_compatible(&self, wire: WireType) -> bool {
+        // `tag` retains the payload wire type for oneof members too.
+        self.tag & 7 == wire as u32 || self.kind.accepts_repeated_wire(wire)
     }
 
     const fn number(&self) -> u32 {

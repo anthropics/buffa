@@ -166,8 +166,8 @@ impl ::buffa::Message for Version {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -176,7 +176,7 @@ impl ::buffa::Message for Version {
                     ::buffa::types::decode_int32(buf)?,
                 );
             }
-            2u32 => {
+            (2u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -185,7 +185,7 @@ impl ::buffa::Message for Version {
                     ::buffa::types::decode_int32(buf)?,
                 );
             }
-            3u32 => {
+            (3u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -194,7 +194,7 @@ impl ::buffa::Message for Version {
                     ::buffa::types::decode_int32(buf)?,
                 );
             }
-            4u32 => {
+            (4u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -532,8 +532,8 @@ impl ::buffa::Message for CodeGeneratorRequest {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -544,7 +544,7 @@ impl ::buffa::Message for CodeGeneratorRequest {
                 )?;
                 self.file_to_generate.push(__elem);
             }
-            2u32 => {
+            (2u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -556,7 +556,7 @@ impl ::buffa::Message for CodeGeneratorRequest {
                     buf,
                 )?;
             }
-            3u32 => {
+            (3u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -567,7 +567,7 @@ impl ::buffa::Message for CodeGeneratorRequest {
                     ctx,
                 )?;
             }
-            15u32 => {
+            (15u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -579,7 +579,7 @@ impl ::buffa::Message for CodeGeneratorRequest {
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, ctx)?;
                 self.proto_file.push(elem);
             }
-            17u32 => {
+            (17u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -938,8 +938,8 @@ impl ::buffa::Message for CodeGeneratorResponse {
         use ::buffa::bytes::Buf as _;
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
-        match tag.field_number() {
-            1u32 => {
+        match (tag.field_number(), tag.wire_type()) {
+            (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -949,7 +949,7 @@ impl ::buffa::Message for CodeGeneratorResponse {
                     buf,
                 )?;
             }
-            2u32 => {
+            (2u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -958,7 +958,7 @@ impl ::buffa::Message for CodeGeneratorResponse {
                     ::buffa::types::decode_uint64(buf)?,
                 );
             }
-            3u32 => {
+            (3u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -967,7 +967,7 @@ impl ::buffa::Message for CodeGeneratorResponse {
                     ::buffa::types::decode_int32(buf)?,
                 );
             }
-            4u32 => {
+            (4u32, ::buffa::encoding::WireType::Varint) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::Varint,
@@ -976,7 +976,7 @@ impl ::buffa::Message for CodeGeneratorResponse {
                     ::buffa::types::decode_int32(buf)?,
                 );
             }
-            15u32 => {
+            (15u32, ::buffa::encoding::WireType::LengthDelimited) => {
                 ::buffa::encoding::check_wire_type(
                     tag,
                     ::buffa::encoding::WireType::LengthDelimited,
@@ -1515,8 +1515,8 @@ pub mod code_generator_response {
             use ::buffa::bytes::Buf as _;
             #[allow(unused_imports)]
             use ::buffa::Enumeration as _;
-            match tag.field_number() {
-                1u32 => {
+            match (tag.field_number(), tag.wire_type()) {
+                (1u32, ::buffa::encoding::WireType::LengthDelimited) => {
                     ::buffa::encoding::check_wire_type(
                         tag,
                         ::buffa::encoding::WireType::LengthDelimited,
@@ -1528,7 +1528,7 @@ pub mod code_generator_response {
                         buf,
                     )?;
                 }
-                2u32 => {
+                (2u32, ::buffa::encoding::WireType::LengthDelimited) => {
                     ::buffa::encoding::check_wire_type(
                         tag,
                         ::buffa::encoding::WireType::LengthDelimited,
@@ -1540,7 +1540,7 @@ pub mod code_generator_response {
                         buf,
                     )?;
                 }
-                15u32 => {
+                (15u32, ::buffa::encoding::WireType::LengthDelimited) => {
                     ::buffa::encoding::check_wire_type(
                         tag,
                         ::buffa::encoding::WireType::LengthDelimited,
@@ -1552,7 +1552,7 @@ pub mod code_generator_response {
                         buf,
                     )?;
                 }
-                16u32 => {
+                (16u32, ::buffa::encoding::WireType::LengthDelimited) => {
                     ::buffa::encoding::check_wire_type(
                         tag,
                         ::buffa::encoding::WireType::LengthDelimited,

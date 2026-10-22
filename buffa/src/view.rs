@@ -221,9 +221,9 @@ pub trait MessageView<'a>: Sized {
     ///
     /// # Errors
     ///
-    /// Returns a [`DecodeError`] on malformed input, a wire-type mismatch, or
-    /// when a configured decode limit (recursion depth, unknown-field
-    /// allowance, or element-memory budget) is exceeded.
+    /// Returns a [`DecodeError`] on malformed input, an incompatible map-entry
+    /// key/value wire type, or when a configured decode limit (recursion depth,
+    /// unknown-field allowance, or element-memory budget) is exceeded.
     fn decode_view_ctx(buf: &'a [u8], ctx: crate::DecodeContext<'_>) -> Result<Self, DecodeError>
     where
         Self: Default,
@@ -245,9 +245,9 @@ pub trait MessageView<'a>: Sized {
     ///
     /// # Errors
     ///
-    /// Returns a [`DecodeError`] on malformed input, a wire-type mismatch, or
-    /// when a configured decode limit (recursion depth, unknown-field
-    /// allowance, or element-memory budget) is exceeded.
+    /// Returns a [`DecodeError`] on malformed input, an incompatible map-entry
+    /// key/value wire type, or when a configured decode limit (recursion depth,
+    /// unknown-field allowance, or element-memory budget) is exceeded.
     fn merge_into_view(
         &mut self,
         buf: &'a [u8],
@@ -279,8 +279,9 @@ pub trait MessageView<'a>: Sized {
     /// [`decode_view`](Self::decode_view) and
     /// [`decode_view_with_ctx`](Self::decode_view_with_ctx) to decode by hand
     /// never reaches the provided loop, so it can satisfy the trait with a
-    /// one-line `Ok(cur)` stub. The canonical shape is a match on
-    /// `tag.field_number()`. Mark the method `#[inline]`: the provided loop
+    /// one-line `Ok(cur)` stub. The canonical shape matches both field number
+    /// and wire type, routing incompatible records through the unknown arm.
+    /// Mark the method `#[inline]`: the provided loop
     /// calls it once per field across the crate boundary, so the hint lets the
     /// optimizer fold the match into that loop.
     ///
@@ -294,9 +295,13 @@ pub trait MessageView<'a>: Sized {
     ///     ctx: buffa::DecodeContext<'_>,
     /// ) -> Result<&'a [u8], buffa::DecodeError> {
     ///     let mut cur = cur;
-    ///     match tag.field_number() {
-    ///         1 => self.id = buffa::types::decode_int32(&mut cur)?,
-    ///         2 => self.name = buffa::types::borrow_str(&mut cur)?,
+    ///     match (tag.field_number(), tag.wire_type()) {
+    ///         (1, buffa::encoding::WireType::Varint) => {
+    ///             self.id = buffa::types::decode_int32(&mut cur)?;
+    ///         }
+    ///         (2, buffa::encoding::WireType::LengthDelimited) => {
+    ///             self.name = buffa::types::borrow_str(&mut cur)?;
+    ///         }
     ///         _ => buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?,
     ///     }
     ///     Ok(cur)
@@ -326,8 +331,10 @@ pub trait MessageView<'a>: Sized {
     ///
     /// # Errors
     ///
-    /// Returns a [`DecodeError`] on malformed payloads, wire-type mismatches,
-    /// or when a configured decode limit is exceeded.
+    /// Returns a [`DecodeError`] on malformed payloads, incompatible map-entry
+    /// key/value wire types, or when a configured decode limit is exceeded.
+    /// Structurally valid incompatible records follow the unknown-field policy
+    /// without changing the known field.
     fn merge_view_field(
         &mut self,
         tag: crate::encoding::Tag,
