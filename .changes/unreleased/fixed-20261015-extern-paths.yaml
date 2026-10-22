@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**Direct `buffa_codegen::generate` and `generate_with_diagnostics` callers now normalize and validate `CodeGenConfig::extern_paths` proto names** (#703). A missing leading dot, surrounding whitespace, or one trailing dot is normalized before resolving types; malformed names return an error quoting the entry instead of silently leaving the mapping unused. The caller configuration and Rust paths are unchanged.'
+time: 2026-10-15T21:56:15.700765Z

@@ -53,6 +53,7 @@ mod comments;
 mod custom_attributes;
 mod debug_redact;
 mod deprecation;
+mod direct_extern_paths;
 mod element_memory_limit;
 mod excluded_refs;
 mod feature_gating;

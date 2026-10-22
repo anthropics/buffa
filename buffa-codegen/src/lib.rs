@@ -1336,13 +1336,12 @@ pub struct CodeGenConfig {
     /// exact type-FQN entry wins over a covering package prefix; otherwise
     /// the longest matching prefix wins.
     ///
-    /// The proto side must be `"."` (every type) or a fully-qualified name:
-    /// a leading dot, then protobuf identifiers separated by single dots,
-    /// with no trailing dot. [`generate`] does not validate entries, and an
-    /// entry in another form matches no type; a caller that fills this field
-    /// directly should pass each name through
-    /// [`normalize_extern_path_proto_name`], as `protoc-gen-buffa` and
-    /// `buffa-build` do.
+    /// The proto side is normalized and validated by [`generate`] and
+    /// [`generate_with_diagnostics`] through [`normalize_extern_path_proto_name`]:
+    /// whitespace is trimmed, a missing leading dot is added, and one trailing
+    /// dot is removed. The result must be `"."` (every type) or protobuf
+    /// identifiers separated by single dots. A malformed name is an error.
+    /// The Rust path and this configuration are left unchanged.
     ///
     /// Well-known types (`google.protobuf.*`) are automatically mapped to
     /// `::buffa_types::google::protobuf::*` without needing an explicit
@@ -3338,8 +3337,8 @@ fn warn_excluded_refs_msg(
 ///   `file_per_package`.
 /// - [`CodeGenError::Other`] if an active feature-gate name in
 ///   [`CodeGenConfig::feature_gate_names`] is not a valid Cargo feature name,
-///   or if `shared_descriptor_pool_root` or an `exclude_packages` entry is
-///   malformed.
+///   or if `shared_descriptor_pool_root`, an `exclude_packages` entry, or an
+///   `extern_paths` proto name is malformed.
 /// - [`CodeGenError::SharedCorpusContextMismatch`] if
 ///   [`CodeGenConfig::shared_corpus_context`] was built from a different
 ///   corpus or different rules than this call uses.
@@ -3431,6 +3430,19 @@ pub fn generate_with_diagnostics(
 
     config.validate_type_name_prefix()?;
     context::validate_custom_attributes(config)?;
+
+    // Direct callers need the same validation as the front ends. Keep the
+    // normalized names in the effective config so every resolution path sees
+    // them, including automatic WKT and file-level mapping decisions.
+    let mut normalized_config = std::borrow::Cow::Borrowed(config);
+    for (index, (proto, _)) in config.extern_paths.iter().enumerate() {
+        let normalized = normalize_extern_path_proto_name(proto)
+            .map_err(|e| CodeGenError::Other(format!("extern_path {proto:?}: {e}")))?;
+        if normalized != *proto {
+            normalized_config.to_mut().extern_paths[index].0 = normalized;
+        }
+    }
+    let config = normalized_config.as_ref();
 
     // Normalize exclude_packages entries (optional leading dot stripped). The
     // plugin normalizes before it gets here and buffa-build validates in
@@ -5260,8 +5272,9 @@ pub fn normalize_exclude_package(value: &str) -> Result<String, String> {
 /// no type, so a typo would otherwise leave the mapping silently unused.
 /// `"."`, the catch-all, is returned as is.
 ///
-/// The `protoc-gen-buffa` option parser and `buffa-build` both run entries
-/// through this function, so the two front ends accept the same names.
+/// The `protoc-gen-buffa` option parser, `buffa-build`, and
+/// [`generate_with_diagnostics`] run entries through this function, so the
+/// front ends and direct codegen callers accept the same names.
 ///
 /// # Errors
 ///
