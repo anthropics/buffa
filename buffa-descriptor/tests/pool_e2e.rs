@@ -719,7 +719,7 @@ fn editions_file_without_edition_is_rejected_without_mutating_pool() {
 }
 
 #[test]
-fn editions_file_with_an_undefined_edition_number_links_with_2023_defaults() {
+fn editions_file_with_an_undefined_edition_number_is_rejected() {
     use buffa::Message;
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
     use buffa_descriptor::generated::descriptor::{
@@ -754,15 +754,21 @@ fn editions_file_with_an_undefined_edition_number_links_with_2023_defaults() {
     .encode_to_vec();
 
     // The wire form carries the number, and decoding keeps it as an unknown
-    // field with `edition` unset.
-    let p = DescriptorPool::decode(&bytes).unwrap();
+    // field with `edition` unset. The pool cannot know that edition's
+    // feature defaults, so it rejects the file with the number it carried
+    // instead of linking it with the edition 2023 defaults.
+    let err = match DescriptorPool::decode(&bytes) {
+        Ok(_) => panic!("an undefined edition number links"),
+        Err(err) => err,
+    };
+    assert!(matches!(
+        err,
+        PoolError::UnsupportedEdition { ref file, edition: UNDEFINED_EDITION }
+            if file == "future-edition.proto"
+    ));
     assert_eq!(
-        p.message_by_name("FutureEdition")
-            .unwrap()
-            .field(1)
-            .unwrap()
-            .presence(),
-        FieldPresence::Explicit
+        err.to_string(),
+        "file future-edition.proto has syntax \"editions\" with unsupported edition 5000"
     );
 }
 

@@ -32,7 +32,8 @@ use crate::generated::descriptor::{
 /// A file with syntax `editions` and no edition that this crate defines
 /// resolves to the edition 2023 defaults. `DescriptorPool` (feature
 /// `reflect`) rejects such a file when its `edition` is unset or
-/// `EDITION_UNKNOWN`, before it calls this function.
+/// `EDITION_UNKNOWN`, or outside the supported range, before it calls
+/// this function; the fallback here serves direct callers.
 #[must_use]
 pub fn for_file(file: &FileDescriptorProto) -> ResolvedFeatures {
     match file.syntax.as_deref() {
