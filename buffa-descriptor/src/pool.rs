@@ -322,9 +322,11 @@ pub enum PoolError {
     /// A field with `type` unset takes its kind from the type the name
     /// resolves to, so it reports this error as well.
     ///
-    /// The pool looks a `type_name` up as a fully-qualified name, with or
-    /// without the leading dot. A name relative to the field's scope, which
-    /// protoc resolves before it writes a descriptor, is reported here.
+    /// A `type_name` with a leading dot is looked up as the fully-qualified
+    /// name it spells. Without one, it is first tried against each enclosing
+    /// scope of the referring field, method or extension, innermost first,
+    /// as protoc and protobuf-go resolve it; this error means no scope, and
+    /// no fully-qualified lookup, produced a message or enum.
     UnresolvedTypeName { type_name: String, field: String },
     /// A field's `type_name` resolved to the wrong kind (e.g. a `TYPE_ENUM`
     /// field referencing a message). Carries the name and the field.
@@ -1487,8 +1489,9 @@ impl DescriptorPool {
     ///
     /// A field that leaves `type` unset takes its kind from the message or
     /// enum that its `type_name` resolves to. With `type_name` also unset or
-    /// empty, the field links as `double`. Every `type_name` must be fully
-    /// qualified; the leading dot is optional.
+    /// empty, the field links as `double`. A `type_name` with a leading dot
+    /// is fully qualified; without one, it is resolved against the referring
+    /// element's enclosing scopes, innermost first, as protoc resolves it.
     ///
     /// # Errors
     ///
@@ -2815,6 +2818,28 @@ impl DescriptorPool {
         Ok(())
     }
 
+    /// Look up a `type_name` written in a descriptor, resolving it the way
+    /// protoc and protobuf-go do. A leading dot makes the name fully
+    /// qualified, and only the exact name is tried. Without one, the name is
+    /// tried against each enclosing scope of the referrer (its containing
+    /// message or service, then each parent, up to the package), innermost
+    /// first, and finally as a fully-qualified name. protoc always writes
+    /// the leading dot, so this only changes hand-built descriptors.
+    fn lookup_type_name(&self, tn: &str, referrer_fqn: &str) -> Option<&Definition> {
+        if let Some(fqn) = tn.strip_prefix('.') {
+            return self.by_name.get(fqn);
+        }
+        let mut scope = referrer_fqn;
+        while let Some((parent, _)) = scope.rsplit_once('.') {
+            scope = parent;
+            let candidate = format!("{scope}.{tn}");
+            if let Some(definition) = self.by_name.get(&candidate) {
+                return Some(definition);
+            }
+        }
+        self.by_name.get(tn)
+    }
+
     /// Resolve a method's `input_type`/`output_type` (a leading-dot FQN like
     /// `.my.pkg.Request`) to a [`MessageIndex`].
     fn resolve_message_type_name(
@@ -2826,8 +2851,7 @@ impl DescriptorPool {
         let tn = type_name.ok_or_else(|| PoolError::MissingTypeName {
             field: method_fqn.to_string(),
         })?;
-        let lookup = tn.strip_prefix('.').unwrap_or(tn);
-        match self.by_name.get(lookup) {
+        match self.lookup_type_name(tn, method_fqn) {
             Some(Definition::Message(midx)) => {
                 self.check_visible(scope, self.message_file[midx.0 as usize], tn, method_fqn)?;
                 Ok(*midx)
@@ -3282,8 +3306,7 @@ impl DescriptorPool {
         let tn = type_name.ok_or_else(|| PoolError::MissingTypeName {
             field: field_fqn.to_string(),
         })?;
-        let lookup = tn.strip_prefix('.').unwrap_or(tn);
-        match self.by_name.get(lookup) {
+        match self.lookup_type_name(tn, field_fqn) {
             Some(Definition::Message(midx))
                 if matches!(
                     ty,
