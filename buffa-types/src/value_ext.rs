@@ -617,8 +617,15 @@ impl<'de> serde::Deserialize<'de> for Value {
             }
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Value, A::Error> {
                 let mut st = Struct::default();
-                while let Some((k, v)) = map.next_entry::<String, Value>()? {
-                    st.fields.insert(k, v);
+                while let Some(key) = map.next_key::<buffa::json_helpers::JsonObjectKey>()? {
+                    match key {
+                        buffa::json_helpers::JsonObjectKey::NumberToken => {
+                            return key.into_number_f64(&mut map).map(Value::from);
+                        }
+                        buffa::json_helpers::JsonObjectKey::Field(field) => {
+                            st.fields.insert(field, map.next_value::<Value>()?);
+                        }
+                    }
                 }
                 Ok(Value::from(st))
             }
@@ -710,6 +717,45 @@ impl<'de> serde::Deserialize<'de> for ListValue {
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn numeric_token_value_preserves_number_and_literal_object_shapes() {
+        for input in ["1e1", "12.5", "-1.25e2"] {
+            let expected: f64 = input.parse().unwrap();
+            let value: Value = serde_json::from_str(input).unwrap();
+            assert_eq!(value.as_number(), Some(expected));
+            #[cfg(feature = "std")]
+            {
+                let reader: Value = serde_json::from_reader(input.as_bytes()).unwrap();
+                assert_eq!(reader, value);
+            }
+        }
+        let literal = r#"{"$serde_json::private::Number":"1e1"}"#;
+        let object: Value = serde_json::from_str(literal).unwrap();
+        assert_eq!(
+            object
+                .as_struct()
+                .unwrap()
+                .get("$serde_json::private::Number")
+                .unwrap()
+                .as_str(),
+            Some("1e1")
+        );
+        let nested: Value =
+            serde_json::from_str(r#"{"values":[1e1,{"$serde_json::private::Number":"1e1"}]}"#)
+                .unwrap();
+        let values = nested
+            .as_struct()
+            .unwrap()
+            .get("values")
+            .unwrap()
+            .as_list()
+            .unwrap();
+        assert_eq!(values.values[0].as_number(), Some(10.0));
+        assert_eq!(values.values[1], object);
+        assert!(serde_json::from_str::<Value>("1e400").is_err());
+    }
     use super::*;
     use alloc::{vec, vec::Vec};
 

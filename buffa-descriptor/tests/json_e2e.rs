@@ -210,20 +210,49 @@ fn json_integer_parsing_matches_generated_messages() {
         Some(&Value::I64(4_503_599_627_370_495))
     );
 
-    // serde_json can round integer-valued float tokens at this magnitude
-    // before the visitor sees them. Generated decoders reject them, and the
-    // reflective path must do the same instead of accepting an adjacent value.
-    for input in [
-        r#"{"fInt64": 4503599627370496.0}"#,
-        r#"{"fInt64": 9007199254740991.0}"#,
-        r#"{"fInt64": -9007199254740991.0}"#,
-        r#"{"fUint64": 9007199254740991.0}"#,
+    let number = serde_json::from_str::<serde_json::Number>("1e1").unwrap();
+    let preserves_numeric_token = serde_json::to_string(&number).unwrap() != "10.0";
+    for (input, field, expected) in [
+        (
+            r#"{"fInt64":4503599627370496.0}"#,
+            4,
+            Value::I64(4_503_599_627_370_496),
+        ),
+        (
+            r#"{"fInt64":9007199254740991.0}"#,
+            4,
+            Value::I64(9_007_199_254_740_991),
+        ),
+        (
+            r#"{"fInt64":-9007199254740991.0}"#,
+            4,
+            Value::I64(-9_007_199_254_740_991),
+        ),
+        (
+            r#"{"fUint64":9007199254740991.0}"#,
+            6,
+            Value::U64(9_007_199_254_740_991),
+        ),
     ] {
-        let err = DynamicMessage::from_json(Arc::clone(&p), idx, input)
-            .expect_err("unsafe unquoted integer float must be rejected");
+        let actual = DynamicMessage::from_json(Arc::clone(&p), idx, input);
+        if preserves_numeric_token {
+            assert_eq!(
+                actual.unwrap().field_by_number(field),
+                Some(&expected),
+                "{input}"
+            );
+        } else {
+            let error = actual.expect_err("unsafe erased float must be rejected");
+            assert!(error.to_string().contains("invalid value"), "{error}");
+        }
+    }
+    for input in [
+        r#"{"fInt64":9007199254740993.0}"#,
+        r#"{"fUint64":18446744073709551615.0}"#,
+    ] {
         assert!(
-            err.to_string().contains("invalid value"),
-            "rejection should name the offending value, got: {err}"
+            DynamicMessage::from_json(Arc::clone(&p), idx, input).is_err(),
+            "{input}"
         );
     }
 }

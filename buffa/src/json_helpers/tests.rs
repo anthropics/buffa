@@ -299,9 +299,19 @@ fn int64_rejects_unsafe_unquoted_float_notation() {
     ];
     for &json in cases {
         assert!(
-            serde_json::from_str::<SerdeInt64>(json).is_err(),
+            int64::deserialize(serde::de::value::F64Deserializer::<serde_json::Error>::new(
+                json.parse().unwrap()
+            ))
+            .is_err(),
             "input should reject: {json}"
         );
+        let lexical = serde_json::from_str::<serde_json::Number>("1e1").unwrap();
+        if serde_json::to_string(&lexical).unwrap() == "10.0" {
+            assert!(
+                serde_json::from_str::<SerdeInt64>(json).is_err(),
+                "ambiguous numeric token: {json}"
+            );
+        }
     }
 }
 
@@ -342,9 +352,19 @@ fn uint64_rejects_unsafe_unquoted_float_notation() {
     ];
     for &json in cases {
         assert!(
-            serde_json::from_str::<SerdeUint64>(json).is_err(),
+            uint64::deserialize(serde::de::value::F64Deserializer::<serde_json::Error>::new(
+                json.parse().unwrap()
+            ))
+            .is_err(),
             "input should reject: {json}"
         );
+        let lexical = serde_json::from_str::<serde_json::Number>("1e1").unwrap();
+        if serde_json::to_string(&lexical).unwrap() == "10.0" {
+            assert!(
+                serde_json::from_str::<SerdeUint64>(json).is_err(),
+                "ambiguous numeric token: {json}"
+            );
+        }
     }
 }
 
@@ -2286,4 +2306,221 @@ fn adapter_newtypes_match_their_helpers() {
         serde_json::to_string(&ClosedEnumSeqJson(&[TestEnum::Zero, TestEnum::One][..])).unwrap(),
         r#"["ZERO","ONE"]"#
     );
+}
+
+#[test]
+fn numeric_token_helpers_preserve_exact_integer_text() {
+    for (input, expected) in [("1e1", 10), ("1200e-2", 12), ("0.0", 0)] {
+        assert_eq!(
+            serde_json::from_str::<SerdeUint64>(input).unwrap().0,
+            expected
+        );
+        #[cfg(feature = "std")]
+        assert_eq!(
+            serde_json::from_reader::<_, SerdeUint64>(input.as_bytes())
+                .unwrap()
+                .0,
+            expected
+        );
+    }
+    for input in [
+        r#"{"$serde_json::private::Number":"1e1"}"#,
+        r#"{"value":10}"#,
+    ] {
+        assert!(
+            serde_json::from_str::<SerdeUint64>(input).is_err(),
+            "{input}"
+        );
+        assert!(
+            serde_json::from_str::<SerdeInt64>(input).is_err(),
+            "{input}"
+        );
+        assert!(
+            serde_json::from_str::<SerdeFloat>(input).is_err(),
+            "{input}"
+        );
+        assert!(
+            serde_json::from_str::<SerdeDouble>(input).is_err(),
+            "{input}"
+        );
+    }
+    let exact_number = serde_json::from_str::<serde_json::Number>("1e1").unwrap();
+    if serde_json::to_string(&exact_number).unwrap() != "10.0" {
+        for input in [
+            "18446744073709551615.0",
+            "1.8446744073709551615e19",
+            "9007199254740993.0",
+        ] {
+            assert!(
+                serde_json::from_str::<SerdeUint64>(input).is_err(),
+                "rounded binary64 token: {input}"
+            );
+        }
+        for (input, expected) in [
+            ("4503599627370496.0", 4503599627370496),
+            ("9007199254740992.0", 9007199254740992),
+            ("18446744073709549568.0", 18446744073709549568),
+        ] {
+            assert_eq!(
+                serde_json::from_str::<SerdeUint64>(input).unwrap().0,
+                expected
+            );
+        }
+        for input in [
+            "0.999999999999999999999",
+            "1.000000000000000000001",
+            "18446744073709551616.0",
+            "-1e0",
+        ] {
+            assert!(
+                serde_json::from_str::<SerdeUint64>(input).is_err(),
+                "{input}"
+            );
+        }
+        assert_eq!(
+            serde_json::from_str::<SerdeInt64>("-9.223372036854775808e18")
+                .unwrap()
+                .0,
+            i64::MIN
+        );
+    }
+}
+
+#[test]
+fn numeric_token_helpers_preserve_float_and_container_semantics() {
+    assert_eq!(
+        serde_json::from_str::<SerdeFloat>("1.25e1").unwrap().0,
+        12.5
+    );
+    assert_eq!(
+        serde_json::from_str::<SerdeDouble>("1.25e1").unwrap().0,
+        12.5
+    );
+    assert!(serde_json::from_str::<SerdeFloat>("1e100").is_err());
+    assert!(serde_json::from_str::<SerdeDouble>("1e400").is_err());
+    assert_eq!(
+        serde_json::from_str::<SerdeDouble>(r#""Infinity""#)
+            .unwrap()
+            .0,
+        f64::INFINITY
+    );
+    assert_eq!(
+        serde_json::from_str::<SeqI64Holder>("[1e1,-2e1]")
+            .unwrap()
+            .0,
+        vec![10, -20]
+    );
+    assert_eq!(
+        serde_json::from_str::<MapI32I64Holder>(r#"{"1":1e1}"#)
+            .unwrap()
+            .0[&1],
+        10
+    );
+}
+
+#[test]
+fn numeric_token_integer_binary64_boundary_has_explicit_expectations() {
+    let mode = serde_json::from_str::<serde_json::Number>("1e1").unwrap();
+    if serde_json::to_string(&mode).unwrap() == "10.0" {
+        return;
+    }
+    for (input, expected) in [
+        ("4503599627370496.0", Some(4503599627370496_i64)),
+        ("9007199254740991.0", Some(9007199254740991)),
+        ("9007199254740992.0", Some(9007199254740992)),
+        ("9007199254740993.0", None),
+        ("9.007199254740993e15", None),
+        ("-4503599627370496.0", Some(-4503599627370496)),
+        ("-9007199254740991.0", Some(-9007199254740991)),
+        ("-9007199254740992.0", Some(-9007199254740992)),
+        ("-9007199254740993.0", None),
+        ("-9.007199254740993e15", None),
+    ] {
+        assert_eq!(
+            serde_json::from_str::<SerdeInt64>(input)
+                .ok()
+                .map(|value| value.0),
+            expected,
+            "{input}"
+        );
+    }
+    for (input, expected) in [
+        ("4503599627370496.0", Some(4503599627370496_u64)),
+        ("9007199254740991.0", Some(9007199254740991)),
+        ("9007199254740992.0", Some(9007199254740992)),
+        ("9007199254740993.0", None),
+        ("9.007199254740993e15", None),
+        ("18446744073709551615.0", None),
+        ("18446744073709551616.0", None),
+        ("18446744073709549568.0", Some(18446744073709549568)),
+    ] {
+        assert_eq!(
+            serde_json::from_str::<SerdeUint64>(input)
+                .ok()
+                .map(|value| value.0),
+            expected,
+            "{input}"
+        );
+    }
+    assert_eq!(
+        serde_json::from_str::<SerdeUint64>(r#""18446744073709551615.0""#)
+            .unwrap()
+            .0,
+        u64::MAX
+    );
+    assert_eq!(
+        serde_json::from_str::<SerdeInt64>(r#""9007199254740993.0""#)
+            .unwrap()
+            .0,
+        9007199254740993
+    );
+}
+
+#[test]
+fn numeric_token_rescaled_integer_values_remain_exact() {
+    fn rescaled_bare_integer(value: impl core::fmt::Display, zeros: &str) -> String {
+        let significand = value.to_string();
+        if significand == "0" {
+            "0e-80".to_string()
+        } else {
+            format!("{significand}{zeros}e-80")
+        }
+    }
+    let zeros = "0".repeat(80);
+    for value in [0, 1, -1, 1_200, i32::MIN, i32::MAX] {
+        let json = rescaled_bare_integer(value, &zeros);
+        assert_eq!(serde_json::from_str::<SerdeInt32>(&json).unwrap().0, value);
+    }
+    for value in [0, 1, 1_200, u32::MAX] {
+        let json = rescaled_bare_integer(value, &zeros);
+        assert_eq!(serde_json::from_str::<SerdeUint32>(&json).unwrap().0, value);
+    }
+    for value in [0_i64, 1, -1, 1_200] {
+        let json = rescaled_bare_integer(value, &zeros);
+        assert_eq!(serde_json::from_str::<SerdeInt64>(&json).unwrap().0, value);
+    }
+    for value in [0_u64, 1, 1_200] {
+        let json = rescaled_bare_integer(value, &zeros);
+        assert_eq!(serde_json::from_str::<SerdeUint64>(&json).unwrap().0, value);
+    }
+    let mode = serde_json::from_str::<serde_json::Number>("1e1").unwrap();
+    if serde_json::to_string(&mode).unwrap() != "10.0" {
+        let signed = format!("-9223372036854775808{zeros}e-80");
+        assert_eq!(
+            serde_json::from_str::<SerdeInt64>(&signed).unwrap().0,
+            i64::MIN
+        );
+        let unsigned = format!("18446744073709549568{zeros}e-80");
+        assert_eq!(
+            serde_json::from_str::<SerdeUint64>(&unsigned).unwrap().0,
+            18_446_744_073_709_549_568
+        );
+        for value in ["9007199254740993", "18446744073709551615"] {
+            let json = format!("{value}{zeros}e-80");
+            assert!(
+                serde_json::from_str::<SerdeUint64>(&json).is_err(),
+                "{json}"
+            );
+        }
+    }
 }

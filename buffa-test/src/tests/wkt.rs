@@ -28,6 +28,65 @@ fn test_message_with_timestamp_derives_eq_and_hash() {
 }
 
 #[test]
+fn numeric_token_reflected_wkt_matches_typed_shapes() {
+    use buffa_descriptor::reflect::DynamicMessage;
+    use buffa_types::google::protobuf::{descriptor_pool, ListValue, Struct, Value};
+
+    fn compare<T: Message + serde::de::DeserializeOwned>(name: &str, input: &str) {
+        let typed: T = serde_json::from_str(input).unwrap();
+        let pool = descriptor_pool();
+        let index = pool.message_index(name).unwrap();
+        let reflected =
+            DynamicMessage::from_json(std::sync::Arc::clone(pool), index, input).unwrap();
+        assert_eq!(
+            reflected.encode_to_vec(),
+            typed.encode_to_vec(),
+            "{name}: {input}"
+        );
+    }
+
+    for input in [
+        "1e1",
+        "12.5",
+        r#"{"values":[1e1,12.5]}"#,
+        r#"{"$serde_json::private::Number":"1e1"}"#,
+        r#"{"nested":{"$serde_json::private::Number":"1e1"}}"#,
+        r#"[1e1,12.5,{"$serde_json::private::Number":"1e1"}]"#,
+    ] {
+        compare::<Value>("google.protobuf.Value", input);
+    }
+    assert_eq!(
+        serde_json::from_str::<Value>("1e1").unwrap().as_number(),
+        Some(10.0)
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>("12.5").unwrap().as_number(),
+        Some(12.5)
+    );
+    for input in [
+        r#"{"value":1e1}"#,
+        r#"{"value":[12.5,{"$serde_json::private::Number":"1e1"}]}"#,
+    ] {
+        compare::<Struct>("google.protobuf.Struct", input);
+    }
+    for input in ["[1e1,12.5]", r#"[{"$serde_json::private::Number":"1e1"}]"#] {
+        compare::<ListValue>("google.protobuf.ListValue", input);
+    }
+    let pool = descriptor_pool();
+    for (name, input) in [
+        ("google.protobuf.Value", "1e400"),
+        ("google.protobuf.Struct", r#"{"value":1e400}"#),
+        ("google.protobuf.ListValue", "[1e400]"),
+    ] {
+        let index = pool.message_index(name).unwrap();
+        assert!(DynamicMessage::from_json(std::sync::Arc::clone(pool), index, input).is_err());
+    }
+    assert!(serde_json::from_str::<Value>("1e400").is_err());
+    assert!(serde_json::from_str::<Struct>(r#"{"value":1e400}"#).is_err());
+    assert!(serde_json::from_str::<ListValue>("[1e400]").is_err());
+}
+
+#[test]
 fn test_wkt_in_oneof_from_impls() {
     // Orphan-rule regression: From<T> for Option<Oneof> must only be generated
     // for local T. Extern-crate T (WKTs via ::buffa_types) would be E0117

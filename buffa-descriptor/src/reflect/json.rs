@@ -1097,6 +1097,29 @@ fn deserialize_scalar<'de, D: Deserializer<'de>>(sc: ScalarType, d: D) -> Result
             scalar_from_f64(self.0, v)
         }
 
+        fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+            let deserializer = de::value::MapAccessDeserializer::new(map);
+            Ok(match self.0 {
+                ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => {
+                    Value::I32(json_helpers::int32::deserialize(deserializer)?)
+                }
+                ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64 => {
+                    Value::I64(json_helpers::int64::deserialize(deserializer)?)
+                }
+                ScalarType::Uint32 | ScalarType::Fixed32 => {
+                    Value::U32(json_helpers::uint32::deserialize(deserializer)?)
+                }
+                ScalarType::Uint64 | ScalarType::Fixed64 => {
+                    Value::U64(json_helpers::uint64::deserialize(deserializer)?)
+                }
+                ScalarType::Float => Value::F32(json_helpers::float::deserialize(deserializer)?),
+                ScalarType::Double => Value::F64(json_helpers::double::deserialize(deserializer)?),
+                ScalarType::Bool | ScalarType::String | ScalarType::Bytes => {
+                    return Err(de::Error::invalid_type(de::Unexpected::Map, &self))
+                }
+            })
+        }
+
         fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
             scalar_from_str(self.0, v)
         }
@@ -1382,6 +1405,41 @@ const _: fn(&MessageDescriptor) = |_| {};
 #[cfg(test)]
 mod tests {
     use super::{field_mask_to_camel, field_mask_to_snake};
+
+    #[test]
+    fn numeric_token_scalar_matches_shared_numeric_helpers() {
+        use super::{deserialize_scalar, ScalarType, Value};
+        for (scalar, input, expected) in [
+            (ScalarType::Int32, "1e1", Value::I32(10)),
+            (ScalarType::Int64, "-1e1", Value::I64(-10)),
+            (ScalarType::Uint32, "1e1", Value::U32(10)),
+            (ScalarType::Uint64, "1e1", Value::U64(10)),
+            (ScalarType::Float, "1.25e1", Value::F32(12.5)),
+            (ScalarType::Double, "1.25e1", Value::F64(12.5)),
+        ] {
+            let mut deserializer = serde_json::Deserializer::from_str(input);
+            assert_eq!(
+                deserialize_scalar(scalar, &mut deserializer).unwrap(),
+                expected
+            );
+            deserializer.end().unwrap();
+        }
+        for scalar in [
+            ScalarType::Int32,
+            ScalarType::Int64,
+            ScalarType::Uint32,
+            ScalarType::Uint64,
+            ScalarType::Float,
+            ScalarType::Double,
+            ScalarType::String,
+            ScalarType::Bool,
+            ScalarType::Bytes,
+        ] {
+            let mut deserializer =
+                serde_json::Deserializer::from_str(r#"{"$serde_json::private::Number":"1e1"}"#);
+            assert!(deserialize_scalar(scalar, &mut deserializer).is_err());
+        }
+    }
 
     #[test]
     fn field_mask_leading_underscore_roundtrip() {

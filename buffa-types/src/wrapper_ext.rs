@@ -251,6 +251,69 @@ impl<'de> serde::Deserialize<'de> for BytesValue {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "json")]
+    #[test]
+    fn numeric_token_wrapper_values_use_the_shared_scalar_contract() {
+        assert_eq!(serde_json::from_str::<Int32Value>("1e1").unwrap().value, 10);
+        assert_eq!(
+            serde_json::from_str::<UInt32Value>("1e1").unwrap().value,
+            10
+        );
+        assert_eq!(
+            serde_json::from_str::<Int32Value>(r#""-2147483648""#)
+                .unwrap()
+                .value,
+            i32::MIN
+        );
+        assert_eq!(
+            serde_json::from_str::<UInt32Value>(r#""4294967295""#)
+                .unwrap()
+                .value,
+            u32::MAX
+        );
+        assert_eq!(serde_json::from_str::<Int32Value>("null").unwrap().value, 0);
+        assert_eq!(
+            serde_json::from_str::<UInt32Value>("null").unwrap().value,
+            0
+        );
+        assert_eq!(
+            serde_json::to_string(&Int32Value::from(i32::MIN)).unwrap(),
+            "-2147483648"
+        );
+        assert_eq!(
+            serde_json::to_string(&UInt32Value::from(u32::MAX)).unwrap(),
+            "4294967295"
+        );
+        assert_eq!(serde_json::from_str::<Int64Value>("1e1").unwrap().value, 10);
+        assert_eq!(
+            serde_json::from_str::<UInt64Value>("1e1").unwrap().value,
+            10
+        );
+        assert_eq!(
+            serde_json::from_str::<FloatValue>("1.25e1").unwrap().value,
+            12.5
+        );
+        assert_eq!(
+            serde_json::from_str::<DoubleValue>("1.25e1").unwrap().value,
+            12.5
+        );
+        assert_eq!(
+            serde_json::from_str::<UInt64Value>(r#""18446744073709551615""#)
+                .unwrap()
+                .value,
+            u64::MAX
+        );
+        for input in [
+            r#"{"$serde_json::private::Number":"1e1"}"#,
+            "-1e1",
+            "4294967296e0",
+        ] {
+            assert!(
+                serde_json::from_str::<UInt32Value>(input).is_err(),
+                "{input}"
+            );
+        }
+    }
     use super::*;
     use alloc::vec;
 

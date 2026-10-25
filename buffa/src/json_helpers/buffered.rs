@@ -60,17 +60,15 @@
 //!
 //! # The `arbitrary_precision` feature of `serde_json`
 //!
-//! `buffa`'s JSON decoding does not support that feature. With it, a number
-//! that has a fraction or an exponent, or a whole number outside the `i64`
-//! and `u64` ranges, reaches a visitor as an object with the key
-//! `$serde_json::private::Number`. The numeric helpers, such as
-//! [`double`](super::double) and [`int64`](super::int64), reject that object,
-//! so an integer field also rejects `1.0` and `1e3`.
+//! Direct numeric decoding supports this feature through the shared scalar helpers.
+//! Decimal and exponent integer tokens must retain their exact value through their binary64 interpretation.
+//! Native integer tokens and quoted integers retain the full target range without that restriction.
 //!
 //! The types in this module read that key as data, so the JSON text
 //! `{"$serde_json::private::Number": "1"}` stays an object in every build.
 //! With the feature on, the number `1.5` therefore buffers as an object with
 //! that key, where `Value` holds a number.
+//! Numeric decoding through this buffer or Serde's untagged buffering does not preserve numeric dispatch identity.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -526,19 +524,42 @@ mod tests {
             "-1",
             "18446744073709551615",
             "-9223372036854775808",
-            "1.5",
-            "1e400",
             r#""a\"é\n""#,
             "[]",
             "{}",
             r#"[1, [2, [3, {"a": [null]}]], "x"]"#,
             r#"{"a": 1, "b": {"c": [true, false]}, "a": 2}"#,
-            r#"{"$serde_json::private::Number": "1"}"#,
         ] {
             let expected = serde_json::from_str::<Value>(text).map_err(|e| e.to_string());
             let got = buffer(text).map_err(|e| e.to_string());
             assert_eq!(got, expected, "{text}");
         }
+    }
+
+    #[test]
+    fn numeric_tokens_follow_the_documented_buffering_policy() {
+        let probe = serde_json::from_str::<Number>("1e1").unwrap();
+        let preserves_numeric_tokens = probe.to_string() != "10.0";
+        for text in ["1.5", "1e400"] {
+            let parsed = serde_json::from_str::<Number>(text);
+            if preserves_numeric_tokens {
+                let expected =
+                    json!({ "$serde_json::private::Number": parsed.unwrap().to_string() });
+                assert_eq!(buffer(text).unwrap(), expected, "{text}");
+            } else {
+                match parsed {
+                    Ok(number) => assert_eq!(buffer(text).unwrap(), Value::Number(number)),
+                    Err(_) => assert!(buffer(text).is_err(), "{text}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_private_number_key_remains_object_data() {
+        let text = r#"{"$serde_json::private::Number":"1"}"#;
+        let expected = json!({ "$serde_json::private::Number": "1" });
+        assert_eq!(buffer(text).unwrap(), expected);
     }
 
     #[test]

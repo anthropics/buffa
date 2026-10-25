@@ -32,8 +32,11 @@
 //! types, and functions for `#[serde(deserialize_with = "...")]`.
 
 pub mod buffered;
+mod number_key;
 #[doc(hidden)]
 pub mod wkt;
+#[doc(hidden)]
+pub use number_key::JsonObjectKey;
 
 use buffered::BufferedValue;
 
@@ -1032,6 +1035,13 @@ fn parse_exact_decimal_int(v: &str) -> Option<i128> {
     }
 }
 
+/// Numeric token's binary64 interpretation must preserve the exact integer.
+fn number_matches_binary64(token: &str, exact: i128) -> bool {
+    token
+        .parse::<f64>()
+        .is_ok_and(|value| value.is_finite() && value as i128 == exact)
+}
+
 /// Try to interpret an f64 as an exact integer, rejecting magnitudes above
 /// [`MAX_SAFE_JSON_INTEGER_F64`] where the value no longer uniquely
 /// identifies the JSON token it was parsed from.
@@ -1107,6 +1117,24 @@ macro_rules! int_serde_module {
                     fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<$int_type, E> {
                         f64_to_int::<$int_type>(v)
                             .ok_or_else(|| E::invalid_value(serde::de::Unexpected::Float(v), &self))
+                    }
+                    fn visit_map<A: serde::de::MapAccess<'de>>(
+                        self,
+                        map: A,
+                    ) -> Result<$int_type, A::Error> {
+                        let token = super::number_key::number_from_map(map)?;
+                        let convert: fn(
+                            &str,
+                            &dyn serde::de::Expected,
+                        ) -> Result<$int_type, A::Error> = $visit_str;
+                        let exact = convert(&token, &self)?;
+                        if !number_matches_binary64(&token, i128::from(exact)) {
+                            return Err(serde::de::Error::invalid_value(
+                                serde::de::Unexpected::Str(&token),
+                                &"an integer exactly represented by binary64",
+                            ));
+                        }
+                        Ok(exact)
                     }
                     fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<$int_type, E> {
                         let convert: fn(&str, &dyn serde::de::Expected) -> Result<$int_type, E> =
@@ -1267,6 +1295,10 @@ pub mod float {
                 Ok(0.0)
             }
 
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<f32, A::Error> {
+                self.visit_f64(super::number_key::f64_from_map(map)?)
+            }
+
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<f32, E> {
                 match v {
                     "NaN" => Ok(f32::NAN),
@@ -1356,6 +1388,10 @@ pub mod double {
 
             fn visit_unit<E>(self) -> Result<f64, E> {
                 Ok(0.0)
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<f64, A::Error> {
+                self.visit_f64(super::number_key::f64_from_map(map)?)
             }
 
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<f64, E> {

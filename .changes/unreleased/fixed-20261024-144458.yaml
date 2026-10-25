@@ -1,0 +1,3 @@
+kind: Fixed
+body: Direct ProtoJSON numeric decoding supports serde_json arbitrary precision in shared scalar helpers, reflection and well-known Value types while rejecting rounded integers and preserving literal object keys. Buffered Any and untagged Serde paths retain their existing numeric-dispatch limitations.
+time: 2026-10-24T14:44:58.0108833+02:00
