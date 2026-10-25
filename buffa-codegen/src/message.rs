@@ -2674,7 +2674,7 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
         return Some(if matches!(info.map_value_type, Some(Type::TYPE_BYTES)) {
             "::buffa::json_helpers::bytes_key_bytes_val_map"
         } else {
-            "::buffa::json_helpers::bytes_key_map"
+            "::buffa::json_helpers::proto_bytes_key_map"
         });
     }
 

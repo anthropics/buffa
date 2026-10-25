@@ -64,3 +64,20 @@ message WrapperMapNoValidation {
 // utf8_validation to file-level or field-level only (not message-level).
 // File-level would apply to ALL messages in this file including the ones
 // above, so we test only per-field overrides here.
+
+message WrapperMapsNoValidation {
+  map<string, google.protobuf.Int32Value> signed_values = 1 [features.utf8_validation = NONE];
+  map<string, google.protobuf.UInt32Value> unsigned_values = 2 [features.utf8_validation = NONE];
+  map<string, google.protobuf.Value> values = 3 [features.utf8_validation = NONE];
+  map<string, google.protobuf.Timestamp> timestamps = 4 [features.utf8_validation = NONE];
+  map<string, int64> signed_integers = 5 [features.utf8_validation = NONE];
+  map<string, uint64> unsigned_integers = 6 [features.utf8_validation = NONE];
+  map<string, double> numbers = 7 [features.utf8_validation = NONE];
+  map<string, google.protobuf.NullValue> null_values = 8 [features.utf8_validation = NONE];
+  map<string, MapValue> ordinary_enums = 9 [features.utf8_validation = NONE];
+}
+
+enum MapValue {
+  MAP_VALUE_UNSPECIFIED = 0;
+  MAP_VALUE_ACTIVE = 1;
+}

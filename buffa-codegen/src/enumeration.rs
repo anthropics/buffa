@@ -393,6 +393,16 @@ pub fn generate_enum(
     // the enum carries it too, like the scoped `non_snake_case` allow on
     // messages (#408). A regular `//` comment inside `quote!` is dropped,
     // which is why this note sits outside it.
+    let json_null_impl = if crate::well_known_json::is_null_value_type_name(Some(proto_fqn)) {
+        quote! {
+            fn from_json_null() -> ::core::option::Option<Self> {
+                Self::from_i32(0)
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
+
     Ok(quote! {
         #enum_doc
         #[allow(non_camel_case_types)]
@@ -440,6 +450,8 @@ pub fn generate_enum(
             fn values() -> &'static [Self] {
                 &[#(Self::#value_idents),*]
             }
+
+            #json_null_impl
         }
 
         #reflect_element_impl

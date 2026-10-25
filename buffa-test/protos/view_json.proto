@@ -117,3 +117,14 @@ message WithWkt {
   repeated google.protobuf.DoubleValue double_values = 15;
   map<int32, google.protobuf.Int32Value> priorities_by_id = 16;
 }
+
+message WrapperContainers {
+  repeated google.protobuf.Int32Value signed_values = 1;
+  repeated google.protobuf.UInt32Value unsigned_values = 2;
+  map<string, google.protobuf.Int32Value> signed_by_name = 3;
+  map<string, google.protobuf.UInt32Value> unsigned_by_name = 4;
+  repeated google.protobuf.Value values = 5;
+  map<string, google.protobuf.Value> values_by_name = 6;
+  map<int32, google.protobuf.Int32Value> signed_by_id = 7;
+  map<int32, google.protobuf.UInt32Value> unsigned_by_id = 8;
+}

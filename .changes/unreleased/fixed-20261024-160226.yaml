@@ -1,0 +1,3 @@
+kind: Fixed
+body: Preserve NullValue representations in protobuf containers and keep owned and borrowed byte-key map JSON consistent. Restore generic Serde values in bytes_key_map while generated protobuf maps use the additive proto_bytes_key_map adapter; regenerate code produced by unreleased versions that routed typed values through bytes_key_map.
+time: 2026-10-24T16:02:26.8925546+02:00

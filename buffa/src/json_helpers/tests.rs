@@ -1948,7 +1948,7 @@ struct BytesKeyWrapper {
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 struct BytesKeyInt64Wrapper {
-    #[serde(with = "bytes_key_map")]
+    #[serde(with = "proto_bytes_key_map")]
     m: crate::__private::HashMap<Vec<u8>, i64>,
 }
 
@@ -1979,7 +1979,7 @@ fn bytes_key_map_rejects_null_values() {
 }
 
 #[test]
-fn bytes_key_map_uses_protojson_for_int64_values() {
+fn proto_bytes_key_map_uses_protojson_for_int64_values() {
     let mut m = crate::__private::HashMap::default();
     m.insert(b"k".to_vec(), 5_i64);
     let w = BytesKeyInt64Wrapper { m };

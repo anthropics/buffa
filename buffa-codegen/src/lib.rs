@@ -46,6 +46,7 @@ pub(crate) mod reflect_view;
 pub(crate) mod table_codec;
 pub(crate) mod table_plan;
 pub(crate) mod view;
+pub(crate) mod well_known_json;
 
 use crate::generated::descriptor::{DescriptorProto, EnumDescriptorProto, FileDescriptorProto};
 use proc_macro2::TokenStream;

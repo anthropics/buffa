@@ -799,3 +799,185 @@ mod proto2 {
         );
     }
 }
+
+mod numeric_wrapper_containers {
+    use super::*;
+    use crate::view_json::WrapperContainers;
+
+    fn rejects_null_element<T: serde::de::DeserializeOwned>(body: &str) {
+        assert!(serde_json::from_str::<T>(body).is_err(), "{body}");
+    }
+
+    #[test]
+    fn numeric_wrapper_container_signed_sequence_rejects_null() {
+        rejects_null_element::<WrapperContainers>(r#"{"signedValues":[null]}"#);
+    }
+
+    #[test]
+    fn numeric_wrapper_container_unsigned_sequence_rejects_null() {
+        rejects_null_element::<WrapperContainers>(r#"{"unsignedValues":[null]}"#);
+    }
+
+    #[test]
+    fn numeric_wrapper_container_signed_map_rejects_null() {
+        rejects_null_element::<WrapperContainers>(r#"{"signedByName":{"x":null}}"#);
+    }
+
+    #[test]
+    fn numeric_wrapper_container_unsigned_map_rejects_null() {
+        rejects_null_element::<WrapperContainers>(r#"{"unsignedByName":{"x":null}}"#);
+    }
+
+    #[test]
+    fn numeric_wrapper_container_null_presence_remains_distinct() {
+        use buffa_types::google::protobuf::{value::Kind, Int32Value, UInt32Value};
+        assert_eq!(serde_json::from_str::<Int32Value>("null").unwrap().value, 0);
+        assert_eq!(
+            serde_json::from_str::<UInt32Value>("null").unwrap().value,
+            0
+        );
+        for body in [
+            "{}",
+            r#"{"signedValues":null,"unsignedValues":null,"signedByName":null,"unsignedByName":null}"#,
+        ] {
+            let parsed: WrapperContainers = serde_json::from_str(body).unwrap();
+            assert!(parsed.signed_values.is_empty());
+            assert!(parsed.unsigned_values.is_empty());
+            assert!(parsed.signed_by_name.is_empty());
+            assert!(parsed.unsigned_by_name.is_empty());
+        }
+        let parsed: WrapperContainers =
+            serde_json::from_str(r#"{"values":[null],"valuesByName":{"x":null}}"#).unwrap();
+        assert!(matches!(parsed.values[0].kind, Some(Kind::NullValue(_))));
+        assert!(matches!(
+            parsed.values_by_name["x"].kind,
+            Some(Kind::NullValue(_))
+        ));
+    }
+    #[test]
+    fn numeric_wrapper_container_valid_values_match_owned_and_view() {
+        let body = r#"{"signedValues":["-1",1e1],"unsignedValues":["2",1e1],"signedByName":{"x":"-3"},"unsignedByName":{"x":"4"}}"#;
+        let parsed: WrapperContainers = serde_json::from_str(body).unwrap();
+        assert_eq!(
+            parsed
+                .signed_values
+                .iter()
+                .map(|value| value.value)
+                .collect::<Vec<_>>(),
+            [-1, 10]
+        );
+        assert_eq!(
+            parsed
+                .unsigned_values
+                .iter()
+                .map(|value| value.value)
+                .collect::<Vec<_>>(),
+            [2, 10]
+        );
+        assert_eq!(parsed.signed_by_name["x"].value, -3);
+        assert_eq!(parsed.unsigned_by_name["x"].value, 4);
+        assert_view_json_value_parity!(
+            crate::view_json::__buffa::view::WrapperContainersView,
+            parsed
+        );
+    }
+    #[test]
+    fn numeric_wrapper_container_integer_signed_map_rejects_null() {
+        rejects_null_element::<WrapperContainers>(r#"{"signedById":{"1":null}}"#);
+    }
+    #[test]
+    fn numeric_wrapper_container_integer_unsigned_map_rejects_null() {
+        rejects_null_element::<WrapperContainers>(r#"{"unsignedById":{"1":null}}"#);
+    }
+    #[test]
+    fn numeric_wrapper_container_custom_signed_map_rejects_null() {
+        rejects_null_element::<crate::string_map::WrapperMaps>(r#"{"signedValues":{"x":null}}"#);
+    }
+    #[test]
+    fn numeric_wrapper_container_custom_unsigned_map_rejects_null() {
+        rejects_null_element::<crate::string_map::WrapperMaps>(r#"{"unsignedValues":{"x":null}}"#);
+    }
+    #[test]
+    fn numeric_wrapper_container_bytes_signed_map_rejects_null() {
+        rejects_null_element::<crate::utf8test::WrapperMapsNoValidation>(
+            r#"{"signedValues":{"eA==":null}}"#,
+        );
+    }
+    #[test]
+    fn numeric_wrapper_container_bytes_unsigned_map_rejects_null() {
+        rejects_null_element::<crate::utf8test::WrapperMapsNoValidation>(
+            r#"{"unsignedValues":{"eA==":null}}"#,
+        );
+    }
+    #[test]
+    fn numeric_wrapper_container_key_forms_preserve_valid_values() {
+        let integer: WrapperContainers =
+            serde_json::from_str(r#"{"signedById":{"1":"-3"},"unsignedById":{"2":"4"}}"#).unwrap();
+        assert_eq!(integer.signed_by_id[&1].value, -3);
+        assert_eq!(integer.unsigned_by_id[&2].value, 4);
+        let custom: crate::string_map::WrapperMaps =
+            serde_json::from_str(r#"{"signedValues":{"x":"-3"},"unsignedValues":{"y":"4"}}"#)
+                .unwrap();
+        assert_eq!(custom.signed_values.values().next().unwrap().value, -3);
+        assert_eq!(custom.unsigned_values.values().next().unwrap().value, 4);
+        let bytes: crate::utf8test::WrapperMapsNoValidation = serde_json::from_str(r#"{"signedValues":{"eA==":"-3"},"unsignedValues":{"eQ==":"4"},"values":{"eg==":null},"timestamps":{"dA==":"2024-01-01T00:00:00Z"}}"#).unwrap();
+        assert_eq!(bytes.signed_values[b"x".as_slice()].value, -3);
+        assert_eq!(bytes.unsigned_values[b"y".as_slice()].value, 4);
+        assert!(matches!(
+            bytes.values[b"z".as_slice()].kind,
+            Some(buffa_types::google::protobuf::value::Kind::NullValue(_))
+        ));
+        assert_eq!(bytes.timestamps[b"t".as_slice()].seconds, 1_704_067_200);
+        let encoded = serde_json::to_string(&bytes).unwrap();
+        let reparsed: crate::utf8test::WrapperMapsNoValidation =
+            serde_json::from_str(&encoded).unwrap();
+        assert_eq!(bytes, reparsed);
+        let empty: crate::utf8test::WrapperMapsNoValidation = serde_json::from_str(
+            r#"{"signedValues":null,"unsignedValues":null,"values":null,"timestamps":null}"#,
+        )
+        .unwrap();
+        assert!(
+            empty.signed_values.is_empty()
+                && empty.unsigned_values.is_empty()
+                && empty.values.is_empty()
+                && empty.timestamps.is_empty()
+        );
+    }
+    #[test]
+    fn numeric_bytes_key_map_preserves_null_value() {
+        let parsed: crate::utf8test::WrapperMapsNoValidation =
+            serde_json::from_str(r#"{"nullValues":{"bg==":null}}"#).unwrap();
+        assert_eq!(parsed.null_values[b"n".as_slice()].to_i32(), 0);
+        let encoded = serde_json::to_string(&parsed).unwrap();
+        let reparsed: crate::utf8test::WrapperMapsNoValidation =
+            serde_json::from_str(&encoded).unwrap();
+        assert_eq!(parsed, reparsed);
+    }
+
+    #[test]
+    fn numeric_bytes_key_map_rejects_ordinary_enum_null() {
+        rejects_null_element::<crate::utf8test::WrapperMapsNoValidation>(
+            r#"{"ordinaryEnums":{"bg==":null}}"#,
+        );
+    }
+
+    #[test]
+    fn numeric_bytes_key_map_uses_proto_json_values() {
+        let parsed: crate::utf8test::WrapperMapsNoValidation = serde_json::from_str(
+            r#"{"signedIntegers":{"eA==":"-9223372036854775808"},"unsignedIntegers":{"eA==":"18446744073709551615"},"numbers":{"eA==":"Infinity"},"nullValues":{"eA==":null},"ordinaryEnums":{"eA==":"MAP_VALUE_ACTIVE"}}"#,
+        ).unwrap();
+        assert_eq!(parsed.signed_integers[b"x".as_slice()], i64::MIN);
+        assert_eq!(parsed.unsigned_integers[b"x".as_slice()], u64::MAX);
+        assert_eq!(parsed.numbers[b"x".as_slice()], f64::INFINITY);
+        assert_eq!(parsed.ordinary_enums[b"x".as_slice()].to_i32(), 1);
+        let encoded = serde_json::to_value(&parsed).unwrap();
+        assert_eq!(encoded["signedIntegers"]["eA=="], "-9223372036854775808");
+        assert_eq!(encoded["unsignedIntegers"]["eA=="], "18446744073709551615");
+        assert_eq!(encoded["numbers"]["eA=="], "Infinity");
+        assert!(encoded["nullValues"]["eA=="].is_null());
+        assert_view_json_value_parity!(
+            crate::utf8test::__buffa::view::WrapperMapsNoValidationView,
+            parsed
+        );
+    }
+}

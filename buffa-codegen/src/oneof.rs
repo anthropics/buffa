@@ -19,7 +19,7 @@ use crate::CodeGenError;
 /// value (not "variant absent"), and serialization must emit `null`
 /// rather than the enum string name.
 pub(crate) fn is_null_value_field(field: &FieldDescriptorProto) -> bool {
-    field.type_name.as_deref() == Some(".google.protobuf.NullValue")
+    crate::well_known_json::is_null_value_type_name(field.type_name.as_deref())
 }
 
 /// Returns `true` when a field's type treats JSON `null` as a valid value
@@ -33,10 +33,7 @@ pub(crate) fn is_null_value_field(field: &FieldDescriptorProto) -> bool {
 /// (which intercepts `null` as `None`), but instead forward `null` to the
 /// type's own `Deserialize` impl.
 pub(crate) fn null_is_valid_value(field: &FieldDescriptorProto) -> bool {
-    matches!(
-        field.type_name.as_deref(),
-        Some(".google.protobuf.NullValue") | Some(".google.protobuf.Value")
-    )
+    crate::well_known_json::null_is_valid_type_name(field.type_name.as_deref())
 }
 
 /// Returns `true` for oneof variant types that are heap-allocated via `Box`.

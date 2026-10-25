@@ -2546,6 +2546,9 @@ pub(crate) fn view_field_serialize_stmt(
                 quote! {},
                 quote! { &::buffa::json_helpers::ClosedEnumJson(v) },
             ),
+            Type::TYPE_ENUM if key_raw == Type::TYPE_BYTES => {
+                (quote! {}, quote! { &::buffa::json_helpers::ProtoJson(v) })
+            }
             vt if serde_helper_path(vt).is_some() => {
                 (quote! {}, quote! { &::buffa::json_helpers::ProtoJson(v) })
             }

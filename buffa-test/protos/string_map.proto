@@ -54,3 +54,8 @@ enum Color {
   COLOR_RED = 1;
   COLOR_BLUE = 2;
 }
+
+message WrapperMaps {
+  map<string, google.protobuf.Int32Value> signed_values = 1;
+  map<string, google.protobuf.UInt32Value> unsigned_values = 2;
+}

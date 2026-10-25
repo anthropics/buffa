@@ -47,6 +47,9 @@ impl ::buffa::Enumeration for NullValue {
     fn values() -> &'static [Self] {
         &[Self::NULL_VALUE]
     }
+    fn from_json_null() -> ::core::option::Option<Self> {
+        Self::from_i32(0)
+    }
 }
 /// `Struct` represents a structured data value, consisting of fields
 /// which map to dynamically typed values. In some languages, `Struct`
