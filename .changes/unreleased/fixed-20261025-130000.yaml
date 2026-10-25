@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **A `type_name` without a leading dot now resolves against the enclosing scope** (#635). `DescriptorPool` looked every `type_name`, `extendee`, `input_type` and `output_type` up as a fully-qualified name, so a hand-built descriptor whose field in package `a` names its sibling message as just `M` failed with `UnresolvedTypeName`, and one that happened to share its name with a root-level type linked to that type instead. A name without a leading dot is now tried against each enclosing scope of the referring field, method or extension, innermost first, and only then as a fully-qualified name, matching protoc and protobuf-go; a leading dot still forces the exact fully-qualified lookup.
+time: 2026-10-25T13:00:00.000000000-07:00

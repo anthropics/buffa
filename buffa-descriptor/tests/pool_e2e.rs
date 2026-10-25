@@ -1877,7 +1877,7 @@ fn unresolved_inferred_type_names_are_rejected_transactionally() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
     use buffa_descriptor::generated::descriptor::DescriptorProto;
 
-    for type_name in [".invalid.test.Missing", "Holder"] {
+    for type_name in [".invalid.test.Missing", "Missing"] {
         assert_rejected_without_mutating_pool(
             "inferred-unresolved.proto",
             "invalid.test.Holder",
