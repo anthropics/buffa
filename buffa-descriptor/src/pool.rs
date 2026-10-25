@@ -43,7 +43,7 @@ use crate::generated::descriptor::{
 use buffa::editions::{
     EnumType, FieldPresence, JsonFormat, MessageEncoding, RepeatedFieldEncoding,
 };
-use buffa::MessageField;
+use buffa::{MessageField, UnknownFieldData};
 
 /// Clone a descriptor's raw `*Options` into a boxed `Option`, the form the
 /// linked descriptors store. `None` for the common no-options case; one
@@ -269,10 +269,17 @@ pub enum PoolError {
     /// A file declares syntax `editions` and its `edition` is unset or
     /// `EDITION_UNKNOWN`, so its feature defaults are undefined.
     ///
-    /// An edition number that this version of buffa does not define is a
-    /// different case: decoding keeps it as an unknown field, and the file
-    /// links with the edition 2023 defaults.
+    /// An edition that is set but outside the supported range is a
+    /// different case: see [`PoolError::UnsupportedEdition`].
     MissingEdition { file: String },
+    /// A file declares syntax `editions` with an edition outside the range
+    /// this version of buffa supports, `EDITION_PROTO2` through
+    /// `EDITION_2024`. Carries the file name and the edition number as
+    /// written, which may be one this crate does not define (decoding keeps
+    /// such a number as an unknown field). A later edition's feature
+    /// defaults are unknowable here, so the file is rejected rather than
+    /// linked with the edition 2023 defaults.
+    UnsupportedEdition { file: String, edition: i32 },
     /// A file's `public_dependency` names an index outside its `dependency`
     /// list. The indices are positions in that list, so an out-of-range one
     /// names no import at all.
@@ -705,6 +712,12 @@ impl core::fmt::Display for PoolError {
                     "file {file} has syntax \"editions\" but its edition is unset or EDITION_UNKNOWN"
                 )
             }
+            Self::UnsupportedEdition { file, edition } => {
+                write!(
+                    f,
+                    "file {file} has syntax \"editions\" with unsupported edition {edition}"
+                )
+            }
             Self::InvalidPublicDependencyIndex {
                 file,
                 index,
@@ -1123,22 +1136,28 @@ impl std::error::Error for PoolError {
     }
 }
 
-/// Whether `file` carries an edition other than `EDITION_UNKNOWN`.
+/// The edition number `file` declares, as written, or `None` if it
+/// declares none.
 ///
 /// `Edition` is a closed enum, so decoding leaves a number that this crate
-/// does not define in the file's unknown fields with `edition` unset. Such a
-/// file has an edition, which [`features::for_file`] resolves to the edition
-/// 2023 defaults.
-fn has_edition(file: &FileDescriptorProto) -> bool {
+/// does not define in the file's unknown fields with `edition` unset; the
+/// number is recovered from there so an unsupported edition can be reported
+/// (and rejected) with the value the descriptor actually carries.
+fn edition_number(file: &FileDescriptorProto) -> Option<i32> {
     /// Field number of `FileDescriptorProto.edition`.
     const EDITION_FIELD_NUMBER: u32 = 14;
-    match file.edition {
-        Some(edition) => edition != Edition::EDITION_UNKNOWN,
-        None => file
-            .__buffa_unknown_fields
-            .iter()
-            .any(|field| field.number == EDITION_FIELD_NUMBER),
+    if let Some(edition) = file.edition {
+        return Some(edition as i32);
     }
+    file.__buffa_unknown_fields.iter().find_map(|field| {
+        if field.number != EDITION_FIELD_NUMBER {
+            return None;
+        }
+        match field.data {
+            UnknownFieldData::Varint(value) => i32::try_from(value).ok(),
+            _ => None,
+        }
+    })
 }
 
 /// What a fully-qualified name resolves to within the pool.
@@ -1523,13 +1542,23 @@ impl DescriptorPool {
                 }
                 match file.syntax.as_deref() {
                     None | Some("" | "proto2" | "proto3") => {}
-                    Some("editions") => {
-                        if !has_edition(file) {
+                    Some("editions") => match edition_number(file) {
+                        None | Some(0) => {
                             return Err(PoolError::MissingEdition {
                                 file: file.name.clone().unwrap_or_default(),
                             });
                         }
-                    }
+                        Some(edition)
+                            if !(Edition::EDITION_PROTO2 as i32..=Edition::EDITION_2024 as i32)
+                                .contains(&edition) =>
+                        {
+                            return Err(PoolError::UnsupportedEdition {
+                                file: file.name.clone().unwrap_or_default(),
+                                edition,
+                            });
+                        }
+                        _ => {}
+                    },
                     Some(syntax) => {
                         return Err(PoolError::UnrecognizedSyntax {
                             file: file.name.clone().unwrap_or_default(),

@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **An editions file whose edition is outside `EDITION_PROTO2` through `EDITION_2024` no longer links** (#634). `DescriptorPool` accepted any other edition (a defined one such as `EDITION_UNSTABLE` or the test-only editions, or a number this version of buffa does not define at all, which decoding keeps as an unknown field) and silently resolved its features with the edition 2023 defaults, which are only right while the newer edition changes no runtime feature default. Such a file is now rejected with the new `PoolError::UnsupportedEdition`, which carries the file name and the edition number as written, matching protoc and protobuf-go. An unset or `EDITION_UNKNOWN` edition is still `PoolError::MissingEdition`.
+time: 2026-10-25T14:00:00.000000000-07:00
