@@ -43,9 +43,9 @@ pub mod pool;
 pub mod reflect;
 
 pub use desc::{
-    EnumDescriptor, EnumIndex, EnumValueDescriptor, ExtensionDescriptor, ExtensionIndex,
-    FieldDescriptor, FieldKind, MessageDescriptor, MessageIndex, MethodDescriptor, OneofDescriptor,
-    ScalarType, ServiceDescriptor, ServiceIndex, SingularKind,
+    DefaultValue, EnumDescriptor, EnumIndex, EnumValueDescriptor, ExtensionDescriptor,
+    ExtensionIndex, FieldDescriptor, FieldKind, MessageDescriptor, MessageIndex, MethodDescriptor,
+    OneofDescriptor, ScalarType, ServiceDescriptor, ServiceIndex, SingularKind,
 };
 #[cfg(feature = "reflect")]
 pub use pool::{DescriptorPool, LinkOptions, PoolError, MAX_SYMBOL_LEN};
