@@ -103,6 +103,27 @@ pub enum ValueRef<'a> {
     Map(&'a dyn ReflectMap),
 }
 
+impl From<&crate::DefaultValue> for Value {
+    /// A field's declared default as a reflective value. The variants map
+    /// one to one; this is the bridge a caller needs to compare a
+    /// [`FieldDescriptor::default_value`](crate::FieldDescriptor::default_value)
+    /// against values read through [`ReflectMessage::get`](super::ReflectMessage::get).
+    fn from(default: &crate::DefaultValue) -> Self {
+        match default {
+            crate::DefaultValue::Bool(v) => Self::Bool(*v),
+            crate::DefaultValue::I32(v) => Self::I32(*v),
+            crate::DefaultValue::I64(v) => Self::I64(*v),
+            crate::DefaultValue::U32(v) => Self::U32(*v),
+            crate::DefaultValue::U64(v) => Self::U64(*v),
+            crate::DefaultValue::F32(v) => Self::F32(*v),
+            crate::DefaultValue::F64(v) => Self::F64(*v),
+            crate::DefaultValue::String(v) => Self::String(v.clone()),
+            crate::DefaultValue::Bytes(v) => Self::Bytes(v.clone()),
+            crate::DefaultValue::EnumNumber(v) => Self::EnumNumber(*v),
+        }
+    }
+}
+
 impl Value {
     /// Borrow this value as a [`ValueRef`].
     #[must_use]

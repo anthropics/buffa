@@ -184,6 +184,41 @@ pub enum FieldKind {
     },
 }
 
+/// A field's declared default value, parsed from the `default_value` string
+/// of its `FieldDescriptorProto` and validated against the field's type when
+/// the pool links.
+///
+/// Only singular scalar and enum fields with explicit presence can declare
+/// a default, so the variant set is the scalar arms of
+/// [`Value`](crate::reflect::Value) (which needs the `reflect` feature):
+/// message, repeated, and map fields have no representation here because a
+/// default on one of them is a link error. An enum default is stored as its
+/// number, the same representation `Value::EnumNumber` uses.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DefaultValue {
+    /// A `bool` default.
+    Bool(bool),
+    /// An `int32`, `sint32`, or `sfixed32` default.
+    I32(i32),
+    /// An `int64`, `sint64`, or `sfixed64` default.
+    I64(i64),
+    /// A `uint32` or `fixed32` default.
+    U32(u32),
+    /// A `uint64` or `fixed64` default.
+    U64(u64),
+    /// A `float` default.
+    F32(f32),
+    /// A `double` default.
+    F64(f64),
+    /// A `string` default, stored exactly as written (string defaults are
+    /// not escaped in a descriptor).
+    String(String),
+    /// A `bytes` default, after C-escape decoding.
+    Bytes(Vec<u8>),
+    /// An enum default, as the number of the named value.
+    EnumNumber(i32),
+}
+
 /// A linked, feature-resolved field descriptor.
 ///
 /// Constructed only by [`DescriptorPool`](crate::DescriptorPool); not
@@ -203,6 +238,9 @@ pub struct FieldDescriptor {
     pub(crate) enum_type: Option<EnumType>,
     /// Raw `FieldOptions`, boxed (`None` when the field declares none).
     pub(crate) options: Option<Box<FieldOptions>>,
+    /// The declared default, parsed at link time (`None` when the field
+    /// declares none, which is every field that may not declare one).
+    pub(crate) default_value: Option<DefaultValue>,
 }
 
 impl FieldDescriptor {
@@ -307,6 +345,24 @@ impl FieldDescriptor {
     #[must_use]
     pub fn options(&self) -> Option<&FieldOptions> {
         self.options.as_deref()
+    }
+
+    /// The field's declared default value (`[default = ...]`), parsed and
+    /// validated against the field's type when the pool linked.
+    ///
+    /// `Some` only for a singular scalar or enum field with explicit
+    /// presence that declares a default; every other field reports `None`.
+    /// A default that does not parse for the field's type fails the link
+    /// with [`PoolError::InvalidDefaultValue`](crate::PoolError), so a
+    /// `Some` here always holds a value of the field's type.
+    ///
+    /// This reports the declaration only. It does not change what
+    /// [`ReflectMessage::get`](crate::reflect::ReflectMessage::get) returns
+    /// for an unset field, which remains the type's default value.
+    #[inline]
+    #[must_use]
+    pub fn default_value(&self) -> Option<&DefaultValue> {
+        self.default_value.as_ref()
     }
 }
 
@@ -841,6 +897,7 @@ mod tests {
             oneof_index: None,
             enum_type: None,
             options: None,
+            default_value: None,
         }
     }
 

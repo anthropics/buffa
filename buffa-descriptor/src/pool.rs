@@ -30,9 +30,9 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use crate::desc::{
-    EnumDescriptor, EnumIndex, EnumValueDescriptor, ExtensionDescriptor, ExtensionIndex,
-    FieldDescriptor, FieldKind, MessageDescriptor, MessageIndex, MethodDescriptor, OneofDescriptor,
-    ScalarType, ServiceDescriptor, ServiceIndex, SingularKind,
+    DefaultValue, EnumDescriptor, EnumIndex, EnumValueDescriptor, ExtensionDescriptor,
+    ExtensionIndex, FieldDescriptor, FieldKind, MessageDescriptor, MessageIndex, MethodDescriptor,
+    OneofDescriptor, ScalarType, ServiceDescriptor, ServiceIndex, SingularKind,
 };
 use crate::features::{self, ResolvedFeatures};
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type as ProtoType};
@@ -392,6 +392,18 @@ pub enum PoolError {
     /// An extension always has presence. A proto3 field reports
     /// [`Proto3FieldWithDefault`](Self::Proto3FieldWithDefault) instead.
     ImplicitPresenceFieldWithDefault { field: String },
+    /// A singular scalar or enum field declares a default value that does
+    /// not parse for the field's type: an integer outside the type's range,
+    /// a malformed float literal, a `bool` other than `true` or `false`, a
+    /// bytes value with a bad C escape, or an enum value name the enum does
+    /// not declare. `reason` says which rule the value broke. protoc
+    /// rejects the same descriptors ("Couldn't parse default value"), as
+    /// does protobuf-go ("has invalid default").
+    InvalidDefaultValue {
+        field: String,
+        value: String,
+        reason: String,
+    },
     /// A singular enum field of an editions file has implicit presence but
     /// uses a closed enum. Closed enum fields require presence to
     /// distinguish an unset field from its default value.
@@ -820,6 +832,14 @@ impl core::fmt::Display for PoolError {
             Self::ImplicitPresenceFieldWithDefault { field } => write!(
                 f,
                 "field {field} has implicit presence and declares a default value"
+            ),
+            Self::InvalidDefaultValue {
+                field,
+                value,
+                reason,
+            } => write!(
+                f,
+                "field {field} declares default value {value:?}, which does not parse for its type: {reason}"
             ),
             Self::ImplicitPresenceClosedEnum { field } => write!(
                 f,
@@ -1657,6 +1677,7 @@ impl DescriptorPool {
         debug_assert_eq!(self.message_file.len(), self.messages.len());
         debug_assert_eq!(self.enum_file.len(), self.enums.len());
         self.files.extend(new_files);
+        self.resolve_enum_defaults(first_new_message, first_new_extension, base)?;
         self.check_linked_enum_fields(first_new_message)
     }
 
@@ -3003,6 +3024,21 @@ impl DescriptorPool {
             return Err(PoolError::ImplicitPresenceFieldWithDefault { field: field_fqn });
         }
 
+        // Parse the declared default against the resolved kind, now that
+        // every rule about whether a default may appear on this field has
+        // passed (not repeated, not a message field, not proto3, not
+        // implicit presence). protoc and protobuf-go both reject a default
+        // that does not parse for the field's type; before this the string
+        // was never read beyond `is_some` checks. An enum default is only
+        // the value's name here; resolving it waits for
+        // `resolve_enum_defaults`, once every enum in the set has linked.
+        let default_value = match (&f.default_value, element) {
+            (Some(raw), SingularKind::Scalar(ty)) => {
+                Some(parse_scalar_default(&field_fqn, ty, raw)?)
+            }
+            _ => None,
+        };
+
         // Resolve packed encoding.
         // Per the spec, only repeated scalar/enum fields are packable.
         let packable = matches!(
@@ -3107,6 +3143,7 @@ impl DescriptorPool {
             oneof_index,
             enum_type,
             options: clone_options(&f.options),
+            default_value,
         })
     }
 
@@ -3158,6 +3195,61 @@ impl DescriptorPool {
     /// reads the syntax of the file that declares the message.
     /// It visits the new messages in link order and each message's fields in
     /// declaration order, and returns the first violation.
+    /// Resolves declared defaults on enum-typed fields, the one default
+    /// kind `link_field` cannot finish: an enum's values are populated
+    /// only when the enum itself links, which can be after the fields that
+    /// name it (a file links its messages before its enums, and the enum
+    /// can be declared in a later file of the set). Runs at the same point
+    /// as [`check_linked_enum_fields`](Self::check_linked_enum_fields),
+    /// with the batch's files in `self.files` so the declared names can be
+    /// read back from the protos.
+    fn resolve_enum_defaults(
+        &mut self,
+        first_new_message: usize,
+        first_new_extension: usize,
+        first_new_file: usize,
+    ) -> Result<(), PoolError> {
+        let mut declared = BTreeMap::new();
+        collect_declared_defaults(&self.files[first_new_file..], &mut declared);
+        if declared.is_empty() {
+            return Ok(());
+        }
+        let enums = &self.enums;
+        let resolve = |field: &mut FieldDescriptor, field_fqn: String| -> Result<(), PoolError> {
+            let FieldKind::Singular(SingularKind::Enum(eidx)) = field.kind else {
+                return Ok(());
+            };
+            let Some(proto) = declared.get(&field_fqn) else {
+                return Ok(());
+            };
+            let raw = proto.default_value.as_deref().unwrap_or_default();
+            let enumeration = &enums[eidx.0 as usize];
+            match enumeration.value_by_name(raw) {
+                Some(value) => {
+                    field.default_value = Some(DefaultValue::EnumNumber(value.number));
+                    Ok(())
+                }
+                None => Err(PoolError::InvalidDefaultValue {
+                    field: field_fqn,
+                    value: raw.to_string(),
+                    reason: format!("enum {} has no value named {raw:?}", &enumeration.full_name),
+                }),
+            }
+        };
+        for message in &mut self.messages[first_new_message..] {
+            let msg_fqn = message.full_name.clone();
+            for field in &mut message.fields {
+                let field_fqn = format!("{msg_fqn}.{}", field.name);
+                resolve(field, field_fqn)?;
+            }
+        }
+        for extension in &mut self.extensions[first_new_extension..] {
+            let field_fqn = extension.full_name.clone();
+            resolve(&mut extension.field, field_fqn)?;
+        }
+        Ok(())
+    }
+
     fn check_linked_enum_fields(&self, first_new_message: usize) -> Result<(), PoolError> {
         let messages = &self.messages[first_new_message..];
         let files = &self.message_file[first_new_message..];
@@ -3394,6 +3486,211 @@ impl DescriptorPool {
             self.resolve_singular(vf.r#type, vf.type_name.as_deref(), field_fqn, scope)?;
         Ok((key_ty, value_kind))
     }
+}
+
+/// Parses a declared `default_value` string for a scalar field, the
+/// validation protoc applies when building a descriptor ("Couldn't parse
+/// default value") and protobuf-go applies in `desc_resolve` ("has
+/// invalid default"). Enum defaults are value names, not literals, and
+/// resolve separately once the enum has linked
+/// (`DescriptorPool::resolve_enum_defaults`).
+fn parse_scalar_default(
+    field_fqn: &str,
+    ty: ScalarType,
+    raw: &str,
+) -> Result<DefaultValue, PoolError> {
+    let invalid = |reason: String| PoolError::InvalidDefaultValue {
+        field: field_fqn.to_string(),
+        value: raw.to_string(),
+        reason,
+    };
+    match ty {
+        ScalarType::Bool => match raw {
+            "true" => Ok(DefaultValue::Bool(true)),
+            "false" => Ok(DefaultValue::Bool(false)),
+            _ => Err(invalid("expected \"true\" or \"false\"".into())),
+        },
+        ScalarType::Int32 | ScalarType::Sint32 | ScalarType::Sfixed32 => raw
+            .parse::<i32>()
+            .map(DefaultValue::I32)
+            .map_err(|e| invalid(e.to_string())),
+        ScalarType::Int64 | ScalarType::Sint64 | ScalarType::Sfixed64 => raw
+            .parse::<i64>()
+            .map(DefaultValue::I64)
+            .map_err(|e| invalid(e.to_string())),
+        ScalarType::Uint32 | ScalarType::Fixed32 => raw
+            .parse::<u32>()
+            .map(DefaultValue::U32)
+            .map_err(|e| invalid(e.to_string())),
+        ScalarType::Uint64 | ScalarType::Fixed64 => raw
+            .parse::<u64>()
+            .map(DefaultValue::U64)
+            .map_err(|e| invalid(e.to_string())),
+        ScalarType::Float => parse_float_default(raw)
+            .map(DefaultValue::F32)
+            .map_err(invalid),
+        ScalarType::Double => parse_double_default(raw)
+            .map(DefaultValue::F64)
+            .map_err(invalid),
+        ScalarType::String => Ok(DefaultValue::String(raw.to_string())),
+        ScalarType::Bytes => unescape_c_escape(raw)
+            .map(DefaultValue::Bytes)
+            .map_err(invalid),
+    }
+}
+
+/// Collects every field proto in `files` that declares a `default_value`,
+/// keyed by the field's fully-qualified name (the name a link error for
+/// the field would report). `DescriptorPool::resolve_enum_defaults`
+/// resolves enum defaults against this map once the enums have linked;
+/// scalar defaults are parsed during `link_field` and never look here.
+fn collect_declared_defaults<'a>(
+    files: &'a [FileDescriptorProto],
+    map: &mut BTreeMap<String, &'a FieldDescriptorProto>,
+) {
+    for file in files {
+        let pkg = file.package.as_deref().unwrap_or("");
+        for ext in &file.extension {
+            if ext.default_value.is_some() {
+                let name = ext.name.as_deref().unwrap_or_default();
+                let fqn = if pkg.is_empty() {
+                    name.to_string()
+                } else {
+                    format!("{pkg}.{name}")
+                };
+                map.insert(fqn, ext);
+            }
+        }
+        for msg in &file.message_type {
+            collect_declared_defaults_in_message(pkg, msg, map);
+        }
+    }
+}
+
+fn collect_declared_defaults_in_message<'a>(
+    parent_fqn: &str,
+    msg: &'a DescriptorProto,
+    map: &mut BTreeMap<String, &'a FieldDescriptorProto>,
+) {
+    let name = msg.name.as_deref().unwrap_or_default();
+    let fqn = if parent_fqn.is_empty() {
+        name.to_string()
+    } else {
+        format!("{parent_fqn}.{name}")
+    };
+    for field in msg.field.iter().chain(&msg.extension) {
+        if field.default_value.is_some() {
+            map.insert(
+                format!("{fqn}.{}", field.name.as_deref().unwrap_or_default()),
+                field,
+            );
+        }
+    }
+    for nested in &msg.nested_type {
+        collect_declared_defaults_in_message(&fqn, nested, map);
+    }
+}
+
+/// Parses a `float` default the way protoc does: the `inf`, `infinity`,
+/// and `nan` spellings (with a sign on the infinities), else a decimal
+/// literal in range for `f32`.
+fn parse_float_default(raw: &str) -> Result<f32, String> {
+    match raw {
+        "inf" | "infinity" => Ok(f32::INFINITY),
+        "-inf" | "-infinity" => Ok(f32::NEG_INFINITY),
+        "nan" => Ok(f32::NAN),
+        _ => raw.parse::<f32>().map_err(|e| e.to_string()),
+    }
+}
+
+/// Parses a `double` default; see [`parse_float_default`].
+fn parse_double_default(raw: &str) -> Result<f64, String> {
+    match raw {
+        "inf" | "infinity" => Ok(f64::INFINITY),
+        "-inf" | "-infinity" => Ok(f64::NEG_INFINITY),
+        "nan" => Ok(f64::NAN),
+        _ => raw.parse::<f64>().map_err(|e| e.to_string()),
+    }
+}
+
+/// Decodes a C-escaped bytes default, the escaping protoc applies to
+/// `default_value` for bytes fields. Mirrors
+/// `google::protobuf::UnescapeCEscapeString`: the simple escapes (`\a`,
+/// `\b`, `\f`, `\n`, `\r`, `\t`, `\v`, `\\`, `\'`, `\"`, `\?`), up to three
+/// octal digits whose value must fit in a byte, and `\x` followed by a run
+/// of hex digits whose value must fit in a byte. Anything else is an error,
+/// where protobuf's text-format parser would also fail.
+fn unescape_c_escape(s: &str) -> Result<Vec<u8>, String> {
+    let src = s.as_bytes();
+    let mut dst = Vec::with_capacity(src.len());
+    let mut p = 0;
+    while p < src.len() {
+        if src[p] != b'\\' {
+            dst.push(src[p]);
+            p += 1;
+            continue;
+        }
+        p += 1;
+        if p == src.len() {
+            return Err("ends with a lone '\\'".into());
+        }
+        match src[p] {
+            b'a' => dst.push(0x07),
+            b'b' => dst.push(0x08),
+            b'f' => dst.push(0x0C),
+            b'n' => dst.push(0x0A),
+            b'r' => dst.push(0x0D),
+            b't' => dst.push(0x09),
+            b'v' => dst.push(0x0B),
+            b'\\' => dst.push(0x5C),
+            b'?' => dst.push(0x3F),
+            b'\'' => dst.push(0x27),
+            b'"' => dst.push(0x22),
+            b'0'..=b'7' => {
+                let mut octal = 0u32;
+                for _ in 0..3 {
+                    if p < src.len() && matches!(src[p], b'0'..=b'7') {
+                        octal = octal * 8 + u32::from(src[p] - b'0');
+                        p += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if octal > 255 {
+                    return Err(format!(
+                        "octal escape \\{octal:o} is out of range (max \\377)"
+                    ));
+                }
+                dst.push(octal as u8);
+                continue;
+            }
+            b'x' | b'X' => {
+                p += 1;
+                if p == src.len() || !src[p].is_ascii_hexdigit() {
+                    return Err("incomplete hex escape".into());
+                }
+                // protobuf consumes the whole run of hex digits and then
+                // range-checks the value; saturate so a long run cannot
+                // wrap before the check.
+                let mut hex = 0u32;
+                while p < src.len() {
+                    let Some(digit) = char::from(src[p]).to_digit(16) else {
+                        break;
+                    };
+                    hex = hex.saturating_mul(16).saturating_add(digit);
+                    p += 1;
+                }
+                if hex > 255 {
+                    return Err(format!("hex escape \\x{hex:x} is out of range (max \\xff)"));
+                }
+                dst.push(hex as u8);
+                continue;
+            }
+            _ => return Err("invalid escape sequence".into()),
+        }
+        p += 1;
+    }
+    Ok(dst)
 }
 
 /// Derive the default JSON name for a proto field name (lowerCamelCase).
