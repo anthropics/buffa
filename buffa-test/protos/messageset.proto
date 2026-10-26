@@ -33,3 +33,10 @@ message Marker {
 extend Container {
   optional Marker marker_ext = 2000;
 }
+
+// MessageSet type IDs are not restricted to the 29-bit ordinary tag range.
+extend Container {
+  optional Payload high_ext = 1000000000;
+  // `max` is an exclusive i32::MAX range end, so this is the last ID.
+  optional Payload boundary_ext = 2147483646;
+}

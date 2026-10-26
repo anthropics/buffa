@@ -56,6 +56,9 @@ pub struct CodeGenContext<'a> {
     /// Nested types use module-qualified paths:
     /// ".pkg.Outer.Inner" → "pkg::outer::Inner" (not "pkg::OuterInner").
     pub type_map: HashMap<String, String>,
+    /// MessageSet extendee names (without a leading dot), including imports
+    /// and nested messages. Only their extensions may use int32 type IDs.
+    message_set_types: HashSet<String>,
     /// Map from fully-qualified protobuf name to its proto package.
     ///
     /// Used by `rust_type_relative` to compute `super::`-based relative
@@ -651,6 +654,12 @@ impl<'a> CodeGenContext<'a> {
             files,
             config,
             type_map,
+            message_set_types: crate::oneof::message_index(files)
+                .into_iter()
+                .filter_map(|(name, message)| {
+                    (message.options.message_set_wire_format == Some(true)).then_some(name)
+                })
+                .collect(),
             package_of,
             enum_closedness,
             // Only consulted by opened-enum default handling (a bare open
@@ -837,6 +846,12 @@ impl<'a> CodeGenContext<'a> {
     /// [`truncate_warnings`](Self::truncate_warnings)).
     pub(crate) fn warnings_len(&self) -> usize {
         self.warnings.borrow().len()
+    }
+
+    /// Whether the resolved message uses MessageSet wire format.
+    pub(crate) fn is_message_set(&self, proto_fqn: &str) -> bool {
+        self.message_set_types
+            .contains(proto_fqn.strip_prefix('.').unwrap_or(proto_fqn))
     }
 
     /// Look up the proto package that owns a fully-qualified type name.
