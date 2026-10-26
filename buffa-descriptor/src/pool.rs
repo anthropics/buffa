@@ -273,6 +273,14 @@ pub enum PoolError {
     /// different case: decoding keeps it as an unknown field, and the file
     /// links with the edition 2023 defaults.
     MissingEdition { file: String },
+    /// An editions file (edition 2023 or later) sets
+    /// `features.field_presence = LEGACY_REQUIRED` in its own options.
+    /// Required presence is set field by field, so a file cannot make it the
+    /// default.
+    ///
+    /// As in protoc, this rule and the other rules that say "edition 2023 or
+    /// later" skip a file with syntax `editions` and an earlier edition.
+    LegacyRequiredFileDefault { file: String },
     /// A file's `public_dependency` names an index outside its `dependency`
     /// list. The indices are positions in that list, so an out-of-range one
     /// names no import at all.
@@ -451,11 +459,38 @@ pub enum PoolError {
     /// A field sets `packed = true` but is not a repeated numeric, bool, or
     /// enum field. Strings, bytes, messages, and groups cannot be packed.
     InvalidPackedOption { field: String },
+    /// A field in an editions file (edition 2023 or later) sets the `packed`
+    /// option, to either value. Editions spell `packed = true` as
+    /// `features.repeated_field_encoding = PACKED`, the edition default, and
+    /// `packed = false` as `EXPANDED`. This rule is checked before
+    /// [`InvalidPackedOption`](Self::InvalidPackedOption).
+    PackedOptionInEditions { field: String },
     /// A field sets `features.repeated_field_encoding` where it cannot apply:
     /// the field is not repeated, or the value is `PACKED` and the field is
     /// not a repeated numeric, bool, or enum field. The fields of a map entry
     /// are exempt, because protoc copies the map field's features onto them.
     InvalidRepeatedFieldEncoding { field: String },
+    /// A field in an editions file (edition 2023 or later) sets
+    /// `features.field_presence` where it cannot apply: on a oneof member, a
+    /// repeated or map field, or an extension, or to `IMPLICIT` on a message
+    /// field. An extension set to `LEGACY_REQUIRED` reports
+    /// [`RequiredExtension`](Self::RequiredExtension) instead.
+    ///
+    /// Only a feature that the field sets itself counts: one inherited from
+    /// the file applies to the fields it fits. The fields of a map entry are
+    /// exempt, because protoc copies the map field's features onto them.
+    InvalidFieldPresence { field: String },
+    /// A field in an editions file (edition 2023 or later) sets
+    /// `features.utf8_validation` but is neither a string field nor a map
+    /// with a string key or value. As for
+    /// [`InvalidFieldPresence`](Self::InvalidFieldPresence), only the field's
+    /// own setting counts, and the fields of a map entry are exempt.
+    InvalidUtf8Validation { field: String },
+    /// A field in an editions file (edition 2023 or later) sets
+    /// `features.message_encoding` but is a map field or not a message field.
+    /// As for [`InvalidFieldPresence`](Self::InvalidFieldPresence), only the
+    /// field's own setting counts, and the fields of a map entry are exempt.
+    InvalidMessageEncoding { field: String },
     /// A map field's entry message is malformed. The entry must have exactly
     /// two fields, in this order: `key` with number 1, then `value` with
     /// number 2. Each must be optional, and the key type must be an integer
@@ -561,6 +596,10 @@ pub enum PoolError {
     /// A field or extension in a proto3 file has `TYPE_GROUP`. Proto2 uses
     /// legacy groups; editions use `message_encoding = DELIMITED`.
     GroupFieldInProto3 { field: String },
+    /// A field or extension in an editions file (edition 2023 or later) has
+    /// `TYPE_GROUP`. Editions declare a message field with
+    /// `features.message_encoding = DELIMITED` instead.
+    GroupFieldInEditions { field: String },
     /// An extension declared in a proto3 file extends a message that is not
     /// an options message. A proto3 file declares extensions only to define
     /// custom options, so the extendee must be `FileOptions`,
@@ -705,6 +744,10 @@ impl core::fmt::Display for PoolError {
                     "file {file} has syntax \"editions\" but its edition is unset or EDITION_UNKNOWN"
                 )
             }
+            Self::LegacyRequiredFileDefault { file } => write!(
+                f,
+                "file {file} sets features.field_presence = LEGACY_REQUIRED, which only a field may set"
+            ),
             Self::InvalidPublicDependencyIndex {
                 file,
                 index,
@@ -882,10 +925,27 @@ impl core::fmt::Display for PoolError {
                 f,
                 "field {field} sets packed = true but is not a repeated numeric, bool, or enum field"
             ),
+            Self::PackedOptionInEditions { field } => {
+                write!(f, "field {field} sets the packed option in an editions file")
+            }
             Self::InvalidRepeatedFieldEncoding { field } => write!(
                 f,
                 "field {field} sets features.repeated_field_encoding, but the field is not repeated or \
                  its elements cannot be packed"
+            ),
+            Self::InvalidFieldPresence { field } => write!(
+                f,
+                "field {field} sets features.field_presence, but it is a oneof member, repeated, an \
+                 extension, or a message field set to IMPLICIT"
+            ),
+            Self::InvalidUtf8Validation { field } => write!(
+                f,
+                "field {field} sets features.utf8_validation but is not a string field or a map \
+                 with a string key or value"
+            ),
+            Self::InvalidMessageEncoding { field } => write!(
+                f,
+                "field {field} sets features.message_encoding but is a map or not a message field"
             ),
             Self::MalformedMapEntry { message } => write!(
                 f,
@@ -994,6 +1054,9 @@ impl core::fmt::Display for PoolError {
             }
             Self::GroupFieldInProto3 { field } => {
                 write!(f, "field {field} uses a group type in proto3")
+            }
+            Self::GroupFieldInEditions { field } => {
+                write!(f, "field {field} uses a group type in an editions file")
             }
             Self::Proto3ExtensionTargetNotOptions { field, extendee } => write!(
                 f,
@@ -1250,6 +1313,9 @@ struct LinkScope<'a> {
     proto3: bool,
     /// Whether the referring file's syntax permits legacy `required` labels.
     allows_required_labels: bool,
+    /// Whether the referring file is held to the editions rules
+    /// ([`is_editions_file`]).
+    editions: bool,
     /// Itself, its direct and weak dependencies, and their transitive
     /// `public_dependency` closure; `None` when visibility is not enforced.
     visible: Option<&'a BTreeSet<usize>>,
@@ -1258,6 +1324,18 @@ struct LinkScope<'a> {
 /// Whether `file` declares `syntax = "proto3"`.
 fn is_proto3(file: &FileDescriptorProto) -> bool {
     file.syntax.as_deref() == Some("proto3")
+}
+
+/// Whether protoc holds `file` to the editions rules: its syntax is
+/// `editions` and its edition is 2023 or later. protoc holds an earlier
+/// edition to the legacy rules. An edition this crate does not define decodes
+/// as unset here and counts as a later one.
+fn is_editions_file(file: &FileDescriptorProto) -> bool {
+    // MSRV: `Option::is_none_or` requires 1.82.
+    file.syntax.as_deref() == Some("editions")
+        && file.edition.map_or(true, |edition| {
+            edition as i32 >= Edition::EDITION_2023 as i32
+        })
 }
 
 /// The messages of `descriptor.proto` that carry options. A proto3 file
@@ -1296,6 +1374,7 @@ impl<'a> LinkScope<'a> {
             file: index,
             proto3: is_proto3(file),
             allows_required_labels: !matches!(syntax, Some("proto3" | "editions")),
+            editions: is_editions_file(file),
             visible,
         }
     }
@@ -1526,6 +1605,16 @@ impl DescriptorPool {
                     Some("editions") => {
                         if !has_edition(file) {
                             return Err(PoolError::MissingEdition {
+                                file: file.name.clone().unwrap_or_default(),
+                            });
+                        }
+                        // No edition defaults to LEGACY_REQUIRED, so only the
+                        // file's own feature can resolve to it.
+                        if is_editions_file(file)
+                            && features::for_file(file).field_presence
+                                == FieldPresence::LegacyRequired
+                        {
+                            return Err(PoolError::LegacyRequiredFileDefault {
                                 file: file.name.clone().unwrap_or_default(),
                             });
                         }
@@ -2904,6 +2993,9 @@ impl DescriptorPool {
         if scope.proto3 && f.r#type == Some(ProtoType::TYPE_GROUP) {
             return Err(PoolError::GroupFieldInProto3 { field: field_fqn });
         }
+        if scope.editions && f.r#type == Some(ProtoType::TYPE_GROUP) {
+            return Err(PoolError::GroupFieldInEditions { field: field_fqn });
+        }
 
         // Detect map fields: repeated + message type + the message is a
         // map_entry nested in this message and named for this field.
@@ -3010,6 +3102,9 @@ impl DescriptorPool {
             FieldKind::List(SingularKind::Scalar(s)) if !matches!(s, ScalarType::String | ScalarType::Bytes)
         ) || matches!(kind, FieldKind::List(SingularKind::Enum(_)));
         let packed_option = f.options.as_option().and_then(|o| o.packed);
+        if scope.editions && packed_option.is_some() {
+            return Err(PoolError::PackedOptionInEditions { field: field_fqn });
+        }
         if packed_option == Some(true) && !packable {
             return Err(PoolError::InvalidPackedOption { field: field_fqn });
         }
@@ -3027,6 +3122,40 @@ impl DescriptorPool {
                 is_repeated && (packable || encoding != feature_set::RepeatedFieldEncoding::PACKED);
             if !applies && !in_map_entry {
                 return Err(PoolError::InvalidRepeatedFieldEncoding { field: field_fqn });
+            }
+        }
+        // protoc holds an editions field's own settings of the other
+        // features to the same rule, with the same map entry exemption.
+        if let Some(own) = features::field_features(f).filter(|_| scope.editions && !in_map_entry) {
+            let is_message = matches!(element, SingularKind::Message(_));
+            let is_map = matches!(kind, FieldKind::Map { .. });
+            // A required extension was rejected above.
+            if own.field_presence.is_some_and(|presence| {
+                f.oneof_index.is_some()
+                    || is_repeated
+                    || is_extension
+                    || (is_message && presence == feature_set::FieldPresence::IMPLICIT)
+            }) {
+                return Err(PoolError::InvalidFieldPresence { field: field_fqn });
+            }
+            let string_map = matches!(
+                kind,
+                FieldKind::Map {
+                    key: ScalarType::String,
+                    ..
+                } | FieldKind::Map {
+                    value: SingularKind::Scalar(ScalarType::String),
+                    ..
+                }
+            );
+            if own.utf8_validation.is_some()
+                && f.r#type != Some(ProtoType::TYPE_STRING)
+                && !string_map
+            {
+                return Err(PoolError::InvalidUtf8Validation { field: field_fqn });
+            }
+            if own.message_encoding.is_some() && (!is_message || is_map) {
+                return Err(PoolError::InvalidMessageEncoding { field: field_fqn });
             }
         }
         let packed = if packable {
