@@ -4,11 +4,11 @@
 //! `repeated_type_custom("crate::repeated_type::CustomList<*>")`, so every
 //! `repeated` field is a `CustomList<T>` (a crate-local `ProtoList<T>` impl)
 //! instead of `Vec<T>`. Compiling `crate::repeated_type` is most of the test —
-//! the merge (`push`/`reserve`), encode, clear, and view→owned paths must all
-//! emit the generic `ProtoList` surface. The runtime checks below pin the field
-//! types and verify binary and view→owned round-trips across the element kinds
-//! whose codegen differs (packed varint, packed fixed-width, unpacked string,
-//! repeated message).
+//! the merge (`push`/`reserve`), encode, clear, view→owned and text paths must
+//! all emit the generic `ProtoList` surface. The runtime checks below pin the
+//! field types and verify binary, view→owned and text round-trips across the
+//! element kinds whose codegen differs (packed varint, packed fixed-width,
+//! unpacked string, repeated message).
 
 use crate::repeated_type::{CustomList, Inner, Lists};
 use buffa::Message;
@@ -92,4 +92,39 @@ fn arbitrary_builds_custom_list_of_custom_strings() {
     let raw: [u8; 256] = core::array::from_fn(|i| (i as u8) | 1);
     let msg = Lists::arbitrary(&mut Unstructured::new(&raw)).unwrap();
     let _: &CustomList<crate::reprs::EcoStr> = &msg.labels;
+}
+
+#[test]
+fn text_round_trip() {
+    // The text encoder iterates the `Deref` slice and the decoder appends
+    // through `ProtoList::push`.
+    let msg = sample();
+    let text = buffa::text::encode_to_string(&msg);
+    assert_eq!(
+        text,
+        r#"numbers: 1 numbers: -2 numbers: 300 numbers: 0 numbers: 42 names: "alpha" names: "beta" items {id: 7} items {id: 9} fixed: 10 fixed: -20 fixed: 30 labels: "gamma" blobs: "\000raw""#
+    );
+    let decoded: Lists = buffa::text::decode_from_str(&text).expect("decode text");
+    assert_eq!(decoded, msg);
+}
+
+#[test]
+fn text_merge_appends_in_order() {
+    // Both repeated forms append after the elements already in the collection.
+    let mut msg = sample();
+    buffa::text::merge_from_str(
+        &mut msg,
+        r#"numbers: [5, 6] numbers: 7 items: [{id: 1}, {id: 2}] names: [] labels: ["delta"]"#,
+    )
+    .expect("merge text");
+    assert_eq!(&*msg.numbers, &[1, -2, 300, 0, 42, 5, 6, 7]);
+    assert_eq!(
+        msg.items.iter().map(|i| i.id).collect::<Vec<_>>(),
+        [7, 9, 1, 2]
+    );
+    assert_eq!(msg.names.len(), 2);
+    assert_eq!(
+        msg.labels.iter().map(|l| l.as_str()).collect::<Vec<_>>(),
+        ["gamma", "delta"]
+    );
 }

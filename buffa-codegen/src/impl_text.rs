@@ -26,9 +26,10 @@ use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
 use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto};
 use crate::idents::rust_path_to_tokens;
 use crate::impl_message::{
-    effective_type, effective_type_in_map_entry, field_bytes_repr, field_string_repr,
-    find_map_entry_fields, is_explicit_presence_scalar, is_non_default_expr, is_real_oneof_member,
-    is_required_field, is_supported_field_type, map_string_repr, map_value_bytes_repr,
+    effective_type, effective_type_in_map_entry, field_bytes_repr, field_map_repr,
+    field_repeated_repr, field_string_repr, find_map_entry_fields, is_explicit_presence_scalar,
+    is_non_default_expr, is_real_oneof_member, is_required_field, is_supported_field_type,
+    map_string_repr, map_value_bytes_repr, repeated_for_iter,
 };
 use crate::message::{is_closed_enum, is_map_field};
 use crate::CodeGenError;
@@ -187,7 +188,7 @@ pub(crate) fn generate_text_impl(
         .collect::<Result<_, _>>()?;
     let repeated_encode: Vec<_> = repeated_fields
         .iter()
-        .map(|f| repeated_encode_stmt(ctx, f, features))
+        .map(|f| repeated_encode_stmt(ctx, f, proto_fqn, features))
         .collect::<Result<_, _>>()?;
     let oneof_encode: Vec<_> = oneof_groups
         .iter()
@@ -205,7 +206,7 @@ pub(crate) fn generate_text_impl(
         .collect::<Result<_, _>>()?;
     let map_encode: Vec<_> = map_fields
         .iter()
-        .map(|f| map_encode_stmt(ctx, msg, f, features))
+        .map(|f| map_encode_stmt(ctx, msg, f, proto_fqn, features))
         .collect::<Result<_, _>>()?;
 
     // ── merge_text arms ─────────────────────────────────────────────────────
@@ -484,11 +485,11 @@ fn enum_write(closed: bool, val: &TokenStream) -> TokenStream {
     }
 }
 
-/// Resolve a field's enum type path relative to the message impl scope.
-/// The impl block sits at the struct's own depth (`nesting`); a nested
-/// message referencing a cross-package enum therefore needs the same
+/// Resolve a field's enum or message type path relative to the message impl
+/// scope. The impl block sits at the struct's own depth (`nesting`); a nested
+/// message referencing a cross-package type therefore needs the same
 /// number of `super::` hops as its containing struct.
-fn enum_type_path(
+fn field_type_path(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
     current_package: &str,
@@ -500,7 +501,7 @@ fn enum_type_path(
         .ok_or(CodeGenError::MissingField("field.type_name"))?;
     let path = ctx
         .rust_type_relative(type_name, current_package, nesting)
-        .ok_or_else(|| CodeGenError::Other(format!("enum type '{type_name}' not found")))?;
+        .ok_or_else(|| CodeGenError::Other(format!("type '{type_name}' not found")))?;
     Ok(rust_path_to_tokens(&path))
 }
 
@@ -665,7 +666,7 @@ fn scalar_merge_arm(
     // Enum.
     if ty == Type::TYPE_ENUM {
         let closed = is_closed_enum(features);
-        let enum_ty = enum_type_path(ctx, field, current_package, nesting)?;
+        let enum_ty = field_type_path(ctx, field, current_package, nesting)?;
         let read = enum_read(closed, &enum_ty, &format_ident!("dec"));
         return Ok(if explicit {
             quote! { #name_pat => self.#ident = ::core::option::Option::Some(#read?), }
@@ -698,6 +699,7 @@ fn scalar_merge_arm(
 fn repeated_encode_stmt(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
+    proto_fqn: &str,
     parent_features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
@@ -718,8 +720,9 @@ fn repeated_encode_stmt(
         _ if is_copy_scalar(ty) => write_call(ty, &quote! { *__v }),
         _ => write_call(ty, &quote! { __v }),
     };
+    let elems = repeated_for_iter(&ident, &field_repeated_repr(ctx, proto_fqn, proto_name));
     Ok(quote! {
-        for __v in &self.#ident {
+        for __v in #elems {
             enc.write_field_name(#name_lit)?;
             #body
         }
@@ -778,7 +781,7 @@ fn repeated_merge_arm(
         },
         Type::TYPE_ENUM => {
             let closed = is_closed_enum(features);
-            let enum_ty = enum_type_path(ctx, field, current_package, nesting)?;
+            let enum_ty = field_type_path(ctx, field, current_package, nesting)?;
             enum_read(closed, &enum_ty, &format_ident!("__d"))
         }
         Type::TYPE_STRING => {
@@ -826,8 +829,21 @@ fn repeated_merge_arm(
             quote! { #call }
         }
     };
+    if field_repeated_repr(ctx, proto_fqn, proto_name).is_default() {
+        return Ok(quote! {
+            #name_pat => dec.#read_repeated(&mut self.#ident, |__d| #elem)?,
+        });
+    }
+    // The decoder's repeated readers fill a `Vec`; a custom collection takes
+    // the elements from one through `ProtoList::push`, in order.
     Ok(quote! {
-        #name_pat => dec.#read_repeated(&mut self.#ident, |__d| #elem)?,
+        #name_pat => {
+            let mut __items = ::buffa::alloc::vec::Vec::new();
+            dec.#read_repeated(&mut __items, |__d| #elem)?;
+            for __v in __items {
+                ::buffa::ProtoList::push(&mut self.#ident, __v);
+            }
+        }
     })
 }
 
@@ -927,11 +943,8 @@ fn oneof_merge_arms(
 
         // Message/group variants are boxed unless opted out. Merge-into-existing
         // matches binary oneof semantics (oneof_merge_arm in impl_message.rs).
-        let boxed = crate::oneof::variant_boxed(
-            ctx,
-            ty,
-            &format!(".{proto_fqn}.{oneof_name}.{proto_name}"),
-        );
+        let variant_fqn = format!(".{proto_fqn}.{oneof_name}.{proto_name}");
+        let boxed = crate::oneof::variant_boxed(ctx, ty, &variant_fqn);
         let assign = match ty {
             Type::TYPE_MESSAGE | Type::TYPE_GROUP => {
                 let existing_ref = if boxed {
@@ -939,10 +952,17 @@ fn oneof_merge_arms(
                 } else {
                     quote! { __existing }
                 };
-                let wrapped = if boxed {
-                    quote! { ::buffa::alloc::boxed::Box::new(__m) }
-                } else {
-                    quote! { __m }
+                // `Box::new` for the default pointer, `ProtoBox::new` for a
+                // custom one, as the binary decoder does.
+                let wrapped = match (boxed, ctx.pointer_repr(&variant_fqn)) {
+                    (false, _) => quote! { __m },
+                    (true, crate::PointerRepr::Box) => {
+                        quote! { ::buffa::alloc::boxed::Box::new(__m) }
+                    }
+                    (true, repr) => {
+                        let msg_ty = field_type_path(ctx, field, current_package, nesting)?;
+                        repr.pointer_new(&msg_ty, &quote! { __m })?
+                    }
                 };
                 quote! {
                     if let ::core::option::Option::Some(
@@ -960,7 +980,7 @@ fn oneof_merge_arms(
             }
             Type::TYPE_ENUM => {
                 let closed = is_closed_enum(&features);
-                let enum_ty = enum_type_path(ctx, field, current_package, nesting)?;
+                let enum_ty = field_type_path(ctx, field, current_package, nesting)?;
                 let read = enum_read(closed, &enum_ty, &format_ident!("dec"));
                 quote! {
                     self.#field_ident = ::core::option::Option::Some(
@@ -1015,6 +1035,7 @@ fn map_encode_stmt(
     ctx: &CodeGenContext,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
+    proto_fqn: &str,
     features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
     let proto_name = field
@@ -1052,8 +1073,17 @@ fn map_encode_stmt(
     // closure captures `__k`, `__v` with their concrete types so the
     // `#key_write` / `#val_write` bodies (which contain type-specific calls
     // like `enc.write_i32(*__k)`) typecheck.
+    //
+    // The default `HashMap` keeps `&self.field` (byte-identical output); any
+    // other container iterates through `MapStorage`, since a custom newtype
+    // need not implement `IntoIterator` for a reference.
+    let entries = if field_map_repr(ctx, proto_fqn, proto_name).is_default() {
+        quote! { &self.#ident }
+    } else {
+        quote! { ::buffa::map_codec::MapStorage::storage_iter(&self.#ident) }
+    };
     Ok(quote! {
-        for (__k, __v) in &self.#ident {
+        for (__k, __v) in #entries {
             enc.write_field_name(#name_lit)?;
             enc.write_map_entry(|enc| {
                 enc.write_field_name("key")?;
@@ -1122,7 +1152,7 @@ fn map_merge_arm(
         },
         Type::TYPE_ENUM => {
             let closed = is_closed_enum(&val_features);
-            let enum_ty = enum_type_path(ctx, val_fd, current_package, nesting)?;
+            let enum_ty = field_type_path(ctx, val_fd, current_package, nesting)?;
             let read = enum_read(closed, &enum_ty, &format_ident!("__d"));
             quote! { #read? }
         }
@@ -1149,6 +1179,11 @@ fn map_merge_arm(
     // counterpart to merge_message) and returns (K, V). Absent key or value
     // defaults — same as binary map decode. One small Vec alloc per
     // list-form map field; textproto usage doesn't care.
+    let insert = if field_map_repr(ctx, proto_fqn, proto_name).is_default() {
+        quote! { self.#ident.insert(__k, __v); }
+    } else {
+        quote! { ::buffa::map_codec::MapStorage::storage_insert(&mut self.#ident, __k, __v); }
+    };
     Ok(quote! {
         #name_lit => {
             let mut __pairs: ::buffa::alloc::vec::Vec<_> = ::buffa::alloc::vec::Vec::new();
@@ -1171,7 +1206,7 @@ fn map_merge_arm(
                 ))
             })?;
             for (__k, __v) in __pairs {
-                self.#ident.insert(__k, __v);
+                #insert
             }
         }
     })

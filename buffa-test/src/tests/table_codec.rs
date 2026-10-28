@@ -2713,6 +2713,20 @@ fn a_custom_pointer_for_oneof_message_members_agrees() {
 }
 
 #[test]
+fn a_custom_pointer_for_oneof_message_members_agrees_in_text() {
+    // The text decoder builds a oneof message member's custom pointer with
+    // `ProtoBox::new`, under both codecs.
+    for (u, t) in pointers_u::held().iter().zip(&pointers_t::held()) {
+        let text = buffa::text::encode_to_string(u);
+        assert_eq!(text, buffa::text::encode_to_string(t));
+        let du: crate::tc5u::Held = buffa::text::decode_from_str(&text).unwrap();
+        let dt: crate::tc5t::Held = buffa::text::decode_from_str(&text).unwrap();
+        assert_eq!(&du, u);
+        assert_eq!(&dt, t);
+    }
+}
+
+#[test]
 fn oneofs_named_like_keywords_with_members_out_of_number_order_agree() {
     let (unrolled, table) = (pointers_u::names(), pointers_t::names());
     assert_eq!(table.len(), 48);

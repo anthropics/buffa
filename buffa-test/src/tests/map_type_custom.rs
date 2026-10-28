@@ -9,7 +9,8 @@
 //! (`storage_clear`), reflect `has` (`MapStorage::storage_len`) and `get`
 //! (consumer `ReflectMap`), and view→owned (`FromIterator`) paths must all emit
 //! code that resolves against the consumer-provided trait impls. The runtime
-//! checks pin the field types and the binary / view→owned / clear round-trips.
+//! checks pin the field types and the binary / view→owned / clear / text
+//! round-trips.
 
 use crate::map_type_custom::{CustomMaps, Item};
 use buffa::Message;
@@ -83,4 +84,34 @@ fn view_to_owned_round_trip() {
         .expect("decode view")
         .to_owned_message();
     assert_eq!(owned, sample());
+}
+
+#[test]
+fn text_round_trip() {
+    // The text encoder iterates through `MapStorage::storage_iter` (in the inner
+    // `BTreeMap`'s key order) and the decoder inserts through `storage_insert`.
+    let msg = sample();
+    let text = buffa::text::encode_to_string(&msg);
+    assert_eq!(
+        text,
+        r#"scores {key: "alpha" value: -2} scores {key: "mu" value: 300} items {key: "one" value {id: 11}} items {key: "two" value {id: 22}}"#
+    );
+    let decoded: CustomMaps = buffa::text::decode_from_str(&text).expect("decode text");
+    assert_eq!(decoded, msg);
+}
+
+#[test]
+fn text_merge_inserts_last_write_wins() {
+    // The list form and a repeated key: the later entry replaces the earlier one,
+    // and entries already in the map stay.
+    let mut msg = sample();
+    buffa::text::merge_from_str(
+        &mut msg,
+        r#"scores: [{key: "mu" value: 1}, {key: "nu" value: 2}] scores {key: "nu" value: 3}"#,
+    )
+    .expect("merge text");
+    assert_eq!(msg.scores.0.get("alpha"), Some(&-2));
+    assert_eq!(msg.scores.0.get("mu"), Some(&1));
+    assert_eq!(msg.scores.0.get("nu"), Some(&3));
+    assert_eq!(msg.scores.0.len(), 3);
 }

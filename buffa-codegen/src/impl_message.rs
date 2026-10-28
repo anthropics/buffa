@@ -2165,7 +2165,7 @@ pub(crate) fn is_field_packed(field: &FieldDescriptorProto, features: &ResolvedF
 /// knob). A custom collection iterates via its `Deref<Target = [T]>` slice
 /// (`self.field.iter()`), because `&C: IntoIterator` is not available for a
 /// newtype that only provides `Deref`.
-fn repeated_for_iter(ident: &Ident, repr: &crate::RepeatedRepr) -> TokenStream {
+pub(crate) fn repeated_for_iter(ident: &Ident, repr: &crate::RepeatedRepr) -> TokenStream {
     if repr.is_default() {
         quote! { &self.#ident }
     } else {

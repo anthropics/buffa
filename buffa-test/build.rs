@@ -297,9 +297,7 @@ fn main() {
             &[],
         );
         // A custom pointer for the message members of oneofs, and names that
-        // `idiomatic_field_names` changes. Without the text format, whose
-        // decoder of a oneof message member wraps it in a `Box` whatever the
-        // pointer is, for both codecs.
+        // `idiomatic_field_names` changes.
         compile_both_codecs_with(
             "table_codec5.proto",
             &read_proto("table_codec5.proto"),
@@ -309,7 +307,6 @@ fn main() {
                 config
                     .box_type_custom("crate::box_type::CustomBox<*>")
                     .idiomatic_field_names(true)
-                    .generate_text(false)
             },
         );
         // A closed enum in a oneof, with nowhere to keep a number it lacks.
@@ -439,15 +436,17 @@ fn main() {
     // box_type: a crate-LOCAL `CustomBox<T>` pointer (a `ProtoBox<T>` impl) for
     // singular message fields, via the `*`-templated knob. The crate compiling
     // is most of the test — the field type, decode (`get_or_insert_default`),
-    // clear, view→owned (`some`), and JSON paths must all emit
+    // clear, view→owned (`some`), JSON and text paths must all emit
     // `MessageField<T, CustomBox<T>>` and use only the generic `ProtoBox`
     // surface. In particular, JSON oneof serialization must not require the
-    // custom pointer itself to implement serde.
+    // custom pointer itself to implement serde, and the text decoder of a oneof
+    // message member must build the pointer with `ProtoBox::new`.
     buffa_build::Config::new()
         .files(&["protos/box_type.proto"])
         .includes(&["protos/"])
         .box_type_custom("crate::box_type::CustomBox<*>")
         .generate_json(true)
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for box_type.proto");
 
@@ -549,7 +548,8 @@ fn main() {
     // the consumer-implemented `MapStorage` / `ReflectMap` (delegating to the
     // inner map) / `FromIterator` surface — the worked example for a downstream
     // user. Vtable reflection on so the consumer `ReflectMap` delegation and the
-    // `MapStorage::storage_len` reflect `has`-arm are compiled. JSON is left off
+    // `MapStorage::storage_len` reflect `has`-arm are compiled, and text on so
+    // its encoder and decoder go through `MapStorage`. JSON is left off
     // (a custom container's JSON support is covered by the BTreeMap built-in
     // fixture; see the `MapStorage` docs for the with-module caveat).
     buffa_build::Config::new()
@@ -557,6 +557,7 @@ fn main() {
         .includes(&["protos/"])
         .map_type_custom("crate::map_type_custom::CustomMap")
         .reflect_mode(buffa_build::ReflectMode::VTable)
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for map_type_custom.proto");
 
@@ -580,8 +581,8 @@ fn main() {
     // repeated_type: a crate-LOCAL `CustomList<T>` collection (a `ProtoList<T>`
     // impl) used for every `repeated` field, via the `*`-templated knob. The
     // crate compiling is most of the test — the merge (`push`/`reserve`),
-    // encode (`.iter()`), clear, and view→owned (`collect`) paths must all emit
-    // the generic `ProtoList` surface for the custom collection, and under
+    // encode (`.iter()`), clear, view→owned (`collect`) and text paths must all
+    // emit the generic `ProtoList` surface for the custom collection, and under
     // `generate_arbitrary` the builders for a custom string or `Bytes` element
     // must return it.
     buffa_build::Config::new()
@@ -594,6 +595,7 @@ fn main() {
             &[".repeated_type.Lists.blobs"],
         )
         .generate_arbitrary(true)
+        .generate_text(true)
         .compile()
         .expect("buffa_build failed for repeated_type.proto");
 

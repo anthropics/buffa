@@ -169,6 +169,8 @@ pub type Map<K, V> = crate::__private::HashMap<K, V>;
 ///   transparently to the inner map; the with-modules call this trait's methods
 ///   directly rather than the newtype's serde, so even that is only needed when
 ///   the field type bypasses a with-module.)
+/// - Nothing more under the text format: the generated text encoder and decoder
+///   go through this trait.
 ///
 /// The buffa-provided `HashMap` and `BTreeMap` already satisfy all of these, so
 /// selecting `BTreeMap` needs no consumer code.
