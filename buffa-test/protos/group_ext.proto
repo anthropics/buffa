@@ -24,4 +24,20 @@ message Carrier {
 extend Carrier {
   Inner delim_inner = 100;
   repeated Inner delim_repeated = 101;
+  Level level = 102;
+  Mode mode = 103;
+}
+
+// Enum extensions without a default read absent as the first value: LOW for
+// the closed enum, which does not declare 0, and 0 for the open one.
+enum Level {
+  option features.enum_type = CLOSED;
+
+  LOW = 3;
+  HIGH = 4;
+}
+
+enum Mode {
+  MODE_UNSPECIFIED = 0;
+  MODE_ON = 1;
 }

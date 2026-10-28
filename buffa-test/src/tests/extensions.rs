@@ -1,11 +1,11 @@
 //! Integration tests for `extend` codegen and the `ExtensionSet` runtime API.
 
 use crate::custopts::__buffa::ext::{
-    ACTIVE, ANN, C_ACTIVE, C_ANN, C_FLAG, C_LABEL, C_MARKER, C_PRIORITY, C_TAGS, C_WEIGHT,
+    ACTIVE, ANN, C_ACTIVE, C_ANN, C_FLAG, C_LABEL, C_LEVEL, C_MARKER, C_PRIORITY, C_TAGS, C_WEIGHT,
     IS_INTERNAL, LABEL, PRIORITY, TAGS, WEIGHT,
 };
-use crate::custopts::{carrier, Annotation, Carrier};
-use buffa::{Extension, ExtensionSet, Message};
+use crate::custopts::{carrier, Annotation, Carrier, Level};
+use buffa::{Enumeration, Extension, ExtensionSet, Message};
 
 /// Sanity: field numbers, extendees, and codec types match the proto source.
 /// Codec types are enforced by the `const` binding itself — a mismatch is a
@@ -253,6 +253,20 @@ fn extension_or_default_no_declared_default_uses_type_default() {
     assert!(!c.extension_or_default(&C_FLAG));
 }
 
+/// A closed enum need not declare 0, so a closed-enum extension without a
+/// `[default]` reads absent as the enum's first value, the same number an
+/// unset field of that enum reads as.
+#[test]
+fn closed_enum_extension_or_default_is_first_value() {
+    let mut c = Carrier::default();
+    assert_eq!(c.extension(&C_LEVEL), None);
+    assert_eq!(c.extension_or_default(&C_LEVEL), Level::LOW.to_i32());
+    assert_eq!(Level::default(), Level::LOW);
+
+    c.set_extension(&C_LEVEL, Level::HIGH.to_i32());
+    assert_eq!(c.extension_or_default(&C_LEVEL), Level::HIGH.to_i32());
+}
+
 /// The declared default survives encode/decode: a freshly-decoded carrier
 /// with no extension data still returns the proto default. (The default lives
 /// in the generated `const`, not on the wire.)
@@ -273,9 +287,20 @@ fn proto2_default_after_roundtrip() {
 // Group-encoded extensions (editions DELIMITED)
 // ────────────────────────────────────────────────────────────────────────────
 
-use crate::groupext::__buffa::ext::{DELIM_INNER, DELIM_REPEATED};
-use crate::groupext::{Carrier as GroupCarrier, Inner};
+use crate::groupext::__buffa::ext::{DELIM_INNER, DELIM_REPEATED, LEVEL, MODE};
+use crate::groupext::{Carrier as GroupCarrier, Inner, Level as EditionsLevel};
 use buffa::extension::codecs::{GroupCodec, Repeated};
+
+/// Editions: an extension of an `enum_type = CLOSED` enum without a default
+/// reads absent as the first value; one of an open enum still reads 0.
+#[test]
+fn editions_enum_extension_or_default() {
+    let c = GroupCarrier::default();
+    assert_eq!(c.extension(&LEVEL), None);
+    assert_eq!(c.extension_or_default(&LEVEL), EditionsLevel::LOW.to_i32());
+    assert_eq!(c.extension(&MODE), None);
+    assert_eq!(c.extension_or_default(&MODE), 0);
+}
 
 /// Codec type check: DELIMITED extension gets `GroupCodec`, not `MessageCodec`.
 /// A type mismatch here is a compile error.
