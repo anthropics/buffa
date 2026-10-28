@@ -2539,7 +2539,11 @@ pub(crate) fn view_field_serialize_stmt(
         };
 
         // Value wrapper struct (for types needing special encoding).
+        // NullValue must serialize as JSON `null`, not "NULL_VALUE".
+        let val_is_null_value =
+            val_raw == Type::TYPE_ENUM && !is_closed_enum(&val_f) && is_null_value_field(val_fd);
         let (val_wrapper, val_expr) = match val_raw {
+            _ if val_is_null_value => (quote! {}, quote! { &() }),
             // v: &&[u8] — deref coercion to &[u8] at the adapter field.
             Type::TYPE_BYTES => (quote! {}, quote! { &::buffa::json_helpers::BytesJson(v) }),
             Type::TYPE_ENUM if is_closed_enum(&val_f) => (
@@ -2550,6 +2554,12 @@ pub(crate) fn view_field_serialize_stmt(
                 (quote! {}, quote! { &::buffa::json_helpers::ProtoJson(v) })
             }
             _ => (quote! {}, quote! { v }),
+        };
+
+        let val_pat = if val_is_null_value {
+            quote! { _ }
+        } else {
+            quote! { v }
         };
 
         // Include '__a only when key/val types actually reference the view lifetime.
@@ -2588,7 +2598,7 @@ pub(crate) fn view_field_serialize_stmt(
                         // length-prefixed serializer would reject.
                         let __entries = self.0.iter_unique();
                         let mut __m = __s.serialize_map(::core::option::Option::Some(__entries.len()))?;
-                        for (k, v) in __entries {
+                        for (k, #val_pat) in __entries {
                             __m.serialize_entry(#key_expr, #val_expr)?;
                         }
                         __m.end()
@@ -2605,6 +2615,9 @@ pub(crate) fn view_field_serialize_stmt(
             Type::TYPE_BYTES => quote! { ::buffa::json_helpers::BytesSeqJson },
             Type::TYPE_ENUM if is_closed_enum(&f_features) => {
                 quote! { ::buffa::json_helpers::ClosedEnumSeqJson }
+            }
+            Type::TYPE_ENUM if is_null_value_field(field) => {
+                quote! { ::buffa::json_helpers::NullValueSeqJson }
             }
             Type::TYPE_ENUM => quote! { ::buffa::json_helpers::EnumSeqJson },
             scalar_ty_val if serde_helper_path(scalar_ty_val).is_some() => {
@@ -2656,6 +2669,11 @@ pub(crate) fn view_field_serialize_stmt(
                     }
                 }
             }
+            Type::TYPE_ENUM if is_null_value_field(field) => quote! {
+                if self.#ident.is_some() {
+                    __map.serialize_entry(#json_name, &())?;
+                }
+            },
             Type::TYPE_ENUM => quote! {
                 if let ::core::option::Option::Some(ref __v) = self.#ident {
                     __map.serialize_entry(#json_name, __v)?;
@@ -2717,7 +2735,11 @@ pub(crate) fn view_field_serialize_stmt(
         }
         Type::TYPE_ENUM => (
             quote! { !::buffa::json_helpers::skip_if::is_default_enum_value(&self.#ident) },
-            quote! { __map.serialize_entry(#json_name, &self.#ident)?; },
+            if is_null_value_field(field) {
+                quote! { __map.serialize_entry(#json_name, &())?; }
+            } else {
+                quote! { __map.serialize_entry(#json_name, &self.#ident)?; }
+            },
         ),
         scalar if serde_helper_path(scalar).is_some() => {
             let skip_path = scalar_skip_predicate(scalar);

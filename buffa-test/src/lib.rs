@@ -818,6 +818,36 @@ pub mod view_json_p2 {
 #[allow(
     clippy::derivable_impls,
     clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod null_json {
+    buffa::include_proto!("test.nulljson");
+}
+
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod null_json_ed {
+    buffa::include_proto!("test.nulljson.ed");
+}
+
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
+pub mod null_json_p2 {
+    buffa::include_proto!("test.nulljson.p2");
+}
+
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
     non_camel_case_types
 )]
 pub mod p2json {

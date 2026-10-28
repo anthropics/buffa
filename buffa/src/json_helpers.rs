@@ -191,6 +191,16 @@ impl<E: crate::Enumeration> serde::Serialize for EnumSeqJson<'_, E> {
     }
 }
 
+/// Serialize a slice of `google.protobuf.NullValue` values, each as `null`
+/// (see [`repeated_null_value`]).
+#[doc(hidden)]
+pub struct NullValueSeqJson<'a, E: crate::Enumeration>(pub &'a [crate::EnumValue<E>]);
+impl<E: crate::Enumeration> serde::Serialize for NullValueSeqJson<'_, E> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        repeated_null_value::serialize(self.0, s)
+    }
+}
+
 /// Serialize a slice of closed-enum values as proto name strings.
 #[doc(hidden)]
 pub struct ClosedEnumSeqJson<'a, E>(pub &'a [E]);
@@ -907,6 +917,198 @@ pub mod map_enum {
         }
         d.deserialize_any(V::<C>(core::marker::PhantomData))
     }
+}
+
+// ── NullValue: google.protobuf.NullValue fields as JSON null ─────────────────
+//
+// ProtoJSON writes every `google.protobuf.NullValue` as the literal `null`,
+// whatever its number, and reads `null` back as `NULL_VALUE`. The enum modules
+// above write the proto name and read `null` as "unset" for an optional field,
+// so codegen routes NullValue fields through these modules instead. Oneof
+// members and extensions handle NullValue in their own generated code.
+
+/// Serde with-module for a singular `EnumValue<NullValue>` field.
+pub mod null_value {
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<E: crate::Enumeration, S: Serializer>(
+        _value: &crate::EnumValue<E>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        s.serialize_unit()
+    }
+
+    pub fn deserialize<'de, E: crate::Enumeration, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<crate::EnumValue<E>, D::Error> {
+        super::proto_enum::deserialize(d)
+    }
+}
+
+/// Serde with-module for an explicit-presence `Option<EnumValue<NullValue>>`
+/// field. Unlike [`opt_enum`], JSON `null` sets the field.
+pub mod opt_null_value {
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<E: crate::Enumeration, S: Serializer>(
+        value: &Option<crate::EnumValue<E>>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(_) => s.serialize_unit(),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, E: crate::Enumeration, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<Option<crate::EnumValue<E>>, D::Error> {
+        let super::BufferedValue(raw) = serde::Deserialize::deserialize(d)?;
+        super::try_deserialize_enum::<crate::EnumValue<E>>(raw).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Serde with-module for a repeated `google.protobuf.NullValue` field. Each
+/// element is written as `null`; `null` for the whole field is an empty list.
+pub mod repeated_null_value {
+    use alloc::vec::Vec;
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<E: crate::Enumeration, S: Serializer>(
+        value: &[crate::EnumValue<E>],
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut seq = s.serialize_seq(Some(value.len()))?;
+        for _ in value {
+            seq.serialize_element(&())?;
+        }
+        seq.end()
+    }
+
+    pub fn deserialize<'de, E, C, D>(d: D) -> Result<C, D::Error>
+    where
+        E: crate::Enumeration,
+        C: From<Vec<crate::EnumValue<E>>>,
+        D: Deserializer<'de>,
+    {
+        let raw: Option<Vec<super::BufferedValue>> = serde::Deserialize::deserialize(d)?;
+        let mut out = Vec::new();
+        for super::BufferedValue(v) in raw.unwrap_or_default() {
+            if let Some(v) = super::try_deserialize_enum(v).map_err(serde::de::Error::custom)? {
+                out.push(v);
+            }
+        }
+        Ok(C::from(out))
+    }
+}
+
+/// Serde with-module for a map field whose value is `google.protobuf.NullValue`.
+/// Keys are handled as in [`map_enum`].
+pub mod map_null_value {
+    use crate::map_codec::MapStorage;
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<C, S>(value: &C, s: S) -> Result<S::Ok, S::Error>
+    where
+        C: MapStorage,
+        C::Key: serde::Serialize,
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = s.serialize_map(Some(value.storage_len()))?;
+        for (k, _) in value.storage_iter() {
+            map.serialize_entry(k, &())?;
+        }
+        map.end()
+    }
+
+    pub fn deserialize<'de, C, D>(d: D) -> Result<C, D::Error>
+    where
+        C: MapStorage + Default,
+        C::Key: serde::Deserialize<'de>,
+        C::Value: serde::de::DeserializeOwned,
+        D: Deserializer<'de>,
+    {
+        super::deserialize_null_value_map(d, Ok::<_, core::convert::Infallible>)
+    }
+}
+
+/// [`map_null_value`] for `Vec<u8>` keys, which are base64-encoded as in
+/// [`bytes_key_map`].
+pub mod bytes_key_null_value_map {
+    use crate::map_codec::MapStorage;
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<C, S>(value: &C, s: S) -> Result<S::Ok, S::Error>
+    where
+        C: MapStorage<Key = alloc::vec::Vec<u8>>,
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map = s.serialize_map(Some(value.storage_len()))?;
+        for (k, _) in value.storage_iter() {
+            map.serialize_entry(&super::Base64Wrapper(k), &())?;
+        }
+        map.end()
+    }
+
+    pub fn deserialize<'de, C, D>(d: D) -> Result<C, D::Error>
+    where
+        C: MapStorage<Key = alloc::vec::Vec<u8>> + Default,
+        C::Value: serde::de::DeserializeOwned,
+        D: Deserializer<'de>,
+    {
+        super::deserialize_null_value_map(d, |k: alloc::string::String| super::decode_base64(&k))
+    }
+}
+
+/// Shared visitor of [`map_null_value`] and [`bytes_key_null_value_map`]:
+/// reads each key as `K` and converts it with `key`.
+fn deserialize_null_value_map<'de, C, K, Err, D>(
+    d: D,
+    key: fn(K) -> Result<C::Key, Err>,
+) -> Result<C, D::Error>
+where
+    C: crate::map_codec::MapStorage + Default,
+    C::Value: serde::de::DeserializeOwned,
+    K: serde::Deserialize<'de>,
+    Err: core::fmt::Display,
+    D: serde::Deserializer<'de>,
+{
+    struct V<C: crate::map_codec::MapStorage, K, Err>(fn(K) -> Result<C::Key, Err>);
+    impl<'de, C, K, Err> serde::de::Visitor<'de> for V<C, K, Err>
+    where
+        C: crate::map_codec::MapStorage + Default,
+        C::Value: serde::de::DeserializeOwned,
+        K: serde::Deserialize<'de>,
+        Err: core::fmt::Display,
+    {
+        type Value = C;
+
+        fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.write_str("a map with NullValue values or null")
+        }
+
+        fn visit_unit<E>(self) -> Result<C, E> {
+            Ok(C::default())
+        }
+
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<C, A::Error> {
+            let mut out = C::default();
+            while let Some(k) = map.next_key::<K>()? {
+                let k = (self.0)(k).map_err(serde::de::Error::custom)?;
+                let BufferedValue(raw) = map.next_value()?;
+                if let Some(v) =
+                    try_deserialize_enum::<C::Value>(raw).map_err(serde::de::Error::custom)?
+                {
+                    out.storage_insert(k, v);
+                }
+            }
+            Ok(out)
+        }
+    }
+    d.deserialize_any(V::<C, K, Err>(key))
 }
 
 // ── null_as_default: generic null→Default handler ────────────────────────────

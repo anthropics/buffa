@@ -1,0 +1,12 @@
+// Proto2 companion to `null_value_json.proto`.
+
+syntax = "proto2";
+
+package test.nulljson.p2;
+
+import "google/protobuf/struct.proto";
+
+message NullFields {
+  optional google.protobuf.NullValue opt = 1;
+  required google.protobuf.NullValue req = 2;
+}

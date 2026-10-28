@@ -1,0 +1,18 @@
+// `google.protobuf.NullValue` outside a oneof: ProtoJSON writes it as `null`
+// in every field shape, and reads `null` as a set `NULL_VALUE`. Compiled with
+// views and JSON, together with the edition 2023 and proto2 companions.
+
+syntax = "proto3";
+
+package test.nulljson;
+
+import "google/protobuf/struct.proto";
+
+message NullFields {
+  google.protobuf.NullValue implicit = 1;
+  optional google.protobuf.NullValue opt = 2;
+  repeated google.protobuf.NullValue list = 3;
+  map<string, google.protobuf.NullValue> by_name = 4;
+  map<int32, google.protobuf.NullValue> by_id = 5;
+  map<bool, google.protobuf.NullValue> by_flag = 6;
+}

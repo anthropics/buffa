@@ -879,6 +879,22 @@ fn main() {
         .compile()
         .expect("buffa_build failed for view_json protos");
 
+    // google.protobuf.NullValue outside a oneof, in proto3, edition 2023 and
+    // proto2 field shapes. Views on so the view Serialize impls are covered;
+    // strict_utf8_mapping turns the editions file's NONE key into a bytes key.
+    buffa_build::Config::new()
+        .files(&[
+            "protos/null_value_json.proto",
+            "protos/null_value_json_editions.proto",
+            "protos/null_value_json_proto2.proto",
+        ])
+        .includes(&["protos/"])
+        .generate_views(true)
+        .generate_json(true)
+        .strict_utf8_mapping(true)
+        .compile()
+        .expect("buffa_build failed for null_value_json protos");
+
     // Proto2 + JSON — closed-enum JSON helpers (map_closed_enum,
     // repeated_closed_enum, closed_enum). Proto2 enums are always closed.
     buffa_build::Config::new()
