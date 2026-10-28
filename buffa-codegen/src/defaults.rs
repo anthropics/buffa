@@ -28,21 +28,9 @@ pub fn parse_default_value(
 ) -> Result<Option<TokenStream>, CodeGenError> {
     use crate::generated::descriptor::field_descriptor_proto::Type;
 
-    let default_str = match field.default_value.as_deref() {
-        Some(s) if !s.is_empty() => s,
-        _ => return Ok(None),
-    };
-
-    // Custom defaults apply to fields with explicit storage semantics:
-    // proto2, editions `EXPLICIT`, and editions `LEGACY_REQUIRED` (required
-    // fields carry declared defaults exactly like proto2 `required`). Proto3
-    // implicit fields and editions implicit presence ignore `default_value`.
-    if !matches!(
-        features.field_presence,
-        crate::features::FieldPresence::Explicit | crate::features::FieldPresence::LegacyRequired
-    ) {
+    let Some(default_str) = declared_default(field, features) else {
         return Ok(None);
-    }
+    };
 
     let field_name = field.name.as_deref().unwrap_or("<unknown>");
     let ty = field.r#type.unwrap_or_default();
@@ -147,6 +135,67 @@ pub fn parse_default_value(
         Ok(Some(quote! { ::core::convert::Into::into(#expr) }))
     } else {
         Ok(Some(expr))
+    }
+}
+
+/// The field's `default_value`, if one is declared and applies.
+///
+/// Custom defaults apply to fields with explicit storage semantics:
+/// proto2, editions `EXPLICIT`, and editions `LEGACY_REQUIRED` (required
+/// fields carry declared defaults exactly like proto2 `required`). Proto3
+/// implicit fields and editions implicit presence ignore `default_value`.
+fn declared_default<'f>(
+    field: &'f FieldDescriptorProto,
+    features: &ResolvedFeatures,
+) -> Option<&'f str> {
+    let default_str = field.default_value.as_deref().filter(|s| !s.is_empty())?;
+    matches!(
+        features.field_presence,
+        crate::features::FieldPresence::Explicit | crate::features::FieldPresence::LegacyRequired
+    )
+    .then_some(default_str)
+}
+
+/// [`parse_default_value`] for a field of a view struct.
+///
+/// View string and bytes fields borrow from the input (`&'a str` /
+/// `&'a [u8]`), so their default is a `'static` literal rather than an owned
+/// `String` / `Vec<u8>`. Every other type is stored the same way on views and
+/// owned structs, and gets the same expression.
+pub(crate) fn parse_view_default_value(
+    field: &FieldDescriptorProto,
+    ctx: &CodeGenContext,
+    current_package: &str,
+    features: &ResolvedFeatures,
+    nesting: usize,
+) -> Result<Option<TokenStream>, CodeGenError> {
+    use crate::generated::descriptor::field_descriptor_proto::Type;
+
+    let Some(default_str) = declared_default(field, features) else {
+        return Ok(None);
+    };
+    match crate::impl_message::effective_type(ctx, field, features) {
+        Type::TYPE_STRING => Ok(Some(quote! { #default_str })),
+        Type::TYPE_BYTES => {
+            // A string field normalized to bytes (strict_utf8_mapping) keeps
+            // its default as raw text; a declared bytes default is C-escaped.
+            let bytes = if field.r#type.unwrap_or_default() == Type::TYPE_STRING {
+                default_str.as_bytes().to_vec()
+            } else {
+                unescape_c_escape_string(default_str)?
+            };
+            let lit = proc_macro2::Literal::byte_string(&bytes);
+            Ok(Some(quote! { #lit }))
+        }
+        _ => parse_default_value(
+            field,
+            ctx,
+            current_package,
+            features,
+            nesting,
+            crate::StringRepr::String,
+            &crate::BytesRepr::Vec,
+        ),
     }
 }
 

@@ -537,15 +537,17 @@ pub(crate) fn generate_view_with_nesting(
 }
 
 /// Generate a custom `Default` impl for an eager/lazy view struct when a
-/// bare-stored enum field's default differs from the derived one.
+/// bare-stored field's default differs from the derived one.
 ///
-/// Views normally derive `Default`. The exception is a proto2 required
-/// closed enum field opened by an enum-type override: `EnumValue::default()` is
-/// raw wire zero, but the field's declared default is the enum's first value
-/// (or an explicit `[default = ...]`). The owned struct already gets a
-/// custom `Default`; views need the same initializer because decoders start
-/// from `Self::default()`. Returns `None` (derive as usual) when no field
-/// needs it.
+/// Views normally derive `Default`. The exceptions are the fields the owned
+/// struct's custom `Default` initializes: a proto2 `required` / editions
+/// `LEGACY_REQUIRED` field with a declared `[default = ...]`, and a required
+/// closed enum field opened by an enum-type override, whose
+/// `EnumValue::default()` is raw wire zero rather than the enum's first value.
+/// Views need the same initializers because decoders start from
+/// `Self::default()`: a required field missing from the wire keeps it, and
+/// `to_owned_message` copies it into the owned struct. Returns `None` (derive
+/// as usual) when no field needs it.
 pub(crate) fn custom_view_default_impl(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
@@ -553,15 +555,17 @@ pub(crate) fn custom_view_default_impl(
     has_phantom_field: bool,
 ) -> Result<Option<TokenStream>, CodeGenError> {
     let ctx = scope.ctx;
-    // A view default can spell out `Enum::VARIANT` (an opened bare-enum field
-    // whose declared default is non-wire-zero), so this impl needs the same
-    // guard the owned message's does when a deprecated member is involved.
+    // A view default can spell out `Enum::VARIANT` (a bare enum field whose
+    // declared default is non-wire-zero), so this impl needs the same guard
+    // the owned message's does when a deprecated member is involved.
     let deprecated_field_allow = crate::message::deprecated_field_allow(ctx, msg, scope.proto_fqn);
 
-    // The triggering condition (bare open enum with a non-wire-zero declared
-    // default) can only arise through an enum-type feature override, so the
-    // default configuration skips the per-field scan entirely.
-    if !ctx.config.has_enum_type_overrides() {
+    // Same gate as the owned message's `Default`: declared defaults count only
+    // in a message with explicit presence, and an opened enum field needs an
+    // enum-type feature override. Without either, skip the per-field scan.
+    let presence_explicit =
+        scope.features.field_presence == crate::features::FieldPresence::Explicit;
+    if !presence_explicit && !ctx.config.has_enum_type_overrides() {
         return Ok(None);
     }
 
@@ -580,8 +584,9 @@ pub(crate) fn custom_view_default_impl(
             .as_deref()
             .ok_or(CodeGenError::MissingField("field.name"))?;
         let field_ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
-        if let Some(expr) = view_open_enum_default_expr(scope, msg, field)? {
-            has_custom = true;
+        let (declared, open_enum) = view_bare_default_exprs(scope, msg, field)?;
+        has_custom |= (presence_explicit && declared.is_some()) || open_enum.is_some();
+        if let Some(expr) = declared.or(open_enum) {
             field_inits.push(quote! { #field_ident: #expr, });
         } else {
             field_inits.push(quote! { #field_ident: ::core::default::Default::default(), });
@@ -639,14 +644,16 @@ pub(crate) fn custom_view_default_impl(
     }))
 }
 
-/// The non-derived default expression for a view field, if it needs one:
-/// a bare-stored (required) enum field with open representation whose
-/// declared default differs from wire zero. `None` for everything else.
-fn view_open_enum_default_expr(
+/// The non-derived default expressions a bare-stored view field can need, as
+/// `(declared, open_enum)`: its declared `[default = ...]` as a view-typed
+/// literal, and the default of a required enum field with open representation
+/// whose declared default differs from wire zero. Both `None` for repeated,
+/// map, message and explicit-presence fields.
+fn view_bare_default_exprs(
     scope: MessageScope<'_>,
     msg: &DescriptorProto,
     field: &FieldDescriptorProto,
-) -> Result<Option<TokenStream>, CodeGenError> {
+) -> Result<(Option<TokenStream>, Option<TokenStream>), CodeGenError> {
     let MessageScope {
         ctx,
         current_package,
@@ -655,22 +662,32 @@ fn view_open_enum_default_expr(
         ..
     } = scope;
     if field.label.unwrap_or_default() == Label::LABEL_REPEATED || is_map_field(msg, field) {
-        return Ok(None);
+        return Ok((None, None));
     }
 
     let field_features = crate::features::resolve_field(ctx, field, parent_features);
     let ty = effective_type(ctx, field, &field_features);
-    if ty != Type::TYPE_ENUM || is_explicit_presence_scalar(field, ty, &field_features) {
-        return Ok(None);
+    if matches!(ty, Type::TYPE_MESSAGE | Type::TYPE_GROUP)
+        || is_explicit_presence_scalar(field, ty, &field_features)
+    {
+        return Ok((None, None));
     }
 
-    crate::defaults::open_enum_bare_default_value(
+    let declared = crate::defaults::parse_view_default_value(
         field,
         ctx,
         current_package,
         &field_features,
         nesting,
-    )
+    )?;
+    let open_enum = crate::defaults::open_enum_bare_default_value(
+        field,
+        ctx,
+        current_package,
+        &field_features,
+        nesting,
+    )?;
+    Ok((declared, open_enum))
 }
 
 // ---------------------------------------------------------------------------
