@@ -5,6 +5,7 @@ macro_rules! bytes_defaults_test {
     ($test:ident, $module:ident) => {
         #[test]
         fn $test() {
+            use crate::$module::__buffa::view::RequiredBytesDefaultsView;
             use crate::$module::RequiredBytesDefaults;
 
             let mut msg = RequiredBytesDefaults::default();
@@ -16,6 +17,14 @@ macro_rules! bytes_defaults_test {
                 RequiredBytesDefaults::decode_from_slice(&wire).unwrap(),
                 msg
             );
+
+            // LEGACY_REQUIRED defaults reach the view too, including the
+            // string normalized to bytes.
+            let view = RequiredBytesDefaultsView::decode_view(&[]).unwrap();
+            assert_eq!(view.raw_text, "café\n".as_bytes());
+            assert_eq!(view.blob, &[0, 255]);
+            assert_eq!(view.checked, "checked");
+            assert_eq!(view.to_owned_message().unwrap(), msg);
 
             msg.raw_text = Default::default();
             msg.blob = Default::default();

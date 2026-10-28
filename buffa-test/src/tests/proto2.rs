@@ -133,6 +133,21 @@ macro_rules! bytes_defaults_test {
             let mut nested = Nested::default();
             assert_eq!(&nested.data[..], b"nested");
             assert_eq!(round_trip(&nested), nested);
+
+            // Views of an empty message hold the same declared defaults.
+            {
+                use crate::$module::__buffa::view::{
+                    required_bytes_defaults::NestedView, RequiredBytesDefaultsView,
+                };
+                use buffa::MessageView;
+
+                let view = RequiredBytesDefaultsView::decode_view(&[]).unwrap();
+                assert_eq!(view.nonempty, &[0, 255, b'A', b'\n']);
+                assert_eq!(view.to_owned_message().unwrap(), msg);
+                let view = NestedView::decode_view(&[]).unwrap();
+                assert_eq!(view.data, b"nested");
+                assert_eq!(view.to_owned_message().unwrap(), nested);
+            }
             nested.data = replacement();
             nested.clear();
             assert_eq!(&nested.data[..], b"nested");
@@ -562,6 +577,71 @@ fn test_view_required_presence_custom_defaults() {
     assert!(view.has_label());
     assert!(view.has_level());
     assert!(view.has_sfx64());
+}
+
+#[test]
+fn test_view_required_custom_defaults_match_owned() {
+    // A required field missing from the wire keeps its declared default on
+    // the view, as it does on the owned message, so the view, its
+    // re-encoding and to_owned_message agree with owned decode.
+    use crate::proto2::__buffa::view::RequiredDefaultsView;
+    use crate::proto2::{Priority, RequiredDefaults};
+    use buffa::{MessageView, ViewEncode};
+
+    let view = RequiredDefaultsView::decode_view(&[]).unwrap();
+    assert_eq!(view.count, 42);
+    assert_eq!(view.label, "line1\nline2\t\"quoted\"");
+    assert_eq!(view.magic, &[0, 255]);
+    assert!(view.on);
+    assert_eq!(view.u, u32::MAX);
+    assert_eq!(view.i64v, i64::MIN);
+    assert_eq!(view.u64v, u64::MAX);
+    assert_eq!(view.f, 1.5);
+    assert_eq!(view.d_inf, f64::INFINITY);
+    assert_eq!(view.d_ninf, f64::NEG_INFINITY);
+    assert!(view.d_nan.is_nan());
+    assert_eq!(view.level, Priority::CRITICAL);
+    assert_eq!(view.sfx64, -200);
+    assert_eq!(RequiredDefaultsView::default().count, 42);
+
+    // Only `count` on the wire; the rest keep their defaults. `d_nan` defeats
+    // PartialEq, so compare encodings.
+    let wire = super::varint_field(1, 7);
+    let owned = RequiredDefaults::decode_from_slice(&wire).unwrap();
+    let view = RequiredDefaultsView::decode_view(&wire).unwrap();
+    assert_eq!(view.count, 7);
+    assert_eq!(view.level, Priority::CRITICAL);
+    assert_eq!(
+        view.to_owned_message().unwrap().encode_to_vec(),
+        owned.encode_to_vec()
+    );
+    assert_eq!(view.encode_to_vec(), owned.encode_to_vec());
+}
+
+#[test]
+fn test_lazy_view_required_custom_defaults_match_owned() {
+    use crate::proto2::{
+        KeywordEnumDefault, KeywordEnumDefaultLazyView, KeywordValues, RequiredDefaults,
+        RequiredDefaultsLazyView,
+    };
+    use buffa::view::LazyMessageView;
+
+    let wire = super::varint_field(1, 7);
+    let owned = RequiredDefaults::decode_from_slice(&wire).unwrap();
+    let view = RequiredDefaultsLazyView::decode_lazy(&wire).unwrap();
+    assert_eq!(view.label, "line1\nline2\t\"quoted\"");
+    assert_eq!(
+        view.to_owned_message().unwrap().encode_to_vec(),
+        owned.encode_to_vec()
+    );
+    assert_eq!(view.encode_to_vec(), owned.encode_to_vec());
+
+    let view = KeywordEnumDefaultLazyView::decode_lazy(&[]).unwrap();
+    assert_eq!(view.kind, KeywordValues::r#type);
+    assert_eq!(
+        view.to_owned_message().unwrap(),
+        KeywordEnumDefault::default()
+    );
 }
 
 #[test]

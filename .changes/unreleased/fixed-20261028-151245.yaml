@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **Views give a missing required field its declared `[default = ...]`, as owned messages do** (#807).
+    The owned struct of a message with a proto2 `required` or editions `LEGACY_REQUIRED` field that declares a default starts from that default, so `Message::decode` of input without the field returns it. The eager and lazy views derived `Default` instead and held the type's zero value: `0`, `false`, `""`, empty bytes or the enum's first value. So for one input the view, the view's re-encoding, its JSON and `to_owned_message()` all disagreed with `Message::decode`. With `required int32 count = 1 [default = 42]` and an empty buffer, owned decode gave `count: 42` while `decode_view(..).to_owned_message()` gave `count: 0`, and re-encoding the view wrote `0` onto the wire. Generated views now start from the same declared defaults, and `FooView::default()` returns them too.
+time: 2026-10-28T15:12:45+03:00
