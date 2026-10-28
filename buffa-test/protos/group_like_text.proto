@@ -1,0 +1,48 @@
+// Text-format names of editions DELIMITED fields.
+//
+// Text format writes a group-like field under its type's name (`Nested {}`)
+// and every other field under its own name. A DELIMITED field is group-like
+// only when its name is the lowercased type name AND the type is nested in
+// the field's own message (C++ `IsGroupLike`, protobuf-go `isGroupLike`).
+// Only `nested` below qualifies; protoc rejects `Payload`, `Inner`,
+// `Imported`, `Item` and `Pick` as field names on `Outer`.
+
+edition = "2023";
+package buffa.test.grouplike;
+
+import "group_like_text_dep.proto";
+
+option features.message_encoding = DELIMITED;
+
+message Payload {
+  int32 x = 1;
+}
+
+message Item {
+  int32 x = 1;
+}
+
+message Pick {
+  int32 x = 1;
+}
+
+message Other {
+  message Inner {
+    int32 x = 1;
+  }
+}
+
+message Outer {
+  message Nested {
+    int32 x = 1;
+  }
+
+  Payload payload = 1;
+  Other.Inner inner = 2;
+  Imported imported = 3;
+  Nested nested = 4;
+  repeated Item item = 5;
+  oneof choice {
+    Pick pick = 6;
+  }
+}

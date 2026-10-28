@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Textproto writes an editions DELIMITED field under its type name only when the field is group-like, that is when its name is the lowercased type name and the type is nested in the field's message** (#805). A DELIMITED field whose name was the lowercased name of its type, such as `Payload payload = 1`, was written as `Payload { ... }` whatever the scope of `Payload`. C++ and protobuf-go treat a field as group-like, and use the type name, only when the type is also nested in the field's own message, so for a top-level, sibling-nested or imported type they write `payload { ... }` and reject `Payload` as an unknown field, and could not read what buffa wrote. Generated code now uses the same rule, and its parser accepts the type name only for a group-like field, as theirs do. Proto2 groups are unaffected.
+time: 2026-10-28T14:05:53+03:00

@@ -1384,6 +1384,20 @@ fn main() {
         .compile()
         .expect("buffa_build failed for group_ext.proto");
 
+    // Text-format names of editions DELIMITED fields: only a field whose
+    // type is nested in its own message is group-like. Assertions live in
+    // `src/tests/textproto.rs`.
+    buffa_build::Config::new()
+        .files(&[
+            "protos/group_like_text.proto",
+            "protos/group_like_text_dep.proto",
+        ])
+        .includes(&["protos/"])
+        .generate_views(false)
+        .generate_text(true)
+        .compile()
+        .expect("buffa_build failed for group_like_text.proto");
+
     // MessageSet wire format — legacy group-wrapped extension encoding.
     // Gated behind `allow_message_set(true)`; default is a codegen error.
     buffa_build::Config::new()
