@@ -583,11 +583,13 @@ fn main() {
     // encode (`.iter()`), clear, and view→owned (`collect`) paths must all emit
     // the generic `ProtoList` surface for the custom collection, and under
     // `generate_arbitrary` the builders for a custom string or `Bytes` element
-    // must return it.
+    // must return it. Lazy views are on so the lazy `to_owned_message`, which
+    // builds a repeated message field in a `Vec`, must convert it too.
     buffa_build::Config::new()
         .files(&["protos/repeated_type.proto"])
         .includes(&["protos/"])
         .repeated_type_custom("crate::repeated_type::CustomList<*>")
+        .lazy_views(true)
         .string_type_custom_in("crate::reprs::EcoStr", &[".repeated_type.Lists.labels"])
         .bytes_type_in(
             buffa_build::BytesRepr::Bytes,

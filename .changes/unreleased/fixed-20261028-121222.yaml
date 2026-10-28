@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Lazy views compile with a custom `repeated_type` on a repeated message field** (#803). With `lazy_views(true)` and `repeated_type_custom`, the generated lazy `to_owned_message` built such a field as a `Vec` and returned it where the owned struct holds the custom collection, so the generated crate failed with `E0308 mismatched types`. The `Vec` now goes through the collection's `From<Vec<T>>`, which `ProtoList` already requires. Code generated for the default `Vec` is unchanged.
+time: 2026-10-28T12:12:22.000000000+03:00
