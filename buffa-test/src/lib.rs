@@ -905,6 +905,16 @@ pub mod groupext {
     non_camel_case_types,
     dead_code
 )]
+pub mod grouplike {
+    buffa::include_proto!("buffa.test.grouplike");
+}
+
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types,
+    dead_code
+)]
 pub mod msgset {
     buffa::include_proto!("buffa.test.messageset");
 }

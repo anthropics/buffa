@@ -587,6 +587,63 @@ fn group_in_oneof_uses_type_name() {
     assert!(matches!(v.choice, Some(ChoiceOneof::Payload(ref p)) if p.x == Some(11)));
 }
 
+// ── editions DELIMITED naming ───────────────────────────────────────────────
+//
+// An editions DELIMITED field is group-like, and so named by its type, only
+// when its type is nested in the field's own message. A top-level type, one
+// nested in another message or one from another file keeps the field name,
+// and the type name is not accepted for it (as in C++ and protobuf-go).
+
+#[test]
+fn delimited_type_outside_parent_uses_field_name() {
+    use crate::grouplike::__buffa::oneof::outer::Choice;
+    use crate::grouplike::other::Inner;
+    use crate::grouplike::outer::Nested;
+    use crate::grouplike::{Imported, Item, Outer, Payload, Pick};
+
+    let msg = Outer {
+        payload: MessageField::some(Payload {
+            x: Some(1),
+            ..Default::default()
+        }),
+        inner: MessageField::some(Inner {
+            x: Some(2),
+            ..Default::default()
+        }),
+        imported: MessageField::some(Imported {
+            x: Some(3),
+            ..Default::default()
+        }),
+        nested: MessageField::some(Nested {
+            x: Some(4),
+            ..Default::default()
+        }),
+        item: vec![Item {
+            x: Some(5),
+            ..Default::default()
+        }],
+        choice: Some(Choice::Pick(Box::new(Pick {
+            x: Some(6),
+            ..Default::default()
+        }))),
+        ..Default::default()
+    };
+    let text = encode_to_string(&msg);
+    assert_eq!(
+        text,
+        "payload {x: 1} inner {x: 2} imported {x: 3} Nested {x: 4} item {x: 5} pick {x: 6}"
+    );
+    assert_eq!(decode_from_str::<Outer>(&text).unwrap(), msg);
+
+    for name in ["Payload", "Inner", "Imported", "Item", "Pick"] {
+        let err = decode_from_str::<Outer>(&format!("{name} {{x: 1}}")).unwrap_err();
+        assert_eq!(err.kind, ParseErrorKind::UnknownField, "{name}");
+    }
+    // The nested control is group-like and also accepts its field name.
+    let m: Outer = decode_from_str("nested {x: 7}").unwrap();
+    assert_eq!(m.nested.x, Some(7));
+}
+
 // ── Element-memory budget ──────────────────────────────────────────────────
 //
 // The binary decoder bounds what a decode materializes rather than what it

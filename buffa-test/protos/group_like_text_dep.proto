@@ -1,0 +1,9 @@
+// Companion to group_like_text.proto: a type in the same package but declared
+// in another file, so a DELIMITED field of this type is never group-like.
+
+edition = "2023";
+package buffa.test.grouplike;
+
+message Imported {
+  int32 x = 1;
+}

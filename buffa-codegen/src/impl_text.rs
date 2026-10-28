@@ -183,11 +183,11 @@ pub(crate) fn generate_text_impl(
 
     let scalar_encode: Vec<_> = scalar_fields
         .iter()
-        .map(|f| scalar_encode_stmt(ctx, f, features))
+        .map(|f| scalar_encode_stmt(ctx, f, proto_fqn, features))
         .collect::<Result<_, _>>()?;
     let repeated_encode: Vec<_> = repeated_fields
         .iter()
-        .map(|f| repeated_encode_stmt(ctx, f, features))
+        .map(|f| repeated_encode_stmt(ctx, f, proto_fqn, features))
         .collect::<Result<_, _>>()?;
     let oneof_encode: Vec<_> = oneof_groups
         .iter()
@@ -437,24 +437,34 @@ fn is_copy_scalar(ty: Type) -> bool {
 /// lowercase (`internal/filedesc/desc_list_gen.go`). For everything else
 /// both are the plain field name.
 ///
-/// A field is group-like when its effective type is `TYPE_GROUP` and the
-/// field name equals the lowercased simple name of its type. Proto2 `group`
-/// syntax always satisfies this (protoc enforces it). Editions DELIMITED
-/// fields satisfy it only when the user chose matching names — as the
-/// editions-proto2 conformance golden does to mirror proto2 semantics —
-/// so a generic `SomeMsg foo = 1 [DELIMITED]` keeps its field name.
+/// A field is group-like when its effective type is `TYPE_GROUP`, the
+/// field name equals the lowercased simple name of its type, and the type
+/// is nested directly in the field's containing message `proto_fqn` (the
+/// checks of C++ `IsGroupLike` and protobuf-go `isGroupLike`; a type nested
+/// in the containing message is necessarily in the same file). Proto2
+/// `group` syntax always satisfies this (protoc enforces it). Editions
+/// DELIMITED fields satisfy it only when the user chose matching names on a
+/// nested type — as the editions-proto2 conformance golden does to mirror
+/// proto2 semantics — so a generic `SomeMsg foo = 1 [DELIMITED]`, or a
+/// `Payload payload = 1 [DELIMITED]` whose `Payload` is top-level, nested
+/// elsewhere or imported, keeps its field name.
 fn text_field_name(
+    proto_fqn: &str,
     proto_name: &str,
     field: &FieldDescriptorProto,
     ty: Type,
 ) -> (String, TokenStream) {
     if ty == Type::TYPE_GROUP {
         if let Some(type_name) = field.type_name.as_deref() {
-            // `.pkg.Parent.GroupType` → `GroupType`
-            let simple = type_name.rsplit('.').next().unwrap_or(type_name);
+            // `.pkg.Parent.GroupType` → (`pkg.Parent`, `GroupType`)
+            let fqn = type_name.trim_start_matches('.');
+            let (scope, simple) = fqn.rsplit_once('.').unwrap_or(("", fqn));
             // `simple != proto_name` guards against all-lowercase type names
             // (possible in editions) producing a duplicate `"x" | "x"` pattern.
-            if simple != proto_name && simple.to_ascii_lowercase() == proto_name {
+            if scope == proto_fqn
+                && simple != proto_name
+                && simple.to_ascii_lowercase() == proto_name
+            {
                 return (simple.to_string(), quote! { #simple | #proto_name });
             }
         }
@@ -532,6 +542,7 @@ fn enum_read(closed: bool, enum_ty: &TokenStream, dec: &proc_macro2::Ident) -> T
 fn scalar_encode_stmt(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
+    proto_fqn: &str,
     parent_features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
@@ -541,7 +552,7 @@ fn scalar_encode_stmt(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
-    let (name_lit, _) = text_field_name(proto_name, field, ty);
+    let (name_lit, _) = text_field_name(proto_fqn, proto_name, field, ty);
     let required = is_required_field(field, features);
 
     // Explicit-presence (Option<T>): emit when Some, regardless of value.
@@ -651,7 +662,7 @@ fn scalar_merge_arm(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
-    let (_, name_pat) = text_field_name(proto_name, field, ty);
+    let (_, name_pat) = text_field_name(proto_fqn, proto_name, field, ty);
     let explicit = is_explicit_presence_scalar(field, ty, features);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, proto_name);
 
@@ -698,6 +709,7 @@ fn scalar_merge_arm(
 fn repeated_encode_stmt(
     ctx: &CodeGenContext,
     field: &FieldDescriptorProto,
+    proto_fqn: &str,
     parent_features: &ResolvedFeatures,
 ) -> Result<TokenStream, CodeGenError> {
     let features = &crate::features::resolve_field(ctx, field, parent_features);
@@ -707,7 +719,7 @@ fn repeated_encode_stmt(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
-    let (name_lit, _) = text_field_name(proto_name, field, ty);
+    let (name_lit, _) = text_field_name(proto_fqn, proto_name, field, ty);
 
     let body = match ty {
         Type::TYPE_ENUM => {
@@ -741,7 +753,7 @@ fn repeated_merge_arm(
         .ok_or(CodeGenError::MissingField("field.name"))?;
     let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
-    let (_, name_pat) = text_field_name(proto_name, field, ty);
+    let (_, name_pat) = text_field_name(proto_fqn, proto_name, field, ty);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, proto_name);
     // Enumerated so that a new `Type` variant is a compile error here, not a
     // field that takes the scalar rule by default.
@@ -856,7 +868,7 @@ fn oneof_encode_stmt(
             .ok_or(CodeGenError::MissingField("field.name"))?;
         let variant = crate::oneof::oneof_variant_ident(proto_name);
         let ty = effective_type(ctx, field, &features);
-        let (name_lit, _) = text_field_name(proto_name, field, ty);
+        let (name_lit, _) = text_field_name(proto_fqn, proto_name, field, ty);
         let boxed = crate::oneof::variant_boxed(
             ctx,
             ty,
@@ -922,7 +934,7 @@ fn oneof_merge_arms(
             .ok_or(CodeGenError::MissingField("field.name"))?;
         let variant = crate::oneof::oneof_variant_ident(proto_name);
         let ty = effective_type(ctx, field, &features);
-        let (_, name_pat) = text_field_name(proto_name, field, ty);
+        let (_, name_pat) = text_field_name(proto_fqn, proto_name, field, ty);
         let bytes_repr = field_bytes_repr(ctx, proto_fqn, proto_name);
 
         // Message/group variants are boxed unless opted out. Merge-into-existing
@@ -1200,7 +1212,7 @@ mod tests {
             r#type: Some(Type::TYPE_MESSAGE),
             ..Default::default()
         };
-        let (enc, pat) = text_field_name("child", &f, Type::TYPE_MESSAGE);
+        let (enc, pat) = text_field_name("pkg.Parent", "child", &f, Type::TYPE_MESSAGE);
         assert_eq!(enc, "child");
         assert_eq!(pat.to_string(), "\"child\"");
     }
@@ -1210,7 +1222,7 @@ mod tests {
         // `optional group Data = N { ... }` → field name "data",
         // type_name ".pkg.Parent.Data".
         let f = group_field("data", ".pkg.Parent.Data");
-        let (enc, pat) = text_field_name("data", &f, Type::TYPE_GROUP);
+        let (enc, pat) = text_field_name("pkg.Parent", "data", &f, Type::TYPE_GROUP);
         assert_eq!(enc, "Data");
         assert_eq!(pat.to_string(), "\"Data\" | \"data\"");
     }
@@ -1219,8 +1231,8 @@ mod tests {
     fn text_name_multi_word_group() {
         // `optional group MultiWordGroupField = N` → field name is the
         // full lowercase, not snake_case.
-        let f = group_field("multiwordgroupfield", ".pkg.MultiWordGroupField");
-        let (enc, pat) = text_field_name("multiwordgroupfield", &f, Type::TYPE_GROUP);
+        let f = group_field("multiwordgroupfield", ".pkg.Parent.MultiWordGroupField");
+        let (enc, pat) = text_field_name("pkg.Parent", "multiwordgroupfield", &f, Type::TYPE_GROUP);
         assert_eq!(enc, "MultiWordGroupField");
         assert_eq!(
             pat.to_string(),
@@ -1234,7 +1246,7 @@ mod tests {
         // effective_type rewrites to TYPE_GROUP, but lowercase("SomeMsg")
         // = "somemsg" ≠ "foo" so it's NOT group-like.
         let f = group_field("foo", ".pkg.SomeMsg");
-        let (enc, pat) = text_field_name("foo", &f, Type::TYPE_GROUP);
+        let (enc, pat) = text_field_name("pkg.Parent", "foo", &f, Type::TYPE_GROUP);
         assert_eq!(enc, "foo");
         assert_eq!(pat.to_string(), "\"foo\"");
     }
@@ -1244,7 +1256,7 @@ mod tests {
         // Editions `Data data = 1 [DELIMITED]` — mirrors proto2 group shape
         // (as in the editions-proto2 conformance golden).
         let f = group_field("data", ".pkg.Parent.Data");
-        let (enc, _) = text_field_name("data", &f, Type::TYPE_GROUP);
+        let (enc, _) = text_field_name("pkg.Parent", "data", &f, Type::TYPE_GROUP);
         assert_eq!(enc, "Data");
     }
 
@@ -1252,9 +1264,32 @@ mod tests {
     fn text_name_all_lowercase_type_no_duplicate_pattern() {
         // Pathological editions case: `message data {} data data = 1 [DELIMITED]`.
         // simple == proto_name → fall through, no `"data" | "data"` duplicate.
-        let f = group_field("data", ".pkg.data");
-        let (enc, pat) = text_field_name("data", &f, Type::TYPE_GROUP);
+        let f = group_field("data", ".pkg.Parent.data");
+        let (enc, pat) = text_field_name("pkg.Parent", "data", &f, Type::TYPE_GROUP);
         assert_eq!(enc, "data");
         assert_eq!(pat.to_string(), "\"data\"");
+    }
+
+    #[test]
+    fn text_name_editions_delimited_type_outside_parent_keeps_field_name() {
+        // Editions `Data data = 1 [DELIMITED]` where `Data` is not nested in
+        // the field's message: top-level, nested in another message, or from
+        // another package. C++ `IsGroupLike` and protobuf-go `isGroupLike`
+        // require the type's containing message to be the field's, so text
+        // uses (and only accepts) the field name.
+        for type_name in [".pkg.Data", ".pkg.Other.Data", ".other.Data", ".Data"] {
+            let f = group_field("data", type_name);
+            let (enc, pat) = text_field_name("pkg.Parent", "data", &f, Type::TYPE_GROUP);
+            assert_eq!(enc, "data", "{type_name}");
+            assert_eq!(pat.to_string(), "\"data\"", "{type_name}");
+        }
+    }
+
+    #[test]
+    fn text_name_group_in_root_package() {
+        // No package: the containing message FQN has no dot.
+        let f = group_field("data", ".Parent.Data");
+        let (enc, _) = text_field_name("Parent", "data", &f, Type::TYPE_GROUP);
+        assert_eq!(enc, "Data");
     }
 }
