@@ -59,4 +59,11 @@ extend Carrier {
   optional int32 c_priority = 110 [default = 7];
   optional string c_label = 111 [default = "none"];
   optional bool c_active = 112 [default = true];
+  optional Level c_level = 113;                 // closed enum, no [default]
+}
+
+// A closed enum that does not declare 0: absent `c_level` reads as LOW.
+enum Level {
+  LOW = 1;
+  HIGH = 2;
 }

@@ -48,7 +48,9 @@
 //! # Defaults
 //!
 //! Proto2 `[default = ...]` values are surfaced by [`extension_or_default`],
-//! which returns the declared default when the extension is absent. Presence
+//! which returns the declared default when the extension is absent. A
+//! closed-enum extension with no declared default returns the enum's first
+//! value, as an unset field of that enum does. Presence
 //! is still distinguishable via [`extension`] (returns `None`) or
 //! [`has_extension`].
 //!
@@ -168,7 +170,9 @@ impl<C: ExtensionCodec> Extension<C> {
     /// The function pointer is called lazily on each `extension_or_default`
     /// call. For `Copy` scalars codegen emits a `const fn`; for `String` and
     /// `bytes` a regular `fn` (allocates on each call — same cost as a
-    /// hand-written `.unwrap_or_else(|| "x".into())`).
+    /// hand-written `.unwrap_or_else(|| "x".into())`). Codegen also passes a
+    /// regular `fn` for a closed-enum extension that declares no default,
+    /// returning the enum's first value.
     ///
     /// # Panics
     ///
@@ -450,6 +454,11 @@ pub trait ExtensionSet {
 
     /// Read a singular extension value, returning the proto2 `[default = ...]`
     /// value if absent, or the type's `Default` if no proto default was declared.
+    ///
+    /// Generated code gives a closed-enum extension without a declared default
+    /// the enum's first value, which need not be 0, so this returns the same
+    /// number an unset field of that enum reads as. An open enum's first value
+    /// is always 0.
     ///
     /// Only meaningful for singular codecs (`Output = Option<Value>`). For
     /// repeated codecs use [`extension`](Self::extension) — there is no such

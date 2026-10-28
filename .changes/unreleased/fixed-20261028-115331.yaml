@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`extension_or_default` returns a closed enum's first value for an extension that declares no default** (#801). A singular extension of a closed enum (any proto2 enum, or an editions enum with `enum_type = CLOSED`) without `[default = ...]` read as 0 when absent, and 0 need not be a value of the enum: for `enum Level { LOW = 1; HIGH = 2; }` it is not. Generated code now gives such an extension the enum's first declared value as its default, the number an unset field of that enum already reads as. Extensions of open enums, whose first value is always 0, and repeated extensions are unchanged, and `extension()` still returns `None` for an absent extension.
+time: 2026-10-28T11:53:31.504699+03:00

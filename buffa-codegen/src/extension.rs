@@ -101,6 +101,8 @@ fn generate_one(
     // Proto2 `[default = ...]`. The proto spec only allows defaults on singular
     // scalar/enum fields; protoc rejects message/group/repeated at parse time.
     // We check defensively because a hand-crafted descriptor could slip through.
+    // A singular closed-enum extension without one defaults to the enum's
+    // first declared value, as a field of that enum does.
     let default_fn = if field
         .default_value
         .as_deref()
@@ -126,6 +128,17 @@ fn generate_one(
             current_package,
             nesting,
             features,
+        )?)
+    } else if !repeated
+        && ty == Type::TYPE_ENUM
+        && crate::message::is_closed_enum(&crate::features::resolve_field(ctx, field, features))
+    {
+        Some(closed_enum_default_fn_tokens(
+            ctx,
+            field,
+            &const_ident,
+            current_package,
+            nesting,
         )?)
     } else {
         None
@@ -356,6 +369,35 @@ fn default_fn_tokens(
             #[doc(hidden)]
             #const_kw fn #fn_ident() -> #value_ty {
                 #default_expr
+            }
+        },
+    ))
+}
+
+/// Build the default fn of a singular closed-enum extension that declares no
+/// `[default = ...]`: the enum's first declared value, which is what an unset
+/// field of that enum reads as. Without it `extension_or_default` would return
+/// `i32::default()`, and 0 need not be a value of a closed enum
+/// (`enum Level { LOW = 1; HIGH = 2; }`). An open enum's first value is
+/// always 0, so it needs none.
+///
+/// The fn is not `const`: it goes through the enum's `Default` impl, which
+/// also covers an `extern_path` enum whose values this build cannot see.
+fn closed_enum_default_fn_tokens(
+    ctx: &CodeGenContext,
+    field: &FieldDescriptorProto,
+    const_ident: &Ident,
+    current_package: &str,
+    nesting: usize,
+) -> Result<(Ident, TokenStream), CodeGenError> {
+    let fn_ident = format_ident!("__{}_default", const_ident.to_string().to_lowercase());
+    let first = crate::reflect_view::enum_default_number(ctx, field, current_package, nesting)?;
+    Ok((
+        fn_ident.clone(),
+        quote! {
+            #[doc(hidden)]
+            fn #fn_ident() -> i32 {
+                #first
             }
         },
     ))
@@ -767,10 +809,10 @@ mod tests {
     #[test]
     fn enum_extension_doc_mentions_type() {
         let mut field = ext_field("level", 50006, Type::TYPE_ENUM);
-        field.type_name = Some(".my.pkg.LogLevel".to_string());
-        let tokens = gen(&field).unwrap();
+        field.type_name = Some(".my.pkg.Color".to_string());
+        let (tokens, _) = gen_in_pkg(&field).unwrap();
         assert!(tokens.contains("EnumI32"), "{tokens}");
-        assert!(tokens.contains("my.pkg.LogLevel"), "{tokens}");
+        assert!(tokens.contains("my.pkg.Color"), "{tokens}");
     }
 
     #[test]
@@ -1110,6 +1152,103 @@ mod tests {
         assert!(tokens.contains("const fn __color_default"), "{tokens}");
         assert!(tokens.contains("-> i32"), "{tokens}");
         assert!(tokens.contains("Color :: RED as i32"), "{tokens}");
+    }
+
+    /// Run `generate_one` for extension `level` of enum `.my.pkg.Level`,
+    /// declared in `file` (package `my.pkg`), under the file's features.
+    fn gen_enum_ext(file: FileDescriptorProto, label: Label) -> String {
+        let files = [file];
+        let config = CodeGenConfig::default();
+        let ctx = CodeGenContext::new(&files, &config, &[]);
+        let features = crate::features::for_file(&files[0]);
+        let mut field = ext_field("level", 50040, Type::TYPE_ENUM);
+        field.type_name = Some(".my.pkg.Level".into());
+        field.label = Some(label);
+        generate_one(&ctx, &field, "my.pkg", 0, &features, "my.pkg")
+            .unwrap()
+            .unwrap()
+            .0
+            .to_string()
+    }
+
+    fn level_file(syntax: &str, level: EnumDescriptorProto) -> FileDescriptorProto {
+        FileDescriptorProto {
+            name: Some("level.proto".into()),
+            package: Some("my.pkg".into()),
+            syntax: Some(syntax.into()),
+            edition: (syntax == "editions")
+                .then_some(crate::generated::descriptor::Edition::EDITION_2023),
+            enum_type: vec![level],
+            ..Default::default()
+        }
+    }
+
+    fn level_enum(
+        enum_type: Option<crate::generated::descriptor::feature_set::EnumType>,
+    ) -> EnumDescriptorProto {
+        use crate::generated::descriptor::{EnumOptions, FeatureSet};
+        EnumDescriptorProto {
+            name: Some("Level".into()),
+            options: match enum_type {
+                Some(t) => buffa::MessageField::some(EnumOptions {
+                    features: buffa::MessageField::some(FeatureSet {
+                        enum_type: Some(t),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                None => buffa::MessageField::none(),
+            },
+            ..Default::default()
+        }
+    }
+
+    const FIRST_VALUE: &str =
+        ":: buffa :: Enumeration :: to_i32 (& < Level as :: core :: default :: Default > :: default ())";
+
+    /// A closed enum need not declare 0, so a singular extension of one with no
+    /// `[default]` reads absent as the enum's first value, through a non-const
+    /// fn, in proto2 and under editions `enum_type = CLOSED`.
+    #[test]
+    fn closed_enum_without_default_uses_first_value() {
+        use crate::generated::descriptor::feature_set::EnumType;
+        let files = [
+            level_file("proto2", level_enum(None)),
+            level_file("editions", level_enum(Some(EnumType::CLOSED))),
+        ];
+        for file in files {
+            let tokens = gen_enum_ext(file, Label::LABEL_OPTIONAL);
+            assert!(tokens.contains(":: with_default"), "{tokens}");
+            assert!(tokens.contains("fn __level_default () -> i32"), "{tokens}");
+            assert!(!tokens.contains("const fn __level_default"), "{tokens}");
+            assert!(tokens.contains(FIRST_VALUE), "{tokens}");
+        }
+    }
+
+    /// An open enum's first value is 0, which `i32::default()` already gives,
+    /// and a repeated extension has no default, so neither gets a fn.
+    #[test]
+    fn open_or_repeated_enum_without_default_emits_plain_new() {
+        let cases = [
+            (
+                level_file("proto3", level_enum(None)),
+                Label::LABEL_OPTIONAL,
+            ),
+            (
+                level_file("editions", level_enum(None)),
+                Label::LABEL_OPTIONAL,
+            ),
+            (
+                level_file("proto2", level_enum(None)),
+                Label::LABEL_REPEATED,
+            ),
+        ];
+        for (file, label) in cases {
+            let tokens = gen_enum_ext(file, label);
+            assert!(tokens.contains(":: new"), "{tokens}");
+            assert!(!tokens.contains("with_default"), "{tokens}");
+            assert!(!tokens.contains("__level_default"), "{tokens}");
+        }
     }
 
     #[test]
