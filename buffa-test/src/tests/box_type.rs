@@ -4,10 +4,10 @@
 //! `box_type_custom("crate::box_type::CustomBox<*>")`, so every singular message
 //! field is a `MessageField<T, CustomBox<T>>` instead of `MessageField<T>`
 //! (`= MessageField<T, Box<T>>`). Compiling `crate::box_type` is most of the
-//! test — the field type, decode (`get_or_insert_default`), clear, JSON, and
-//! view→owned (`some`) paths must all emit the custom pointer. The runtime
-//! checks below pin the field type and verify binary + view→owned round-trips,
-//! including a self-referential field.
+//! test — the field type, decode (`get_or_insert_default`), clear, JSON, text,
+//! and view→owned (`some`) paths must all emit the custom pointer. The runtime
+//! checks below pin the field type and verify binary, view→owned and text
+//! round-trips, including a self-referential field.
 
 use crate::box_type::{CustomBox, Inner, Outer};
 use buffa::{Message, MessageField};
@@ -188,4 +188,47 @@ fn oneof_view_to_owned_round_trip() {
         .expect("decode view")
         .to_owned_message();
     assert_eq!(owned, msg);
+}
+
+#[test]
+fn text_round_trip() {
+    // The text decoder of a oneof message member builds the custom pointer with
+    // `ProtoBox::new`, for a plain and a recursive member alike.
+    use crate::box_type::__buffa::oneof::with_oneof::Kind;
+    use crate::box_type::WithOneof;
+    use buffa::alloc::boxed::Box;
+
+    let msg = WithOneof {
+        kind: Some(Kind::Nested(CustomBox(Box::new(WithOneof {
+            kind: Some(Kind::Msg(CustomBox(Box::new(inner(7, "text"))))),
+            ..Default::default()
+        })))),
+        ..Default::default()
+    };
+    let text = buffa::text::encode_to_string(&msg);
+    assert_eq!(text, r#"nested {msg {id: 7 name: "text"}}"#);
+    let decoded: WithOneof = buffa::text::decode_from_str(&text).expect("decode text");
+    assert_eq!(decoded, msg);
+
+    let text = buffa::text::encode_to_string(&sample());
+    assert_eq!(
+        text,
+        r#"inner {id: 7 name: "alpha"} maybe {id: 9 name: "beta"} count: 42"#
+    );
+    let decoded: Outer = buffa::text::decode_from_str(&text).expect("decode outer text");
+    assert_eq!(decoded, sample());
+}
+
+#[test]
+fn text_merge_into_existing_oneof_member() {
+    // A second occurrence of the member merges into the one behind the pointer.
+    use crate::box_type::__buffa::oneof::with_oneof::Kind;
+    use crate::box_type::WithOneof;
+
+    let decoded: WithOneof =
+        buffa::text::decode_from_str(r#"msg {id: 1} msg {name: "n"}"#).expect("decode text");
+    match decoded.kind {
+        Some(Kind::Msg(p)) => assert_eq!(*p, inner(1, "n")),
+        other => panic!("expected msg variant, got {other:?}"),
+    }
 }

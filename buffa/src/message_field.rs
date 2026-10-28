@@ -134,6 +134,12 @@ macro_rules! impl_default_instance {
 /// `MessageField`'s generic serde implementation, and message-valued oneof
 /// variants serialize the pointee through this trait's `Deref` bound.
 ///
+/// # Text format
+///
+/// Text codegen needs nothing beyond this trait either: the decoder builds a
+/// message-valued oneof variant with [`new`](Self::new) and merges into an
+/// existing one through `DerefMut`.
+///
 /// # Examples
 ///
 /// A minimal crate-local newtype wrapping a foreign pointer (the `Clone` derive
