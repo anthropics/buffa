@@ -81,6 +81,17 @@ fn view_to_owned_round_trip() {
     assert_eq!(owned, sample());
 }
 
+#[test]
+fn lazy_view_to_owned_round_trip() {
+    // The lazy view decodes `items` on access and collects the owned messages
+    // into the custom collection.
+    use buffa::view::LazyMessageView;
+    let bytes = sample().encode_to_vec();
+    let view = crate::repeated_type::ListsLazyView::decode_lazy(&bytes).expect("decode lazy");
+    let owned: Lists = view.to_owned_message().expect("to owned");
+    assert_eq!(owned, sample());
+}
+
 /// `EcoStr` has no `Arbitrary` impl, so `Lists: Arbitrary` compiling shows that
 /// `labels` got a builder that makes each element from a `String` and returns
 /// the custom collection.

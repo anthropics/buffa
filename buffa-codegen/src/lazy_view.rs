@@ -822,6 +822,16 @@ fn build_lazy_to_owned_fields(
         let ty = effective_type(ctx, field, features);
         let init = if is_lazy_field(scope, field) {
             if is_repeated {
+                // A custom `repeated_type` takes the built `Vec` through its
+                // `From<Vec<T>>` (a `ProtoList` supertrait); the default `Vec`
+                // returns it as is, so the output is unchanged without the knob.
+                let finish = if crate::impl_message::field_repeated_repr(ctx, scope.proto_fqn, name)
+                    .is_default()
+                {
+                    quote! { __out }
+                } else {
+                    quote! { ::core::convert::From::from(__out) }
+                };
                 quote! {
                     {
                         let mut __out =
@@ -829,7 +839,7 @@ fn build_lazy_to_owned_fields(
                         for __r in self.#ident.iter() {
                             __out.push(__r?.to_owned_message()?);
                         }
-                        __out
+                        #finish
                     }
                 }
             } else {
