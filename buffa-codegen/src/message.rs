@@ -1658,6 +1658,9 @@ pub(crate) struct FieldInfo {
     /// features — that field is TYPE_MESSAGE so the overlay doesn't fire.
     /// See `map_serde_module`.
     map_value_enum_closed: Option<bool>,
+    /// Whether the field's enum type, or a map's value enum type, is
+    /// `google.protobuf.NullValue`, whose JSON form is `null`.
+    is_null_value: bool,
     /// `true` when the map **key** is proto `string` *and* a custom
     /// `string_type` representation is configured for the field. The JSON
     /// `proto_map` module stringifies keys via `Display` / `FromStr`, which a
@@ -1883,6 +1886,11 @@ pub(crate) fn classify_field(
     } else {
         None
     };
+    let is_null_value = if is_map {
+        map_value_type_name == Some(".google.protobuf.NullValue")
+    } else {
+        crate::oneof::is_null_value_field(field)
+    };
 
     let map_string_is_custom = !map_string_repr.is_default();
     let map_key_custom_string = map_key_type == Some(Type::TYPE_STRING) && map_string_is_custom;
@@ -1904,6 +1912,7 @@ pub(crate) fn classify_field(
         is_wkt_wrapper,
         map_value_is_wkt_wrapper,
         map_value_enum_closed,
+        is_null_value,
         map_key_custom_string,
         map_value_custom_string,
         inner_opt_type,
@@ -2606,9 +2615,9 @@ fn field_deser_modules(
     } else if info.is_repeated {
         repeated_serde_module(field_type, info, features)
     } else if info.is_optional {
-        optional_serde_module(field_type, features)
+        optional_serde_module(field_type, info, features)
     } else {
-        singular_serde_module(field_type, features)
+        singular_serde_module(field_type, info, features)
     };
 
     let null_deser = if with_module.is_none() && (info.is_repeated || info.is_map) {
@@ -2655,6 +2664,9 @@ fn value_needs_proto_json(ty: Type) -> bool {
 /// Open-enum map values keep `map_enum` for its ignore-unknown-values
 /// filtering behavior (a `JsonParseOptions` feature proto_map doesn't have).
 ///
+/// `google.protobuf.NullValue` values use `map_null_value` (or
+/// `bytes_key_null_value_map`), which writes each value as `null`.
+///
 /// Values that are `google.protobuf.*Value` wrappers also use `proto_map`
 /// (or `proto_str_key_map` for a custom string key): their JSON is a bare
 /// scalar, so the derived serde path would accept `null` as a value, which
@@ -2673,6 +2685,8 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
     if matches!(info.map_key_type, Some(Type::TYPE_BYTES)) {
         return Some(if matches!(info.map_value_type, Some(Type::TYPE_BYTES)) {
             "::buffa::json_helpers::bytes_key_bytes_val_map"
+        } else if info.is_null_value && info.map_value_enum_closed == Some(false) {
+            "::buffa::json_helpers::bytes_key_null_value_map"
         } else {
             "::buffa::json_helpers::bytes_key_map"
         });
@@ -2689,6 +2703,8 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
     if let Some(closed) = info.map_value_enum_closed {
         return Some(if closed {
             "::buffa::json_helpers::map_closed_enum"
+        } else if info.is_null_value {
+            "::buffa::json_helpers::map_null_value"
         } else {
             "::buffa::json_helpers::map_enum"
         });
@@ -2753,6 +2769,8 @@ fn repeated_serde_module(
         // Enums need ignore_unknown_enum_values filtering.
         Type::TYPE_ENUM => Some(if is_closed_enum(features) {
             "::buffa::json_helpers::repeated_closed_enum"
+        } else if info.is_null_value {
+            "::buffa::json_helpers::repeated_null_value"
         } else {
             "::buffa::json_helpers::repeated_enum"
         }),
@@ -2771,7 +2789,11 @@ fn repeated_serde_module(
 }
 
 /// Serde module for explicit-presence (optional) fields.
-fn optional_serde_module(field_type: Type, features: &ResolvedFeatures) -> Option<&'static str> {
+fn optional_serde_module(
+    field_type: Type,
+    info: &FieldInfo,
+    features: &ResolvedFeatures,
+) -> Option<&'static str> {
     match field_type {
         Type::TYPE_INT32 | Type::TYPE_SINT32 | Type::TYPE_SFIXED32 => {
             Some("::buffa::json_helpers::opt_int32")
@@ -2786,6 +2808,8 @@ fn optional_serde_module(field_type: Type, features: &ResolvedFeatures) -> Optio
         Type::TYPE_BYTES => Some("::buffa::json_helpers::opt_bytes"),
         Type::TYPE_ENUM => Some(if is_closed_enum(features) {
             "::buffa::json_helpers::opt_closed_enum"
+        } else if info.is_null_value {
+            "::buffa::json_helpers::opt_null_value"
         } else {
             "::buffa::json_helpers::opt_enum"
         }),
@@ -2794,7 +2818,11 @@ fn optional_serde_module(field_type: Type, features: &ResolvedFeatures) -> Optio
 }
 
 /// Serde module for singular (non-optional, non-repeated) fields.
-fn singular_serde_module(field_type: Type, features: &ResolvedFeatures) -> Option<&'static str> {
+fn singular_serde_module(
+    field_type: Type,
+    info: &FieldInfo,
+    features: &ResolvedFeatures,
+) -> Option<&'static str> {
     match field_type {
         Type::TYPE_BOOL => Some("::buffa::json_helpers::proto_bool"),
         Type::TYPE_STRING => Some("::buffa::json_helpers::proto_string"),
@@ -2811,6 +2839,8 @@ fn singular_serde_module(field_type: Type, features: &ResolvedFeatures) -> Optio
         Type::TYPE_BYTES => Some("::buffa::json_helpers::bytes"),
         Type::TYPE_ENUM => Some(if is_closed_enum(features) {
             "::buffa::json_helpers::closed_enum"
+        } else if info.is_null_value {
+            "::buffa::json_helpers::null_value"
         } else {
             "::buffa::json_helpers::proto_enum"
         }),

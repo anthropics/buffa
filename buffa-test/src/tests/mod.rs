@@ -106,6 +106,7 @@ mod message_set;
 mod mod_collision;
 mod nesting;
 mod nestpkg;
+mod null_value_json;
 mod oneof_struct_field_attr;
 mod open_enums;
 mod owned_view;

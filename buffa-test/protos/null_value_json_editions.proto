@@ -1,0 +1,14 @@
+// Edition 2023 companion to `null_value_json.proto`: a singular field has
+// explicit presence by default, and a NONE-validated string key becomes a
+// bytes key under strict_utf8_mapping.
+
+edition = "2023";
+
+package test.nulljson.ed;
+
+import "google/protobuf/struct.proto";
+
+message NullFields {
+  google.protobuf.NullValue sing = 1;
+  map<string, google.protobuf.NullValue> raw_keys = 2 [features.utf8_validation = NONE];
+}
