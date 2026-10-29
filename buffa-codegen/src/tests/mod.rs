@@ -65,6 +65,7 @@ mod json_codegen;
 mod keyword_escaped_fields;
 mod lifetime_anchor;
 mod map_type;
+mod message_set_extension;
 mod naming;
 mod owned_view_codegen;
 mod pointer_repr;

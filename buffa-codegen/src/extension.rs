@@ -71,7 +71,8 @@ fn generate_one(
         .name
         .as_deref()
         .ok_or(CodeGenError::MissingField("extension.name"))?;
-    let number = crate::impl_message::validated_field_number(field)?;
+    let number =
+        crate::impl_message::validated_extension_field_number(ctx, field, current_package)?;
     let ty = crate::impl_message::effective_type(ctx, field, features);
     let extendee = field.extendee.as_deref().unwrap_or("<unknown>");
     // Strip leading dot for both the runtime extendee check (PROTO_FQN is

@@ -17,7 +17,7 @@
 
 use crate::context::CodeGenContext;
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
-use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto};
+use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto, FileDescriptorProto};
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
@@ -30,15 +30,97 @@ use buffa::encoding::MAX_FIELD_NUMBER;
 ///
 /// Protobuf field numbers must be in `[1, MAX_FIELD_NUMBER]`.
 pub(crate) fn validated_field_number(field: &FieldDescriptorProto) -> Result<u32, CodeGenError> {
+    validated_field_number_with_upper(field, MAX_FIELD_NUMBER)
+}
+
+fn validated_field_number_with_upper(
+    field: &FieldDescriptorProto,
+    upper: u32,
+) -> Result<u32, CodeGenError> {
     let n = field
         .number
         .ok_or(CodeGenError::MissingField("field.number"))?;
     // FieldDescriptorProto.number is int32 in the descriptor schema, hence
     // the cast for the range check (2^29 − 1 fits comfortably in i32).
-    if !(1..=MAX_FIELD_NUMBER as i32).contains(&n) {
+    if !(1..=upper as i32).contains(&n) {
         return Err(CodeGenError::Other(format!("invalid field number: {n}")));
     }
     Ok(n as u32)
+}
+
+/// Validate an extension field number, using protoc's relaxed `i32::MAX` bound
+/// when the extendee is a MessageSet (`message_set_wire_format = true`).
+pub(crate) fn validated_extension_field_number(
+    ctx: &CodeGenContext,
+    field: &FieldDescriptorProto,
+    current_package: &str,
+) -> Result<u32, CodeGenError> {
+    let upper = if extension_extendee_is_message_set(ctx.files, field, current_package)? {
+        i32::MAX as u32
+    } else {
+        MAX_FIELD_NUMBER
+    };
+    validated_field_number_with_upper(field, upper)
+}
+
+fn extension_extendee_is_message_set(
+    files: &[FileDescriptorProto],
+    field: &FieldDescriptorProto,
+    current_package: &str,
+) -> Result<bool, CodeGenError> {
+    let Some(extendee) = field.extendee.as_deref() else {
+        return Ok(false);
+    };
+    let fqn = resolve_proto_type_fqn(extendee, current_package);
+    let Some(msg) = find_message_by_fqn(files, &fqn) else {
+        return Ok(false);
+    };
+    Ok(msg
+        .options
+        .as_option()
+        .and_then(|o| o.message_set_wire_format)
+        .unwrap_or(false))
+}
+
+fn resolve_proto_type_fqn(type_name: &str, current_package: &str) -> String {
+    let lookup = type_name.strip_prefix('.').unwrap_or(type_name);
+    if lookup.contains('.') || current_package.is_empty() {
+        lookup.to_string()
+    } else {
+        format!("{current_package}.{lookup}")
+    }
+}
+
+fn find_message_by_fqn<'a>(
+    files: &'a [FileDescriptorProto],
+    fqn: &str,
+) -> Option<&'a DescriptorProto> {
+    files.iter().find_map(|file| {
+        let pkg = file.package.as_deref().unwrap_or("");
+        find_message_in_tree(&file.message_type, pkg, fqn)
+    })
+}
+
+fn find_message_in_tree<'a>(
+    messages: &'a [DescriptorProto],
+    scope: &str,
+    fqn: &str,
+) -> Option<&'a DescriptorProto> {
+    for msg in messages {
+        let name = msg.name.as_deref().unwrap_or("");
+        let msg_fqn = if scope.is_empty() {
+            name.to_string()
+        } else {
+            format!("{scope}.{name}")
+        };
+        if msg_fqn == fqn {
+            return Some(msg);
+        }
+        if let Some(found) = find_message_in_tree(&msg.nested_type, &msg_fqn, fqn) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 /// Returns `true` when a non-message field has *explicit* field presence. A

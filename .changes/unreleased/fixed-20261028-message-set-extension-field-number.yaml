@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **MessageSet extensions accept field numbers up to `i32::MAX`** (#702). `DescriptorPool::link_extension` and codegen for `extend` now match protoc's relaxed bound when the extendee has `message_set_wire_format = true`, instead of rejecting numbers above `(1 << 29) - 1`.
+time: 2026-10-28T23:20:00+05:30
