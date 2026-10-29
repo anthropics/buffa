@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **`DescriptorPool` resolves a type name without a leading dot as protoc does** (closes #635).
+    protoc always writes the leading dot, but a hand-built descriptor may leave it out. The pool looked such a name up as fully qualified, so `type_name: "M"` on a field of `a.Holder` failed with `UnresolvedTypeName`, or linked to a root-level `M` from an imported file with no package where protoc and protobuf-go link `a.M`. A field's `type_name`, an extension's `extendee` and a method's `input_type` and `output_type` without a leading dot are now resolved against each enclosing scope, innermost first, and then as written; a compound name `A.B` stops at the innermost scope that defines `A`, and a match in a file that is not imported is passed over for one further out. A name with a leading dot, which is everything protoc writes, links as before.
+time: 2026-10-29T23:30:00+00:00

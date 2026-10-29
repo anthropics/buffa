@@ -322,9 +322,9 @@ pub enum PoolError {
     /// A field with `type` unset takes its kind from the type the name
     /// resolves to, so it reports this error as well.
     ///
-    /// The pool looks a `type_name` up as a fully-qualified name, with or
-    /// without the leading dot. A name relative to the field's scope, which
-    /// protoc resolves before it writes a descriptor, is reported here.
+    /// A `type_name` with a leading dot is fully qualified. One without is
+    /// resolved as protoc resolves it, against each scope enclosing the
+    /// field, innermost first, and then as written.
     UnresolvedTypeName { type_name: String, field: String },
     /// A field's `type_name` resolved to the wrong kind (e.g. a `TYPE_ENUM`
     /// field referencing a message). Carries the name and the field.
@@ -1487,8 +1487,9 @@ impl DescriptorPool {
     ///
     /// A field that leaves `type` unset takes its kind from the message or
     /// enum that its `type_name` resolves to. With `type_name` also unset or
-    /// empty, the field links as `double`. Every `type_name` must be fully
-    /// qualified; the leading dot is optional.
+    /// empty, the field links as `double`. A `type_name`, `extendee`,
+    /// `input_type` or `output_type` without a leading dot is resolved
+    /// relative to the declaration that holds it, as protoc resolves it.
     ///
     /// # Errors
     ///
@@ -2815,8 +2816,77 @@ impl DescriptorPool {
         Ok(())
     }
 
-    /// Resolve a method's `input_type`/`output_type` (a leading-dot FQN like
-    /// `.my.pkg.Request`) to a [`MessageIndex`].
+    /// Look `type_name` up as protoc does. A leading dot marks a
+    /// fully-qualified name. Any other name is relative to `referrer`, the
+    /// full name of the field, extension or method that holds it: each
+    /// enclosing scope is tried, innermost first, then the name on its own.
+    /// A compound name `A.B` stops at the innermost scope that defines `A`.
+    /// A definition in a file `scope` cannot see is passed over for a visible
+    /// one further out, and is returned only when none matches, so that the
+    /// caller reports it as not imported.
+    fn lookup_type_name(
+        &self,
+        type_name: &str,
+        referrer: &str,
+        scope: LinkScope<'_>,
+    ) -> Option<Definition> {
+        if let Some(full_name) = type_name.strip_prefix('.') {
+            return self.by_name.get(full_name).copied();
+        }
+        let first = type_name.split('.').next().unwrap_or(type_name);
+        let compound = first.len() < type_name.len();
+        let mut hidden = None;
+        let mut enclosing = referrer;
+        while let Some((outer, _)) = enclosing.rsplit_once('.') {
+            enclosing = outer;
+            if compound {
+                if self.is_aggregate(&format!("{outer}.{first}")) {
+                    return self.by_name.get(&format!("{outer}.{type_name}")).copied();
+                }
+            } else if let Some(&def) = self.by_name.get(&format!("{outer}.{type_name}")) {
+                if self.is_visible(scope, def) {
+                    return Some(def);
+                }
+                hidden.get_or_insert(def);
+            }
+        }
+        match self.by_name.get(type_name).copied() {
+            Some(def) if self.is_visible(scope, def) => Some(def),
+            found => hidden.or(found),
+        }
+    }
+
+    /// Whether `name` is a message, enum, service or package, the symbols a
+    /// compound type name can continue into. A package is known only through
+    /// the symbols declared in it.
+    fn is_aggregate(&self, name: &str) -> bool {
+        if matches!(
+            self.symbols.get(name),
+            Some(SymbolKind::Message | SymbolKind::Enum | SymbolKind::Service)
+        ) {
+            return true;
+        }
+        let prefix = format!("{name}.");
+        self.symbols
+            .range::<String, _>(&prefix..)
+            .next()
+            .is_some_and(|(next, _)| next.starts_with(&prefix))
+    }
+
+    /// Whether `scope` may reference `def`.
+    fn is_visible(&self, scope: LinkScope<'_>, def: Definition) -> bool {
+        let def_file = match def {
+            Definition::Message(midx) => self.message_file[midx.0 as usize],
+            Definition::Enum(eidx) => self.enum_file[eidx.0 as usize],
+        };
+        match scope.visible {
+            Some(visible) => visible.contains(&def_file),
+            None => true,
+        }
+    }
+
+    /// Resolve a method's `input_type`/`output_type`, or an extension's
+    /// `extendee`, to a [`MessageIndex`].
     fn resolve_message_type_name(
         &self,
         type_name: Option<&str>,
@@ -2826,11 +2896,10 @@ impl DescriptorPool {
         let tn = type_name.ok_or_else(|| PoolError::MissingTypeName {
             field: method_fqn.to_string(),
         })?;
-        let lookup = tn.strip_prefix('.').unwrap_or(tn);
-        match self.by_name.get(lookup) {
+        match self.lookup_type_name(tn, method_fqn, scope) {
             Some(Definition::Message(midx)) => {
                 self.check_visible(scope, self.message_file[midx.0 as usize], tn, method_fqn)?;
-                Ok(*midx)
+                Ok(midx)
             }
             Some(Definition::Enum(_)) => Err(PoolError::WrongTypeKind {
                 type_name: tn.to_string(),
@@ -3282,8 +3351,7 @@ impl DescriptorPool {
         let tn = type_name.ok_or_else(|| PoolError::MissingTypeName {
             field: field_fqn.to_string(),
         })?;
-        let lookup = tn.strip_prefix('.').unwrap_or(tn);
-        match self.by_name.get(lookup) {
+        match self.lookup_type_name(tn, field_fqn, scope) {
             Some(Definition::Message(midx))
                 if matches!(
                     ty,
@@ -3291,11 +3359,11 @@ impl DescriptorPool {
                 ) =>
             {
                 self.check_visible(scope, self.message_file[midx.0 as usize], tn, field_fqn)?;
-                Ok(SingularKind::Message(*midx))
+                Ok(SingularKind::Message(midx))
             }
             Some(Definition::Enum(eidx)) if matches!(ty, None | Some(ProtoType::TYPE_ENUM)) => {
                 self.check_visible(scope, self.enum_file[eidx.0 as usize], tn, field_fqn)?;
-                Ok(SingularKind::Enum(*eidx))
+                Ok(SingularKind::Enum(eidx))
             }
             Some(_) => Err(PoolError::WrongTypeKind {
                 type_name: tn.to_string(),

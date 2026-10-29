@@ -1869,15 +1869,13 @@ fn inferred_message_fields_follow_the_message_encoding_feature() {
     assert!(delimited.is_delimited());
 }
 
-/// The pool looks a `type_name` up as written. A name that is relative to the
-/// field's scope, here the field's own message, is unresolved like a name
-/// that no type has.
+/// A name that no type has is unresolved, written fully qualified or relative.
 #[test]
 fn unresolved_inferred_type_names_are_rejected_transactionally() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::Label;
     use buffa_descriptor::generated::descriptor::DescriptorProto;
 
-    for type_name in [".invalid.test.Missing", "Holder"] {
+    for type_name in [".invalid.test.Missing", "Missing", "Holder.Missing"] {
         assert_rejected_without_mutating_pool(
             "inferred-unresolved.proto",
             "invalid.test.Holder",
@@ -1896,6 +1894,195 @@ fn unresolved_inferred_type_names_are_rejected_transactionally() {
                     "unexpected error: {err}"
                 );
             },
+        );
+    }
+}
+
+mod relative_type_names {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        MethodDescriptorProto, ServiceDescriptorProto,
+    };
+    use buffa_descriptor::{DescriptorPool, FieldKind, PoolError, SingularKind};
+
+    fn msg_field(name: &str, number: i32, type_name: &str) -> FieldDescriptorProto {
+        FieldDescriptorProto {
+            name: Some(name.into()),
+            number: Some(number),
+            label: Some(Label::LABEL_OPTIONAL),
+            r#type: Some(Type::TYPE_MESSAGE),
+            type_name: Some(type_name.into()),
+            ..Default::default()
+        }
+    }
+
+    fn message(
+        name: &str,
+        field: Vec<FieldDescriptorProto>,
+        nested_type: Vec<DescriptorProto>,
+    ) -> DescriptorProto {
+        DescriptorProto {
+            name: Some(name.into()),
+            field,
+            nested_type,
+            ..Default::default()
+        }
+    }
+
+    fn file(
+        name: &str,
+        package: Option<&str>,
+        dependency: &[&str],
+        message_type: Vec<DescriptorProto>,
+    ) -> FileDescriptorProto {
+        FileDescriptorProto {
+            name: Some(name.into()),
+            package: package.map(Into::into),
+            syntax: Some("proto3".into()),
+            dependency: dependency.iter().map(|d| (*d).to_string()).collect(),
+            message_type,
+            ..Default::default()
+        }
+    }
+
+    fn empty(name: &str) -> DescriptorProto {
+        message(name, vec![], vec![])
+    }
+
+    fn link(files: Vec<FileDescriptorProto>) -> Result<DescriptorPool, PoolError> {
+        DescriptorPool::new(FileDescriptorSet {
+            file: files,
+            ..Default::default()
+        })
+    }
+
+    /// Asserts that field `number` of `message` links to the message `target`.
+    fn assert_links(pool: &DescriptorPool, message: &str, number: u32, target: &str) {
+        let holder = pool.message_by_name(message).unwrap();
+        let expected = SingularKind::Message(pool.message_index(target).unwrap());
+        assert_eq!(
+            holder.field(number).unwrap().kind(),
+            FieldKind::Singular(expected)
+        );
+    }
+
+    /// protoc and protobuf-go try each enclosing scope, innermost first, so a
+    /// package-level `M` wins over a root-level `M` from a file with no
+    /// package.
+    #[test]
+    fn a_name_without_a_leading_dot_resolves_against_the_enclosing_scopes() {
+        let mut a = file(
+            "a.proto",
+            Some("a"),
+            &["root.proto"],
+            vec![
+                empty("M"),
+                message(
+                    "Holder",
+                    vec![msg_field("innermost_scope", 1, "M")],
+                    vec![empty("M")],
+                ),
+                message(
+                    "Other",
+                    vec![
+                        msg_field("package_level", 1, "M"),
+                        msg_field("nested", 2, "Holder.M"),
+                        msg_field("dotless_full_name", 3, "a.M"),
+                        msg_field("root", 4, ".M"),
+                    ],
+                    vec![],
+                ),
+            ],
+        );
+        a.service = vec![ServiceDescriptorProto {
+            name: Some("Svc".into()),
+            method: vec![MethodDescriptorProto {
+                name: Some("Call".into()),
+                input_type: Some("M".into()),
+                output_type: Some("Holder.M".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+        let root = file("root.proto", None, &[], vec![empty("M")]);
+        let pool = link(vec![root, a]).expect("relative names link");
+
+        assert_links(&pool, "a.Holder", 1, "a.Holder.M");
+        assert_links(&pool, "a.Other", 1, "a.M");
+        assert_links(&pool, "a.Other", 2, "a.Holder.M");
+        assert_links(&pool, "a.Other", 3, "a.M");
+        assert_links(&pool, "a.Other", 4, "M");
+        let call = &pool.service_by_name("a.Svc").unwrap().methods()[0];
+        assert_eq!(call.input(), pool.message_index("a.M").unwrap());
+        assert_eq!(call.output(), pool.message_index("a.Holder.M").unwrap());
+    }
+
+    /// A compound name stops at the innermost scope that defines its first
+    /// component, so `Bar.Baz` inside `Foo` looks in `Foo.Bar` only, as in
+    /// protoc.
+    #[test]
+    fn a_compound_name_stops_at_the_innermost_scope_of_its_first_component() {
+        let t = file(
+            "t.proto",
+            Some("t"),
+            &[],
+            vec![
+                message("Bar", vec![], vec![empty("Baz")]),
+                message(
+                    "Foo",
+                    vec![msg_field("nested_baz", 1, "Bar.Baz")],
+                    vec![empty("Bar")],
+                ),
+            ],
+        );
+        let err = link(vec![t]).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                PoolError::UnresolvedTypeName { type_name, field }
+                    if type_name == "Bar.Baz" && field == "t.Foo.nested_baz"
+            ),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn a_partly_qualified_name_resolves_through_an_enclosing_package() {
+        let xy = file(
+            "xy.proto",
+            Some("x.y"),
+            &[],
+            vec![
+                empty("M"),
+                message("Holder", vec![msg_field("m", 1, "y.M")], vec![]),
+            ],
+        );
+        let pool = link(vec![xy]).expect("partly qualified name links");
+        assert_links(&pool, "x.y.Holder", 1, "x.y.M");
+    }
+
+    /// protoc passes over a match in a file the referring file does not
+    /// import and keeps looking further out.
+    #[test]
+    fn a_match_in_a_file_that_is_not_imported_is_passed_over() {
+        let hidden = file("hidden.proto", Some("a"), &[], vec![empty("M")]);
+        let root = file("root.proto", None, &[], vec![empty("M")]);
+        let holder = message("Holder", vec![msg_field("m", 1, "M")], vec![]);
+        let user = |deps: &[&str]| file("user.proto", Some("a"), deps, vec![holder.clone()]);
+
+        let linked = link(vec![hidden.clone(), root, user(&["root.proto"])])
+            .expect("the imported root-level M links");
+        assert_links(&linked, "a.Holder", 1, "M");
+
+        let err = link(vec![hidden, user(&[])]).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                PoolError::TypeNotImported { field, defined_in, .. }
+                    if field == "a.Holder.m" && defined_in == "hidden.proto"
+            ),
+            "unexpected error: {err}"
         );
     }
 }
