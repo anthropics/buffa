@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    **`PoolError::MissingTypeName` no longer reports extensions and methods as fields** (#641). An extension with no `extendee` now reports `MissingExtendee { extension }` as `extension <name> has no extendee`, and a method with no `input_type` or `output_type` reports `MissingMethodInputType { method }` or `MissingMethodOutputType { method }` as `method <name> has no input_type` or `has no output_type`. `MissingTypeName { field }` keeps its existing shape and message and is now emitted only for fields. The new variants are additive on the non-exhaustive `PoolError` enum.
+time: 2026-10-29T11:03:11+05:30

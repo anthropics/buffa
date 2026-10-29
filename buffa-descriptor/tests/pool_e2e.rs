@@ -1467,6 +1467,171 @@ fn scalar_extensions_with_type_name_are_rejected_transactionally() {
 }
 
 #[test]
+fn missing_field_type_name_names_the_field() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::DescriptorProto;
+
+    assert_rejected_without_mutating_pool(
+        "missing-field-type-name.proto",
+        "invalid.test.MissingFieldTypeName",
+        DescriptorProto {
+            name: Some("MissingFieldTypeName".into()),
+            field: vec![scalar_field("value", 1, Type::TYPE_MESSAGE)],
+            ..Default::default()
+        },
+        |err| {
+            assert!(
+                matches!(
+                    err,
+                    PoolError::MissingTypeName { field }
+                        if field == "invalid.test.MissingFieldTypeName.value"
+                ),
+                "unexpected error: {err}"
+            );
+            assert_eq!(
+                err.to_string(),
+                "field invalid.test.MissingFieldTypeName.value has no type_name"
+            );
+        },
+    );
+}
+
+#[test]
+fn missing_extension_extendee_names_the_extension() {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("missing-extendee.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto2".into()),
+            extension: vec![FieldDescriptorProto {
+                ..scalar_field("flag", 100, Type::TYPE_BOOL)
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "missing-extendee.proto",
+        "invalid.test.flag",
+        set,
+        |err| {
+            assert!(
+                matches!(
+                    err,
+                    PoolError::MissingExtendee { extension }
+                        if extension == "invalid.test.flag"
+                ),
+                "unexpected error: {err}"
+            );
+            assert_eq!(
+                err.to_string(),
+                "extension invalid.test.flag has no extendee"
+            );
+        },
+    );
+}
+
+#[test]
+fn missing_method_input_type_names_the_method() {
+    use buffa_descriptor::generated::descriptor::{
+        FileDescriptorProto, FileDescriptorSet, MethodDescriptorProto, ServiceDescriptorProto,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("missing-input-type.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            dependency: vec!["reflect_test.proto".into()],
+            service: vec![ServiceDescriptorProto {
+                name: Some("Gateway".into()),
+                method: vec![MethodDescriptorProto {
+                    name: Some("Call".into()),
+                    output_type: Some(".reflect.test.Inner".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "missing-input-type.proto",
+        "invalid.test.Gateway.Call",
+        set,
+        |err| {
+            assert!(
+                matches!(
+                    err,
+                    PoolError::MissingMethodInputType { method }
+                        if method == "invalid.test.Gateway.Call"
+                ),
+                "unexpected error: {err}"
+            );
+            assert_eq!(
+                err.to_string(),
+                "method invalid.test.Gateway.Call has no input_type"
+            );
+        },
+    );
+}
+
+#[test]
+fn missing_method_output_type_names_the_method() {
+    use buffa_descriptor::generated::descriptor::{
+        FileDescriptorProto, FileDescriptorSet, MethodDescriptorProto, ServiceDescriptorProto,
+    };
+
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("missing-output-type.proto".into()),
+            package: Some("invalid.test".into()),
+            syntax: Some("proto3".into()),
+            dependency: vec!["reflect_test.proto".into()],
+            service: vec![ServiceDescriptorProto {
+                name: Some("Gateway".into()),
+                method: vec![MethodDescriptorProto {
+                    name: Some("Call".into()),
+                    input_type: Some(".reflect.test.Inner".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+
+    assert_set_rejected_without_mutating_pool(
+        "missing-output-type.proto",
+        "invalid.test.Gateway.Call",
+        set,
+        |err| {
+            assert!(
+                matches!(
+                    err,
+                    PoolError::MissingMethodOutputType { method }
+                        if method == "invalid.test.Gateway.Call"
+                ),
+                "unexpected error: {err}"
+            );
+            assert_eq!(
+                err.to_string(),
+                "method invalid.test.Gateway.Call has no output_type"
+            );
+        },
+    );
+}
+
+#[test]
 fn scalar_map_values_with_type_name_are_rejected_transactionally() {
     use buffa_descriptor::generated::descriptor::field_descriptor_proto::{Label, Type};
     use buffa_descriptor::generated::descriptor::{

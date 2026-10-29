@@ -312,7 +312,19 @@ pub enum PoolError {
         defined_in: String,
     },
     /// A field had no `type_name` for a `TYPE_MESSAGE`/`TYPE_GROUP`/`TYPE_ENUM`.
+    ///
+    /// An extension with no `extendee` reports
+    /// [`MissingExtendee`](Self::MissingExtendee), and a method with no
+    /// `input_type` or `output_type` reports
+    /// [`MissingMethodInputType`](Self::MissingMethodInputType) or
+    /// [`MissingMethodOutputType`](Self::MissingMethodOutputType).
     MissingTypeName { field: String },
+    /// An extension had no `extendee`.
+    MissingExtendee { extension: String },
+    /// An RPC method had no `input_type`.
+    MissingMethodInputType { method: String },
+    /// An RPC method had no `output_type`.
+    MissingMethodOutputType { method: String },
     /// A field whose `type` is set to a scalar type also has a non-empty
     /// `type_name`. Only a message, group or enum field, or a field with
     /// `type` unset, may have one.
@@ -731,6 +743,15 @@ impl core::fmt::Display for PoolError {
                 write!(f, "message field {field} declares a default value")
             }
             Self::MissingTypeName { field } => write!(f, "field {field} has no type_name"),
+            Self::MissingExtendee { extension } => {
+                write!(f, "extension {extension} has no extendee")
+            }
+            Self::MissingMethodInputType { method } => {
+                write!(f, "method {method} has no input_type")
+            }
+            Self::MissingMethodOutputType { method } => {
+                write!(f, "method {method} has no output_type")
+            }
             Self::UnexpectedTypeName { field, type_name } => write!(
                 f,
                 "field {field} with scalar type has type_name {type_name:?}"
@@ -1253,6 +1274,15 @@ struct LinkScope<'a> {
     /// Itself, its direct and weak dependencies, and their transitive
     /// `public_dependency` closure; `None` when visibility is not enforced.
     visible: Option<&'a BTreeSet<usize>>,
+}
+
+/// What an unresolved `type_name` would have named, so a missing one can
+/// report the declaration and attribute that actually lacked it.
+#[derive(Clone, Copy)]
+enum MessageTypeRole {
+    ExtensionExtendee,
+    MethodInput,
+    MethodOutput,
 }
 
 /// Whether `file` declares `syntax = "proto3"`.
@@ -2655,10 +2685,18 @@ impl DescriptorPool {
             }
             let method_fqn = format!("{fqn}.{}", m.name.as_deref().unwrap_or(""));
             self.register_symbol(&method_fqn, SymbolKind::Method)?;
-            let input =
-                self.resolve_message_type_name(m.input_type.as_deref(), &method_fqn, scope)?;
-            let output =
-                self.resolve_message_type_name(m.output_type.as_deref(), &method_fqn, scope)?;
+            let input = self.resolve_message_type_name(
+                m.input_type.as_deref(),
+                &method_fqn,
+                MessageTypeRole::MethodInput,
+                scope,
+            )?;
+            let output = self.resolve_message_type_name(
+                m.output_type.as_deref(),
+                &method_fqn,
+                MessageTypeRole::MethodOutput,
+                scope,
+            )?;
             methods.push(MethodDescriptor {
                 name: mname,
                 input,
@@ -2698,7 +2736,12 @@ impl DescriptorPool {
             format!("{scope_fqn}.{name}")
         };
         self.register_symbol(&fqn, SymbolKind::Extension)?;
-        let extendee = self.resolve_message_type_name(ext.extendee.as_deref(), &fqn, scope)?;
+        let extendee = self.resolve_message_type_name(
+            ext.extendee.as_deref(),
+            &fqn,
+            MessageTypeRole::ExtensionExtendee,
+            scope,
+        )?;
         // A proto3 file declares extensions only to define custom options.
         let extendee_name = &self.messages[extendee.0 as usize].full_name;
         if scope.proto3 && !is_proto3_extendee(extendee_name) {
@@ -2815,30 +2858,40 @@ impl DescriptorPool {
         Ok(())
     }
 
-    /// Resolve a method's `input_type`/`output_type` (a leading-dot FQN like
-    /// `.my.pkg.Request`) to a [`MessageIndex`].
+    /// Resolve a method's `input_type`/`output_type` or an extension's
+    /// `extendee` (a leading-dot FQN like `.my.pkg.Request`) to a
+    /// [`MessageIndex`].
     fn resolve_message_type_name(
         &self,
         type_name: Option<&str>,
-        method_fqn: &str,
+        owner_fqn: &str,
+        role: MessageTypeRole,
         scope: LinkScope<'_>,
     ) -> Result<MessageIndex, PoolError> {
-        let tn = type_name.ok_or_else(|| PoolError::MissingTypeName {
-            field: method_fqn.to_string(),
+        let tn = type_name.ok_or_else(|| match role {
+            MessageTypeRole::ExtensionExtendee => PoolError::MissingExtendee {
+                extension: owner_fqn.to_string(),
+            },
+            MessageTypeRole::MethodInput => PoolError::MissingMethodInputType {
+                method: owner_fqn.to_string(),
+            },
+            MessageTypeRole::MethodOutput => PoolError::MissingMethodOutputType {
+                method: owner_fqn.to_string(),
+            },
         })?;
         let lookup = tn.strip_prefix('.').unwrap_or(tn);
         match self.by_name.get(lookup) {
             Some(Definition::Message(midx)) => {
-                self.check_visible(scope, self.message_file[midx.0 as usize], tn, method_fqn)?;
+                self.check_visible(scope, self.message_file[midx.0 as usize], tn, owner_fqn)?;
                 Ok(*midx)
             }
             Some(Definition::Enum(_)) => Err(PoolError::WrongTypeKind {
                 type_name: tn.to_string(),
-                field: method_fqn.to_string(),
+                field: owner_fqn.to_string(),
             }),
             None => Err(PoolError::UnresolvedTypeName {
                 type_name: tn.to_string(),
-                field: method_fqn.to_string(),
+                field: owner_fqn.to_string(),
             }),
         }
     }
