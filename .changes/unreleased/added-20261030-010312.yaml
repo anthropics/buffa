@@ -1,0 +1,3 @@
+kind: Added
+body: '**Remote constructor overrides** (#630). `ProtoString` accepts `copy_from_str = path` for an owning string constructor; `ProtoBytes` accepts `from_bytes = path` and requests owned wire payloads so wrappers around `Bytes` can share the input allocation. Existing derives keep their defaults.'
+time: 2026-10-30T01:03:12.111424-06:00

@@ -83,3 +83,50 @@ fn remote_with_multiple_as_ref_impls_resolves_unambiguously() {
     assert_eq!(&*s, "disambiguated");
     assert_eq!(s.as_ref(), "disambiguated");
 }
+
+fn own_text(value: &str) -> std::borrow::Cow<'static, str> {
+    std::borrow::Cow::Owned(value.to_owned())
+}
+
+// Cow<'static, str> has From<&'static str>, but cannot copy an arbitrary &str
+// through From. The override must cover all three borrowed-text entry points.
+#[derive(Clone, PartialEq, Default, Debug, DeriveProtoString)]
+#[buffa(remote = std::borrow::Cow<'static, str>, copy_from_str = own_text, serde, arbitrary)]
+struct OwnedText(std::borrow::Cow<'static, str>);
+
+#[derive(Clone, PartialEq, Default, Debug, DeriveProtoString)]
+#[buffa(remote = std::borrow::Cow<'static, str>, copy_from_str = own_text)]
+struct NamedOwnedText {
+    inner: std::borrow::Cow<'static, str>,
+}
+
+#[test]
+fn owning_constructor_accepts_non_static_text() {
+    let text = String::from("temporary");
+    let from_str = OwnedText::from(text.as_str());
+    let copied = OwnedText::copy_from_str(&text);
+    let decoded = OwnedText::from_wire(WirePayload::borrowed(text.as_bytes())).unwrap();
+    let named = NamedOwnedText::copy_from_str(&text);
+    drop(text);
+    assert_eq!(from_str.as_ref(), "temporary");
+    assert_eq!(copied, from_str);
+    assert_eq!(decoded, from_str);
+    assert_eq!(named.as_ref(), from_str.as_ref());
+    assert_eq!(NamedOwnedText::from("named").as_ref(), "named");
+    assert_eq!(
+        NamedOwnedText::from_wire(WirePayload::borrowed(b"wire"))
+            .unwrap()
+            .as_ref(),
+        "wire"
+    );
+}
+
+#[test]
+fn owning_constructor_preserves_utf8_validation_and_forwarders() {
+    assert!(OwnedText::from_wire(WirePayload::borrowed(&[0xff])).is_err());
+    let decoded: OwnedText = serde_json::from_str("\"json\"").unwrap();
+    assert_eq!(decoded.as_ref(), "json");
+    let mut input = arbitrary::Unstructured::new(b"fuzz");
+    let generated: OwnedText = arbitrary::Arbitrary::arbitrary(&mut input).unwrap();
+    assert!(std::str::from_utf8(generated.as_bytes()).is_ok());
+}

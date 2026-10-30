@@ -94,3 +94,55 @@ fn as_shared_override_works_on_named_field_newtype() {
     let shared = b.as_shared().expect("override returns Some");
     assert_eq!(shared.as_ptr(), b.inner.as_ptr());
 }
+
+#[derive(Clone, PartialEq, Default, Debug, DeriveProtoBytes)]
+#[buffa(remote = buffa::bytes::Bytes, from_bytes = std::convert::identity, as_shared = share::handle, serde, arbitrary)]
+struct OwnedBytes(buffa::bytes::Bytes);
+
+#[derive(Clone, PartialEq, Default, Debug, DeriveProtoBytes)]
+#[buffa(remote = buffa::bytes::Bytes, from_bytes = std::convert::identity)]
+struct NamedOwnedBytes {
+    inner: buffa::bytes::Bytes,
+}
+
+#[test]
+fn owned_constructor_retains_payload_allocation() {
+    let payload = buffa::bytes::Bytes::from(vec![42; 64]);
+    let decoded = OwnedBytes::from_wire(WirePayload::owned(payload.clone())).unwrap();
+    let named = NamedOwnedBytes::from_wire(WirePayload::owned(payload.clone())).unwrap();
+    assert_eq!(decoded.as_ptr(), payload.as_ptr());
+    assert_eq!(named.as_ptr(), payload.as_ptr());
+    assert_eq!(decoded.as_shared().unwrap().as_ptr(), payload.as_ptr());
+    assert_eq!(decoded.as_ref(), payload.as_ref());
+    const _: () = {
+        assert!(OwnedBytes::PREFERS_OWNED_PAYLOAD);
+        assert!(NamedOwnedBytes::PREFERS_OWNED_PAYLOAD);
+        assert!(!MyBytes::PREFERS_OWNED_PAYLOAD);
+    };
+}
+
+#[test]
+fn owned_constructor_is_used_by_bytes_backed_decode() {
+    let mut encoded = vec![64]; // Length prefix, followed by the payload.
+    encoded.extend_from_slice(&[42; 64]);
+    let source = buffa::bytes::Bytes::from(encoded);
+    let mut wire = source.clone();
+    let decoded = buffa::types::decode_bytes_to::<OwnedBytes>(&mut wire).unwrap();
+    assert_eq!(decoded.as_ptr(), source[1..].as_ptr());
+    assert_eq!(decoded.as_ref(), &source[1..]);
+    assert!(wire.is_empty());
+    assert!(buffa::types::decode_bytes_to::<OwnedBytes>(&mut &[2, 42][..]).is_err());
+}
+
+#[test]
+fn owned_constructor_also_copies_borrowed_input_and_keeps_conversions() {
+    let payload = vec![7; 32];
+    let decoded = OwnedBytes::from_wire(WirePayload::borrowed(&payload)).unwrap();
+    assert_eq!(decoded.as_ref(), payload.as_slice());
+    assert_ne!(decoded.as_ptr(), payload.as_ptr());
+    assert_eq!(OwnedBytes::from(payload), decoded);
+    let json = serde_json::to_string(&decoded).unwrap();
+    assert_eq!(serde_json::from_str::<OwnedBytes>(&json).unwrap(), decoded);
+    let mut input = arbitrary::Unstructured::new(b"fuzz");
+    let _: OwnedBytes = arbitrary::Arbitrary::arbitrary(&mut input).unwrap();
+}
