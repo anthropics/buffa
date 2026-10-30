@@ -6,7 +6,7 @@ use crate::forwarders;
 use crate::remote_field::{self, RemoteField};
 
 pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
-    let remote = remote_field::parse(&input)?;
+    let (remote, overrides) = remote_field::parse_with_overrides(&input, &["copy_from_str"])?;
     let RemoteField {
         ident,
         generics,
@@ -21,10 +21,15 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         quote! { ::core::convert::From<::buffa::alloc::string::String> },
         "from",
     );
-    let from_str = remote_field::qualified_call(
-        field_ty,
-        quote! { ::core::convert::From<&::core::primitive::str> },
-        "from",
+    let from_str = overrides.get("copy_from_str").map_or_else(
+        || {
+            remote_field::qualified_call(
+                field_ty,
+                quote! { ::core::convert::From<&::core::primitive::str> },
+                "from",
+            )
+        },
+        |path| quote! { #path },
     );
     // Fully qualified, not `#accessor.as_ref()` — a remote type implementing
     // more than one `AsRef<_>` (e.g. both `AsRef<str>` and `AsRef<[u8]>`)
@@ -100,4 +105,30 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         #arbitrary_impl
         #serde_impl
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn copying_constructor_requires_a_path() {
+        let input = syn::parse_quote! {
+            #[buffa(remote = String, copy_from_str = 42)]
+            struct Text(String);
+        };
+        assert!(derive(input).is_err());
+    }
+
+    #[test]
+    fn bytes_constructor_is_not_a_string_override() {
+        let input = syn::parse_quote! {
+            #[buffa(remote = String, from_bytes = make)]
+            struct Text(String);
+        };
+        assert!(derive(input)
+            .unwrap_err()
+            .to_string()
+            .contains("copy_from_str"));
+    }
 }

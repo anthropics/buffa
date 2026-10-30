@@ -6,7 +6,8 @@ use crate::forwarders;
 use crate::remote_field::{self, RemoteField};
 
 pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
-    let (remote, overrides) = remote_field::parse_with_overrides(&input, &["as_shared"])?;
+    let (remote, overrides) =
+        remote_field::parse_with_overrides(&input, &["as_shared", "from_bytes"])?;
     let RemoteField {
         ident,
         generics,
@@ -32,9 +33,20 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let ctor_from_vec = remote.construct(quote! { #from_vec(__buffa_vec) });
     // By path, not `__buffa_payload.as_slice()` — see the matching comment
     // on `to_str` in string.rs.
-    let ctor_from_wire = remote.construct(quote! {
-        #from_vec(::buffa::WirePayload::as_slice(&__buffa_payload).to_vec())
-    });
+    let (ctor_from_wire, prefers_owned_impl) = match overrides.get("from_bytes") {
+        Some(path) => (
+            remote.construct(quote! {
+                #path(::buffa::WirePayload::into_bytes(__buffa_payload))
+            }),
+            quote! { const PREFERS_OWNED_PAYLOAD: ::core::primitive::bool = true; },
+        ),
+        None => (
+            remote.construct(quote! {
+                #from_vec(::buffa::WirePayload::as_slice(&__buffa_payload).to_vec())
+            }),
+            quote! {},
+        ),
+    };
 
     // Unlike the `ProtoBox`/`MapStorage` overrides there is no conventional
     // method name to default to: absent the key, nothing is generated and
@@ -82,6 +94,8 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         }
 
         impl #impl_generics ::buffa::ProtoBytes for #ident #ty_generics #where_clause {
+            #prefers_owned_impl
+
             #[inline]
             fn from_wire(
                 __buffa_payload: ::buffa::WirePayload<'_>,
@@ -95,4 +109,30 @@ pub fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         #arbitrary_impl
         #serde_impl
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn owned_constructor_requires_a_path() {
+        let input = syn::parse_quote! {
+            #[buffa(remote = Vec<u8>, from_bytes = 42)]
+            struct Data(Vec<u8>);
+        };
+        assert!(derive(input).is_err());
+    }
+
+    #[test]
+    fn copying_constructor_is_not_a_bytes_override() {
+        let input = syn::parse_quote! {
+            #[buffa(remote = Vec<u8>, copy_from_str = make)]
+            struct Data(Vec<u8>);
+        };
+        assert!(derive(input)
+            .unwrap_err()
+            .to_string()
+            .contains("from_bytes"));
+    }
 }

@@ -26,8 +26,24 @@
 //! `Default`, `Debug`, `Send`, `Sync`, `AsRef<str>`, `From<String>`,
 //! `for<'a> From<&'a str>`). The derive uses the borrowed conversion for
 //! `copy_from_str` as well, avoiding an intermediate `String`. This last bound
-//! belongs to the derive, not to `ProtoString`: if the remote type's `From<&str>`
-//! borrows, implement `ProtoString` by hand and provide an owning copy operation.
+//! belongs to the derive, not to `ProtoString`. For a remote type whose
+//! `From<&str>` borrows or accepts only static strings, set
+//! `#[buffa(remote = ..., copy_from_str = path)]`, where `path` has the shape
+//! `fn(&str) -> Remote` and returns storage that does not borrow from its input.
+//! The override is used for the newtype's `From<&str>`, `copy_from_str`, and
+//! UTF-8-validated `from_wire`; `From<String>` is unchanged. For example:
+//!
+//! ```rust
+//! use std::borrow::Cow;
+//!
+//! fn own_text(text: &str) -> Cow<'static, str> {
+//!     Cow::Owned(text.to_owned())
+//! }
+//!
+//! #[derive(Clone, PartialEq, Default, Debug, buffa_remote_derive::ProtoString)]
+//! #[buffa(remote = Cow<'static, str>, copy_from_str = own_text)]
+//! pub struct Text(Cow<'static, str>);
+//! ```
 //! On the newtype itself, derive the derivable subset (`Clone`,
 //! `PartialEq`, `Default`, `Debug`) yourself — `Send`/`Sync` are automatic
 //! for a single-field wrapper, and for the generic list/map derives
@@ -40,14 +56,22 @@
 //!
 //! [`ProtoBytes`](macro@ProtoBytes) and [`ProtoList`](macro@ProtoList) follow
 //! the same shape for `bytes` and `repeated` fields respectively.
-//! `ProtoBytes`'s generated `from_wire` always copies the payload with
-//! `to_vec()` before handing it to the remote type's `From<Vec<u8>>`. A remote
-//! type that wraps `bytes::Bytes` can decode without that copy, but not
-//! through this derive: replace the derive with hand-written
-//! `Deref<Target = [u8]>`, `AsRef<[u8]>`, `From<Vec<u8>>` and
-//! `buffa::ProtoBytes` impls, and set
-//! `buffa::ProtoBytes::PREFERS_OWNED_PAYLOAD` to `true`. That const's
-//! documentation in `buffa` has an example.
+//! By default, `ProtoBytes`'s generated `from_wire` copies the payload with
+//! `to_vec()` before handing it to the remote type's `From<Vec<u8>>`.
+//! A remote type that retains a `bytes::Bytes` can instead set
+//! `#[buffa(remote = ..., from_bytes = path)]`, where `path` has the shape
+//! `fn(buffa::bytes::Bytes) -> Remote`. The generated `from_wire` passes
+//! `WirePayload::into_bytes()` to that constructor and sets
+//! `ProtoBytes::PREFERS_OWNED_PAYLOAD` to `true`. Decoding from `Bytes` then
+//! shares the input allocation; slice-backed or fragmented input still copies.
+//! Retaining a small field can keep the entire input allocation alive: repeat
+//! that cost in the newtype's documentation. `From<Vec<u8>>` is unchanged.
+//!
+//! ```rust
+//! #[derive(Clone, PartialEq, Default, Debug, buffa_remote_derive::ProtoBytes)]
+//! #[buffa(remote = buffa::bytes::Bytes, from_bytes = core::convert::identity)]
+//! pub struct SharedBytes(buffa::bytes::Bytes);
+//! ```
 //!
 //! The encode side has the mirror-image limitation with an escape hatch: by
 //! default the generated `ProtoBytes` impl inherits the trait's `as_shared`
@@ -322,7 +346,8 @@
 //! `#[buffa(remote = ..., into_inner = MyType::unwrap)]` for `ProtoBox`, or
 //! any of `len`/`insert`/`clear`/`iter` for `MapStorage`. (The keys are
 //! exactly `remote`; `new` and `into_inner` for `ProtoBox`; `len`, `insert`,
-//! `clear` and `iter` for `MapStorage`; `as_shared` for `ProtoBytes`; and the
+//! `clear` and `iter` for `MapStorage`; `copy_from_str` for `ProtoString`;
+//! `as_shared` and `from_bytes` for `ProtoBytes`; and the
 //! bare `arbitrary` and `serde` keys on every derive.) The override path is
 //! called the same way the default is — as a free function taking the
 //! receiver as its first argument (`Type::method(&self.0, ...)`) — so it
@@ -383,6 +408,8 @@ mod string;
 /// `buffa::ProtoString` for a single-field newtype wrapping the type named by
 /// `#[buffa(remote = ...)]`.
 /// The generated `copy_from_str` forwards to the inner type's `From<&str>`.
+/// `copy_from_str = path` instead uses an owning `fn(&str) -> Remote` for
+/// `From<&str>`, `copy_from_str`, and UTF-8-validated wire decoding.
 /// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
 /// the `arbitrary` crate wherever the key is active; the crate docs' section
 /// on the key shows how to make it conditional.
@@ -400,9 +427,10 @@ pub fn derive_proto_string(input: TokenStream) -> TokenStream {
 /// `as_shared = path` key generates the encode-side
 /// `buffa::ProtoBytes::as_shared` override — see the crate docs for the
 /// callable's contract.
-/// The generated impl leaves `buffa::ProtoBytes::PREFERS_OWNED_PAYLOAD` at
-/// `false` and copies each payload; the crate docs say what a type that
-/// should share the input does instead.
+/// By default, decoding copies each payload. `from_bytes = path` supplies
+/// a `fn(buffa::bytes::Bytes) -> Remote` constructor and sets
+/// `buffa::ProtoBytes::PREFERS_OWNED_PAYLOAD` to `true` to share owned input.
+/// This is independent of `as_shared`; both keys can be used together.
 /// The bare `arbitrary` key adds an `arbitrary::Arbitrary` impl, which needs
 /// the `arbitrary` crate wherever the key is active; the crate docs' section
 /// on the key shows how to make it conditional.
