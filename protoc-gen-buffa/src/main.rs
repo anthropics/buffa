@@ -208,10 +208,8 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             // default, whatever the option order; last matching rule wins.
             // Same path grammar as `unbox_oneof_in`.
             "unknown_fields_in" => {
-                codegen.preserve_unknown_fields_in.push((
-                    normalize_proto_path(value.trim(), "unknown_fields_in")?,
-                    true,
-                ));
+                let (path, enabled) = parse_proto_path_enabled_rule(value, "unknown_fields_in")?;
+                codegen.preserve_unknown_fields_in.push((path, enabled));
             }
             "json" => codegen.generate_json = parse_bool("json", value)?,
             // Reject unknown JSON keys instead of ignoring them. Without
@@ -225,10 +223,9 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             // last matching rule wins. Same path grammar as
             // `unknown_fields_in`.
             "deny_unknown_json_fields_in" => {
-                codegen.deny_unknown_json_fields_in.push((
-                    normalize_proto_path(value.trim(), "deny_unknown_json_fields_in")?,
-                    true,
-                ));
+                let (path, enabled) =
+                    parse_proto_path_enabled_rule(value, "deny_unknown_json_fields_in")?;
+                codegen.deny_unknown_json_fields_in.push((path, enabled));
             }
             // Repeatable. Omits the generated `Debug` for matching messages
             // and for enums named exactly, so the crate can write its own.
@@ -576,6 +573,23 @@ fn normalize_unbox_oneof_path(path: &str) -> Result<String, String> {
     normalize_proto_path(path, "unbox_oneof_in")
 }
 
+/// Parse `unknown_fields_in=<path>` or `=<path>=<true|false>`, and the same
+/// shape for `deny_unknown_json_fields_in`. A bare path (no `=true`/`=false`
+/// suffix) enables the rule, matching the historical plugin spelling.
+fn parse_proto_path_enabled_rule(value: &str, label: &str) -> Result<(String, bool), String> {
+    let value = value.trim();
+    if let Some((path, flag)) = value.rsplit_once('=') {
+        let flag = flag.trim();
+        if flag.eq_ignore_ascii_case("true") {
+            return Ok((normalize_proto_path(path.trim(), label)?, true));
+        }
+        if flag.eq_ignore_ascii_case("false") {
+            return Ok((normalize_proto_path(path.trim(), label)?, false));
+        }
+    }
+    Ok((normalize_proto_path(value, label)?, true))
+}
+
 fn normalize_proto_path(path: &str, label: &str) -> Result<String, String> {
     if path.is_empty() {
         return Err(format!(
@@ -729,6 +743,36 @@ mod tests {
             assert!(err.contains("unknown_fields_in rules"), "{params:?}: {err}");
             assert!(err.contains("non-empty proto path"), "{params:?}: {err}");
         }
+    }
+
+    #[test]
+    fn unknown_fields_in_accepts_explicit_false_suffix() {
+        let config = parse_config(
+            "unknown_fields=true,unknown_fields_in=.demo,unknown_fields_in=.demo.Legacy=false",
+        )
+        .unwrap();
+        assert_eq!(
+            config.codegen.preserve_unknown_fields_in,
+            vec![
+                (".demo".to_string(), true),
+                (".demo.Legacy".to_string(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn deny_unknown_json_fields_in_accepts_explicit_false_suffix() {
+        let config = parse_config(
+            "json=true,deny_unknown_json_fields_in=.demo,deny_unknown_json_fields_in=.demo.Legacy=false",
+        )
+        .unwrap();
+        assert_eq!(
+            config.codegen.deny_unknown_json_fields_in,
+            vec![
+                (".demo".to_string(), true),
+                (".demo.Legacy".to_string(), false),
+            ]
+        );
     }
 
     #[test]

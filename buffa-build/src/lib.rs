@@ -776,10 +776,10 @@ impl Config {
     ///
     /// A rule covers the message it names **and every message nested inside
     /// it**; a rule naming a nested message does not cover its enclosing
-    /// message. Rules are enable-only, so this builder cannot exclude a
-    /// nested message from a rule that names its parent
-    /// ([`CodeGenConfig::preserve_unknown_fields_in`](buffa_codegen::CodeGenConfig::preserve_unknown_fields_in)
-    /// also accepts disabling entries, and the last matching entry wins).
+    /// message. This builder only enables rules; use
+    /// [`preserve_unknown_fields_in_with`](Self::preserve_unknown_fields_in_with)
+    /// to disable a sub-path (last matching entry wins, same as
+    /// [`CodeGenConfig::preserve_unknown_fields_in`](buffa_codegen::CodeGenConfig::preserve_unknown_fields_in)).
     /// Preservation is a property of each message *type*: a preserved
     /// message's sub-messages keep their own unknown fields only if their
     /// types are covered too.
@@ -806,7 +806,31 @@ impl Config {
     ///     .preserve_unknown_fields_in(&[".wa.CallLogRecord", ".wa.SyncdMutation"])
     /// ```
     #[must_use]
-    pub fn preserve_unknown_fields_in(mut self, paths: &[impl AsRef<str>]) -> Self {
+    pub fn preserve_unknown_fields_in(self, paths: &[impl AsRef<str>]) -> Self {
+        self.preserve_unknown_fields_in_with(true, paths)
+    }
+
+    /// Path-scoped unknown-field preservation with an explicit on/off value.
+    ///
+    /// Same path matching as [`preserve_unknown_fields_in`](Self::preserve_unknown_fields_in);
+    /// the **last** matching rule wins. Use this to carve a nested message out
+    /// of a broader rule, or to turn preservation off for one type while the
+    /// global default stays on:
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .preserve_unknown_fields(true)
+    ///     .preserve_unknown_fields_in_with(false, &[".wa.CallLogRecord"])
+    /// ```
+    ///
+    /// Pair with [`preserve_unknown_fields_in`](Self::preserve_unknown_fields_in)
+    /// (enable-only) or call this repeatedly; call order defines rule order.
+    #[must_use]
+    pub fn preserve_unknown_fields_in_with(
+        mut self,
+        enabled: bool,
+        paths: &[impl AsRef<str>],
+    ) -> Self {
         for raw in paths.iter().map(AsRef::as_ref) {
             let normalized = normalize_override_path(raw);
             if normalized.is_empty() {
@@ -818,7 +842,7 @@ impl Config {
             }
             self.codegen_config
                 .preserve_unknown_fields_in
-                .push((normalized, true));
+                .push((normalized, enabled));
         }
         self
     }
@@ -860,12 +884,10 @@ impl Config {
     /// message's sub-messages reject unknown keys only if their types are
     /// covered too.
     ///
-    /// Rules only enable, so this builder cannot exempt a message. With the
-    /// global flag on, every message is already strict and these rules add
-    /// nothing; to be strict everywhere except a few messages, leave the
-    /// global flag off and list the strict packages here.
-    /// (`buffa_codegen::CodeGenConfig` accepts disabling entries; neither
-    /// this builder nor the plugin exposes them.) With
+    /// This method only enables. To be strict everywhere except a few
+    /// messages, leave the global flag off and list the strict packages here,
+    /// or use [`deny_unknown_json_fields_in_with`](Self::deny_unknown_json_fields_in_with)
+    /// to disable strictness under a broader rule. With
     /// [`generate_json`](Self::generate_json) off the rules change nothing,
     /// and the build warns as it does for the global flag.
     ///
@@ -880,7 +902,29 @@ impl Config {
     ///     .deny_unknown_json_fields_in(&[".demo.DeviceConfig"])
     /// ```
     #[must_use]
-    pub fn deny_unknown_json_fields_in(mut self, paths: &[impl AsRef<str>]) -> Self {
+    pub fn deny_unknown_json_fields_in(self, paths: &[impl AsRef<str>]) -> Self {
+        self.deny_unknown_json_fields_in_with(true, paths)
+    }
+
+    /// Path-scoped strict JSON parsing with an explicit on/off value.
+    ///
+    /// Same path matching as
+    /// [`deny_unknown_json_fields_in`](Self::deny_unknown_json_fields_in); the
+    /// **last** matching rule wins. Use this to exempt a nested message from a
+    /// package-wide strict rule:
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .generate_json(true)
+    ///     .deny_unknown_json_fields_in(&[".demo"])
+    ///     .deny_unknown_json_fields_in_with(false, &[".demo.Legacy"])
+    /// ```
+    #[must_use]
+    pub fn deny_unknown_json_fields_in_with(
+        mut self,
+        enabled: bool,
+        paths: &[impl AsRef<str>],
+    ) -> Self {
         for raw in paths.iter().map(AsRef::as_ref) {
             let normalized = normalize_override_path(raw);
             if normalized.is_empty() {
@@ -892,7 +936,7 @@ impl Config {
             }
             self.codegen_config
                 .deny_unknown_json_fields_in
-                .push((normalized, true));
+                .push((normalized, enabled));
         }
         self
     }
@@ -3450,6 +3494,39 @@ mod tests {
                 (".wa.SyncdMutation".to_string(), true),
                 (".wa.Other".to_string(), true),
                 (".".to_string(), true),
+            ]
+        );
+    }
+
+    #[test]
+    fn preserve_unknown_fields_in_with_can_disable_subpaths() {
+        let config = Config::new()
+            .preserve_unknown_fields(true)
+            .preserve_unknown_fields_in(&[".demo"])
+            .preserve_unknown_fields_in_with(false, &[".demo.Legacy"])
+            .codegen_config;
+        assert!(config.preserve_unknown_fields);
+        assert_eq!(
+            config.preserve_unknown_fields_in,
+            vec![
+                (".demo".to_string(), true),
+                (".demo.Legacy".to_string(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn deny_unknown_json_fields_in_with_can_carve_out_lenient_messages() {
+        let config = Config::new()
+            .generate_json(true)
+            .deny_unknown_json_fields_in(&[".demo"])
+            .deny_unknown_json_fields_in_with(false, &[".demo.Legacy"])
+            .codegen_config;
+        assert_eq!(
+            config.deny_unknown_json_fields_in,
+            vec![
+                (".demo".to_string(), true),
+                (".demo.Legacy".to_string(), false),
             ]
         );
     }
