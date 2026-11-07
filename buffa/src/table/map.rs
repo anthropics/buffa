@@ -418,13 +418,15 @@ unsafe fn merge_entry(
     let [key_entry, value_entry] = table.entries else {
         unreachable!("an entry table has a key and a value")
     };
+
     let mut known = true;
+
     while !payload.is_empty() {
         let tag = Tag::decode(&mut payload)?;
+
         match tag.field_number() {
             1 => {
-                // SAFETY: `key` points to the value the key entry describes,
-                // and the entry table has no unknown fields, so `merge_kind`
+                // SAFETY: The key entry has no unknown fields, so merge_kind
                 // does not read the base pointer.
                 unsafe {
                     merge_kind(
@@ -438,15 +440,19 @@ unsafe fn merge_entry(
                     )
                 }?;
             }
+
             2 if value_entry.kind == Kind::EnumRequired => {
                 check_wire_type(tag, WireType::Varint)?;
+
                 let raw = types::decode_int32(&mut payload)?;
-                // SAFETY: `value` points to the enum the value entry's
-                // descriptor was built for.
-                known = unsafe { (table.enum_vt(value_entry).set)(value, raw) };
+
+                // SAFETY: `value` points to the enum described by value_entry.
+                known &= unsafe { (table.enum_vt(value_entry).set)(value, raw) };
             }
+
             2 => {
-                // SAFETY: as for the key.
+                // SAFETY: The value entry has no unknown fields, so merge_kind
+                // does not read the base pointer.
                 unsafe {
                     merge_kind(
                         table,
@@ -459,8 +465,10 @@ unsafe fn merge_entry(
                     )
                 }?;
             }
+
             _ => skip_field_depth(tag, &mut payload, ctx.depth())?,
         }
     }
+
     Ok(known)
 }
