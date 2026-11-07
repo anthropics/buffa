@@ -1,0 +1,29 @@
+// Exercises `packed_views()`: packed varint fields of eager and
+// lazy views become borrowed `PackedView`s; fixed-width, enum, string and
+// unpacked repeated fields keep `RepeatedView`.
+syntax = "proto3";
+
+package test.packedviews;
+
+enum Color {
+  COLOR_UNSPECIFIED = 0;
+  COLOR_RED = 1;
+}
+
+message Packed {
+  repeated int32 i32s = 1;
+  repeated int64 i64s = 2;
+  repeated uint32 u32s = 3;
+  repeated uint64 u64s = 4;
+  repeated sint32 s32s = 5;
+  repeated sint64 s64s = 6;
+  repeated bool bools = 7;
+  repeated fixed32 f32s = 8;
+  repeated Color colors = 9;
+  repeated string names = 10;
+  repeated uint32 unpacked = 11 [packed = false];
+}
+
+message Holder {
+  repeated Packed items = 1;
+}

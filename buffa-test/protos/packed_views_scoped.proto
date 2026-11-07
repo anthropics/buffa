@@ -1,0 +1,16 @@
+// Exercises path-scoped `packed_views_in`: one message mixes a field selected
+// as a `PackedView` with a varint field that keeps `RepeatedView`, and a
+// message rule covers the fields of a nested message.
+syntax = "proto3";
+
+package test.packedviewsscoped;
+
+message Mixed {
+  repeated uint32 selected = 1;
+  repeated sint64 unlisted = 2;
+  Inner inner = 3;
+
+  message Inner {
+    repeated uint64 nested = 1;
+  }
+}

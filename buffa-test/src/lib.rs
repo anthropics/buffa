@@ -558,6 +558,20 @@ pub mod lazyviews {
     buffa::include_proto!("test.lazyviews");
 }
 
+/// `packed_views()` (with lazy views and JSON) — packed varint fields of
+/// views as borrowed `PackedView`s.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod packedviews {
+    buffa::include_proto!("test.packedviews");
+}
+
+/// `packed_views_in(paths)` (with lazy views and JSON) — `PackedView` and
+/// `RepeatedView` varint fields in one message.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod packedviewsscoped {
+    buffa::include_proto!("test.packedviewsscoped");
+}
+
 /// `lazy_views(true)` + `preserve_unknown_fields(false)` — the lazy decode
 /// loop without unknown-field capture, and an all-scalar lazy struct whose
 /// lifetime is anchored by `PhantomData`.

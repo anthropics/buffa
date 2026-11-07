@@ -188,6 +188,7 @@ struct PluginConfig {
 fn parse_config(params: &str) -> Result<PluginConfig, String> {
     let mut codegen = CodeGenConfig::default();
     let mut unbox_oneof = false;
+    let mut packed_views = false;
 
     if params.is_empty() {
         return Ok(PluginConfig { codegen });
@@ -200,6 +201,16 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
         match key.trim() {
             "views" => codegen.generate_views = parse_bool("views", value)?,
             "lazy_views" => codegen.lazy_views = parse_bool("lazy_views", value)?,
+            // `packed_views=true` holds every packed varint field of views as a
+            // `PackedView`; path-scoped rules use the repeatable
+            // `packed_views_in=<path>`, matching the builder API's
+            // `packed_views()` / `packed_views_in()` split.
+            "packed_views" => packed_views = parse_bool("packed_views", value)?,
+            "packed_views_in" => {
+                codegen
+                    .packed_view_fields
+                    .push((normalize_proto_path(value.trim(), "packed_views_in")?, true));
+            }
             "unknown_fields" => {
                 codegen.preserve_unknown_fields = parse_bool("unknown_fields", value)?
             }
@@ -462,6 +473,9 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
     if unbox_oneof {
         codegen.unboxed_oneof_fields.push(".".to_string());
     }
+    if packed_views {
+        codegen.packed_view_fields.push((".".to_string(), true));
+    }
 
     // Without reflection there is no embedded descriptor pool to share.
     // Codegen core rejects this too, but its message names the CodeGenConfig
@@ -637,6 +651,42 @@ mod tests {
     fn views_false() {
         let config = parse_config("views=false").unwrap();
         assert!(!config.codegen.generate_views);
+    }
+
+    #[test]
+    fn packed_views_is_a_boolean_blanket_toggle() {
+        let config = parse_config("packed_views=true").unwrap();
+        assert_eq!(
+            config.codegen.packed_view_fields,
+            vec![(".".to_string(), true)]
+        );
+        assert!(parse_config("")
+            .unwrap()
+            .codegen
+            .packed_view_fields
+            .is_empty());
+        let config = parse_config("packed_views=true,packed_views=false").unwrap();
+        assert!(config.codegen.packed_view_fields.is_empty());
+        assert!(parse_err("packed_views=.my.pkg").contains("packed_views"));
+    }
+
+    #[test]
+    fn packed_views_in_is_repeatable_and_normalized() {
+        let config = parse_config(
+            "packed_views_in=my.pkg.Msg.ids,packed_views_in= . ,packed_views_in=.my.pkg.Other. ",
+        )
+        .unwrap();
+        assert_eq!(
+            config.codegen.packed_view_fields,
+            vec![
+                (".my.pkg.Msg.ids".to_string(), true),
+                (".".to_string(), true),
+                (".my.pkg.Other".to_string(), true),
+            ]
+        );
+        for bad in ["packed_views_in=", "packed_views_in=..."] {
+            assert!(parse_err(bad).contains("packed_views_in"), "{bad}");
+        }
     }
 
     #[test]

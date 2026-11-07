@@ -138,6 +138,48 @@ impl Config {
         self
     }
 
+    /// Hold the matching packed varint fields of views as borrowed
+    /// `buffa::PackedView`s instead of `Vec`-backed `RepeatedView`s, so
+    /// decoding a view makes no allocation for them.
+    ///
+    /// Each path is a fully-qualified proto path prefix, e.g.
+    /// `".my.pkg.MyMessage.ids"` for one field, `".my.pkg.MyMessage"` for a
+    /// message (its nested messages' fields too) or `".my.pkg"` for a package
+    /// (same matching as [`use_bytes_type_in`](Self::use_bytes_type_in)).
+    /// Paths are normalized as for [`bytes_type_in`](Self::bytes_type_in), and
+    /// a rule that matches no generated field produces a `cargo:warning`.
+    /// Calls accumulate with [`packed_views`](Self::packed_views), in any
+    /// order.
+    ///
+    /// Only packed `int32`, `int64`, `uint32`, `uint64`, `sint32`, `sint64` and
+    /// `bool` fields are eligible: enums, fixed-width and unpacked fields that
+    /// a rule covers keep `RepeatedView`. A `PackedView` has no slice to index
+    /// or deref to, and decodes its elements again on every iteration, so list
+    /// only fields that are read once, in order. Has no effect on views that
+    /// implement reflection ([`generate_reflection`](Self::generate_reflection)
+    /// selects them), which produces a `cargo:warning`. See
+    /// [`CodeGenConfig::packed_view_fields`].
+    #[must_use]
+    pub fn packed_views_in(mut self, paths: &[impl AsRef<str>]) -> Self {
+        self.codegen_config.packed_view_fields.extend(
+            field_rule_paths("packed_views_in", paths)
+                .into_iter()
+                .map(|path| (path, true)),
+        );
+        self
+    }
+
+    /// Hold every eligible packed varint field of views as a borrowed
+    /// `buffa::PackedView`. Convenience for `.packed_views_in(&["."])`; see it
+    /// for the eligible fields and the costs.
+    #[must_use]
+    pub fn packed_views(mut self) -> Self {
+        self.codegen_config
+            .packed_view_fields
+            .push((".".to_string(), true));
+        self
+    }
+
     /// Enable or disable serde JSON generation (default: false).
     ///
     /// When enabled:
@@ -3346,6 +3388,22 @@ mod tests {
             vec![
                 ".my.pkg.Msg.body.small".to_string(),
                 ".my.pkg.Other".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn packed_views_in_normalizes_and_accumulates_paths() {
+        let config = Config::new()
+            .packed_views_in(&["my.pkg.Msg.ids", ".my.pkg.Other.", "..."])
+            .packed_views()
+            .codegen_config;
+        assert_eq!(
+            config.packed_view_fields,
+            vec![
+                (".my.pkg.Msg.ids".to_string(), true),
+                (".my.pkg.Other".to_string(), true),
+                (".".to_string(), true),
             ]
         );
     }

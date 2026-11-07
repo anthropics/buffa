@@ -25,7 +25,8 @@
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::encoding::decode_varint_packed;
+use crate::encode_sink::EncodeSink;
+use crate::encoding::{decode_varint_packed, encode_varint, varint_len};
 use crate::error::DecodeError;
 
 mod sealed {
@@ -197,6 +198,22 @@ impl<'a, C: PackedCodec> PackedView<'a, C> {
         self.decoded().push(elem);
     }
 
+    /// The length of the packed payload [`write_packed`](Self::write_packed) writes
+    /// (used by generated `ViewEncode` code).
+    #[doc(hidden)]
+    #[must_use]
+    pub fn packed_len(&self) -> usize {
+        self.iter().map(|e| varint_len(C::to_varint(e))).sum()
+    }
+
+    /// Writes the elements as a packed payload, canonically encoded as the owned
+    /// message encodes them (used by generated `ViewEncode` code).
+    #[doc(hidden)]
+    pub fn write_packed(&self, buf: &mut impl EncodeSink) {
+        self.iter()
+            .for_each(|e| encode_varint(C::to_varint(e), buf));
+    }
+
     fn decoded(&mut self) -> &mut Vec<C::Elem> {
         if let Repr::Borrowed(..) = self.repr {
             self.repr = Repr::Decoded(self.to_vec());
@@ -212,6 +229,15 @@ impl<C: PackedCodec> Default for PackedView<'_, C> {
     fn default() -> Self {
         Self {
             repr: Repr::Borrowed(&[], 0),
+        }
+    }
+}
+
+/// Collects elements into a view, for building one from application data.
+impl<C: PackedCodec> FromIterator<C::Elem> for PackedView<'_, C> {
+    fn from_iter<I: IntoIterator<Item = C::Elem>>(iter: I) -> Self {
+        Self {
+            repr: Repr::Decoded(iter.into_iter().collect()),
         }
     }
 }
@@ -279,7 +305,6 @@ mod tests {
     use alloc::{format, vec};
 
     use super::*;
-    use crate::encoding::encode_varint;
 
     fn varints(values: &[u64]) -> Vec<u8> {
         let mut out = Vec::new();
@@ -331,6 +356,14 @@ mod tests {
         iter.next();
         assert_eq!(iter.len(), 2);
         assert_eq!((&view).into_iter().sum::<u32>(), 301);
+        // Re-encoded canonically, as the owned message encodes the decoded values.
+        let mut out = Vec::new();
+        view.write_packed(&mut out);
+        let canonical = varints(&[1, 300, 0]);
+        assert_eq!(
+            (out, view.packed_len()),
+            (canonical.clone(), canonical.len())
+        );
     }
 
     #[test]
@@ -346,6 +379,14 @@ mod tests {
         view.push(70_000);
         assert_eq!(view.to_vec(), [-1, 2, i64::MIN, 70_000]);
         assert_eq!(format!("{view:?}"), "[-1, 2, -9223372036854775808, 70000]");
+        let mut out = Vec::new();
+        view.write_packed(&mut out);
+        let expected = encoded(&[-1, 2, i64::MIN, 70_000]);
+        assert_eq!((out, view.packed_len()), (expected.clone(), expected.len()));
+        assert_eq!(
+            view.to_vec(),
+            PackedView::<Sint64>::from_iter(view.to_vec()).to_vec()
+        );
         // A malformed record leaves the field unchanged.
         assert_eq!(view.extend_packed(&[0x80]), Err(DecodeError::UnexpectedEof));
         assert_eq!(view.len(), 4);

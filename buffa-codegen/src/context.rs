@@ -1569,6 +1569,19 @@ impl<'a> CodeGenContext<'a> {
             .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
             .map_or(crate::RepeatedRepr::default(), |(_, repr)| repr.clone())
     }
+
+    /// Whether `config.packed_view_fields` selects the field at `field_fqn`
+    /// (e.g. `".my.pkg.MyMessage.ids"`), with the same proto-segment-aware
+    /// prefix logic as [`bytes_repr`](Self::bytes_repr); the **last** matching
+    /// rule wins, and a field matching no rule is not selected.
+    pub fn packed_view_field(&self, field_fqn: &str) -> bool {
+        self.config
+            .packed_view_fields
+            .iter()
+            .rev()
+            .find(|(prefix, _)| matches_proto_prefix(prefix, field_fqn))
+            .is_some_and(|(_, enabled)| *enabled)
+    }
 }
 
 /// Scope-local context for code generation within a message.

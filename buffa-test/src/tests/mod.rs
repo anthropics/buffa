@@ -109,6 +109,7 @@ mod nestpkg;
 mod oneof_struct_field_attr;
 mod open_enums;
 mod owned_view;
+mod packed_views;
 mod proto2;
 mod proto3_semantics;
 mod remote_derive_serde;

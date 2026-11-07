@@ -721,3 +721,156 @@ fn map_entries_omit_defaults_compares_view_enum_values_with_their_default() {
     assert_eq!(view.matches(closed).count(), 3, "{view}");
     assert_eq!(view.matches("v.to_i32()!=0").count(), 3, "{view}");
 }
+
+// -----------------------------------------------------------------------
+// packed_views
+// -----------------------------------------------------------------------
+
+#[test]
+fn packed_views_hold_packed_varint_fields_as_packed_views() {
+    let mut unpacked = make_field("unpacked", 4, Label::LABEL_REPEATED, Type::TYPE_UINT32);
+    unpacked.options = crate::generated::descriptor::FieldOptions {
+        packed: Some(false),
+        ..Default::default()
+    }
+    .into();
+    let mut file = proto3_file("packed.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![
+            make_field("ids", 1, Label::LABEL_REPEATED, Type::TYPE_UINT32),
+            make_field("deltas", 2, Label::LABEL_REPEATED, Type::TYPE_SINT64),
+            make_field("weights", 3, Label::LABEL_REPEATED, Type::TYPE_FIXED32),
+            unpacked,
+        ],
+        ..Default::default()
+    });
+    let generate_with = |config: CodeGenConfig| {
+        joined(
+            &generate(&[file.clone()], &["packed.proto".to_string()], &config)
+                .expect("should generate"),
+        )
+    };
+    let on = CodeGenConfig {
+        packed_view_fields: vec![(".".to_string(), true)],
+        ..Default::default()
+    };
+    let content = generate_with(on.clone());
+    for field in [
+        "pub ids: ::buffa::PackedView<'a, ::buffa::packed_view::Uint32>",
+        "pub deltas: ::buffa::PackedView<'a, ::buffa::packed_view::Sint64>",
+        // Not varints, or not packed: unchanged.
+        "pub weights: ::buffa::RepeatedView<'a, u32>",
+        "pub unpacked: ::buffa::RepeatedView<'a, u32>",
+    ] {
+        assert!(content.contains(field), "{field}: {content}");
+    }
+    assert!(
+        content.contains("view.ids.extend_packed(payload)?"),
+        "{content}"
+    );
+    // Views that implement reflection keep RepeatedView.
+    let reflecting = generate_with(CodeGenConfig {
+        generate_reflection: true,
+        generate_reflection_vtable: true,
+        ..on
+    });
+    assert!(!reflecting.contains("PackedView"), "{reflecting}");
+
+    // Rules are proto path prefixes, and the last matching one wins.
+    let with_rules = |rules: &[(&str, bool)]| {
+        generate_with(CodeGenConfig {
+            packed_view_fields: rules
+                .iter()
+                .map(|(r, on)| ((*r).to_string(), *on))
+                .collect(),
+            ..Default::default()
+        })
+    };
+    let ids = "pub ids: ::buffa::PackedView<'a, ::buffa::packed_view::Uint32>";
+    let deltas = "pub deltas: ::buffa::PackedView<'a, ::buffa::packed_view::Sint64>";
+    let deltas_repeated = "pub deltas: ::buffa::RepeatedView<'a, i64>";
+    let field = with_rules(&[(".Msg.ids", true)]);
+    assert!(
+        field.contains(ids) && field.contains(deltas_repeated),
+        "{field}"
+    );
+    // The two fields of one message take different decode arms.
+    assert!(
+        field.contains("view.ids.extend_packed(payload)?"),
+        "{field}"
+    );
+    assert!(field.contains("view.deltas.as_mut_vec()"), "{field}");
+    let message = with_rules(&[(".Msg", true)]);
+    assert!(
+        message.contains(ids) && message.contains(deltas),
+        "{message}"
+    );
+    let carved = with_rules(&[(".", true), (".Msg.deltas", false)]);
+    assert!(
+        carved.contains(ids) && carved.contains(deltas_repeated),
+        "{carved}"
+    );
+    // Matching is by whole path segments: `.Msg.id` is not a prefix of `.Msg.ids`.
+    let default = generate_with(CodeGenConfig::default());
+    assert_eq!(with_rules(&[(".Msg.id", true)]), default);
+    assert_eq!(with_rules(&[(".Other", true)]), default);
+    assert!(!default.contains("PackedView"), "{default}");
+}
+
+#[test]
+fn packed_views_warn_when_they_change_nothing() {
+    let mut file = proto3_file("packed.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![make_field(
+            "ids",
+            1,
+            Label::LABEL_REPEATED,
+            Type::TYPE_UINT32,
+        )],
+        ..Default::default()
+    });
+    let warnings = |config: CodeGenConfig| {
+        crate::generate_with_diagnostics(&[file.clone()], &["packed.proto".to_string()], &config)
+            .expect("should generate")
+            .1
+    };
+    let all = || vec![(".".to_string(), true)];
+    let reflecting = warnings(CodeGenConfig {
+        packed_view_fields: all(),
+        generate_reflection: true,
+        generate_reflection_vtable: true,
+        ..Default::default()
+    });
+    assert!(
+        reflecting.contains(&CodeGenWarning::PackedViewsIgnored { reflection: true }),
+        "{reflecting:?}"
+    );
+    let no_views = warnings(CodeGenConfig {
+        packed_view_fields: all(),
+        generate_views: false,
+        ..Default::default()
+    });
+    assert!(
+        no_views.contains(&CodeGenWarning::PackedViewsIgnored { reflection: false }),
+        "{no_views:?}"
+    );
+    let typo = warnings(CodeGenConfig {
+        packed_view_fields: vec![(".Msg.idz".to_string(), true)],
+        ..Default::default()
+    });
+    assert!(
+        typo.iter().any(|w| matches!(
+            w,
+            CodeGenWarning::FieldTypeRuleMatchedNothing { rule, option: "packed_view_fields", .. }
+                if rule == ".Msg.idz"
+        )),
+        "{typo:?}"
+    );
+    assert!(warnings(CodeGenConfig {
+        packed_view_fields: all(),
+        ..Default::default()
+    })
+    .is_empty());
+}
