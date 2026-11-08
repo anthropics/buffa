@@ -1212,6 +1212,26 @@ pub struct CodeGenConfig {
     /// reuses the eager view-oneof enums and eager sub-view types); with
     /// views disabled the flag is ignored with a warning.
     pub lazy_views: bool,
+    /// Path rules selecting the packed varint fields (`int32`, `int64`,
+    /// `uint32`, `uint64`, `sint32`, `sint64`, `bool`; not enums or fixed-width
+    /// types) that views hold as `buffa::PackedView`s, borrowed and checked
+    /// when decoded and decoded as iterated, instead of `RepeatedView`s, which
+    /// allocate a `Vec` per field per message. A `PackedView` has no slice to
+    /// index or deref to, and decodes its elements again on every iteration,
+    /// so a field read by index or more than once may be better left out.
+    ///
+    /// Each entry is `(proto_path_prefix, enabled)`, with a leading dot
+    /// (`".pkg.Msg.ids"`), matched with the same proto-segment-aware prefix
+    /// logic as [`bytes_fields`](Self::bytes_fields): `"."` covers every field,
+    /// and a message path covers its fields and those of the messages nested
+    /// in it. The **last** matching rule wins, so a later `false` entry can
+    /// carve a field back out of an earlier, broader one. The default is
+    /// empty. Applies to the eager and the lazy families, but not to views
+    /// that implement reflection (`generate_reflection_vtable`), nor without
+    /// `generate_views`; either produces a [`CodeGenWarning`]. A rule that
+    /// matches no generated field produces
+    /// [`CodeGenWarning::FieldTypeRuleMatchedNothing`].
+    pub packed_view_fields: Vec<(String, bool)>,
     /// Whether to preserve unknown fields (default: true).
     ///
     /// Path-scoped overrides go in
@@ -2024,6 +2044,7 @@ impl Default for CodeGenConfig {
         Self {
             generate_views: true,
             lazy_views: false,
+            packed_view_fields: Vec::new(),
             preserve_unknown_fields: true,
             preserve_unknown_fields_in: Vec::new(),
             deny_unknown_json_fields: false,
@@ -2308,6 +2329,17 @@ pub enum CodeGenWarning {
     /// no lazy views were generated. Emitted once per generation run.
     #[non_exhaustive]
     LazyViewsRequireViews,
+    /// [`packed_view_fields`](CodeGenConfig::packed_view_fields) selects
+    /// fields, but views are not generated, or implement reflection
+    /// ([`generate_reflection_vtable`](CodeGenConfig::generate_reflection_vtable)),
+    /// whose views keep `RepeatedView`s; no field is a `PackedView`. Emitted
+    /// once per generation run.
+    #[non_exhaustive]
+    PackedViewsIgnored {
+        /// Whether views implement reflection; otherwise views are not
+        /// generated.
+        reflection: bool,
+    },
     /// [`deny_unknown_json_fields`](CodeGenConfig::deny_unknown_json_fields), or a
     /// [`deny_unknown_json_fields_in`](CodeGenConfig::deny_unknown_json_fields_in)
     /// rule, was set with [`generate_json`](CodeGenConfig::generate_json)
@@ -2476,7 +2508,8 @@ pub enum CodeGenWarning {
         /// (`buffa-build` has normalized it).
         rule: String,
         /// The [`CodeGenConfig`] list that contains the rule: `"bytes_fields"`,
-        /// `"string_fields"`, `"map_fields"` or `"repeated_fields"`.
+        /// `"string_fields"`, `"map_fields"`, `"repeated_fields"` or
+        /// `"packed_view_fields"`.
         option: &'static str,
         /// Whether the rule matches a field of a message that this call does
         /// not generate: one in an imported file, or in a package under
@@ -2518,6 +2551,7 @@ fn field_type_rule_builders(option: &str) -> &'static str {
         "string_fields" => "string_type_in / string_type_custom_in",
         "map_fields" => "map_type_in / map_type_custom_in",
         "repeated_fields" => "repeated_type_in / repeated_type_custom_in",
+        "packed_view_fields" => "packed_views_in / packed_views",
         _ => "",
     }
 }
@@ -2568,6 +2602,22 @@ impl core::fmt::Display for CodeGenWarning {
                      generated JSON deserializers to make strict); unknown JSON keys \
                      are still ignored — enable generate_json (buffa-build: \
                      `.generate_json(true)`; plugin: `json=true`)"
+                )
+            }
+            Self::PackedViewsIgnored { reflection: true } => {
+                write!(
+                    f,
+                    "packed_views selects fields, but views that implement reflection \
+                     (vtable mode, which generate_reflection selects) keep RepeatedView, \
+                     so no field is a PackedView"
+                )
+            }
+            Self::PackedViewsIgnored { reflection: false } => {
+                write!(
+                    f,
+                    "packed_views selects fields, but views are not generated, so no \
+                     field is a PackedView — enable generate_views (buffa-build: \
+                     `.generate_views(true)`, the default; plugin: `views=true`)"
                 )
             }
             Self::LazyViewsRequireViews => {
@@ -3556,6 +3606,7 @@ pub fn generate_with_diagnostics(
         ("string_fields", rule_paths(&config.string_fields)),
         ("map_fields", rule_paths(&config.map_fields)),
         ("repeated_fields", rule_paths(&config.repeated_fields)),
+        ("packed_view_fields", rule_paths(&config.packed_view_fields)),
     ];
     let mut every_file: Option<Vec<String>> = None;
     for (option, rules) in field_type_rules {
@@ -3598,6 +3649,14 @@ pub fn generate_with_diagnostics(
     // Lazy views need the eager view machinery; warn once per run.
     if config.lazy_views && !config.generate_views {
         ctx.warn(CodeGenWarning::LazyViewsRequireViews);
+    }
+    // Packed views apply only to views without reflection; warn once per run.
+    if config.packed_view_fields.iter().any(|(_, on)| *on)
+        && (!config.generate_views || config.generate_reflection_vtable)
+    {
+        ctx.warn(CodeGenWarning::PackedViewsIgnored {
+            reflection: config.generate_views,
+        });
     }
 
     // Warn about exclude_packages entries that matched no package in the full

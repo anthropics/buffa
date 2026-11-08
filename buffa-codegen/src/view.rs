@@ -213,6 +213,7 @@ pub(crate) fn generate_view_with_nesting(
     };
     let view_encode_methods = crate::impl_message::build_view_encode_methods(
         ctx,
+        proto_fqn,
         msg,
         preserve_unknown_fields,
         features,
@@ -834,6 +835,37 @@ pub(crate) fn view_singular_type(
     }
 }
 
+/// The `buffa::packed_view` codec of a field that views hold as a
+/// `PackedView` (a packed varint field matched by `packed_view_fields`), or
+/// `None`. `proto_fqn` and `parent_features` are the enclosing message's.
+pub(crate) fn packed_view_codec(
+    ctx: &CodeGenContext,
+    proto_fqn: &str,
+    field: &FieldDescriptorProto,
+    parent_features: &ResolvedFeatures,
+) -> Option<TokenStream> {
+    if ctx.config.packed_view_fields.is_empty()
+        || ctx.config.generate_reflection_vtable
+        || field.label.unwrap_or_default() != Label::LABEL_REPEATED
+        || !crate::impl_message::is_field_packed(field, parent_features)
+    {
+        return None;
+    }
+    let codec = match field.r#type.unwrap_or_default() {
+        Type::TYPE_INT32 => quote! { Int32 },
+        Type::TYPE_INT64 => quote! { Int64 },
+        Type::TYPE_UINT32 => quote! { Uint32 },
+        Type::TYPE_UINT64 => quote! { Uint64 },
+        Type::TYPE_SINT32 => quote! { Sint32 },
+        Type::TYPE_SINT64 => quote! { Sint64 },
+        Type::TYPE_BOOL => quote! { Bool },
+        _ => return None,
+    };
+    let field_name = field.name.as_deref()?;
+    crate::impl_message::field_packed_view(ctx, proto_fqn, field_name)
+        .then(|| quote! { ::buffa::packed_view::#codec })
+}
+
 /// Field type for a repeated (non-map) view field, with `lt` as the borrow
 /// lifetime — see [`view_singular_type`].
 pub(crate) fn view_repeated_type(
@@ -846,6 +878,9 @@ pub(crate) fn view_repeated_type(
         features: parent_features,
         ..
     } = scope;
+    if let Some(codec) = packed_view_codec(ctx, scope.proto_fqn, field, parent_features) {
+        return Ok(quote! { ::buffa::PackedView<#lt, #codec> });
+    }
     let features = &crate::features::resolve_field(ctx, field, parent_features);
     let ty = effective_type(ctx, field, features);
     match ty {
@@ -1732,7 +1767,9 @@ pub(crate) fn repeated_decode_arm(
     // Fixed-width and plain-varint payloads decode in one bulk call
     // (validation, exact reserve, and the element loop live inside the
     // extender); enums keep the per-element loop for unknown-value routing.
-    let packed_body = if let Some(extend_fn) = extend_packed_fn_token(ty) {
+    let packed_body = if packed_view_codec(ctx, scope.proto_fqn, field, parent_features).is_some() {
+        quote! { view.#ident.extend_packed(payload)?; }
+    } else if let Some(extend_fn) = extend_packed_fn_token(ty) {
         quote! { #extend_fn(payload, view.#ident.as_mut_vec())?; }
     } else if let Some(extend_fn) = extend_packed_varint_fn_token(ty) {
         // The exact-count reserve policy this path had with the loop.
@@ -2065,7 +2102,7 @@ fn build_to_owned_fields(
         }
         let ty = effective_type(ctx, field, features);
         let init = if is_repeated {
-            repeated_to_owned(scope, ty, &ident, name)
+            repeated_to_owned(scope, field, ty, &ident, name)
         } else {
             singular_to_owned(scope, field, ty, &ident, name)?
         };
@@ -2228,6 +2265,7 @@ pub(crate) fn singular_to_owned(
 
 pub(crate) fn repeated_to_owned(
     scope: MessageScope<'_>,
+    field: &FieldDescriptorProto,
     ty: Type,
     ident: &proc_macro2::Ident,
     field_name: &str,
@@ -2259,6 +2297,9 @@ pub(crate) fn repeated_to_owned(
         _ => {
             if crate::impl_message::field_repeated_repr(ctx, proto_fqn, field_name).is_default() {
                 quote! { self.#ident.to_vec() }
+            } else if packed_view_codec(ctx, proto_fqn, field, scope.features).is_some() {
+                // A PackedView iterates by value.
+                quote! { self.#ident.iter().collect() }
             } else {
                 quote! { self.#ident.iter().copied().collect() }
             }
@@ -2613,12 +2654,18 @@ pub(crate) fn view_field_serialize_stmt(
             _ => quote! {},
         };
 
+        // A PackedView has no slice to serialize: decode it.
+        let elems = if packed_view_codec(ctx, scope.proto_fqn, field, parent_features).is_some() {
+            quote! { self.#ident.to_vec() }
+        } else {
+            quote! { self.#ident }
+        };
         let seq_val = if seq_adapter.is_empty() {
             // Explicit deref: RepeatedView doesn't impl Serialize, but &[T] does.
-            quote! { &*self.#ident }
+            quote! { &*#elems }
         } else {
             // Deref coercion from &RepeatedView<'a,T> to &[T] at the adapter field.
-            quote! { &#seq_adapter(&self.#ident) }
+            quote! { &#seq_adapter(&#elems) }
         };
 
         return Ok(quote! {

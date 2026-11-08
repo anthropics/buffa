@@ -1412,6 +1412,32 @@ fn main() {
         .compile()
         .expect("buffa_build failed for lazy_views.proto");
 
+    // packed_views — packed varint fields of eager and lazy views as borrowed
+    // PackedViews. JSON on to exercise the view Serialize path.
+    buffa_build::Config::new()
+        .files(&["protos/packed_views.proto"])
+        .includes(&["protos/"])
+        .packed_views()
+        .lazy_views(true)
+        .generate_json(true)
+        .compile()
+        .expect("buffa_build failed for packed_views.proto");
+
+    // packed_views_in — field-scoped rules: one message mixes PackedView and
+    // RepeatedView varint fields, so its decode, ViewEncode, JSON and
+    // to_owned_message must agree per field.
+    buffa_build::Config::new()
+        .files(&["protos/packed_views_scoped.proto"])
+        .includes(&["protos/"])
+        .packed_views_in(&[
+            ".test.packedviewsscoped.Mixed.selected",
+            ".test.packedviewsscoped.Mixed.Inner",
+        ])
+        .lazy_views(true)
+        .generate_json(true)
+        .compile()
+        .expect("buffa_build failed for packed_views_scoped.proto");
+
     // lazy_views + preserve_unknown_fields(false): compiles the lazy decode
     // loop without unknown-field capture, and the PhantomData lifetime anchor
     // for an all-scalar lazy struct — branches lazy_views.proto can't reach.

@@ -791,6 +791,34 @@ fn lazy_fragment_encode_stmts(
     Ok((compute, write))
 }
 
+/// Compute-size / write-to pair for a view's `PackedView` field: one packed
+/// record holding the payload `PackedView::write_packed` writes.
+fn packed_view_encode_stmts(
+    ctx: &CodeGenContext,
+    field: &FieldDescriptorProto,
+) -> Result<(TokenStream, TokenStream), CodeGenError> {
+    let field_name = field
+        .name
+        .as_deref()
+        .ok_or(CodeGenError::MissingField("field.name"))?;
+    let field_number = validated_field_number(field)?;
+    let ident = ctx.field_ident(field_name, field.number.unwrap_or(0));
+    let ld_tag_len = tag_encoded_len(field_number, 2);
+    let compute = quote! {
+        if !self.#ident.is_empty() {
+            let __n = self.#ident.packed_len() as u64;
+            size += #ld_tag_len + ::buffa::encoding::varint_len(__n) as u64 + __n;
+        }
+    };
+    let write = quote! {
+        if !self.#ident.is_empty() {
+            ::buffa::types::put_len_delimited_header(#field_number, self.#ident.packed_len() as u64, buf);
+            self.#ident.write_packed(buf);
+        }
+    };
+    Ok((compute, write))
+}
+
 /// `is_lazy`: when building for the lazy view family, the per-field
 /// deferral predicate — matching fields re-emit recorded fragments verbatim
 /// (wire-equivalent to the merged value); all other field kinds share the
@@ -798,6 +826,7 @@ fn lazy_fragment_encode_stmts(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_view_encode_methods(
     ctx: &CodeGenContext,
+    proto_fqn: &str,
     msg: &DescriptorProto,
     preserve_unknown_fields: bool,
     features: &ResolvedFeatures,
@@ -833,8 +862,15 @@ pub(crate) fn build_view_encode_methods(
                 compute_stmts.push(scalar_compute_size_stmt(ctx, f, features)?);
                 write_stmts.push(scalar_write_to_stmt(ctx, f, features)?);
             }
+            FieldKind::Repeated(f)
+                if crate::view::packed_view_codec(ctx, proto_fqn, f, features).is_some() =>
+            {
+                let (compute, write) = packed_view_encode_stmts(ctx, f)?;
+                compute_stmts.push(compute);
+                write_stmts.push(write);
+            }
             FieldKind::Repeated(f) => {
-                // The view's repeated fields are always borrowed `RepeatedView`s,
+                // Every other repeated view field is a borrowed `RepeatedView`,
                 // independent of the owned collection's `RepeatedRepr`, so the
                 // default `&self.field` iteration form always applies here.
                 compute_stmts.push(repeated_compute_size_stmt(
@@ -1173,6 +1209,13 @@ pub(crate) fn field_repeated_repr(
 ) -> crate::RepeatedRepr {
     let field_fqn = format!(".{}.{}", proto_fqn, field_name);
     ctx.repeated_repr(&field_fqn)
+}
+
+/// Whether `config.packed_view_fields` selects field `field_name` of the
+/// message `proto_fqn` (no leading dot), matched as for
+/// [`field_repeated_repr`].
+pub(crate) fn field_packed_view(ctx: &CodeGenContext, proto_fqn: &str, field_name: &str) -> bool {
+    ctx.packed_view_field(&format!(".{proto_fqn}.{field_name}"))
 }
 
 fn scalar_clear_stmt(

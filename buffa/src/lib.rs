@@ -235,6 +235,7 @@ pub mod message;
 pub mod message_field;
 pub mod message_set;
 pub mod oneof;
+pub mod packed_view;
 mod size_cache;
 // Runtime for table-driven message codecs, called by generated code; see the
 // module docs.
@@ -278,6 +279,7 @@ pub use size_cache::{SizeCache, SizeCachePool};
 pub use types::{AsSharedBytes, ProtoBytes, ProtoList, ProtoString, WirePayload};
 pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 
+pub use packed_view::PackedView;
 #[cfg(feature = "text")]
 pub use text::TextFormat;
 pub use view::{

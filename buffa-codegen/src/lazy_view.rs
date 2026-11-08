@@ -145,6 +145,7 @@ pub(crate) fn generate_lazy_view_with_nesting(
     let is_lazy = |f: &FieldDescriptorProto| is_lazy_field(view_scope, f);
     let view_encode_methods = crate::impl_message::build_view_encode_methods(
         ctx,
+        proto_fqn,
         msg,
         preserve_unknown_fields,
         features,
@@ -848,7 +849,7 @@ fn build_lazy_to_owned_fields(
                 }
             }
         } else if is_repeated {
-            repeated_to_owned(scope, ty, &ident, name)
+            repeated_to_owned(scope, field, ty, &ident, name)
         } else {
             singular_to_owned(scope, field, ty, &ident, name)?
         };
