@@ -487,6 +487,14 @@
       "created_at": "2026-11-07T22:30:25Z",
       "repoId": 1174622060,
       "pullRequestNo": 815
+    },
+    {
+      "name": "AnthonyKrupko",
+      "id": 146761898,
+      "comment_id": 6746478542,
+      "created_at": "2026-11-09T17:14:54Z",
+      "repoId": 1174622060,
+      "pullRequestNo": 815
     }
   ]
 }
