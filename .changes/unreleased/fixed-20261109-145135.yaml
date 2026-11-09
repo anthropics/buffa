@@ -1,6 +1,6 @@
 kind: Fixed
 body: |-
-    **`MessageDescriptor::field_by_name` and the reflective JSON parser no longer resolve a name shared by two fields to an arbitrary one of them** (closes #817).
+    **`MessageDescriptor::field_by_name` and the reflective JSON parser no longer resolve a name shared by two fields to an arbitrary one of them** (#818, closes #817).
     Where JSON-name conflicts are allowed (proto2, or `deprecated_legacy_json_field_conflicts`), one name can belong to two fields: in a proto2 message with fields `fooBar = 1` and `foo_bar = 2`, both have the JSON name `fooBar`. Proto names and JSON names shared one index, sorted with an unstable sort and searched with a plain binary search, so the field a shared name resolved to was unspecified: with `fooBar` declared first, `field_by_name("fooBar")` returned `foo_bar` in practice and `DynamicMessage::from_json` set field 2 for `{"fooBar": 5}`.
     `field_by_name` now returns the field with that proto name over another field that only has it as its JSON name, as C++'s `FindFieldByName` and protobuf-go's `ByName` return it, and among fields that share a JSON name returns the first declared. The reflective JSON parser resolves an object key JSON name first instead, as protobuf-go's protojson does: the first declared field with that JSON name, else the field with that proto name. Messages without such a conflict resolve as before.
 time: 2026-11-09T14:51:35.148962-06:00
