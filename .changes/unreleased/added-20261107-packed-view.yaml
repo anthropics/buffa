@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`buffa::PackedView`, a borrowed, checked reader for packed varint fields** (refs #814). `PackedView::<C>::from_packed(payload)` checks a packed payload once, counts its elements and keeps borrowing it; `iter()` decodes the elements without a `Vec`. `extend_packed` and `push` add a later record or an unpacked element of the same field. The codec `C` is one of `buffa::packed_view::{Int32, Int64, Uint32, Uint64, Sint32, Sint64, Bool}`. For decoders written with `buffa::encoding` and `buffa::types`.
+time: 2026-11-07T16:30:00-05:00
