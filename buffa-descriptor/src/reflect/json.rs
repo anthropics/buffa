@@ -810,9 +810,10 @@ impl<'de> Visitor<'de> for MessageVisitor<'_> {
         let mut seen_fields: Vec<u32> = Vec::new();
         while let Some(key) = map.next_key::<String>()? {
             // The proto3 JSON spec says parsers must accept both the camelCase
-            // json_name and the original proto field name. `field_by_name`
-            // indexes both. A `"[pkg.ext]"` key names an extension of this
-            // message, registered in the pool by its bracketed full name.
+            // json_name and the original proto field name. `field_by_json_key`
+            // resolves both, JSON name first. A `"[pkg.ext]"` key names an
+            // extension of this message, registered in the pool by its
+            // bracketed full name.
             let md = self.pool.message(self.msg_idx);
             let fd = if let Some(ext_name) = key.strip_prefix('[').and_then(|k| k.strip_suffix(']'))
             {
@@ -831,7 +832,7 @@ impl<'de> Visitor<'de> for MessageVisitor<'_> {
                     None => None,
                 }
             } else {
-                md.field_by_name(&key)
+                md.field_by_json_key(&key)
             };
             let Some(fd) = fd else {
                 // Unknown field — error per the spec, unless the caller

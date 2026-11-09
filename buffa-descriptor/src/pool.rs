@@ -2337,7 +2337,18 @@ impl DescriptorPool {
             fields.push(fd);
         }
         field_by_number.sort_unstable_by_key(|&(n, _)| n);
-        field_by_name.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+        // Equal names can occur where JSON-name conflicts are allowed
+        // (proto2, or `deprecated_legacy_json_field_conflicts`). Order them so
+        // the first entry is the one `field_by_name` returns: a field's own
+        // proto name before another field's JSON name, then the earlier
+        // declared field. `field_by_json_key` picks among the equal entries
+        // itself.
+        field_by_name.sort_unstable_by(|(a, ai), (b, bi)| {
+            let is_json_name = |name: &String, i: u16| fields[i as usize].name != *name;
+            a.cmp(b)
+                .then_with(|| is_json_name(a, *ai).cmp(&is_json_name(b, *bi)))
+                .then_with(|| ai.cmp(bi))
+        });
 
         for oneof in &oneofs {
             if oneof.field_indices.is_empty() {

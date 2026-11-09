@@ -322,7 +322,9 @@ pub struct MessageDescriptor {
     /// binary-search lookup. Internal index; not API.
     pub(crate) field_by_number: Vec<(u32, u16)>,
     /// `(name, index_into_fields)`, sorted by name. Holds both the proto
-    /// name and (when distinct) the JSON name. Internal index; not API.
+    /// name and (when distinct) the JSON name; among equal names, a proto
+    /// name sorts before a JSON name, then by declaration order. Internal
+    /// index; not API.
     pub(crate) field_by_name: Vec<(String, u16)>,
     pub(crate) oneofs: Vec<OneofDescriptor>,
     pub(crate) extension_ranges: Vec<(u32, u32)>,
@@ -387,17 +389,59 @@ impl MessageDescriptor {
 
     /// Look up a field by its proto field name or JSON name. `O(log n)`.
     ///
-    /// CEL evaluators and JSON parsers both look fields up by name in a hot
-    /// loop; this is the supported path. Both the proto field name and the
-    /// camelCase JSON name resolve.
+    /// CEL evaluators look fields up by name in a hot loop; this is the
+    /// supported path. Both the proto field name and the JSON name resolve.
+    ///
+    /// Where JSON-name conflicts are allowed (proto2, or
+    /// `deprecated_legacy_json_field_conflicts`), a name can match more than
+    /// one field. The field with that proto name is returned, as C++'s
+    /// `FindFieldByName` returns it, and among fields sharing a JSON name the
+    /// first declared. The reflective JSON parser (`DynamicMessage::from_json`)
+    /// resolves object keys JSON name first instead, as protobuf-go's
+    /// protojson does; a JSON parser that must match protojson in these
+    /// cases should check `json_name` across `fields()` first.
     #[must_use]
     pub fn field_by_name(&self, name: &str) -> Option<&FieldDescriptor> {
         let i = self
             .field_by_name
-            .binary_search_by(|(n, _)| n.as_str().cmp(name))
-            .ok()?;
-        let (_, idx) = self.field_by_name[i];
+            .partition_point(|(n, _)| n.as_str() < name);
+        match self.field_by_name.get(i) {
+            Some((n, idx)) if n == name => self.fields.get(*idx as usize),
+            _ => None,
+        }
+    }
+
+    /// Resolve a JSON object key as protobuf-go's protojson does: the first
+    /// declared field whose JSON name is `key`, else the field whose proto
+    /// name is `key`. Differs from [`field_by_name`](Self::field_by_name)
+    /// only where a JSON-name conflict makes `key` match two fields.
+    #[cfg(all(feature = "reflect", feature = "json"))]
+    pub(crate) fn field_by_json_key(&self, key: &str) -> Option<&FieldDescriptor> {
+        let entries = self.entries_named(key);
+        if let [(_, idx)] = entries {
+            return self.fields.get(*idx as usize);
+        }
+        let idx = entries
+            .iter()
+            .map(|&(_, idx)| idx)
+            .filter(|&idx| {
+                self.fields
+                    .get(idx as usize)
+                    .is_some_and(|fd| fd.json_name == key)
+            })
+            .min()
+            .or_else(|| entries.first().map(|&(_, idx)| idx))?;
         self.fields.get(idx as usize)
+    }
+
+    /// The `field_by_name` entries for `name`, in index order.
+    #[cfg(all(feature = "reflect", feature = "json"))]
+    fn entries_named(&self, name: &str) -> &[(String, u16)] {
+        let start = self
+            .field_by_name
+            .partition_point(|(n, _)| n.as_str() < name);
+        let rest = &self.field_by_name[start..];
+        &rest[..rest.partition_point(|(n, _)| n == name)]
     }
 
     /// Whether `number` falls within any declared extension range.
