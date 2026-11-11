@@ -5201,6 +5201,188 @@ fn proto2_json_name_conflicts_are_accepted_as_protoc_emits_them() {
     .expect("proto2 JSON-name conflicts are best-effort, and protoc emits them");
 }
 
+/// Pool holding the proto2 message `lenient.test.M` with `fields`, each given
+/// the JSON name protoc would assign it.
+fn pool_with_proto2_message(
+    fields: &[(&str, i32, &str)],
+) -> (Arc<DescriptorPool>, buffa_descriptor::MessageIndex) {
+    pool_with_message("proto2", None, fields)
+}
+
+/// Pool holding the message `lenient.test.M` with `fields` in a file of the
+/// given `syntax`, with `options` on the message.
+fn pool_with_message(
+    syntax: &str,
+    options: Option<buffa_descriptor::generated::descriptor::MessageOptions>,
+    fields: &[(&str, i32, &str)],
+) -> (Arc<DescriptorPool>, buffa_descriptor::MessageIndex) {
+    use buffa_descriptor::generated::descriptor::field_descriptor_proto::Type;
+    use buffa_descriptor::generated::descriptor::{
+        DescriptorProto, FileDescriptorProto, FileDescriptorSet,
+    };
+
+    let field = fields
+        .iter()
+        .map(|&(name, number, json_name)| {
+            let mut f = scalar_field(name, number, Type::TYPE_INT32);
+            f.json_name = Some(json_name.into());
+            f
+        })
+        .collect();
+    let mut p = DescriptorPool::decode(FDS_BYTES).unwrap();
+    p.add_file_descriptor_set(FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("json-name-lookup.proto".into()),
+            package: Some("lenient.test".into()),
+            syntax: Some(syntax.into()),
+            message_type: vec![DescriptorProto {
+                name: Some("M".into()),
+                field,
+                options: options.into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    })
+    .unwrap();
+    let idx = p.message_index("lenient.test.M").unwrap();
+    (Arc::new(p), idx)
+}
+
+/// A proto name that is also another field's JSON name (`fooBar` and
+/// `foo_bar`, both JSON-named `fooBar`) resolves to the field with that
+/// proto name, in either declaration order, as C++'s `FindFieldByName` and
+/// protobuf-go's `ByName` do.
+#[test]
+fn field_by_name_prefers_the_proto_name_over_another_fields_json_name() {
+    for fields in [
+        [("fooBar", 1, "fooBar"), ("foo_bar", 2, "fooBar")],
+        [("foo_bar", 2, "fooBar"), ("fooBar", 1, "fooBar")],
+    ] {
+        let (p, idx) = pool_with_proto2_message(&fields);
+        let md = p.message(idx);
+        assert_eq!(
+            md.field_by_name("fooBar").unwrap().number(),
+            1,
+            "{fields:?}"
+        );
+        assert_eq!(
+            md.field_by_name("foo_bar").unwrap().number(),
+            2,
+            "{fields:?}"
+        );
+    }
+}
+
+/// Two fields sharing only a JSON name resolve to the first declared one, as
+/// protobuf-go's `ByJSONName` does, rather than to whichever the sort placed
+/// first.
+#[test]
+fn field_by_name_resolves_a_shared_json_name_to_the_first_declared_field() {
+    for (fields, first) in [
+        ([("alpha", 1, "sameName"), ("beta", 2, "sameName")], 1),
+        ([("beta", 2, "sameName"), ("alpha", 1, "sameName")], 2),
+    ] {
+        let (p, idx) = pool_with_proto2_message(&fields);
+        let md = p.message(idx);
+        assert_eq!(
+            md.field_by_name("sameName").unwrap().number(),
+            first,
+            "{fields:?}"
+        );
+    }
+}
+
+/// The reflective JSON parser resolves a key JSON name first, as protobuf-go's
+/// protojson does (`ByJSONName`, then `ByTextName`), so `{"fooBar": 5}` sets
+/// the first declared field whose JSON name is `fooBar`, in either order.
+#[cfg(feature = "json")]
+#[test]
+fn json_key_resolves_to_the_first_field_with_that_json_name() {
+    use buffa_descriptor::{DynamicMessage, Value};
+
+    for (fields, set, unset) in [
+        ([("fooBar", 1, "fooBar"), ("foo_bar", 2, "fooBar")], 1, 2),
+        ([("foo_bar", 2, "fooBar"), ("fooBar", 1, "fooBar")], 2, 1),
+    ] {
+        let (p, idx) = pool_with_proto2_message(&fields);
+        let msg = DynamicMessage::from_json(Arc::clone(&p), idx, r#"{"fooBar": 5}"#).unwrap();
+        assert_eq!(msg.field_by_number(set), Some(&Value::I32(5)), "{fields:?}");
+        assert_eq!(msg.field_by_number(unset), None, "{fields:?}");
+    }
+}
+
+/// With a custom `json_name`, a key can be one field's proto name and another
+/// field's JSON name. The JSON parser takes the JSON name, as protojson does,
+/// while `field_by_name` takes the proto name.
+#[cfg(feature = "json")]
+#[test]
+fn json_key_prefers_a_custom_json_name_over_another_fields_proto_name() {
+    use buffa_descriptor::{DynamicMessage, Value};
+
+    let (p, idx) = pool_with_proto2_message(&[("fooBar", 1, "custom"), ("x", 2, "fooBar")]);
+    assert_eq!(p.message(idx).field_by_name("fooBar").unwrap().number(), 1);
+    let msg = DynamicMessage::from_json(Arc::clone(&p), idx, r#"{"fooBar": 5}"#).unwrap();
+    assert_eq!(msg.field_by_number(2), Some(&Value::I32(5)));
+    assert_eq!(msg.field_by_number(1), None);
+}
+
+/// A proto3 message that opts out with `deprecated_legacy_json_field_conflicts`
+/// resolves a shared name by the same rules as proto2: `field_by_name` takes
+/// the proto name, the JSON parser the first declared field with that JSON
+/// name.
+// The option is `[deprecated = true]` in descriptor.proto.
+#[allow(deprecated)]
+#[cfg(feature = "json")]
+#[test]
+fn proto3_legacy_json_conflict_opt_out_resolves_shared_names_deterministically() {
+    use buffa_descriptor::generated::descriptor::MessageOptions;
+    use buffa_descriptor::{DynamicMessage, Value};
+
+    for (fields, json_sets) in [
+        ([("fooBar", 1, "fooBar"), ("foo_bar", 2, "fooBar")], 1),
+        ([("foo_bar", 2, "fooBar"), ("fooBar", 1, "fooBar")], 2),
+    ] {
+        let opt_out = MessageOptions {
+            deprecated_legacy_json_field_conflicts: Some(true),
+            ..Default::default()
+        };
+        let (p, idx) = pool_with_message("proto3", Some(opt_out), &fields);
+        let md = p.message(idx);
+        assert_eq!(
+            md.field_by_name("fooBar").unwrap().number(),
+            1,
+            "{fields:?}"
+        );
+        assert_eq!(
+            md.field_by_name("foo_bar").unwrap().number(),
+            2,
+            "{fields:?}"
+        );
+        let msg = DynamicMessage::from_json(Arc::clone(&p), idx, r#"{"fooBar": 5}"#).unwrap();
+        assert_eq!(
+            msg.field_by_number(json_sets),
+            Some(&Value::I32(5)),
+            "{fields:?}"
+        );
+        assert_eq!(msg.field_by_number(3 - json_sets), None, "{fields:?}");
+    }
+}
+
+/// A key that is only a proto name still resolves when no field has it as
+/// its JSON name.
+#[cfg(feature = "json")]
+#[test]
+fn json_key_falls_back_to_the_proto_name() {
+    use buffa_descriptor::{DynamicMessage, Value};
+
+    let (p, idx) = pool_with_proto2_message(&[("foo_bar", 2, "fooBar"), ("fooBar", 1, "fooBar")]);
+    let msg = DynamicMessage::from_json(Arc::clone(&p), idx, r#"{"foo_bar": 5}"#).unwrap();
+    assert_eq!(msg.field_by_number(2), Some(&Value::I32(5)));
+    assert_eq!(msg.field_by_number(1), None);
+}
+
 /// `deprecated_legacy_json_field_conflicts` is protoc's own opt-out: it
 /// downgrades the conflict to a warning and emits the set. Honour it rather
 /// than reject a descriptor set the author explicitly asked protoc to produce.
