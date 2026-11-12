@@ -388,7 +388,7 @@ Key points:
 - **A custom string used as a `map` key needs `Hash + Eq`** (for the default / `HashMap` container) or `Ord` (for `map_type(BTreeMap)`). The bound is enforced at the generated map field type, so a missing impl is a clear compile error at that field.
 - **A custom type used as a `repeated` element, or as a `map` key/value, must be crate-local.** Codegen emits per-element `ReflectElement` (vtable reflection), `ReflectMapKey` (vtable, for a custom `string` map key), and base64 `ProtoElemJson` (JSON, bytes only) impls for it, which the orphan rule forbids for a foreign type — a local newtype satisfies this. Singular / optional / oneof uses have no such restriction.
 
-`string_type` / `bytes_type` are `buffa-build` / `buffa-codegen` options only — there is no `protoc-gen-buffa` plugin equivalent yet.
+`protoc-gen-buffa` selects the built-in `bytes` representations with `bytes_type=<repr>` and `bytes_type_in=<path>=<repr>`, where `<repr>` is `vec` or `bytes` (see [Plugin options](#plugin-options)). `string_type` and the custom-type options (`bytes_type_custom`, `string_type_custom`) are `buffa-build` / `buffa-codegen` options only — there is no plugin equivalent yet.
 
 ### Multi-package projects
 
@@ -662,6 +662,8 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `codec_strategy_in=<path>=<strategy>` | Choose `table` or `unrolled` for matching messages and the messages nested in them. Repeatable; leading dot optional; the last matching rule wins |
 | `unbox_oneof=true` | Store every non-recursive message/group oneof variant inline instead of `Box<T>`. Recursive variants stay boxed. |
 | `unbox_oneof_in=<path>` | Store matching non-recursive message/group oneof variants inline instead of `Box<T>`. Repeatable; leading dot optional. Use `.` to match all variants. Recursive variants stay boxed for broad matches; exact recursive matches are rejected. |
+| `bytes_type=bytes` | Generate every `bytes` field, including `map<K, bytes>` values, as `bytes::Bytes`, which decodes without a copy from a `Bytes`-backed buffer (default: `vec`, `Vec<u8>`). See [String and bytes field representations](#string-and-bytes-field-representations) |
+| `bytes_type_in=<path>=<repr>` | Select `vec` or `bytes` for matching `bytes` fields, e.g. `bytes_type_in=.my.pkg.Frame.payload=bytes`. Repeatable; leading dot optional; the last matching rule wins, so put `bytes_type` first. Custom types remain builder-only |
 | `reflection=true` | Emit reflection support (vtable mode) plus an embedded per-package descriptor pool — see [Runtime reflection](#runtime-reflection) |
 | `reflect_mode=off\|bridge\|vtable` | Finer-grained reflection selector; `reflection=true` is shorthand for `vtable` |
 | `shared_descriptor_pool=true` | Deduplicate the embedded descriptor set: per-package reflect modules delegate to one shared `__buffa_fds` root module. Pass a matching `shared_descriptor_pool=true` to `protoc-gen-buffa-packaging` so the root module is emitted. See [Runtime reflection](#runtime-reflection) |

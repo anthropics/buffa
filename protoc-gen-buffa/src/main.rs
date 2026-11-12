@@ -21,7 +21,7 @@ use buffa_codegen::generated::compiler::code_generator_response::File as CodeGen
 use buffa_codegen::generated::compiler::CodeGeneratorResponse;
 use buffa_codegen::generated::descriptor::Edition;
 
-use buffa_codegen::{CodeGenConfig, CodecStrategy, EnumTypeOverride, FeatureOverride};
+use buffa_codegen::{BytesRepr, CodeGenConfig, CodecStrategy, EnumTypeOverride, FeatureOverride};
 
 const HELP: &str = "\
 protoc-gen-buffa — protoc plugin for generating Rust code with buffa.
@@ -357,6 +357,27 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     .unboxed_oneof_fields
                     .push(normalize_unbox_oneof_path(value.trim())?);
             }
+            // `bytes_type=bytes` generates every `bytes` field as
+            // `bytes::Bytes` (default `vec`). Path-scoped rules use the
+            // repeatable `bytes_type_in=<path>=<repr>`; as in buffa-build's
+            // `bytes_type` / `bytes_type_in`, rules accumulate in option
+            // order and the last matching rule wins.
+            "bytes_type" => codegen
+                .bytes_fields
+                .push((".".to_string(), parse_bytes_repr(value)?)),
+            "bytes_type_in" => {
+                let (path, repr) = value.rsplit_once('=').ok_or_else(|| {
+                    format!(
+                        "invalid bytes_type_in format '{value}', expected \
+                         'bytes_type_in=<proto_path>=<repr>' \
+                         (e.g. 'bytes_type_in=.my.pkg.Msg.payload=bytes')"
+                    )
+                })?;
+                codegen.bytes_fields.push((
+                    normalize_proto_path(path.trim(), "bytes_type_in")?,
+                    parse_bytes_repr(repr)?,
+                ));
+            }
             // `codec_strategy=table` generates the binary `Message` impl of
             // each message the table can handle from a static table and shared
             // interpreters (default `unrolled`). Path-scoped rules use the repeatable
@@ -531,6 +552,18 @@ fn parse_codec_strategy(value: &str) -> Result<CodecStrategy, String> {
         "table" => Ok(CodecStrategy::Table),
         other => Err(format!(
             "invalid codec strategy '{other}', expected 'unrolled' or 'table'"
+        )),
+    }
+}
+
+/// The built-in `bytes` representations. A custom type stays builder-only
+/// (`bytes_type_custom`).
+fn parse_bytes_repr(value: &str) -> Result<BytesRepr, String> {
+    match value.trim() {
+        "vec" => Ok(BytesRepr::Vec),
+        "bytes" => Ok(BytesRepr::Bytes),
+        other => Err(format!(
+            "invalid bytes type '{other}', expected 'vec' or 'bytes'"
         )),
     }
 }
@@ -836,6 +869,73 @@ mod tests {
             assert!(err.contains("unbox_oneof_in rules"), "{params:?}: {err}");
             assert!(err.contains("non-empty proto path"), "{params:?}: {err}");
         }
+    }
+
+    #[test]
+    fn bytes_type_defaults_to_no_rules() {
+        assert!(parse_config("").unwrap().codegen.bytes_fields.is_empty());
+    }
+
+    #[test]
+    fn bytes_type_sets_a_rule_for_every_field() {
+        assert_eq!(
+            parse_config("bytes_type=bytes")
+                .unwrap()
+                .codegen
+                .bytes_fields,
+            vec![(".".to_string(), BytesRepr::Bytes)],
+        );
+        assert_eq!(
+            parse_config("bytes_type= vec ")
+                .unwrap()
+                .codegen
+                .bytes_fields,
+            vec![(".".to_string(), BytesRepr::Vec)],
+        );
+    }
+
+    #[test]
+    fn bytes_type_in_is_repeatable_normalized_and_kept_in_order() {
+        let config = parse_config(
+            "bytes_type=bytes,bytes_type_in=pkg.Msg.data=vec,\
+             bytes_type_in= .pkg.Other. =bytes,\
+             bytes_type_in=.=vec",
+        )
+        .unwrap();
+        assert_eq!(
+            config.codegen.bytes_fields,
+            vec![
+                (".".to_string(), BytesRepr::Bytes),
+                (".pkg.Msg.data".to_string(), BytesRepr::Vec),
+                (".pkg.Other".to_string(), BytesRepr::Bytes),
+                (".".to_string(), BytesRepr::Vec),
+            ],
+        );
+    }
+
+    #[test]
+    fn bytes_type_rejects_unknown_representations() {
+        for params in [
+            "bytes_type=Bytes",
+            "bytes_type=::my_crate::MyBytes",
+            "bytes_type=",
+            "bytes_type_in=.pkg.Msg.data=custom",
+            "bytes_type_in=.pkg.Msg.data=",
+        ] {
+            let err = parse_err(params);
+            assert!(
+                err.contains("expected 'vec' or 'bytes'"),
+                "{params:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn bytes_type_in_rejects_malformed_rules() {
+        let err = parse_err("bytes_type_in=.pkg.Msg.data");
+        assert!(err.contains("bytes_type_in=<proto_path>=<repr>"), "{err}");
+        let err = parse_err("bytes_type_in==bytes");
+        assert!(err.contains("non-empty proto path"), "{err}");
     }
 
     #[test]
