@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`protoc-gen-buffa` accepts `bytes_type` and `bytes_type_in` options.** `bytes_type=bytes` generates every `bytes` field as `bytes::Bytes`, and `bytes_type_in=<path>=<repr>` selects `vec` or `bytes` for matching fields, with the rule order of `buffa_build::Config::bytes_type` / `bytes_type_in` (the last matching rule wins). A `buf generate` or `protoc` workflow can now decode `bytes` fields without a copy, as `buffa-build` users already could. Custom bytes types remain builder-only.
+time: 2026-11-12T00:00:00+00:00

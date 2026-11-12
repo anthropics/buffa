@@ -3,8 +3,30 @@ use std::process::{Command, Stdio};
 
 use buffa::Message;
 use buffa_codegen::generated::compiler::{CodeGeneratorRequest, CodeGeneratorResponse};
+use buffa_codegen::generated::descriptor::field_descriptor_proto::{Label, Type};
+use buffa_codegen::generated::descriptor::{
+    DescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+};
 
 const BIN: &str = env!("CARGO_BIN_EXE_protoc-gen-buffa");
+
+/// Run the plugin on `request` and decode its response. The plugin reports
+/// errors in the response, so it must exit successfully either way.
+fn run_plugin(request: &CodeGeneratorRequest) -> CodeGeneratorResponse {
+    let mut input = Vec::new();
+    request.encode(&mut input);
+
+    let mut child = Command::new(BIN)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.as_mut().unwrap().write_all(&input).unwrap();
+    let out = child.wait_with_output().unwrap();
+
+    assert!(out.status.success());
+    CodeGeneratorResponse::decode_from_slice(&out.stdout).unwrap()
+}
 
 #[test]
 fn version_prints_name_and_version() {
@@ -46,23 +68,47 @@ fn unrecognized_arg_exits_2() {
 
 #[test]
 fn invalid_plugin_option_returns_response_error() {
-    let request = CodeGeneratorRequest {
+    let response = run_plugin(&CodeGeneratorRequest {
         parameter: Some("unknown_key=value".into()),
         ..Default::default()
-    };
-    let mut input = Vec::new();
-    request.encode(&mut input);
-
-    let mut child = Command::new(BIN)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    child.stdin.as_mut().unwrap().write_all(&input).unwrap();
-    let out = child.wait_with_output().unwrap();
-
-    assert!(out.status.success());
-    let response = CodeGeneratorResponse::decode_from_slice(&out.stdout).unwrap();
+    });
     let error = response.error.as_deref().unwrap_or_default();
     assert!(error.contains("unknown_key"), "error response: {error}");
+}
+
+#[test]
+fn bytes_type_option_generates_bytes_fields() {
+    let file = FileDescriptorProto {
+        name: Some("frame.proto".into()),
+        package: Some("demo".into()),
+        syntax: Some("proto3".into()),
+        message_type: vec![DescriptorProto {
+            name: Some("Frame".into()),
+            field: vec![FieldDescriptorProto {
+                name: Some("payload".into()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_BYTES),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let response = run_plugin(&CodeGeneratorRequest {
+        parameter: Some("bytes_type=bytes".into()),
+        file_to_generate: vec!["frame.proto".into()],
+        proto_file: vec![file],
+        ..Default::default()
+    });
+    assert_eq!(response.error, None);
+    let content: String = response
+        .file
+        .iter()
+        .filter_map(|f| f.content.as_deref())
+        .collect();
+    assert!(
+        content.contains("pub payload: ::buffa::bytes::Bytes"),
+        "generated code: {content}"
+    );
 }
