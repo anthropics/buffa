@@ -225,6 +225,32 @@ pub fn decode_request(input: &[u8]) -> Result<generated::compiler::CodeGenerator
         .map_err(|e| decode_failure("CodeGeneratorRequest", &e, options.element_memory_limit()))
 }
 
+/// An empty `CodeGeneratorResponse` that declares what buffa's plugins
+/// support: proto3 `optional`, and editions from proto2 through 2024.
+///
+/// Build every plugin response from it, the error response included, as
+/// `CodeGeneratorResponse { file, ..plugin_response() }`. A response that
+/// sets `FEATURE_SUPPORTS_EDITIONS` must also set `minimum_edition` and
+/// `maximum_edition`. buf checks this before it reads `error`, so an error
+/// response without the range is rejected and the plugin's message is not
+/// shown.
+///
+/// Both plugins compose exactly this, so it lives here, next to
+/// [`decode_request`].
+pub fn plugin_response() -> generated::compiler::CodeGeneratorResponse {
+    use generated::compiler::code_generator_response::Feature;
+    use generated::descriptor::Edition;
+
+    generated::compiler::CodeGeneratorResponse {
+        supported_features: Some(
+            Feature::FEATURE_PROTO3_OPTIONAL as u64 | Feature::FEATURE_SUPPORTS_EDITIONS as u64,
+        ),
+        minimum_edition: Some(Edition::EDITION_PROTO2 as i32),
+        maximum_edition: Some(Edition::EDITION_2024 as i32),
+        ..Default::default()
+    }
+}
+
 /// Resolve [`ELEMENT_MEMORY_LIMIT_ENV`]'s value to a byte count.
 ///
 /// `None` and an all-whitespace value both mean "unset", yielding

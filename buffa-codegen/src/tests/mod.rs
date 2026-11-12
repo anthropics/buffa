@@ -67,6 +67,7 @@ mod lifetime_anchor;
 mod map_type;
 mod naming;
 mod owned_view_codegen;
+mod plugin_response;
 mod pointer_repr;
 mod proto2;
 mod reexports;

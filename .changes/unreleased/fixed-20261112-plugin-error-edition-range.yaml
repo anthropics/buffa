@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **The plugins' error responses declare the supported editions, so buf shows the error.** When `protoc-gen-buffa` or `protoc-gen-buffa-packaging` failed, for example on an unknown option, it wrote a `CodeGeneratorResponse` with `error` and `FEATURE_SUPPORTS_EDITIONS` set but without `minimum_edition` and `maximum_edition`. buf rejected that response with `FEATURE_SUPPORTS_EDITIONS specified but no minimum_edition set` and did not show the plugin's message. Both plugins now build their success and error responses from the new `buffa_codegen::plugin_response()`, which sets the supported features and the edition range.
+time: 2026-11-12T00:00:00+00:00
