@@ -69,7 +69,7 @@ use std::io::{self, Read, Write};
 use buffa::Message;
 use buffa_codegen::generated::compiler::code_generator_response::File as CodeGeneratorResponseFile;
 use buffa_codegen::generated::compiler::{CodeGeneratorRequest, CodeGeneratorResponse};
-use buffa_codegen::generated::descriptor::{Edition, FileDescriptorProto};
+use buffa_codegen::generated::descriptor::FileDescriptorProto;
 
 /// File-inclusion filter. Extend with new variants as downstream packaging
 /// needs emerge (e.g., `has_ext:<name>` for extension-gated output).
@@ -165,10 +165,10 @@ fn main() {
     match run() {
         Ok(()) => {}
         Err(e) => {
+            // It carries the edition range too, or buf rejects it unread.
             let response = CodeGeneratorResponse {
                 error: Some(e),
-                supported_features: Some(feature_flags()),
-                ..Default::default()
+                ..buffa_codegen::plugin_response()
             };
             write_response(&response).unwrap_or_else(|io_err| {
                 eprintln!(
@@ -245,15 +245,12 @@ fn generate(request: &CodeGeneratorRequest) -> Result<CodeGeneratorResponse, Str
     }
 
     Ok(CodeGeneratorResponse {
-        supported_features: Some(feature_flags()),
-        minimum_edition: Some(Edition::EDITION_PROTO2 as i32),
-        maximum_edition: Some(Edition::EDITION_2024 as i32),
         file: vec![CodeGeneratorResponseFile {
             name: Some("mod.rs".to_string()),
             content: Some(content),
             ..Default::default()
         }],
-        ..Default::default()
+        ..buffa_codegen::plugin_response()
     })
 }
 
@@ -328,12 +325,6 @@ fn write_response(response: &CodeGeneratorResponse) -> io::Result<()> {
     response.encode(&mut output);
     io::stdout().write_all(&output)?;
     io::stdout().flush()
-}
-
-fn feature_flags() -> u64 {
-    const FEATURE_PROTO3_OPTIONAL: u64 = 1;
-    const FEATURE_SUPPORTS_EDITIONS: u64 = 2;
-    FEATURE_PROTO3_OPTIONAL | FEATURE_SUPPORTS_EDITIONS
 }
 
 #[cfg(test)]

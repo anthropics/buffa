@@ -19,7 +19,6 @@ use std::io::{self, Read, Write};
 use buffa::Message;
 use buffa_codegen::generated::compiler::code_generator_response::File as CodeGeneratorResponseFile;
 use buffa_codegen::generated::compiler::CodeGeneratorResponse;
-use buffa_codegen::generated::descriptor::Edition;
 
 use buffa_codegen::{CodeGenConfig, CodecStrategy, EnumTypeOverride, FeatureOverride};
 
@@ -82,10 +81,10 @@ fn main() {
         Ok(()) => {}
         Err(e) => {
             // Protocol: write a response with an error string, don't just crash.
+            // It carries the edition range too, or buf rejects it unread.
             let response = CodeGeneratorResponse {
                 error: Some(format!("{}", e)),
-                supported_features: Some(feature_flags()),
-                ..Default::default()
+                ..buffa_codegen::plugin_response()
             };
             write_response(&response).unwrap_or_else(|io_err| {
                 eprintln!(
@@ -136,12 +135,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     let response = CodeGeneratorResponse {
-        supported_features: Some(feature_flags()),
-        // Tell protoc which editions we support.
-        minimum_edition: Some(Edition::EDITION_PROTO2 as i32),
-        maximum_edition: Some(Edition::EDITION_2024 as i32),
         file: files,
-        ..Default::default()
+        ..buffa_codegen::plugin_response()
     };
 
     write_response(&response)?;
@@ -155,13 +150,6 @@ fn write_response(response: &CodeGeneratorResponse) -> io::Result<()> {
     io::stdout().write_all(&output)?;
     io::stdout().flush()?;
     Ok(())
-}
-
-/// Feature flags we support (bitmask).
-fn feature_flags() -> u64 {
-    const FEATURE_PROTO3_OPTIONAL: u64 = 1;
-    const FEATURE_SUPPORTS_EDITIONS: u64 = 2;
-    FEATURE_PROTO3_OPTIONAL | FEATURE_SUPPORTS_EDITIONS
 }
 
 /// Plugin configuration parsed from the parameter string.
