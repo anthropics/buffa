@@ -527,7 +527,8 @@ scalar_codec!(
 
 /// `bytes` codec for a custom [`ProtoBytes`](crate::types::ProtoBytes) map-value
 /// representation (via `bytes_type_custom`). Decodes through
-/// [`from_wire`](crate::types::ProtoBytes::from_wire); encodes the borrowed
+/// [`decode_length_delimited`](crate::types::ProtoBytes::decode_length_delimited),
+/// whose default delegates to `from_wire`; encodes the borrowed
 /// `&[u8]`. Generic over the value type, so the codec itself stays sealed in
 /// buffa while the concrete representation is a downstream (crate-local) type.
 pub struct ProtoBytesMap<B>(core::marker::PhantomData<B>);
@@ -570,8 +571,9 @@ impl<B: crate::types::ProtoBytes> MapCodec for ProtoBytesMap<B> {
 
 /// `string` codec for a custom [`ProtoString`](crate::types::ProtoString)
 /// map key or value representation (via `string_type_custom`). Decodes through
-/// [`from_wire`](crate::types::ProtoString::from_wire) (UTF-8 validation
-/// included); encodes the borrowed `&str`. Generic over the type, so the codec
+/// [`decode_length_delimited`](crate::types::ProtoString::decode_length_delimited)
+/// (UTF-8 validation included), whose default delegates to `from_wire`.
+/// Encodes the borrowed `&str`. Generic over the type, so the codec
 /// itself stays sealed in buffa while the concrete representation is a
 /// downstream (crate-local) type.
 ///

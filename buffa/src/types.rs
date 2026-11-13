@@ -54,7 +54,9 @@
 use crate::encode_sink::EncodeSink;
 use alloc::string::String;
 use alloc::vec::Vec;
+mod field_payload;
 use bytes::{Buf, Bytes};
+pub use field_payload::FieldPayload;
 
 use crate::encoding::{decode_varint, encode_varint, varint_len, Tag, WireType};
 use crate::error::DecodeError;
@@ -1073,7 +1075,8 @@ pub fn merge_string(value: &mut String, buf: &mut impl Buf) -> Result<(), Decode
 /// and `Bytes`-backed sources) and an owned [`Bytes`] otherwise (e.g. a field
 /// straddling a `Chain` boundary). The exception is a [`ProtoBytes`] type that
 /// sets [`PREFERS_OWNED_PAYLOAD`](ProtoBytes::PREFERS_OWNED_PAYLOAD):
-/// [`decode_bytes_to`] hands it an owned payload for every `bytes` field. A
+/// the default [`ProtoBytes::decode_length_delimited`] hands it an owned
+/// payload for every `bytes` field. A
 /// representation validates-and-borrows with [`to_str`](Self::to_str), reads
 /// the raw bytes with [`as_slice`](Self::as_slice) (always zero-copy), or takes
 /// ownership with [`into_bytes`](Self::into_bytes) (zero-copy only for an owned
@@ -1219,8 +1222,25 @@ impl<'a> WirePayload<'a> {
     }
 }
 
-/// Read one length-delimited field payload from `buf` and pass it to `f` as a
-/// [`WirePayload`], advancing `buf` past the field.
+/// Decode a length prefix and check it against the bytes left in `buf`.
+///
+/// # Errors
+///
+/// - [`DecodeError::UnexpectedEof`] if the buffer is shorter than the declared
+///   length.
+/// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
+#[inline]
+fn read_payload_len(buf: &mut impl Buf) -> Result<usize, DecodeError> {
+    let len = decode_varint(buf)?;
+    let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
+    if buf.remaining() < len {
+        return Err(DecodeError::UnexpectedEof);
+    }
+    Ok(len)
+}
+
+/// Pass the next `len` bytes of `buf` to `f` as a [`WirePayload`], advancing
+/// `buf` past them. The caller guarantees `buf.remaining() >= len`.
 ///
 /// When `prefer_owned` is false, the payload is `Borrowed` if the whole field
 /// is contiguous in the current chunk (zero-copy), and `Owned` otherwise. When
@@ -1228,26 +1248,15 @@ impl<'a> WirePayload<'a> {
 /// [`Buf::copy_to_bytes`], which shares the allocation of a `Bytes` input. `f`
 /// returns an owned value, so its borrow of `buf` ends with the call.
 ///
-/// # Errors
-///
-/// - [`DecodeError::UnexpectedEof`] if the buffer is shorter than the declared
-///   length.
-/// - [`DecodeError::MessageTooLarge`] if the declared length overflows `usize`.
-/// - Any error returned by `f` (e.g. [`DecodeError::InvalidUtf8`]).
-///
 /// On any error the `buf` cursor position is unspecified: a decode error aborts
 /// the whole decode, so the buffer is not left in a recoverable state.
 #[inline]
-pub(crate) fn read_field_payload<R>(
+fn read_payload_of_len<R>(
     buf: &mut impl Buf,
+    len: usize,
     prefer_owned: bool,
     f: impl FnOnce(WirePayload<'_>) -> Result<R, DecodeError>,
 ) -> Result<R, DecodeError> {
-    let len = decode_varint(buf)?;
-    let len = usize::try_from(len).map_err(|_| DecodeError::MessageTooLarge)?;
-    if buf.remaining() < len {
-        return Err(DecodeError::UnexpectedEof);
-    }
     let chunk = buf.chunk();
     if chunk.len() >= len && !prefer_owned {
         // Whole field is contiguous: hand over a borrowed payload carrying the
@@ -1266,6 +1275,38 @@ pub(crate) fn read_field_payload<R>(
         };
         f(WirePayload::owned(bytes))
     }
+}
+
+/// Pass the whole of a field payload bounded by `payload` to `f`, consuming it.
+///
+/// Reads through the underlying buffer so that a borrowed payload keeps the
+/// surrounding chunk tail.
+#[inline]
+fn read_bounded_payload<B: Buf, R>(
+    payload: &mut FieldPayload<B>,
+    prefer_owned: bool,
+    f: impl FnOnce(WirePayload<'_>) -> Result<R, DecodeError>,
+) -> Result<R, DecodeError> {
+    let len = payload.remaining();
+    let r = read_payload_of_len(payload.inner.get_mut(), len, prefer_owned, f)?;
+    payload.inner.set_limit(0);
+    Ok(r)
+}
+
+/// Read a field's length prefix, then hand exactly that many bytes to
+/// `decode`. Bytes `decode` leaves unread are skipped, so `buf` always ends
+/// after the field on success.
+#[inline]
+fn decode_length_delimited_with<T, B: Buf>(
+    buf: &mut B,
+    decode: impl FnOnce(&mut FieldPayload<&mut B>) -> Result<T, DecodeError>,
+) -> Result<T, DecodeError> {
+    let len = read_payload_len(buf)?;
+    let mut payload = FieldPayload::new(buf, len);
+    let value = decode(&mut payload)?;
+    let unread = payload.remaining();
+    payload.advance(unread);
+    Ok(value)
 }
 
 /// Compute the encoded byte count of a `string` value (varint length prefix +
@@ -1306,7 +1347,9 @@ pub fn string_encoded_len(value: &str) -> usize {
 ///   parsing, and proto2 defaults.
 /// - [`copy_from_str`](ProtoString::copy_from_str) — copies borrowed JSON
 ///   strings in non-optional singular fields, and the text of string view
-///   fields of custom representations, into owned storage. Binary decoding uses [`from_wire`](ProtoString::from_wire).
+///   fields of custom representations, into owned storage. Binary decoding uses
+///   [`decode_length_delimited`](ProtoString::decode_length_delimited), whose
+///   default calls [`from_wire`](ProtoString::from_wire).
 ///
 /// For the default `String` representation every conversion is the identity, so
 /// the generic path costs nothing relative to the specialized one.
@@ -1322,8 +1365,9 @@ pub fn string_encoded_len(value: &str) -> usize {
 /// - `Deref`, `AsRef`, and the constructors observe the same content — encoding
 ///   borrows via `Deref` / `AsRef` and the view / reflect paths read the same
 ///   way; if they disagree, a value encodes differently than it reads back.
-/// - `from_wire` is value-equivalent to `From<String>` / `copy_from_str` — binary
-///   decode uses `from_wire` while JSON / text / view→owned use the other
+/// - `from_wire` and any `decode_length_delimited` override are
+///   value-equivalent to `From<String>` / `copy_from_str` — binary decode uses
+///   them while JSON / text / view→owned use the other
 ///   constructors, so a representation must not transform the text (e.g.
 ///   case-fold) in one path but not the other.
 /// - `copy_from_str(s)` is value-equivalent to `From::from(s.to_owned())` — an
@@ -1402,7 +1446,10 @@ pub trait ProtoString:
     /// [`WirePayload::as_slice`]. There is
     /// intentionally no blanket impl — every representation provides its own
     /// optimal `from_wire`; `From<String>` and [`Self::copy_from_str`] remain
-    /// for the JSON, text, and view→owned paths.
+    /// for the JSON, text, and view→owned paths. Binary decode calls `from_wire`
+    /// through the default
+    /// [`decode_length_delimited`](Self::decode_length_delimited); a type that
+    /// overrides that method still provides `from_wire` for direct callers.
     ///
     /// # Errors
     ///
@@ -1411,6 +1458,31 @@ pub trait ProtoString:
     /// with [`DecodeError::Custom`] (carrying a static reason), or return any
     /// other [`DecodeError`] variant.
     fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError>;
+
+    /// Decode one field payload, given exactly the bytes of that field.
+    ///
+    /// Generated code and [`decode_string_to`] call this after reading the field's length
+    /// prefix and checking it against the input, so `payload` holds exactly
+    /// that field and `payload.remaining()` is its validated length. The
+    /// default passes a [`WirePayload`] to [`Self::from_wire`].
+    /// Override it when the representation must also control temporary
+    /// allocations, for example to copy a fragmented field straight into
+    /// storage that is wiped on drop rather than through an intermediate
+    /// [`Bytes`].
+    ///
+    /// An override must accept and reject exactly the payloads that
+    /// `from_wire` does, including rejecting invalid UTF-8, and produce an equal value. Bytes it leaves
+    /// unread are skipped. The opaque [`FieldPayload`] exposes only bounded
+    /// [`Buf`] operations; its limit and underlying buffer cannot be accessed.
+    ///
+    /// # Errors
+    ///
+    /// Returns the representation's error for a rejected payload. On error
+    /// the input position is unspecified: a decode error aborts the whole
+    /// decode.
+    fn decode_length_delimited(payload: &mut FieldPayload<impl Buf>) -> Result<Self, DecodeError> {
+        read_bounded_payload(payload, false, Self::from_wire)
+    }
 }
 
 impl ProtoString for String {
@@ -1428,9 +1500,10 @@ const _: fn() = || {
 };
 
 /// Decode a length-delimited `string` into a configurable [`ProtoString`] type
-/// by handing its wire payload to [`ProtoString::from_wire`].
+/// by dispatching to [`ProtoString::decode_length_delimited`].
 ///
-/// The representation's `from_wire` decides validation and borrow-vs-own, so an
+/// The default hook hands a wire payload to `from_wire`, which decides
+/// validation and borrow-vs-own, so an
 /// inline-capable type avoids the transient `String` allocation that a
 /// `From<String>` path would force. Generated code uses the in-place
 /// [`merge_string`] for default `String` fields (allocation reuse) and this
@@ -1445,7 +1518,7 @@ const _: fn() = || {
 ///   representation's [`from_wire`](ProtoString::from_wire).
 #[inline]
 pub fn decode_string_to<S: ProtoString>(buf: &mut impl Buf) -> Result<S, DecodeError> {
-    read_field_payload(buf, false, S::from_wire)
+    decode_length_delimited_with(buf, |payload| S::decode_length_delimited(payload))
 }
 
 /// Encode a `bytes` value as a varint length prefix followed by raw bytes
@@ -1544,7 +1617,8 @@ pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
 ///   impl reads via `AsRef<[u8]>`.
 /// - `From<Vec<u8>>` — used by the JSON and view→owned paths, and by `Default`
 ///   and `clear()` to construct declared field defaults. Binary decode uses
-///   [`from_wire`](ProtoBytes::from_wire) instead. Note that `From<&[u8]>` is
+///   [`decode_length_delimited`](ProtoBytes::decode_length_delimited) instead,
+///   whose default calls [`from_wire`](ProtoBytes::from_wire). Note that `From<&[u8]>` is
 ///   deliberately *not* required: `bytes::Bytes` implements it only for
 ///   `&'static [u8]`, so requiring it would exclude `Bytes` itself.
 ///
@@ -1562,8 +1636,8 @@ pub fn decode_bytes_to_bytes(buf: &mut impl Buf) -> Result<Bytes, DecodeError> {
 /// - `Deref`, `AsRef`, and the constructors observe the same content — encoding
 ///   borrows via `Deref` / `AsRef` and the view / reflect paths read the same
 ///   way; if they disagree, a value encodes differently than it reads back.
-/// - `from_wire` is value-equivalent to `From<Vec<u8>>` — binary decode uses
-///   `from_wire` while JSON / view→owned use `From`, so a representation must not
+/// - `from_wire` and any `decode_length_delimited` override are
+///   value-equivalent to `From<Vec<u8>>` — binary decode uses them while JSON / view→owned use `From`, so a representation must not
 ///   transform the bytes in one path but not the other.
 ///
 /// # Limitations
@@ -1600,8 +1674,10 @@ pub trait ProtoBytes:
     + AsRef<[u8]>
     + From<Vec<u8>>
 {
-    /// Whether [`decode_bytes_to`] hands [`from_wire`](Self::from_wire) an
-    /// owned [`WirePayload`] for every field, including a field that is
+    /// Whether the default
+    /// [`decode_length_delimited`](Self::decode_length_delimited) implementation hands
+    /// [`from_wire`](Self::from_wire) an owned [`WirePayload`] for every field,
+    /// including a field that is
     /// contiguous in the input.
     ///
     /// Set it to `true` for a type that keeps the [`Bytes`] from
@@ -1615,7 +1691,7 @@ pub trait ProtoBytes:
     /// With `true`, such a type copies twice from an input that cannot share:
     /// once into a temporary `Bytes` and once into the value.
     ///
-    /// The const changes only what [`decode_bytes_to`] passes. `from_wire`
+    /// This const controls only the default decode implementation. `from_wire`
     /// still has to accept a borrowed payload, which any caller can build with
     /// [`WirePayload::borrowed`].
     ///
@@ -1689,9 +1765,11 @@ pub trait ProtoBytes:
     /// unless the type sets
     /// [`PREFERS_OWNED_PAYLOAD`](Self::PREFERS_OWNED_PAYLOAD).
     ///
-    /// Only binary decode calls `from_wire`. JSON, text format, view→owned
-    /// conversion, declared field defaults and `arbitrary` build the value
-    /// through `From<Vec<u8>>`.
+    /// Binary decode calls `from_wire` through the default
+    /// [`decode_length_delimited`](Self::decode_length_delimited). A type that
+    /// overrides that method still provides `from_wire` for direct callers.
+    /// JSON, text format, view→owned conversion, declared field defaults and
+    /// `arbitrary` build the value through `From<Vec<u8>>`.
     ///
     /// # Errors
     ///
@@ -1700,6 +1778,91 @@ pub trait ProtoBytes:
     /// value with [`DecodeError::Custom`] (carrying a static reason), or return
     /// any other [`DecodeError`] variant.
     fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError>;
+
+    /// Decode one field payload, given exactly the bytes of that field.
+    ///
+    /// Generated code and [`decode_bytes_to`] call this after reading the field's length
+    /// prefix and checking it against the input, so `payload` holds exactly
+    /// that field and `payload.remaining()` is its validated length. The
+    /// default passes a [`WirePayload`] to [`Self::from_wire`], honoring
+    /// [`Self::PREFERS_OWNED_PAYLOAD`].
+    /// Override it when the representation must also control temporary
+    /// allocations, for example to copy a fragmented field straight into
+    /// storage that is wiped on drop rather than through an intermediate
+    /// [`Bytes`].
+    ///
+    /// An override must accept and reject exactly the payloads that
+    /// `from_wire` does, and produce an equal value. Bytes it leaves
+    /// unread are skipped. The opaque [`FieldPayload`] exposes only bounded
+    /// [`Buf`] operations; its limit and underlying buffer cannot be accessed.
+    ///
+    /// # Errors
+    ///
+    /// Returns the representation's error for a rejected payload. On error
+    /// the input position is unspecified: a decode error aborts the whole
+    /// decode.
+    ///
+    /// # Example
+    ///
+    /// A representation that copies the field into one allocation of the
+    /// field's exact size, also when the field spans input chunks:
+    ///
+    /// ```
+    /// use buffa::bytes::Buf;
+    /// use buffa::FieldPayload;
+    /// use buffa::types::{decode_bytes_to, encode_bytes, ProtoBytes, WirePayload};
+    /// use buffa::DecodeError;
+    ///
+    /// #[derive(Clone, Debug, Default, PartialEq)]
+    /// struct Exact(Vec<u8>);
+    ///
+    /// impl core::ops::Deref for Exact {
+    ///     type Target = [u8];
+    ///     fn deref(&self) -> &[u8] {
+    ///         &self.0
+    ///     }
+    /// }
+    /// impl AsRef<[u8]> for Exact {
+    ///     fn as_ref(&self) -> &[u8] {
+    ///         &self.0
+    ///     }
+    /// }
+    /// impl From<Vec<u8>> for Exact {
+    ///     fn from(bytes: Vec<u8>) -> Self {
+    ///         Self(bytes)
+    ///     }
+    /// }
+    /// impl ProtoBytes for Exact {
+    ///     fn from_wire(payload: WirePayload<'_>) -> Result<Self, DecodeError> {
+    ///         Ok(Self(payload.as_slice().to_vec()))
+    ///     }
+    ///
+    ///     fn decode_length_delimited(payload: &mut FieldPayload<impl Buf>) -> Result<Self, DecodeError> {
+    ///         // The length is already checked against the input, so this
+    ///         // reservation never exceeds the bytes actually present.
+    ///         let mut out = Vec::with_capacity(payload.remaining());
+    ///         while payload.has_remaining() {
+    ///             let chunk = payload.chunk();
+    ///             out.extend_from_slice(chunk);
+    ///             let read = chunk.len();
+    ///             payload.advance(read);
+    ///         }
+    ///         Ok(Self(out))
+    ///     }
+    /// }
+    ///
+    /// let mut wire = Vec::new();
+    /// encode_bytes(b"payload", &mut wire);
+    /// let (head, tail) = wire.split_at(3);
+    /// let mut input = head.chain(tail);
+    /// let value: Exact = decode_bytes_to(&mut input)?;
+    /// assert_eq!(&value[..], b"payload");
+    /// assert_eq!(value.0.capacity(), b"payload".len());
+    /// # Ok::<(), DecodeError>(())
+    /// ```
+    fn decode_length_delimited(payload: &mut FieldPayload<impl Buf>) -> Result<Self, DecodeError> {
+        read_bounded_payload(payload, Self::PREFERS_OWNED_PAYLOAD, Self::from_wire)
+    }
 
     /// The representation's bytes as a reference-counted [`Bytes`] handle,
     /// when one exists.
@@ -1759,8 +1922,9 @@ const _: fn() = || {
 /// Decode a length-delimited `bytes` value into a configurable [`ProtoBytes`]
 /// type.
 ///
-/// This is the generic counterpart to [`decode_bytes`]: it hands the field's
-/// wire payload to [`ProtoBytes::from_wire`]. A contiguous payload is borrowed
+/// This is the generic counterpart to [`decode_bytes`], dispatching to
+/// [`ProtoBytes::decode_length_delimited`]. Its default hook hands the field's wire payload to
+/// [`ProtoBytes::from_wire`]. Under that default, a contiguous payload is borrowed
 /// unless `B` sets [`ProtoBytes::PREFERS_OWNED_PAYLOAD`], as `Bytes` does. With
 /// the const set, the payload is an owned [`Bytes`] that shares a `Bytes`
 /// input, and the value keeps that input allocated; see the const.
@@ -1779,7 +1943,7 @@ const _: fn() = || {
 ///   [`from_wire`](ProtoBytes::from_wire).
 #[inline]
 pub fn decode_bytes_to<B: ProtoBytes>(buf: &mut impl Buf) -> Result<B, DecodeError> {
-    read_field_payload(buf, B::PREFERS_OWNED_PAYLOAD, B::from_wire)
+    decode_length_delimited_with(buf, |payload| B::decode_length_delimited(payload))
 }
 
 // ---------------------------------------------------------------------------
@@ -4095,3 +4259,6 @@ mod tests {
         assert_eq!(out_u64, vec![u64::MAX]);
     }
 }
+
+#[cfg(test)]
+mod decode_hook_tests;

@@ -275,7 +275,7 @@ pub use message::{debug_assert_two_pass, encode_size_overflow};
 pub use message_field::{DefaultInstance, Inline, MessageField, ProtoBox};
 pub use oneof::Oneof;
 pub use size_cache::{SizeCache, SizeCachePool};
-pub use types::{AsSharedBytes, ProtoBytes, ProtoList, ProtoString, WirePayload};
+pub use types::{AsSharedBytes, FieldPayload, ProtoBytes, ProtoList, ProtoString, WirePayload};
 pub use unknown_fields::{UnknownField, UnknownFieldData, UnknownFields};
 
 #[cfg(feature = "text")]
