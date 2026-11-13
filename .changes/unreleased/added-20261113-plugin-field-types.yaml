@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`protoc-gen-buffa` exposes custom field representations** through the repeatable `bytes_type_custom_in=<proto_path>=<rust_type_path>`, `string_type_custom_in=<proto_path>=<rust_type_path>` and `repeated_type_custom_in=<proto_path>=<template>` options. They follow the same proto-path prefix matching and last-match-wins ordering as the corresponding `buffa-build` methods, so `buf generate` workflows can select custom byte, string and `repeated` representations without post-processing generated sources.
+time: 2026-11-13T12:00:00+01:00
