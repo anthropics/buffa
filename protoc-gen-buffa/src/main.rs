@@ -84,8 +84,7 @@ fn main() {
             // Protocol: write a response with an error string, don't just crash.
             let response = CodeGeneratorResponse {
                 error: Some(format!("{}", e)),
-                supported_features: Some(feature_flags()),
-                ..Default::default()
+                ..response_metadata()
             };
             write_response(&response).unwrap_or_else(|io_err| {
                 eprintln!(
@@ -136,12 +135,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     let response = CodeGeneratorResponse {
-        supported_features: Some(feature_flags()),
-        // Tell protoc which editions we support.
-        minimum_edition: Some(Edition::EDITION_PROTO2 as i32),
-        maximum_edition: Some(Edition::EDITION_2024 as i32),
         file: files,
-        ..Default::default()
+        ..response_metadata()
     };
 
     write_response(&response)?;
@@ -155,6 +150,17 @@ fn write_response(response: &CodeGeneratorResponse) -> io::Result<()> {
     io::stdout().write_all(&output)?;
     io::stdout().flush()?;
     Ok(())
+}
+
+// Buf validates edition support on failures too; keep a single source for
+// response capabilities so it can surface the actual configuration error.
+fn response_metadata() -> CodeGeneratorResponse {
+    CodeGeneratorResponse {
+        supported_features: Some(feature_flags()),
+        minimum_edition: Some(Edition::EDITION_PROTO2 as i32),
+        maximum_edition: Some(Edition::EDITION_2024 as i32),
+        ..Default::default()
+    }
 }
 
 /// Feature flags we support (bitmask).
@@ -212,6 +218,38 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     normalize_proto_path(value.trim(), "unknown_fields_in")?,
                     true,
                 ));
+            }
+            // Repeatable path-scoped custom representations, the plugin form
+            // of buffa-build's `bytes_type_custom_in`, `string_type_custom_in`
+            // and `repeated_type_custom_in`. The value is
+            // "<proto_path>=<rust_type>"; a repeated rule's type is a template
+            // with a `*` placeholder for the element type. buffa-codegen
+            // validates the Rust type at generation time.
+            key
+            @ ("bytes_type_custom_in" | "string_type_custom_in" | "repeated_type_custom_in") => {
+                let (path, rust_type) = parse_custom_type_rule(key, value)?;
+                match key {
+                    "bytes_type_custom_in" => codegen
+                        .bytes_fields
+                        .push((path, buffa_codegen::BytesRepr::Custom(rust_type))),
+                    "string_type_custom_in" => codegen
+                        .string_fields
+                        .push((path, buffa_codegen::StringRepr::Custom(rust_type))),
+                    _ => codegen
+                        .repeated_fields
+                        .push((path, buffa_codegen::RepeatedRepr::Custom(rust_type))),
+                }
+            }
+            // Repeatable: route a custom representation's protobuf JSON
+            // through its ProtoBytesJson / ProtoStringJson impl.
+            "json_policy_type" => {
+                let rust_type = value.trim();
+                if rust_type.is_empty() {
+                    return Err("'json_policy_type' requires a Rust type path \
+                         (e.g. 'json_policy_type=crate::SecretBytes')"
+                        .to_string());
+                }
+                codegen.json_policy_types.push(rust_type.to_string());
             }
             "json" => codegen.generate_json = parse_bool("json", value)?,
             // Reject unknown JSON keys instead of ignoring them. Without
@@ -572,6 +610,33 @@ fn normalize_override_path(path: &str) -> Result<String, String> {
     normalize_proto_path(path, "feature override")
 }
 
+/// Parse the `<proto_path>=<rust_type>` value of a custom representation
+/// option. The proto path is normalized like the other path-scoped options;
+/// the Rust type is checked only for presence here and parsed by codegen.
+fn parse_custom_type_rule(key: &str, value: &str) -> Result<(String, String), String> {
+    let example = match key {
+        "bytes_type_custom_in" => "crate::SecretBytes",
+        "string_type_custom_in" => "crate::SecretString",
+        _ => "crate::SecretList<*>",
+    };
+    let invalid = || {
+        format!(
+            "invalid {key} format '{value}', expected \
+             '{key}=<proto_path>=<rust_type>' \
+             (e.g. '{key}=.my.pkg.Msg.field={example}')"
+        )
+    };
+    let (path, rust_type) = value.split_once('=').ok_or_else(invalid)?;
+    let rust_type = rust_type.trim();
+    if rust_type.is_empty() {
+        return Err(invalid());
+    }
+    Ok((
+        normalize_proto_path(path.trim(), key)?,
+        rust_type.to_owned(),
+    ))
+}
+
 fn normalize_unbox_oneof_path(path: &str) -> Result<String, String> {
     normalize_proto_path(path, "unbox_oneof_in")
 }
@@ -612,6 +677,87 @@ mod tests {
             Ok(_) => panic!("expected parse_config({params:?}) to fail"),
             Err(err) => err,
         }
+    }
+
+    #[test]
+    fn custom_type_rules_are_repeatable_and_normalized() {
+        let config = parse_config(
+            "bytes_type_custom_in=demo.Request.key=crate::SecretBytes,\
+            bytes_type_custom_in=.demo.Request.token..=crate::OtherBytes,\
+            string_type_custom_in= .demo.Request.identity = crate::SecretString,\
+            repeated_type_custom_in=.demo.Request.embedding=crate::SecretList<*>,\
+            bytes_type_custom_in=.=crate::AllBytes",
+        )
+        .unwrap();
+        assert_eq!(
+            config.codegen.bytes_fields,
+            vec![
+                (
+                    ".demo.Request.key".to_owned(),
+                    buffa_codegen::BytesRepr::Custom("crate::SecretBytes".to_owned())
+                ),
+                (
+                    ".demo.Request.token".to_owned(),
+                    buffa_codegen::BytesRepr::Custom("crate::OtherBytes".to_owned())
+                ),
+                (
+                    ".".to_owned(),
+                    buffa_codegen::BytesRepr::Custom("crate::AllBytes".to_owned())
+                ),
+            ]
+        );
+        assert_eq!(
+            config.codegen.string_fields,
+            vec![(
+                ".demo.Request.identity".to_owned(),
+                buffa_codegen::StringRepr::Custom("crate::SecretString".to_owned())
+            )]
+        );
+        assert_eq!(
+            config.codegen.repeated_fields,
+            vec![(
+                ".demo.Request.embedding".to_owned(),
+                buffa_codegen::RepeatedRepr::Custom("crate::SecretList<*>".to_owned())
+            )]
+        );
+    }
+
+    #[test]
+    fn custom_type_rules_report_the_option_and_value() {
+        for option in [
+            "bytes_type_custom_in",
+            "string_type_custom_in",
+            "repeated_type_custom_in",
+        ] {
+            for value in ["", "demo.Key", ".demo.Key="] {
+                let err = parse_err(&format!("{option}={value}"));
+                assert!(err.contains(option), "{option}={value}: {err}");
+                assert!(
+                    err.contains(&format!("'{value}'")),
+                    "{option}={value}: {err}"
+                );
+            }
+            let err = parse_err(&format!("{option}==crate::Secret"));
+            assert!(err.contains(option), "{option}: {err}");
+            assert!(err.contains("non-empty proto path"), "{option}: {err}");
+        }
+    }
+
+    #[test]
+    fn json_policy_types_are_repeatable() {
+        let config = parse_config(
+            "json_policy_type=crate::SecretBytes,json_policy_type= crate::SecretString ",
+        )
+        .unwrap();
+        assert_eq!(
+            config.codegen.json_policy_types,
+            vec![
+                "crate::SecretBytes".to_owned(),
+                "crate::SecretString".to_owned()
+            ]
+        );
+        let err = parse_err("json_policy_type=");
+        assert!(err.contains("json_policy_type"), "{err}");
     }
 
     #[test]

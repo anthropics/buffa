@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **Custom string and byte representations can decode their own binary payloads** by overriding the new `ProtoString::decode_length_delimited` and `ProtoBytes::decode_length_delimited` methods. buffa reads and validates the field's length prefix, then hands the method an opaque `FieldPayload` implementing `Buf`, bounded to exactly that field, so an override never handles the prefix or the surrounding input. A representation can copy a fragmented field straight into its own storage, for example memory that is wiped on drop, instead of through an intermediate `Bytes`. The defaults keep the existing `from_wire` behavior.
+time: 2026-11-13T12:00:00+01:00

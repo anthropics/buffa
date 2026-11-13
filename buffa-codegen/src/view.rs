@@ -2496,6 +2496,45 @@ pub(crate) fn view_field_serialize_stmt(
         let val_raw = effective_type_in_map_entry(ctx, val_fd, parent_features);
         let val_f = crate::features::resolve_field(ctx, val_fd, parent_features);
 
+        // JSON policies of the owned key and value types, matching the owned
+        // message's serialization of the same map.
+        let map_fqn = format!(".{}.{}", scope.proto_fqn, field_name);
+        let map_string = match ctx.string_repr(&map_fqn) {
+            crate::StringRepr::Custom(path) => Some(path),
+            _ => None,
+        };
+        let key_policy = if key_raw == Type::TYPE_STRING {
+            crate::json_policy::of_map_slot(
+                ctx,
+                crate::json_policy::JsonPolicyKind::String,
+                map_string.as_deref(),
+            )?
+        } else {
+            None
+        };
+        let val_policy = match val_raw {
+            Type::TYPE_STRING => crate::json_policy::of_map_slot(
+                ctx,
+                crate::json_policy::JsonPolicyKind::String,
+                map_string.as_deref(),
+            )?,
+            Type::TYPE_BYTES => match crate::impl_message::map_value_bytes_repr(
+                ctx,
+                Some(key_raw),
+                Some(val_raw),
+                scope.proto_fqn,
+                field_name,
+            ) {
+                crate::BytesRepr::Custom(path) => crate::json_policy::of_map_slot(
+                    ctx,
+                    crate::json_policy::JsonPolicyKind::Bytes,
+                    Some(&path),
+                )?,
+                _ => None,
+            },
+            _ => None,
+        };
+
         let key_ty = match key_raw {
             Type::TYPE_STRING => quote! { &'__a str },
             Type::TYPE_BYTES => quote! { &'__a [u8] },
@@ -2531,25 +2570,33 @@ pub(crate) fn view_field_serialize_stmt(
         // The explicit wrappers make the view encoding byte-identical to the
         // owned encoding for any serde backend, not just `serde_json` (whose
         // `MapKeySerializer` happens to stringify primitives on its own).
-        let (key_wrapper, key_expr) = match key_raw {
-            Type::TYPE_STRING => (quote! {}, quote! { k }),
-            // k: &&[u8] — deref coercion to &[u8] at the adapter field.
-            Type::TYPE_BYTES => (quote! {}, quote! { &::buffa::json_helpers::BytesJson(k) }),
-            _ => (quote! {}, quote! { &::buffa::json_helpers::MapKeyJson(k) }),
+        let (key_wrapper, key_expr) = if let Some((kind, owned)) = &key_policy {
+            (quote! {}, kind.serialize_borrowed(owned, &quote! { k }))
+        } else {
+            match key_raw {
+                Type::TYPE_STRING => (quote! {}, quote! { k }),
+                // k: &&[u8] — deref coercion to &[u8] at the adapter field.
+                Type::TYPE_BYTES => (quote! {}, quote! { &::buffa::json_helpers::BytesJson(k) }),
+                _ => (quote! {}, quote! { &::buffa::json_helpers::MapKeyJson(k) }),
+            }
         };
 
         // Value wrapper struct (for types needing special encoding).
-        let (val_wrapper, val_expr) = match val_raw {
-            // v: &&[u8] — deref coercion to &[u8] at the adapter field.
-            Type::TYPE_BYTES => (quote! {}, quote! { &::buffa::json_helpers::BytesJson(v) }),
-            Type::TYPE_ENUM if is_closed_enum(&val_f) => (
-                quote! {},
-                quote! { &::buffa::json_helpers::ClosedEnumJson(v) },
-            ),
-            vt if serde_helper_path(vt).is_some() => {
-                (quote! {}, quote! { &::buffa::json_helpers::ProtoJson(v) })
+        let (val_wrapper, val_expr) = if let Some((kind, owned)) = &val_policy {
+            (quote! {}, kind.serialize_borrowed(owned, &quote! { v }))
+        } else {
+            match val_raw {
+                // v: &&[u8] — deref coercion to &[u8] at the adapter field.
+                Type::TYPE_BYTES => (quote! {}, quote! { &::buffa::json_helpers::BytesJson(v) }),
+                Type::TYPE_ENUM if is_closed_enum(&val_f) => (
+                    quote! {},
+                    quote! { &::buffa::json_helpers::ClosedEnumJson(v) },
+                ),
+                vt if serde_helper_path(vt).is_some() => {
+                    (quote! {}, quote! { &::buffa::json_helpers::ProtoJson(v) })
+                }
+                _ => (quote! {}, quote! { v }),
             }
-            _ => (quote! {}, quote! { v }),
         };
 
         // Include '__a only when key/val types actually reference the view lifetime.
@@ -2599,8 +2646,19 @@ pub(crate) fn view_field_serialize_stmt(
         });
     }
 
+    // A listed JSON policy type governs its view fields too.
+    let policy = crate::json_policy::of_view_field(ctx, scope.proto_fqn, field_name, ty)?;
+
     // ── Repeated field ────────────────────────────────────────────────────────
     if is_repeated {
+        if let Some((kind, owned)) = &policy {
+            let seq_val = kind.serialize_seq(owned, &quote! { &self.#ident });
+            return Ok(quote! {
+                if !self.#ident.is_empty() {
+                    __map.serialize_entry(#json_name, #seq_val)?;
+                }
+            });
+        }
         let seq_adapter = match ty {
             Type::TYPE_BYTES => quote! { ::buffa::json_helpers::BytesSeqJson },
             Type::TYPE_ENUM if is_closed_enum(&f_features) => {
@@ -2632,6 +2690,14 @@ pub(crate) fn view_field_serialize_stmt(
     if is_explicit_presence_scalar(field, ty, &f_features) {
         // opt_* helpers from json_helpers take &Option<owned_T>, not &Option<view_T>.
         // Handle each case inline so the view's Option<&str>/Option<&[u8]> work.
+        if let Some((kind, owned)) = &policy {
+            let value = kind.serialize_borrowed(owned, &quote! { __v });
+            return Ok(quote! {
+                if let ::core::option::Option::Some(__v) = self.#ident {
+                    __map.serialize_entry(#json_name, #value)?;
+                }
+            });
+        }
         let entry = match ty {
             Type::TYPE_STRING => quote! {
                 if let ::core::option::Option::Some(__v) = self.#ident {
@@ -2681,64 +2747,74 @@ pub(crate) fn view_field_serialize_stmt(
     }
 
     // ── Singular fields ───────────────────────────────────────────────────────
-    let (skip_cond, serialize_stmt) = match ty {
-        Type::TYPE_STRING => (
-            quote! { !::buffa::json_helpers::skip_if::is_empty_str(self.#ident) },
-            quote! { __map.serialize_entry(#json_name, self.#ident)?; },
-        ),
-        Type::TYPE_BYTES => (
-            quote! { !::buffa::json_helpers::skip_if::is_empty_bytes(self.#ident) },
-            quote! {
-                __map.serialize_entry(
-                    #json_name,
-                    &::buffa::json_helpers::BytesJson(self.#ident),
-                )?;
-            },
-        ),
-        Type::TYPE_MESSAGE | Type::TYPE_GROUP => (
-            quote! { self.#ident.is_set() },
-            quote! {
-                if let ::core::option::Option::Some(__v) = self.#ident.as_option() {
-                    __map.serialize_entry(#json_name, __v)?;
-                }
-            },
-        ),
-        Type::TYPE_ENUM if is_closed_enum(&f_features) => {
-            let skip_fn = quote! { ::buffa::json_helpers::skip_if::is_default_closed_enum };
-            (
-                quote! { !#skip_fn(&self.#ident) },
+    let (skip_cond, serialize_stmt) = if let Some((kind, owned)) = &policy {
+        let value = kind.serialize_borrowed(owned, &quote! { self.#ident });
+        let skip = if ty == Type::TYPE_STRING {
+            quote! { !::buffa::json_helpers::skip_if::is_empty_str(self.#ident) }
+        } else {
+            quote! { !::buffa::json_helpers::skip_if::is_empty_bytes(self.#ident) }
+        };
+        (skip, quote! { __map.serialize_entry(#json_name, #value)?; })
+    } else {
+        match ty {
+            Type::TYPE_STRING => (
+                quote! { !::buffa::json_helpers::skip_if::is_empty_str(self.#ident) },
+                quote! { __map.serialize_entry(#json_name, self.#ident)?; },
+            ),
+            Type::TYPE_BYTES => (
+                quote! { !::buffa::json_helpers::skip_if::is_empty_bytes(self.#ident) },
                 quote! {
                     __map.serialize_entry(
                         #json_name,
-                        &::buffa::json_helpers::ClosedEnumJson(&self.#ident),
+                        &::buffa::json_helpers::BytesJson(self.#ident),
                     )?;
                 },
-            )
-        }
-        Type::TYPE_ENUM => (
-            quote! { !::buffa::json_helpers::skip_if::is_default_enum_value(&self.#ident) },
-            quote! { __map.serialize_entry(#json_name, &self.#ident)?; },
-        ),
-        scalar if serde_helper_path(scalar).is_some() => {
-            let skip_path = scalar_skip_predicate(scalar);
-            (
-                quote! { !#skip_path(&self.#ident) },
+            ),
+            Type::TYPE_MESSAGE | Type::TYPE_GROUP => (
+                quote! { self.#ident.is_set() },
                 quote! {
-                    __map.serialize_entry(
-                        #json_name,
-                        &::buffa::json_helpers::ProtoJson(&self.#ident),
-                    )?;
+                    if let ::core::option::Option::Some(__v) = self.#ident.as_option() {
+                        __map.serialize_entry(#json_name, __v)?;
+                    }
                 },
-            )
+            ),
+            Type::TYPE_ENUM if is_closed_enum(&f_features) => {
+                let skip_fn = quote! { ::buffa::json_helpers::skip_if::is_default_closed_enum };
+                (
+                    quote! { !#skip_fn(&self.#ident) },
+                    quote! {
+                        __map.serialize_entry(
+                            #json_name,
+                            &::buffa::json_helpers::ClosedEnumJson(&self.#ident),
+                        )?;
+                    },
+                )
+            }
+            Type::TYPE_ENUM => (
+                quote! { !::buffa::json_helpers::skip_if::is_default_enum_value(&self.#ident) },
+                quote! { __map.serialize_entry(#json_name, &self.#ident)?; },
+            ),
+            scalar if serde_helper_path(scalar).is_some() => {
+                let skip_path = scalar_skip_predicate(scalar);
+                (
+                    quote! { !#skip_path(&self.#ident) },
+                    quote! {
+                        __map.serialize_entry(
+                            #json_name,
+                            &::buffa::json_helpers::ProtoJson(&self.#ident),
+                        )?;
+                    },
+                )
+            }
+            Type::TYPE_BOOL => (
+                quote! { self.#ident },
+                quote! { __map.serialize_entry(#json_name, &self.#ident)?; },
+            ),
+            _ => (
+                quote! { self.#ident != ::core::default::Default::default() },
+                quote! { __map.serialize_entry(#json_name, &self.#ident)?; },
+            ),
         }
-        Type::TYPE_BOOL => (
-            quote! { self.#ident },
-            quote! { __map.serialize_entry(#json_name, &self.#ident)?; },
-        ),
-        _ => (
-            quote! { self.#ident != ::core::default::Default::default() },
-            quote! { __map.serialize_entry(#json_name, &self.#ident)?; },
-        ),
     };
 
     // Message fields handle skip internally via the if-let. Required fields
@@ -2814,6 +2890,18 @@ pub(crate) fn view_oneof_serialize_arm(
         return Ok(quote! {
             #view_enum::#variant(_) => {
                 __map.serialize_entry(#json_name, &())?;
+            }
+        });
+    }
+
+    // A listed JSON policy type governs its view variants too.
+    if let Some((kind, owned)) =
+        crate::json_policy::of_view_field(scope.ctx, scope.proto_fqn, name, ty)?
+    {
+        let value = kind.serialize_borrowed(&owned, &quote! { v });
+        return Ok(quote! {
+            #view_enum::#variant(v) => {
+                __map.serialize_entry(#json_name, #value)?;
             }
         });
     }

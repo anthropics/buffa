@@ -1358,3 +1358,12 @@ pub mod xti {
         "/cross_package_idiomatic/_include.rs"
     ));
 }
+
+/// Test-local guarded field representations.
+pub mod guarded_repr;
+
+/// Ordinary generated messages with per-field guarded representations.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod guarded {
+    buffa::include_proto!("guarded");
+}

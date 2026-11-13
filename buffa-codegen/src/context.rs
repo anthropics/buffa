@@ -1500,6 +1500,20 @@ impl<'a> CodeGenContext<'a> {
     /// [`bytes_repr`](Self::bytes_repr); the **last** matching rule wins,
     /// letting a specific override follow a broad default. Fields matching no
     /// rule use [`StringRepr::String`](crate::StringRepr::String).
+    /// Whether the custom representation `rust_type` is listed in
+    /// [`json_policy_types`](CodeGenConfig::json_policy_types) and JSON is
+    /// generated.
+    pub(crate) fn is_json_policy_type(&self, rust_type: &str) -> bool {
+        if !self.config.generate_json || self.config.json_policy_types.is_empty() {
+            return false;
+        }
+        let key = rust_type_key(rust_type);
+        self.config
+            .json_policy_types
+            .iter()
+            .any(|listed| rust_type_key(listed) == key)
+    }
+
     pub fn string_repr(&self, field_fqn: &str) -> crate::StringRepr {
         self.config
             .string_fields
@@ -2170,6 +2184,29 @@ fn register_nested_enum_closedness(
             let fqn = format!("{}.{}", parent_fqn, name);
             register_nested_enum_closedness(map, &fqn, &msg_features, nested);
         }
+    }
+}
+
+/// A whitespace-insensitive key for a Rust type path, for comparing the paths
+/// in [`json_policy_types`](CodeGenConfig::json_policy_types) with those in
+/// representation rules. A path that does not parse is compared verbatim; its
+/// representation rule reports the parse error.
+pub(crate) fn rust_type_key(path: &str) -> String {
+    match syn::parse_str::<syn::Type>(path) {
+        Ok(ty) => quote::ToTokens::to_token_stream(&ty).to_string(),
+        Err(_) => path.to_owned(),
+    }
+}
+
+/// Final path segment used to detect a policy-list spelling mismatch.
+pub(crate) fn rust_type_name(path: &str) -> Option<String> {
+    match syn::parse_str::<syn::Type>(path).ok()? {
+        syn::Type::Path(path) => path
+            .path
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string()),
+        _ => None,
     }
 }
 

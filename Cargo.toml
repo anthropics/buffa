@@ -84,12 +84,17 @@ hashbrown = { version = "0.15", default-features = false, features = ["default-h
 jiff = { version = "0.2", default-features = false, features = ["alloc"] }
 once_cell = { version = "1", default-features = false }
 rustversion = { version = "1" }
+# Guarded-field test fixtures in buffa-test only; no published crate uses them.
+secrecy = { version = "0.10", default-features = false }
 serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 serde_norway = { version = "0.9" }
 arbitrary = { version = "1", default-features = false, features = ["derive"] }
 smoothutf8 = { version = "0.2.3", default-features = false }
+subtle = { version = "2.6", default-features = false }
 thiserror = { version = "2", default-features = false }
+# zeroize 1.9 requires Rust 1.85; keep the workspace's Rust 1.75 MSRV.
+zeroize = { version = ">=1.8.2, <1.9", default-features = false, features = ["alloc"] }
 # Optional `string` field representations that will be selectable via
 # `buffa_build`'s forthcoming `string_type` knob. Declared
 # `default-features = false` so they stay `no_std`; the relevant
