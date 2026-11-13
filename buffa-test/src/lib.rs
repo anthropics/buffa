@@ -9,6 +9,12 @@ pub mod basic {
     buffa::include_proto!("basic");
 }
 
+/// Ordinary vtable reflection over an enum-local editions override.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod reflect_enum_override {
+    buffa::include_proto!("reflect_enum_override");
+}
+
 /// `[debug_redact = true]` — generated Debug impls print a placeholder
 /// instead of the annotated field's value.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
