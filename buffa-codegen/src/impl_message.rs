@@ -207,7 +207,7 @@ pub(crate) fn closed_enum_decode_with_unknown(
 
 /// Token stream that pushes a closed-enum unknown value (`__raw`, in scope)
 /// to `self.__buffa_unknown_fields` as a varint with the given field number.
-/// Returns empty tokens when `preserve_unknown_fields` is false (drop).
+/// Discarded values still enforce explicit unknown-field rejection.
 pub(crate) fn closed_enum_unknown_route(
     field_number: u32,
     preserve_unknown_fields: bool,
@@ -221,7 +221,7 @@ pub(crate) fn closed_enum_unknown_route(
             });
         }
     } else {
-        quote! {}
+        quote! { ctx.check_unknown_field()?; }
     }
 }
 
@@ -583,7 +583,7 @@ pub fn generate_message_impl(
         }
     } else {
         quote! {
-            _ => { ::buffa::encoding::skip_field_depth(tag, buf, ctx.depth())?; }
+            _ => { ::buffa::encoding::skip_unknown_field(tag, buf, ctx)?; }
         }
     };
 

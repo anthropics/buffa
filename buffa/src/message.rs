@@ -129,6 +129,7 @@ pub const DEFAULT_ELEMENT_MEMORY_LIMIT: usize = 32 * 1024 * 1024;
 pub struct DecodeContext<'a> {
     depth: u32,
     unknown_fields_remaining: &'a core::cell::Cell<usize>,
+    reject_unknown_fields: bool,
     element_memory_remaining: Option<&'a core::cell::Cell<usize>>,
 }
 
@@ -140,6 +141,7 @@ impl<'a> DecodeContext<'a> {
         Self {
             depth,
             unknown_fields_remaining: unknown_field_limit,
+            reject_unknown_fields: unknown_field_limit.get() == 0,
             element_memory_remaining: None,
         }
     }
@@ -177,6 +179,33 @@ impl<'a> DecodeContext<'a> {
         self.unknown_fields_remaining.get()
     }
 
+    /// Whether this decode explicitly rejects all unknown wire fields.
+    /// Exhausting a positive storage budget does not change this policy.
+    #[must_use]
+    pub fn rejects_unknown_fields(&self) -> bool {
+        self.reject_unknown_fields
+    }
+
+    /// Check an unknown occurrence independently of its storage policy.
+    ///
+    /// # Errors
+    /// Returns `UnknownFieldLimitExceeded` when this decode started with a
+    /// zero allowance. Discarded fields do not consume a positive storage budget.
+    pub fn check_unknown_field(&self) -> Result<(), DecodeError> {
+        if self.reject_unknown_fields {
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        } else {
+            Ok(())
+        }
+    }
+
+    // Deferred children replay the rejection policy separately from a storage
+    // allowance that may have reached zero before their bytes were recorded.
+    pub(crate) fn with_unknown_field_rejection(mut self, reject: bool) -> Self {
+        self.reject_unknown_fields = reject;
+        self
+    }
+
     /// Consume one level of recursion depth.
     ///
     /// # Errors
@@ -193,18 +222,21 @@ impl<'a> DecodeContext<'a> {
 
     /// Consume one slot of the shared unknown-field allowance.
     ///
-    /// Call **before** materializing an [`UnknownField`](crate::UnknownField).
+    /// Call before materializing an unknown field. Discarded occurrences use
+    /// `check_unknown_field` instead, preserving the storage budget's meaning.
     ///
     /// # Errors
     ///
     /// Returns [`DecodeError::UnknownFieldLimitExceeded`] (leaving the
     /// allowance unchanged) when no slots remain.
     pub fn register_unknown_field(&self) -> Result<(), DecodeError> {
-        let remaining = self.unknown_fields_remaining.get();
-        if remaining == 0 {
-            return Err(DecodeError::UnknownFieldLimitExceeded);
-        }
-        self.unknown_fields_remaining.set(remaining - 1);
+        self.check_unknown_field()?;
+        let remaining = self
+            .unknown_fields_remaining
+            .get()
+            .checked_sub(1)
+            .ok_or(DecodeError::UnknownFieldLimitExceeded)?;
+        self.unknown_fields_remaining.set(remaining);
         Ok(())
     }
 
@@ -1307,7 +1339,11 @@ impl DecodeOptions {
 
     /// Set the maximum number of unknown fields decoded per decode call.
     ///
-    /// Each decoded unknown field occupies a ~40-byte
+    /// Preserved unknown fields consume this allowance. A zero allowance also
+    /// rejects discarded unknown wire fields regardless of storage configuration.
+    /// Positive limits retain their storage-budget semantics.
+    ///
+    /// Each preserved unknown field occupies a ~40-byte
     /// [`UnknownField`](crate::UnknownField) slot regardless of its wire
     /// size (a minimal field is 2 wire bytes — a ~20× amplification), so an
     /// input-size cap alone does not bound decoder memory; this limit does,
@@ -1331,6 +1367,20 @@ impl DecodeOptions {
     pub fn with_unknown_field_limit(mut self, count: usize) -> Self {
         self.unknown_field_limit = count;
         self
+    }
+
+    /// Reject unknown wire fields independently of generated storage settings.
+    /// Equivalent to a zero unknown-field allowance. Unknown closed-enum values
+    /// are included; open-enum numbers remain valid values of known fields.
+    /// Generated static messages retain extensions, MessageSet items and custom
+    /// descriptor options as unknown fields, so they are rejected too. A dynamic
+    /// message can recognize extensions registered in its descriptor pool.
+    ///
+    /// Deferred lazy children are checked only when materialized: constructing a
+    /// lazy view alone does not establish rejection throughout its subtree.
+    #[must_use]
+    pub fn reject_unknown_fields(self) -> Self {
+        self.with_unknown_field_limit(0)
     }
 
     /// Set the memory this decode may materialize in the elements of

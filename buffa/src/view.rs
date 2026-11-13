@@ -297,7 +297,7 @@ pub trait MessageView<'a>: Sized {
     ///     match tag.field_number() {
     ///         1 => self.id = buffa::types::decode_int32(&mut cur)?,
     ///         2 => self.name = buffa::types::borrow_str(&mut cur)?,
-    ///         _ => buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?,
+    ///         _ => buffa::encoding::skip_unknown_field(tag, &mut cur, ctx)?,
     ///     }
     ///     Ok(cur)
     /// }
@@ -313,8 +313,9 @@ pub trait MessageView<'a>: Sized {
     ///
     /// ```rust,ignore
     /// _ => {
-    ///     buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
-    ///     let span_len = before_tag.len() - cur.len();
+    ///     buffa::encoding::skip_unknown_field(tag, &mut cur, ctx)?;
+    ///     let span_len = before_tag.len().checked_sub(cur.len())
+    ///         .ok_or(buffa::DecodeError::UnexpectedEof)?;
     ///     self.unknown_fields.push_record(before_tag, span_len, ctx)?;
     /// }
     /// ```
@@ -1629,6 +1630,7 @@ pub struct LazyMessageFieldView<'a, V> {
     depth: u32,
     allowance: usize,
     elem_allowance: usize,
+    reject_unknown_fields: bool,
     _marker: core::marker::PhantomData<fn() -> V>,
 }
 
@@ -1644,6 +1646,7 @@ impl<'a, V> LazyMessageFieldView<'a, V> {
             depth: u32::MAX,
             allowance: usize::MAX,
             elem_allowance: usize::MAX,
+            reject_unknown_fields: false,
             _marker: core::marker::PhantomData,
         }
     }
@@ -1658,6 +1661,7 @@ impl<'a, V> LazyMessageFieldView<'a, V> {
             depth: crate::RECURSION_LIMIT,
             allowance: crate::DEFAULT_UNKNOWN_FIELD_LIMIT,
             elem_allowance: crate::DEFAULT_ELEMENT_MEMORY_LIMIT,
+            reject_unknown_fields: false,
             _marker: core::marker::PhantomData,
         }
     }
@@ -1672,6 +1676,7 @@ impl<'a, V> LazyMessageFieldView<'a, V> {
     pub fn push_fragment(&mut self, raw: &'a [u8], ctx: crate::DecodeContext<'_>) {
         self.depth = self.depth.min(ctx.depth());
         self.allowance = self.allowance.min(ctx.remaining_unknown_fields());
+        self.reject_unknown_fields |= ctx.rejects_unknown_fields();
         if let Some(remaining) = ctx.remaining_element_memory() {
             self.elem_allowance = self.elem_allowance.min(remaining);
         }
@@ -1746,7 +1751,9 @@ impl<'a, V: LazyMessageView<'a>> LazyMessageFieldView<'a, V> {
     pub fn get(&self) -> Result<Option<V>, DecodeError> {
         let allowance = core::cell::Cell::new(self.allowance);
         let elem = core::cell::Cell::new(self.elem_allowance);
-        let ctx = crate::DecodeContext::new(self.depth, &allowance).with_element_memory(&elem);
+        let ctx = crate::DecodeContext::new(self.depth, &allowance)
+            .with_unknown_field_rejection(self.reject_unknown_fields)
+            .with_element_memory(&elem);
         match &self.raw {
             LazyFragments::None => Ok(None),
             LazyFragments::One(raw) => V::decode_lazy_with_ctx(raw, ctx).map(Some),
@@ -1794,6 +1801,7 @@ impl<V> Clone for LazyMessageFieldView<'_, V> {
             depth: self.depth,
             allowance: self.allowance,
             elem_allowance: self.elem_allowance,
+            reject_unknown_fields: self.reject_unknown_fields,
             _marker: core::marker::PhantomData,
         }
     }
@@ -1830,6 +1838,7 @@ pub struct LazyRepeatedView<'a, V> {
     depth: u32,
     allowance: usize,
     elem_allowance: usize,
+    reject_unknown_fields: bool,
     _marker: core::marker::PhantomData<fn() -> V>,
 }
 
@@ -1843,6 +1852,7 @@ impl<'a, V> LazyRepeatedView<'a, V> {
             depth: u32::MAX,
             allowance: usize::MAX,
             elem_allowance: usize::MAX,
+            reject_unknown_fields: false,
             _marker: core::marker::PhantomData,
         }
     }
@@ -1874,6 +1884,7 @@ impl<'a, V> LazyRepeatedView<'a, V> {
     pub fn push_bytes(&mut self, raw: &'a [u8], ctx: crate::DecodeContext<'_>) {
         self.depth = self.depth.min(ctx.depth());
         self.allowance = self.allowance.min(ctx.remaining_unknown_fields());
+        self.reject_unknown_fields |= ctx.rejects_unknown_fields();
         if let Some(remaining) = ctx.remaining_element_memory() {
             self.elem_allowance = self.elem_allowance.min(remaining);
         }
@@ -1891,12 +1902,15 @@ fn decode_deferred<'a, V: LazyMessageView<'a>>(
     depth: u32,
     allowance: usize,
     elem_allowance: usize,
+    reject_unknown_fields: bool,
 ) -> Result<V, DecodeError> {
     let cell = core::cell::Cell::new(allowance);
     let elem = core::cell::Cell::new(elem_allowance);
     V::decode_lazy_with_ctx(
         raw,
-        crate::DecodeContext::new(depth, &cell).with_element_memory(&elem),
+        crate::DecodeContext::new(depth, &cell)
+            .with_unknown_field_rejection(reject_unknown_fields)
+            .with_element_memory(&elem),
     )
 }
 
@@ -1909,9 +1923,15 @@ impl<'a, V: LazyMessageView<'a>> LazyRepeatedView<'a, V> {
     /// [`LazyMessageFieldView::get`], which returns `Result<Option<V>, _>`.
     #[inline]
     pub fn get(&self, index: usize) -> Option<Result<V, DecodeError>> {
-        self.elements
-            .get(index)
-            .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
+        self.elements.get(index).map(|b| {
+            decode_deferred(
+                b,
+                self.depth,
+                self.allowance,
+                self.elem_allowance,
+                self.reject_unknown_fields,
+            )
+        })
     }
 
     /// Like [`get`](Self::get) with the layers flipped to match
@@ -1938,6 +1958,7 @@ impl<'a, V: LazyMessageView<'a>> LazyRepeatedView<'a, V> {
             depth: self.depth,
             allowance: self.allowance,
             elem_allowance: self.elem_allowance,
+            reject_unknown_fields: self.reject_unknown_fields,
             _marker: core::marker::PhantomData,
         }
     }
@@ -1965,6 +1986,7 @@ pub struct LazyRepeatedIter<'s, 'a, V> {
     depth: u32,
     allowance: usize,
     elem_allowance: usize,
+    reject_unknown_fields: bool,
     _marker: core::marker::PhantomData<fn() -> V>,
 }
 
@@ -1973,16 +1995,28 @@ impl<'a, V: LazyMessageView<'a>> Iterator for LazyRepeatedIter<'_, 'a, V> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner
-            .next()
-            .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
+        self.inner.next().map(|b| {
+            decode_deferred(
+                b,
+                self.depth,
+                self.allowance,
+                self.elem_allowance,
+                self.reject_unknown_fields,
+            )
+        })
     }
 
     #[inline]
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.inner
-            .nth(n)
-            .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
+        self.inner.nth(n).map(|b| {
+            decode_deferred(
+                b,
+                self.depth,
+                self.allowance,
+                self.elem_allowance,
+                self.reject_unknown_fields,
+            )
+        })
     }
 
     #[inline]
@@ -2004,16 +2038,28 @@ impl<'a, V: LazyMessageView<'a>> Iterator for LazyRepeatedIter<'_, 'a, V> {
 impl<'a, V: LazyMessageView<'a>> DoubleEndedIterator for LazyRepeatedIter<'_, 'a, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.inner
-            .next_back()
-            .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
+        self.inner.next_back().map(|b| {
+            decode_deferred(
+                b,
+                self.depth,
+                self.allowance,
+                self.elem_allowance,
+                self.reject_unknown_fields,
+            )
+        })
     }
 
     #[inline]
     fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        self.inner
-            .nth_back(n)
-            .map(|b| decode_deferred(b, self.depth, self.allowance, self.elem_allowance))
+        self.inner.nth_back(n).map(|b| {
+            decode_deferred(
+                b,
+                self.depth,
+                self.allowance,
+                self.elem_allowance,
+                self.reject_unknown_fields,
+            )
+        })
     }
 }
 
@@ -2027,6 +2073,7 @@ impl<V> Clone for LazyRepeatedView<'_, V> {
             depth: self.depth,
             allowance: self.allowance,
             elem_allowance: self.elem_allowance,
+            reject_unknown_fields: self.reject_unknown_fields,
             _marker: core::marker::PhantomData,
         }
     }
@@ -2541,9 +2588,22 @@ impl<'a> UnknownFieldsView<'a> {
             return Err(crate::DecodeError::UnexpectedEof);
         }
         let charge = crate::encoding::register_unknown_record(&tail[..span_len], ctx)?;
+        self.push_borrowed_record(tail, span_len, charge.fields, charge.depth)
+    }
+
+    fn push_borrowed_record(
+        &mut self,
+        tail: &'a [u8],
+        span_len: usize,
+        fields: usize,
+        depth: u32,
+    ) -> Result<(), crate::DecodeError> {
         let st = self.state_mut();
-        st.to_owned_budget = st.to_owned_budget.saturating_add(charge.fields);
-        st.to_owned_depth = st.to_owned_depth.max(charge.depth);
+        st.to_owned_budget = st
+            .to_owned_budget
+            .checked_add(fields)
+            .ok_or(crate::DecodeError::MessageTooLarge)?;
+        st.to_owned_depth = st.to_owned_depth.max(depth);
         if let (Some(UnknownFieldsViewRecord::Borrowed(last)), Some(prev_tail)) =
             (st.records.last_mut(), st.last_tail)
         {
@@ -2552,10 +2612,13 @@ impl<'a> UnknownFieldsView<'a> {
             // of the previous span. Both checks are plain pointer/length
             // comparisons; the extension below re-slices `prev_tail`, whose
             // provenance covers the combined range.
-            if prev_tail.len() >= prev_len + span_len
+            let combined = prev_len
+                .checked_add(span_len)
+                .ok_or(crate::DecodeError::MessageTooLarge)?;
+            if prev_tail.len() >= combined
                 && core::ptr::eq(prev_tail[prev_len..].as_ptr(), tail.as_ptr())
             {
-                *last = &prev_tail[..prev_len + span_len];
+                *last = &prev_tail[..combined];
                 return Ok(());
             }
         }
@@ -3279,6 +3342,30 @@ mod send_sync_assertions {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unknown_map_records_use_one_storage_slot_and_replay_owned_unknowns() {
+        let wire = &[0x1a, 4, 0x10, 99, 0x10, 98][..];
+        let mut fields = UnknownFieldsView::new();
+        let allowance = core::cell::Cell::new(1);
+        fields
+            .push_record(wire, wire.len(), crate::DecodeContext::new(8, &allowance))
+            .unwrap();
+        assert_eq!(allowance.get(), 0);
+        let owned = fields.to_owned().unwrap();
+        assert_eq!(owned.iter().count(), 1);
+        assert_eq!(owned.iter().next().unwrap().number, 3);
+        for (wire, length) in [
+            (&[0x80][..], 1),
+            (&[0x1a, 2, 0x10][..], 3),
+            (&[0x1a, 0][..], 3),
+        ] {
+            let allowance = core::cell::Cell::new(8);
+            assert!(UnknownFieldsView::new()
+                .push_record(wire, length, crate::DecodeContext::new(8, &allowance))
+                .is_err());
+        }
+    }
+
     use super::*;
 
     // ── MessageFieldView ─────────────────────────────────────────────────
@@ -4785,7 +4872,7 @@ mod tests {
                 match tag.field_number() {
                     1 => self.id = crate::types::decode_int32(&mut cursor)?,
                     2 => self.name = crate::types::borrow_str(&mut cursor)?,
-                    _ => crate::encoding::skip_field_depth(tag, &mut cursor, ctx.depth())?,
+                    _ => crate::encoding::skip_unknown_field(tag, &mut cursor, ctx)?,
                 }
             }
             Ok(())
@@ -4797,6 +4884,36 @@ mod tests {
                 name: self.name.into(),
             })
         }
+    }
+
+    #[test]
+    fn deferred_children_preserve_rejection_separately_from_storage_exhaustion() {
+        let allowance = core::cell::Cell::new(1);
+        let ctx = crate::DecodeContext::new(8, &allowance);
+        ctx.register_unknown_field().unwrap();
+        assert_eq!(ctx.remaining_unknown_fields(), 0);
+        assert!(!ctx.rejects_unknown_fields());
+        let wire = &[0x18, 1][..]; // Unknown to SimpleLazyView.
+        let mut singular = LazyMessageFieldView::<SimpleLazyView<'_>>::unset();
+        singular.push_fragment(wire, ctx);
+        assert!(singular.get().is_ok());
+        assert!(singular.clone().get().is_ok());
+        let mut repeated = LazyRepeatedView::<SimpleLazyView<'_>>::new();
+        repeated.push_bytes(wire, ctx);
+        assert!(repeated.get(0).unwrap().is_ok());
+        assert!(repeated.clone().iter().next().unwrap().is_ok());
+
+        let allowance = core::cell::Cell::new(0);
+        let strict = crate::DecodeContext::new(8, &allowance);
+        let mut singular = LazyMessageFieldView::<SimpleLazyView<'_>>::unset();
+        singular.push_fragment(wire, strict);
+        assert_eq!(singular.get(), Err(DecodeError::UnknownFieldLimitExceeded));
+        let mut repeated = LazyRepeatedView::<SimpleLazyView<'_>>::new();
+        repeated.push_bytes(wire, strict);
+        assert_eq!(
+            repeated.get(0).unwrap(),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        );
     }
 
     fn full_budget_ctx(cell: &core::cell::Cell<usize>) -> crate::DecodeContext<'_> {

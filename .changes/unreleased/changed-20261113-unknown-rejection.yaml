@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    A zero unknown-field allowance rejects wire occurrences independently of storage, including discarded groups, map fields and unknown closed-enum occurrences. This changes a zero allowance from a storage-only budget into explicit rejection, including `DecodeContext::new` with a zero allowance. To discard unknown fields without rejecting them, generate with unknown-field storage disabled and keep a positive or default allowance. Positive allowances retain their storage-budget semantics. Static generated extensions and MessageSet payloads are unknown fields too; deferred lazy children validate only when materialized.
+time: 2026-11-13T09:04:51+01:00

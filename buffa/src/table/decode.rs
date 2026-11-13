@@ -13,8 +13,7 @@ use super::{
 use crate::alloc::{string::String, vec::Vec};
 use crate::bytes::Buf;
 use crate::encoding::{
-    check_wire_type, decode_unknown_field, decode_varint, skip_field_depth, wire_type_mismatch,
-    Tag, WireType,
+    check_wire_type, decode_unknown_field, decode_varint, wire_type_mismatch, Tag, WireType,
 };
 use crate::message::MAX_MESSAGE_BYTES;
 use crate::{types, DecodeContext, DecodeError, UnknownField, UnknownFieldData, UnknownFields};
@@ -182,7 +181,7 @@ unsafe fn merge_unknown(
     ctx: DecodeContext<'_>,
 ) -> Result<(), DecodeError> {
     if table.unknown == NO_UNKNOWN {
-        return skip_field_depth(tag, buf, ctx.depth());
+        return crate::encoding::skip_unknown_field(tag, buf, ctx);
     }
     let field = decode_unknown_field(tag, buf, ctx)?;
     // SAFETY: `unknown` is the offset of the message's `UnknownFields`.
@@ -704,7 +703,7 @@ unsafe fn enum_reject(
     ctx: DecodeContext<'_>,
 ) -> Result<(), DecodeError> {
     if table.unknown == NO_UNKNOWN {
-        return Ok(());
+        return ctx.check_unknown_field();
     }
     ctx.register_unknown_field()?;
     // SAFETY: `unknown` is the offset of the message's `UnknownFields`.

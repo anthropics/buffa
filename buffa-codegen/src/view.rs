@@ -41,7 +41,7 @@ fn closed_enum_view_unknown_route(preserve_unknown_fields: bool) -> TokenStream 
             view.__buffa_unknown_fields.push_record(before_tag, __span_len, ctx)?;
         }
     } else {
-        quote! {}
+        quote! { ctx.check_unknown_field()?; }
     }
 }
 
@@ -56,7 +56,7 @@ fn closed_enum_view_unknown_varint_route(
             view.__buffa_unknown_fields.push_varint(#field_number, __raw as u64, ctx)?;
         }
     } else {
-        quote! {}
+        quote! { ctx.check_unknown_field()?; }
     }
 }
 
@@ -295,11 +295,12 @@ pub(crate) fn generate_view_with_nesting(
     };
     let unknown_field_handling = if preserve_unknown_fields {
         quote! {
+            ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
             let span_len = before_tag.len() - cur.len();
             view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
         }
     } else {
-        quote! {}
+        quote! { ::buffa::encoding::skip_unknown_field(tag, &mut cur, ctx)?; }
     };
 
     // Eager views: `message_fields_anchor_lifetime` is false, because a message
@@ -470,7 +471,6 @@ pub(crate) fn generate_view_with_nesting(
                     #(#repeated_arms)*
                     #(#oneof_arms)*
                     _ => {
-                        ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
                         #unknown_field_handling
                     }
                 }
@@ -1809,7 +1809,7 @@ pub(crate) fn map_decode_arm(
     let closed_enum_hooks = val_is_closed_enum.then(|| {
         (
             quote! { __entry_unknown = false; },
-            quote! { __entry_unknown = true; },
+            quote! { ctx.check_unknown_field()?; __entry_unknown = true; },
         )
     });
     let decode_key = map_view_entry_decode(scope, key_fd, &format_ident!("key"), None)?;
@@ -1852,7 +1852,7 @@ pub(crate) fn map_decode_arm(
                 match entry_tag.field_number() {
                     1 => { #decode_key }
                     2 => { #decode_val }
-                    _ => { ::buffa::encoding::skip_field_depth(entry_tag, &mut entry_cur, ctx.depth())?; }
+                    _ => { ::buffa::encoding::skip_unknown_field(entry_tag, &mut entry_cur, ctx)?; }
                 }
             }
             #entry_finish

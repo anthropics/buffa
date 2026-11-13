@@ -551,6 +551,25 @@ pub fn skip_field(tag: Tag, buf: &mut impl Buf) -> Result<(), DecodeError> {
     skip_field_depth(tag, buf, crate::RECURSION_LIMIT)
 }
 
+/// Skip an unknown wire field while enforcing explicit unknown-field rejection.
+///
+/// A decode started with a zero allowance rejects before reading the payload.
+/// Discarded fields do not materialize records and therefore do not consume a
+/// positive storage allowance. Default decoding remains unchanged.
+///
+/// # Errors
+///
+/// Returns [`DecodeError::UnknownFieldLimitExceeded`] when unknown fields are
+/// explicitly rejected, or a wire-format or recursion error for malformed input.
+pub fn skip_unknown_field(
+    tag: Tag,
+    buf: &mut impl Buf,
+    ctx: crate::DecodeContext<'_>,
+) -> Result<(), DecodeError> {
+    ctx.check_unknown_field()?;
+    skip_field_depth(tag, buf, ctx.depth())
+}
+
 /// Verify a decoded tag carries the expected wire type.
 ///
 /// Generated `merge_field` / view-decode arms call this once per field arm
@@ -811,6 +830,45 @@ pub fn decode_unknown_field(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn discarded_unknowns_preserve_storage_budgets_and_validate_groups() {
+        use core::cell::Cell;
+        let allowance = Cell::new(0);
+        let ctx = crate::DecodeContext::new(8, &allowance);
+        let tag = Tag::new(1, WireType::Varint);
+        let mut payload = &[1][..];
+        assert_eq!(
+            skip_unknown_field(tag, &mut payload, ctx),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        );
+        assert_eq!(payload, &[1]);
+        for (wire, budget, expected) in [
+            (&[0x10, 1, 0x0c][..], 2, Ok(())),
+            (&[0x10, 1, 0x0c][..], 1, Ok(())),
+            (&[0x14][..], 2, Err(DecodeError::InvalidEndGroup(2))),
+            (&[0x10][..], 2, Err(DecodeError::UnexpectedEof)),
+        ] {
+            allowance.set(budget);
+            let ctx = crate::DecodeContext::new(8, &allowance);
+            let mut payload = wire;
+            assert_eq!(
+                skip_unknown_field(Tag::new(1, WireType::StartGroup), &mut payload, ctx),
+                expected
+            );
+            assert_eq!(allowance.get(), budget);
+        }
+        allowance.set(2);
+        let mut payload = &[0x0c][..];
+        assert_eq!(
+            skip_unknown_field(
+                Tag::new(1, WireType::StartGroup),
+                &mut payload,
+                crate::DecodeContext::new(0, &allowance)
+            ),
+            Err(DecodeError::RecursionLimitExceeded)
+        );
+    }
+
     use super::*;
 
     #[test]
