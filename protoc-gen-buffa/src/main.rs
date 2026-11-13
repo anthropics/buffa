@@ -213,6 +213,27 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                     true,
                 ));
             }
+            // Repeatable path-scoped custom representations, the plugin form
+            // of buffa-build's `bytes_type_custom_in`, `string_type_custom_in`
+            // and `repeated_type_custom_in`. The value is
+            // "<proto_path>=<rust_type>"; a repeated rule's type is a template
+            // with a `*` placeholder for the element type. buffa-codegen
+            // validates the Rust type at generation time.
+            key
+            @ ("bytes_type_custom_in" | "string_type_custom_in" | "repeated_type_custom_in") => {
+                let (path, rust_type) = parse_custom_type_rule(key, value)?;
+                match key {
+                    "bytes_type_custom_in" => codegen
+                        .bytes_fields
+                        .push((path, buffa_codegen::BytesRepr::Custom(rust_type))),
+                    "string_type_custom_in" => codegen
+                        .string_fields
+                        .push((path, buffa_codegen::StringRepr::Custom(rust_type))),
+                    _ => codegen
+                        .repeated_fields
+                        .push((path, buffa_codegen::RepeatedRepr::Custom(rust_type))),
+                }
+            }
             "json" => codegen.generate_json = parse_bool("json", value)?,
             // Reject unknown JSON keys instead of ignoring them. Without
             // `json=true` it changes nothing and codegen warns.
@@ -572,6 +593,33 @@ fn normalize_override_path(path: &str) -> Result<String, String> {
     normalize_proto_path(path, "feature override")
 }
 
+/// Parse the `<proto_path>=<rust_type>` value of a custom representation
+/// option. The proto path is normalized like the other path-scoped options;
+/// the Rust type is checked only for presence here and parsed by codegen.
+fn parse_custom_type_rule(key: &str, value: &str) -> Result<(String, String), String> {
+    let example = match key {
+        "bytes_type_custom_in" => "crate::SecretBytes",
+        "string_type_custom_in" => "crate::SecretString",
+        _ => "crate::SecretList<*>",
+    };
+    let invalid = || {
+        format!(
+            "invalid {key} format '{value}', expected \
+             '{key}=<proto_path>=<rust_type>' \
+             (e.g. '{key}=.my.pkg.Msg.field={example}')"
+        )
+    };
+    let (path, rust_type) = value.split_once('=').ok_or_else(invalid)?;
+    let rust_type = rust_type.trim();
+    if rust_type.is_empty() {
+        return Err(invalid());
+    }
+    Ok((
+        normalize_proto_path(path.trim(), key)?,
+        rust_type.to_owned(),
+    ))
+}
+
 fn normalize_unbox_oneof_path(path: &str) -> Result<String, String> {
     normalize_proto_path(path, "unbox_oneof_in")
 }
@@ -611,6 +659,70 @@ mod tests {
         match parse_config(params) {
             Ok(_) => panic!("expected parse_config({params:?}) to fail"),
             Err(err) => err,
+        }
+    }
+
+    #[test]
+    fn custom_type_rules_are_repeatable_and_normalized() {
+        let config = parse_config(
+            "bytes_type_custom_in=demo.Request.key=crate::SecretBytes,\
+            bytes_type_custom_in=.demo.Request.token..=crate::OtherBytes,\
+            string_type_custom_in= .demo.Request.identity = crate::SecretString,\
+            repeated_type_custom_in=.demo.Request.embedding=crate::SecretList<*>,\
+            bytes_type_custom_in=.=crate::AllBytes",
+        )
+        .unwrap();
+        assert_eq!(
+            config.codegen.bytes_fields,
+            vec![
+                (
+                    ".demo.Request.key".to_owned(),
+                    buffa_codegen::BytesRepr::Custom("crate::SecretBytes".to_owned())
+                ),
+                (
+                    ".demo.Request.token".to_owned(),
+                    buffa_codegen::BytesRepr::Custom("crate::OtherBytes".to_owned())
+                ),
+                (
+                    ".".to_owned(),
+                    buffa_codegen::BytesRepr::Custom("crate::AllBytes".to_owned())
+                ),
+            ]
+        );
+        assert_eq!(
+            config.codegen.string_fields,
+            vec![(
+                ".demo.Request.identity".to_owned(),
+                buffa_codegen::StringRepr::Custom("crate::SecretString".to_owned())
+            )]
+        );
+        assert_eq!(
+            config.codegen.repeated_fields,
+            vec![(
+                ".demo.Request.embedding".to_owned(),
+                buffa_codegen::RepeatedRepr::Custom("crate::SecretList<*>".to_owned())
+            )]
+        );
+    }
+
+    #[test]
+    fn custom_type_rules_report_the_option_and_value() {
+        for option in [
+            "bytes_type_custom_in",
+            "string_type_custom_in",
+            "repeated_type_custom_in",
+        ] {
+            for value in ["", "demo.Key", ".demo.Key="] {
+                let err = parse_err(&format!("{option}={value}"));
+                assert!(err.contains(option), "{option}={value}: {err}");
+                assert!(
+                    err.contains(&format!("'{value}'")),
+                    "{option}={value}: {err}"
+                );
+            }
+            let err = parse_err(&format!("{option}==crate::Secret"));
+            assert!(err.contains(option), "{option}: {err}");
+            assert!(err.contains("non-empty proto path"), "{option}: {err}");
         }
     }
 
