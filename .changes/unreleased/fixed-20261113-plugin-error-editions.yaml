@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    Include the advertised edition range in plugin error responses so Buf reports the configuration error instead of rejecting the response metadata.
+time: 2026-11-13T09:04:51+01:00

@@ -84,8 +84,7 @@ fn main() {
             // Protocol: write a response with an error string, don't just crash.
             let response = CodeGeneratorResponse {
                 error: Some(format!("{}", e)),
-                supported_features: Some(feature_flags()),
-                ..Default::default()
+                ..response_metadata()
             };
             write_response(&response).unwrap_or_else(|io_err| {
                 eprintln!(
@@ -136,12 +135,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     let response = CodeGeneratorResponse {
-        supported_features: Some(feature_flags()),
-        // Tell protoc which editions we support.
-        minimum_edition: Some(Edition::EDITION_PROTO2 as i32),
-        maximum_edition: Some(Edition::EDITION_2024 as i32),
         file: files,
-        ..Default::default()
+        ..response_metadata()
     };
 
     write_response(&response)?;
@@ -155,6 +150,17 @@ fn write_response(response: &CodeGeneratorResponse) -> io::Result<()> {
     io::stdout().write_all(&output)?;
     io::stdout().flush()?;
     Ok(())
+}
+
+// Buf validates edition support on failures too; keep a single source for
+// response capabilities so it can surface the actual configuration error.
+fn response_metadata() -> CodeGeneratorResponse {
+    CodeGeneratorResponse {
+        supported_features: Some(feature_flags()),
+        minimum_edition: Some(Edition::EDITION_PROTO2 as i32),
+        maximum_edition: Some(Edition::EDITION_2024 as i32),
+        ..Default::default()
+    }
 }
 
 /// Feature flags we support (bitmask).
