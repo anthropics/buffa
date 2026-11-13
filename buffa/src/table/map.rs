@@ -35,9 +35,7 @@ use super::encode::{put_tag, write_kind};
 use super::shape::{DirectMsgVt, EnumVtOf};
 use super::size::size_kind;
 use super::{Aux, Entry, EnumShape, Kind, KindSlot, MessageTable, IMPLICIT, NO_UNKNOWN, REQUIRED};
-use crate::encoding::{
-    check_wire_type, encode_varint, skip_field_depth, varint_len, Tag, WireType,
-};
+use crate::encoding::{check_wire_type, encode_varint, varint_len, Tag, WireType};
 use crate::map_codec::MapStorage;
 use crate::{
     types, DecodeContext, DecodeError, EncodeSink, SizeCache, UnknownField, UnknownFieldData,
@@ -444,6 +442,9 @@ unsafe fn merge_entry(
                 // SAFETY: `value` points to the enum the value entry's
                 // descriptor was built for.
                 known = unsafe { (table.enum_vt(value_entry).set)(value, raw) };
+                if !known {
+                    ctx.check_unknown_field()?;
+                }
             }
             2 => {
                 // SAFETY: as for the key.
@@ -459,7 +460,7 @@ unsafe fn merge_entry(
                     )
                 }?;
             }
-            _ => skip_field_depth(tag, &mut payload, ctx.depth())?,
+            _ => crate::encoding::skip_unknown_field(tag, &mut payload, ctx)?,
         }
     }
     Ok(known)

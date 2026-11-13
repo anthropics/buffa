@@ -472,3 +472,27 @@ fn test_view_owned_parity_for_closed_enum_unknowns() {
         "owned and view-to-owned decode paths must produce identical output"
     );
 }
+
+#[test]
+fn unknown_map_enum_occurrences_are_rejected_but_only_preserved_entries_are_charged() {
+    use crate::proto2::{ViewCoverage, ViewCoverageView};
+    use buffa::{DecodeError, DecodeOptions, MessageView};
+    for values in [&[99, 2][..], &[99, 98][..]] {
+        let (_, wire) = priority_map_entry_wire("key", values);
+        let zero = DecodeOptions::new().reject_unknown_fields();
+        assert_eq!(
+            zero.decode_from_slice::<ViewCoverage>(&wire),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        );
+        assert!(matches!(
+            zero.decode_view::<ViewCoverageView<'_>>(&wire),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        ));
+        // A positive allowance budgets stored records, not the intermediate
+        // values overwritten while decoding one map entry.
+        let options = DecodeOptions::new().with_unknown_field_limit(1);
+        let owned = options.decode_from_slice::<ViewCoverage>(&wire).unwrap();
+        let view = options.decode_view::<ViewCoverageView<'_>>(&wire).unwrap();
+        assert_eq!(view.to_owned_message().unwrap(), owned);
+    }
+}
