@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`buffa::json_helpers::ProtoBytesJson` and `ProtoStringJson`** let a custom byte or string representation define its own protobuf JSON encoding, for example to keep base64 scratch storage under a wipe owner or to accept a value on import while refusing to print it. The traits receive the field's borrowed `&[u8]` or `&str`, so one implementation serves owned messages and views alike. Hidden serde helpers for singular, optional, repeated and map-key positions are included for generated code; JSON `null` keeps its protobuf meaning for each field shape and never reaches the policy.
+time: 2026-11-13T12:00:00+01:00

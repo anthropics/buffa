@@ -32,8 +32,17 @@
 //! types, and functions for `#[serde(deserialize_with = "...")]`.
 
 pub mod buffered;
+mod policy;
 #[doc(hidden)]
 pub mod wkt;
+
+#[doc(hidden)]
+pub use policy::{
+    bytes_policy, opt_bytes_policy, opt_string_policy, policy_str_key_map, string_policy,
+    BytesPolicyJson, BytesPolicySeed, BytesPolicySeqJson, StringPolicyJson, StringPolicySeed,
+    StringPolicySeqJson,
+};
+pub use policy::{ProtoBytesJson, ProtoStringJson};
 
 use buffered::BufferedValue;
 
