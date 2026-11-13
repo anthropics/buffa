@@ -65,6 +65,15 @@ fn invalid_plugin_option_returns_response_error() {
     let response = CodeGeneratorResponse::decode_from_slice(&out.stdout).unwrap();
     let error = response.error.as_deref().unwrap_or_default();
     assert!(error.contains("unknown_key"), "error response: {error}");
+    // Buf validates the feature advertisement before surfacing this error.
+    // An incomplete edition range would replace our diagnostic with a protocol error.
+    use buffa_codegen::generated::descriptor::Edition;
+    assert_eq!(response.supported_features, Some(3));
+    assert_eq!(
+        response.minimum_edition,
+        Some(Edition::EDITION_PROTO2 as i32)
+    );
+    assert_eq!(response.maximum_edition, Some(Edition::EDITION_2024 as i32));
 }
 
 #[test]
