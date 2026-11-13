@@ -12,6 +12,39 @@ use buffa::{Message, MessageView, OwnedView};
 use buffa_descriptor::reflect::{MapKey, ReflectMessage, ValueRef};
 use buffa_test::basic::*;
 
+#[test]
+fn enum_local_closed_override_supports_owned_and_view_collection_reflection() {
+    use buffa_descriptor::reflect::ReflectElement;
+    use buffa_test::reflect_enum_override::{ClosedState, States, StatesView};
+
+    assert!(matches!(
+        ClosedState::STATE_SET.as_value_ref(),
+        ValueRef::EnumNumber(1)
+    ));
+    let mut owned = States::default();
+    owned.values.push(ClosedState::STATE_SET);
+    owned.entries.insert(7, ClosedState::STATE_SET);
+    let wire = owned.encode_to_vec();
+    let view = StatesView::decode_view(&wire).unwrap();
+
+    for reflected in [&owned as &dyn ReflectMessage, &view as &dyn ReflectMessage] {
+        let descriptor = reflected.message_descriptor();
+        let ValueRef::List(values) = reflected.get(descriptor.field(1).unwrap()) else {
+            panic!("expected enum list");
+        };
+        assert_eq!(values.len(), 1);
+        assert!(matches!(values.get(0), Some(ValueRef::EnumNumber(1))));
+        let ValueRef::Map(entries) = reflected.get(descriptor.field(2).unwrap()) else {
+            panic!("expected enum map");
+        };
+        assert_eq!(entries.len(), 1);
+        assert!(matches!(
+            entries.get(&MapKey::I32(7)),
+            Some(ValueRef::EnumNumber(1))
+        ));
+    }
+}
+
 /// A representative Person, encoded to wire bytes.
 fn person_bytes() -> Vec<u8> {
     let person = Person {

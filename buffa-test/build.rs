@@ -251,6 +251,15 @@ fn rustc_minor() -> u32 {
 }
 
 fn main() {
+    // Compile ordinary vtable collections over an enum-local CLOSED override,
+    // independently of the guarded inspection path.
+    buffa_build::Config::new()
+        .files(&["protos/reflect_enum_override.proto"])
+        .includes(&["protos/"])
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("closed-enum reflection fixture generation failed");
+
     // Each schema in `tests::table_codec` is compiled once with the unrolled
     // codec and once with the table codec, under renamed packages, so a test can
     // compare them.
