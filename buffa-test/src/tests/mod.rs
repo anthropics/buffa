@@ -131,3 +131,5 @@ mod view;
 mod view_json;
 mod with_setters;
 mod wkt;
+
+mod guarded;

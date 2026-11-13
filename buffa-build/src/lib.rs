@@ -1438,6 +1438,38 @@ impl Config {
         self.string_type_in(StringRepr::Custom(path.to_string()), paths)
     }
 
+    /// Route the protobuf JSON of a custom `bytes` or `string` representation
+    /// through its `buffa::json_helpers::ProtoBytesJson` or `ProtoStringJson`
+    /// impl.
+    ///
+    /// `path` names the type exactly as its
+    /// [`bytes_type_custom_in`](Self::bytes_type_custom_in) or
+    /// [`string_type_custom_in`](Self::string_type_custom_in) rule does
+    /// (whitespace aside). Every field of that type then serializes and
+    /// deserializes through the policy: singular, optional, repeated and oneof
+    /// fields, `map` keys and values, and the matching fields of generated
+    /// views and owned views. The type's own `serde` impls are not consulted.
+    /// Call it once per type; unlisted custom types keep their existing JSON
+    /// behavior.
+    ///
+    /// # Limitations
+    ///
+    /// - The type must implement the policy trait; a missing impl is a
+    ///   compile error in the generated code, naming the trait.
+    /// - A listed `string` type used as the key of a `map` with enum values
+    ///   is a codegen error from [`compile`](Self::compile).
+    /// - A type that no effective representation rule selects is an error.
+    ///   Binding and spelling errors remain errors with JSON disabled. A valid
+    ///   listed type while [`generate_json`](Self::generate_json) is off
+    ///   produces a `cargo:warning` because its policy is inactive.
+    #[must_use]
+    pub fn json_policy_type(mut self, path: &str) -> Self {
+        self.codegen_config
+            .json_policy_types
+            .push(path.trim().to_string());
+        self
+    }
+
     /// Map every `string` field to the given custom type path. Convenience for
     /// `.string_type_custom_in(path, &["."])`; see it for the limitations.
     #[must_use]

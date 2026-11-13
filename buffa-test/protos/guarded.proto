@@ -1,0 +1,50 @@
+syntax = "proto3";
+package guarded;
+
+message Credentials {
+  bytes key = 1 [debug_redact = true];
+  string identity = 2 [debug_redact = true];
+  optional bytes token = 3 [debug_redact = true];
+  repeated bytes chain = 4 [debug_redact = true];
+  repeated string labels = 5 [debug_redact = true];
+  Credentials child = 6;
+  repeated Credentials children = 7;
+  map<string, bytes> keys = 8 [debug_redact = true];
+  map<string, string> identities = 9 [debug_redact = true];
+  map<string, Credentials> members = 10 [debug_redact = true];
+  bool enabled = 14;
+  int32 count = 15;
+  Mode mode = 16;
+  string media_type = 17;
+  repeated float embedding = 18 [debug_redact = true];
+  oneof credential {
+    bytes raw = 11 [debug_redact = true];
+    string text = 12 [debug_redact = true];
+    Credentials nested = 13;
+  }
+}
+
+// This shape deliberately has no oneof, exercising serde's derived visitor.
+message DirectCredentials {
+  bytes key = 1 [debug_redact = true];
+  optional bytes token = 2 [debug_redact = true];
+  bool enabled = 3;
+}
+
+// Every field shape of a type whose JSON policy refuses export.
+message Sealed {
+  bytes one = 1;
+  optional bytes maybe = 2;
+  repeated bytes many = 3;
+  map<string, bytes> by_name = 4;
+  oneof choice {
+    bytes chosen = 5;
+  }
+}
+
+message Empty {}
+
+enum Mode {
+  MODE_UNSPECIFIED = 0;
+  MODE_ACTIVE = 1;
+}

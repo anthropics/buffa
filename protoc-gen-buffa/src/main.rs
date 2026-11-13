@@ -240,6 +240,17 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                         .push((path, buffa_codegen::RepeatedRepr::Custom(rust_type))),
                 }
             }
+            // Repeatable: route a custom representation's protobuf JSON
+            // through its ProtoBytesJson / ProtoStringJson impl.
+            "json_policy_type" => {
+                let rust_type = value.trim();
+                if rust_type.is_empty() {
+                    return Err("'json_policy_type' requires a Rust type path \
+                         (e.g. 'json_policy_type=crate::SecretBytes')"
+                        .to_string());
+                }
+                codegen.json_policy_types.push(rust_type.to_string());
+            }
             "json" => codegen.generate_json = parse_bool("json", value)?,
             // Reject unknown JSON keys instead of ignoring them. Without
             // `json=true` it changes nothing and codegen warns.
@@ -730,6 +741,23 @@ mod tests {
             assert!(err.contains(option), "{option}: {err}");
             assert!(err.contains("non-empty proto path"), "{option}: {err}");
         }
+    }
+
+    #[test]
+    fn json_policy_types_are_repeatable() {
+        let config = parse_config(
+            "json_policy_type=crate::SecretBytes,json_policy_type= crate::SecretString ",
+        )
+        .unwrap();
+        assert_eq!(
+            config.codegen.json_policy_types,
+            vec![
+                "crate::SecretBytes".to_owned(),
+                "crate::SecretString".to_owned()
+            ]
+        );
+        let err = parse_err("json_policy_type=");
+        assert!(err.contains("json_policy_type"), "{err}");
     }
 
     #[test]

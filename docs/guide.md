@@ -385,6 +385,7 @@ Key points:
 - **The rule also covers `map` `string` slots.** A `string_type` rule on a `map<string, V>` / `map<K, string>` field applies to the key and/or value — one rule on the field path covers both slots of a `map<string, string>`. The `map` container itself stays the configured type (the `map_type` knob); only the `string` element type changes. (`bytes` is value-only here, since proto forbids `bytes` map keys.) Because the rule is keyed on the field path, a `map<string, string>` is all-or-nothing: you cannot give the key a custom type and leave the value `String` (or vice versa) on the same field. Asymmetric cases where only one slot is `string` (`map<string, int64>`, `map<int32, string>`) are unaffected.
 - **A custom string needs no `Arbitrary` impl.** Under `generate_arbitrary`, codegen attaches a generic builder to a custom string field (singular, optional, repeated or oneof) and to a `map` field with a custom string key or value. The builder makes a `String` and converts it through `From<String>`.
 - **JSON of a custom string with explicit presence (proto3 or proto2 `optional`, and the edition 2023 default), in a `repeated` field, in a oneof, or in a `map`,** serializes through the element's native `serde`, so such a newtype must implement `Serialize` / `Deserialize` (`buffa-smolstr`'s `serde` feature does this, and a `buffa-remote-derive` newtype gets them from `#[buffa(remote = ..., serde)]`). A singular string field with implicit presence, or a proto2 `required` one, uses buffa's `proto_string` with-module and needs no `serde` impl.
+- **A [JSON policy](#json-policies-for-custom-types) replaces these JSON rules for a listed type.** Every JSON use of a listed custom string or bytes type, in owned messages and views, goes through its `ProtoStringJson` / `ProtoBytesJson` impl instead.
 - **A custom string used as a `map` key needs `Hash + Eq`** (for the default / `HashMap` container) or `Ord` (for `map_type(BTreeMap)`). The bound is enforced at the generated map field type, so a missing impl is a clear compile error at that field.
 - **A custom type used as a `repeated` element, or as a `map` key/value, must be crate-local.** Codegen emits per-element `ReflectElement` (vtable reflection), `ReflectMapKey` (vtable, for a custom `string` map key), and base64 `ProtoElemJson` (JSON, bytes only) impls for it, which the orphan rule forbids for a foreign type — a local newtype satisfies this. Singular / optional / oneof uses have no such restriction.
 
@@ -668,6 +669,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `bytes_type_custom_in=.pkg.Msg.field=crate::Bytes` | Custom owned bytes representation for a protobuf path prefix, or `.` for every field (repeatable, last matching rule wins) |
 | `string_type_custom_in=.pkg.Msg.field=crate::Text` | Custom owned string representation for a protobuf path prefix, or `.` for every field (repeatable, last matching rule wins) |
 | `repeated_type_custom_in=.pkg.Msg.field=crate::List<*>` | Custom owned collection for `repeated` fields under a protobuf path prefix; `*` is replaced by the element type (repeatable, last matching rule wins). See [`repeated_type_custom_in`](https://docs.rs/buffa-build/latest/buffa_build/struct.Config.html#method.repeated_type_custom_in) for the `ProtoList` requirements |
+| `json_policy_type=crate::Secret` | Route a custom bytes or string representation's protobuf JSON, in owned messages and views, through its `ProtoBytesJson` / `ProtoStringJson` impl (repeatable) — see [JSON policies for custom types](#json-policies-for-custom-types) |
 | `extern_path=.pkg=::rust` | Map a proto package — or a single type, e.g. `extern_path=.pkg.Type=::rust::Type` — to an external Rust path. The proto side is a dotted protobuf name with an optional leading dot; an empty or non-identifier segment is an error |
 | `exclude_package=.pkg` | Drop a proto package and its subpackages from generation (repeatable; leading dot optional). For option-only imports that `include_imports` pulls in but that are never used as field types, e.g. `buf.validate`, `gnostic`. **Pass the same `exclude_package` to `protoc-gen-buffa-packaging`** (see the note below the table) so the generated `mod.rs` omits the same packages. |
 | `file_per_package=true` | Emit one `<dotted.package>.rs` per package instead of per-proto-file content + a `<dotted.pkg>.mod.rs` stitcher. Use this with the remote plugin when you don't want to install `protoc-gen-buffa-packaging` — see [Remote plugin only](#remote-plugin-only-no-local-install). Under `strategy: directory`, requires the input module to be `PACKAGE_DIRECTORY_MATCH`-clean. |
@@ -1809,6 +1811,23 @@ struct Event {
 // In a hand-written visitor:
 let buffa::json_helpers::buffered::BufferedValue(payload) = map.next_value()?;
 ```
+
+### JSON policies for custom types
+
+A custom `bytes` or `string` representation can own its protobuf JSON encoding. List the type with `.json_policy_type("crate::SecretBytes")` (plugin: `json_policy_type=crate::SecretBytes`, repeatable) and implement `buffa::json_helpers::ProtoBytesJson` or `ProtoStringJson` for it:
+
+```rust,ignore
+impl buffa::json_helpers::ProtoBytesJson for SecretBytes {
+    fn serialize_json<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        buffa::json_helpers::bytes::serialize(bytes, s)
+    }
+    fn deserialize_json<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        buffa::json_helpers::bytes::deserialize(d)
+    }
+}
+```
+
+Every JSON use of a listed type then goes through the trait: singular, optional, repeated and oneof fields, `map` keys and values, and the same fields of views, lazy views and owned views. The type's own `serde` impls are not consulted. Serialization receives only the field's `&[u8]` or `&str`, so one policy governs owned and borrowed export, and it cannot depend on per-value state. The trait has no default methods and no blanket impl: a listed type that does not implement it fails to compile. JSON `null` is handled before the policy runs, with the usual protobuf rules for each field shape. A listed `string` type cannot be the key of a `map` with enum values. Unlisted custom types keep their existing JSON behavior. See [guarded field representations](guarded-fields.md) for a worked example that wipes its scratch storage.
 
 ### Unknown fields in JSON
 
