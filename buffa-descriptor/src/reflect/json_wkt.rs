@@ -583,14 +583,10 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
         return Err(D::Error::custom("Any object missing string \"@type\""));
     };
     if flags.strict_any_type_urls && !type_url.contains('/') {
-        return Err(D::Error::custom(format!(
-            "Any type_url {type_url:?} must contain a '/' (e.g. type.googleapis.com/pkg.Type)"
-        )));
+        return Err(D::Error::custom(JsonValueError::AnyBareType));
     }
     let Some(inner_idx) = resolve_any_type(&pool, &type_url) else {
-        return Err(D::Error::custom(format!(
-            "Any type_url {type_url:?} not registered in the descriptor pool"
-        )));
+        return Err(D::Error::custom(JsonValueError::AnyUnregisteredType));
     };
     let inner_md = pool.message(inner_idx);
     let inner_wkt = WktKind::from_full_name(&inner_md.full_name);
@@ -599,16 +595,10 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     let inner_json = if let Some(wkt) = inner_wkt {
         if wkt.uses_any_value_wrapping() {
             let value = obj.remove("value").ok_or_else(|| {
-                D::Error::custom(format!(
-                    "Any with WKT type {type_url:?} requires a \"value\" key"
-                ))
+                D::Error::custom(JsonValueError::AnyMissingValue)
             })?;
-            if !flags.ignore_unknown {
-                if let Some(key) = obj.keys().next() {
-                    return Err(D::Error::custom(format!(
-                        "unknown field {key:?} in Any wrapper for {type_url:?}"
-                    )));
-                }
+            if !flags.ignore_unknown && !obj.is_empty() {
+                return Err(D::Error::custom(JsonValueError::AnyUnexpectedField));
             }
             value
         } else {
@@ -631,9 +621,13 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
         // The budget error keeps its own text at any `Any` depth, so
         // `DynamicMessageSeed::is_element_memory_limit_error` recognises it.
         if DynamicMessageSeed::is_element_memory_limit_error(&e) {
-            D::Error::custom(e)
+            D::Error::custom(ELEMENT_MEMORY_LIMIT_EXCEEDED)
         } else {
-            D::Error::custom(format!("Any inner deserialize failed: {e}"))
+            D::Error::custom(if inner_wkt.is_some_and(WktKind::uses_any_value_wrapping) {
+                JsonValueError::AnyWellKnownType
+            } else {
+                JsonValueError::AnyMessage
+            })
         }
     })?;
     // The decode is done with the buffer, so its charge goes back. The error

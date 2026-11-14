@@ -1,0 +1,4 @@
+kind: Security
+body: |-
+  Omit rejected values from ProtoJSON decoding diagnostics for map-key parsing, numeric conversion and range checks, base64 decoding, malformed Timestamp and Duration strings, and Any payload decoding. Registered Any decoder errors are reported as fixed diagnostics. Accepted inputs are unchanged. This covers Buffa diagnostics at those conversions and the Any decode boundary. Unknown-field diagnostics outside Any (including Serde-derived errors), parser and deserializer errors at other boundaries, and serialization errors are outside this change.
+time: 2026-11-14T00:00:00Z

@@ -2281,3 +2281,55 @@ fn adapter_newtypes_match_their_helpers() {
         r#"["ZERO","ONE"]"#
     );
 }
+
+fn assert_fixed_json_error<T: serde::de::DeserializeOwned>(json: &str, reason: JsonValueError) {
+    let error = match serde_json::from_str::<T>(json) {
+        Err(error) => error,
+        Ok(_) => panic!("expected a JSON error for {json}"),
+    };
+    let text = error.to_string();
+    let expected = reason.to_string();
+    assert_eq!(text.split(" at line ").next(), Some(expected.as_str()));
+}
+
+#[test]
+fn numeric_errors_omit_invalid_text_and_numbers() {
+    use JsonValueError::{Double, Float, Int32, Int64, Uint32, Uint64};
+    for json in [
+        r#""number-marker""#,
+        "-2147483649",
+        "2147483648",
+        "123456.5",
+    ] {
+        assert_fixed_json_error::<SerdeInt32>(json, Int32);
+    }
+    for json in [r#""number-marker""#, "-123456", "4294967296"] {
+        assert_fixed_json_error::<SerdeUint32>(json, Uint32);
+    }
+    for json in [r#""number-marker""#, "9223372036854775808"] {
+        assert_fixed_json_error::<SerdeInt64>(json, Int64);
+    }
+    for json in [r#""number-marker""#, "-123456"] {
+        assert_fixed_json_error::<SerdeUint64>(json, Uint64);
+    }
+    for json in [r#""float-marker""#, "4.12345e39"] {
+        assert_fixed_json_error::<SerdeFloat>(json, Float);
+    }
+    assert_fixed_json_error::<SerdeInt32>("true", Int32);
+    assert_fixed_json_error::<SerdeFloat>("true", Float);
+    assert_fixed_json_error::<SerdeDouble>("true", Double);
+    assert_fixed_json_error::<SerdeDouble>(r#""double-marker""#, Double);
+}
+
+#[test]
+fn key_and_base64_errors_omit_the_rejected_value() {
+    use JsonValueError::{Base64, MapKey};
+    assert_fixed_json_error::<MapI32I64Holder>(r#"{"key-marker":"42"}"#, MapKey);
+    assert_fixed_json_error::<SerdeStringKeyMap>(r#"{"key-marker":"value"}"#, MapKey);
+    // '!' is reported as byte 33 by the underlying base64 decoder.
+    assert_fixed_json_error::<SerdeBytes>(r#""base64!marker""#, Base64);
+    assert_fixed_json_error::<SerdeBytes>("123456789", Base64);
+    assert_fixed_json_error::<BytesKeyWrapper>(r#"{"m":{"base64!marker":1}}"#, Base64);
+    assert_fixed_json_error::<BytesKeyBytesValWrapper>(r#"{"m":{"base64!marker":"AA=="}}"#, Base64);
+    assert_fixed_json_error::<BytesKeyBytesValWrapper>(r#"{"m":{"AA==":"base64!marker"}}"#, Base64);
+}

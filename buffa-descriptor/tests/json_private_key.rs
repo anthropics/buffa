@@ -50,8 +50,26 @@ fn a_string_under_the_private_key_is_not_parsed() {
     // Parsing the string fails the recursion limit. As data it is an object
     // where `id` takes a number.
     let deep = format!("{}0{}", "[".repeat(200), "]".repeat(200));
-    let json = json!({ "payload": { "@type": ANNOTATED_URL, "id": { RAW_VALUE_KEY: deep } } });
-    let err = envelope_from_json(&json).map(|_| ()).unwrap_err();
-    assert!(!err.to_string().contains("recursion limit"), "{err}");
-    assert!(err.to_string().contains("invalid type: map"), "{err}");
+    let payload = json!({ "@type": ANNOTATED_URL, "id": { RAW_VALUE_KEY: deep } });
+    let budget = std::cell::Cell::new(4096);
+    let input = payload.to_string();
+    let mut deserializer = serde_json::Deserializer::from_str(&input);
+    let buffered = buffa::json_helpers::buffered::charged_object(
+        &mut deserializer,
+        &budget,
+        1,
+        1,
+        "test budget exceeded",
+    )
+    .expect("the raw value key is ordinary object data");
+    assert_eq!(buffered.get("id"), payload.get("id"));
+
+    let err = envelope_from_json(&json!({ "payload": payload }))
+        .map(|_| ())
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("invalid JSON payload for a registered Any message"),
+        "{err}"
+    );
 }

@@ -42,7 +42,7 @@ use crate::{
     ScalarType, SingularKind,
 };
 use buffa::editions::EnumType;
-use buffa::json_helpers::{self, EnumJsonErrorReason};
+use buffa::json_helpers::{self, EnumJsonErrorReason, JsonValueError};
 use buffa::RECURSION_LIMIT;
 
 // ── Serialize ───────────────────────────────────────────────────────────────
@@ -1081,7 +1081,7 @@ fn deserialize_scalar<'de, D: Deserializer<'de>>(sc: ScalarType, d: D) -> Result
         fn visit_bool<E: de::Error>(self, v: bool) -> Result<Self::Value, E> {
             match self.0 {
                 ScalarType::Bool => Ok(Value::Bool(v)),
-                _ => Err(de::Error::invalid_type(de::Unexpected::Bool(v), &self)),
+                _ => Err(E::invalid_type(de::Unexpected::Other("boolean"), &self)),
             }
         }
 
@@ -1171,8 +1171,8 @@ fn scalar_from_f64<E: de::Error>(sc: ScalarType, v: f64) -> Result<Value, E> {
         }
         ScalarType::Bool | ScalarType::String | ScalarType::Bytes => {
             return Err(E::invalid_type(
-                de::Unexpected::Float(v),
-                &"a JSON value for this field",
+                de::Unexpected::Other("floating-point number"),
+                &"a JSON value for this protobuf field",
             ));
         }
     })
