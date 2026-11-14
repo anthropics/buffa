@@ -1,0 +1,3 @@
+kind: Security
+body: 'Enum JSON value errors omit the input name or number. This covers generated enum values, enum field values and elements, registered enum extensions, and reflective enum values. The accepted values and lenient parsing behavior are unchanged. Regenerate existing bindings with the matching generator to update standalone enum deserialization.'
+time: 2026-11-14T00:24:18Z

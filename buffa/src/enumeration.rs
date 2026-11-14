@@ -198,6 +198,8 @@ impl<E: Enumeration> serde::Serialize for EnumValue<E> {
 #[cfg(feature = "json")]
 impl<'de, E: Enumeration> serde::Deserialize<'de> for EnumValue<E> {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use crate::json_helpers::EnumJsonErrorReason;
+
         struct EnumValueVisitor<E>(core::marker::PhantomData<E>);
 
         impl<'de, E: Enumeration> serde::de::Visitor<'de> for EnumValueVisitor<E> {
@@ -225,32 +227,29 @@ impl<'de, E: Enumeration> serde::Deserialize<'de> for EnumValue<E> {
                         if crate::json::ignore_unknown_enum_values() {
                             return Ok(EnumValue::from(0));
                         }
-                        Err(serde::de::Error::invalid_value(
-                            serde::de::Unexpected::Str(v),
-                            &"a known enum variant name",
-                        ))
+                        Err(Err::custom(EnumJsonErrorReason::UnknownName))
                     }
                 }
             }
 
             fn visit_i64<Err: serde::de::Error>(self, v: i64) -> Result<EnumValue<E>, Err> {
-                let n = i32::try_from(v).map_err(|_| {
-                    serde::de::Error::invalid_value(
-                        serde::de::Unexpected::Signed(v),
-                        &"an i32 enum value",
-                    )
-                })?;
+                let n =
+                    i32::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
                 Ok(EnumValue::from(n))
             }
 
             fn visit_u64<Err: serde::de::Error>(self, v: u64) -> Result<EnumValue<E>, Err> {
-                let n = i32::try_from(v).map_err(|_| {
-                    serde::de::Error::invalid_value(
-                        serde::de::Unexpected::Unsigned(v),
-                        &"an i32 enum value",
-                    )
-                })?;
+                let n =
+                    i32::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
                 Ok(EnumValue::from(n))
+            }
+
+            fn visit_f64<Err: serde::de::Error>(self, _: f64) -> Result<Self::Value, Err> {
+                Err(Err::custom(EnumJsonErrorReason::InvalidType))
+            }
+
+            fn visit_bool<Err: serde::de::Error>(self, _: bool) -> Result<Self::Value, Err> {
+                Err(Err::custom(EnumJsonErrorReason::InvalidType))
             }
         }
 
@@ -543,12 +542,9 @@ mod tests {
         }
 
         #[test]
-        fn deserialize_unknown_string_error_names_the_value() {
+        fn deserialize_unknown_string_error_omits_the_value() {
             let err = serde_json::from_str::<EnumValue<Color>>(r#""PURPLE""#).unwrap_err();
-            assert_eq!(
-                err.to_string(),
-                r#"invalid value: string "PURPLE", expected a known enum variant name at line 1 column 8"#
-            );
+            assert_eq!(err.to_string(), "unknown enum name at line 1 column 8");
         }
 
         #[test]

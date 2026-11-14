@@ -585,9 +585,13 @@ pub mod helpers {
         n: u32,
     ) -> Result<Vec<UnknownField>, String> {
         let i = match v {
-            serde_json::Value::String(s) => E::from_proto_name(&s)
-                .map(|e| e.to_i32())
-                .ok_or_else(|| format!("field {n}: unknown enum variant `{s}`"))?,
+            serde_json::Value::String(s) => {
+                E::from_proto_name(&s).map(|e| e.to_i32()).ok_or_else(|| {
+                    alloc::string::ToString::to_string(
+                        &crate::json_helpers::EnumJsonErrorReason::UnknownName,
+                    )
+                })?
+            }
             serde_json::Value::Number(num) => num
                 .as_i64()
                 .and_then(|x| i32::try_from(x).ok())
@@ -1489,7 +1493,7 @@ mod tests {
     #[test]
     fn enum_from_json_unknown_name_errors() {
         let err = enum_from_json::<Color>(serde_json::json!("PURPLE"), 1).unwrap_err();
-        assert!(err.contains("unknown enum variant"), "{err}");
+        assert_eq!(err, "unknown enum name");
     }
 
     #[test]
