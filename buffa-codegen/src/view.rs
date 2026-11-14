@@ -11,7 +11,7 @@
 
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
 use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto, OneofDescriptorProto};
-use proc_macro2::TokenStream;
+use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
 use crate::context::{ancillary_prefix, AncillaryKind, CodeGenContext, MessageScope, SENTINEL_MOD};
@@ -351,10 +351,10 @@ pub(crate) fn generate_view_with_nesting(
         )?
     };
 
-    // Fields marked `[debug_redact = true]` print a placeholder instead of
-    // their value. The `Debug` derive is swapped for a manual impl only when
-    // at least one field is redacted, so unaffected views keep byte-identical
-    // output. Oneof payload redaction is handled by the view-oneof enum.
+    // Matched views keep the required Debug impl without inspecting any field
+    // or formatting stored wire data, which may include unknown fields.
+    // Other views use a field-by-field formatter for `[debug_redact = true]`.
+    // Unaffected views keep their derive. View oneofs redact their own payload.
     // Like the owned message's Debug impl, the manual impl lists proto fields
     // only — `__buffa_unknown_fields` is deliberately excluded because unknown
     // fields can carry redacted data from a newer schema version.
@@ -362,7 +362,17 @@ pub(crate) fn generate_view_with_nesting(
         custom_view_default_impl(view_scope, msg, &view_ident, has_phantom_field)?;
     let has_custom_default_impl = custom_default_impl.is_some();
     let any_redacted = view_fields.iter().any(|(_, _, redacted)| *redacted);
-    let (view_debug_derive, view_debug_impl) = if any_redacted {
+    let redacted_derive = if has_custom_default_impl {
+        quote! { #[derive(Clone)] }
+    } else {
+        quote! { #[derive(Clone, Default)] }
+    };
+    let (view_debug_derive, view_debug_impl) = if ctx.skip_debug(proto_fqn) {
+        (
+            redacted_derive,
+            fully_redacted_debug(&view_ident, &quote! { <'a> }),
+        )
+    } else if any_redacted {
         let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
         let view_name_str = view_ident.to_string();
         let mut debug_field_names: Vec<String> = Vec::new();
@@ -382,11 +392,7 @@ pub(crate) fn generate_view_with_nesting(
             debug_field_values.push(quote! { &self.#ident });
         }
         (
-            if has_custom_default_impl {
-                quote! { #[derive(Clone)] }
-            } else {
-                quote! { #[derive(Clone, Default)] }
-            },
+            redacted_derive,
             quote! {
                 #deprecated_field_allow
                 impl<'a> ::core::fmt::Debug for #view_ident<'a> {
@@ -1141,7 +1147,12 @@ fn generate_oneof_view_enum(
     // Variants whose field is `[debug_redact = true]` print a placeholder
     // instead of their payload (same rule as the owned oneof enum).
     let any_redacted = fields.iter().any(|f| crate::message::is_debug_redacted(f));
-    let (debug_derive, debug_impl) = if any_redacted {
+    let (debug_derive, debug_impl) = if ctx.skip_debug(scope.proto_fqn) {
+        (
+            quote! { #[derive(Clone)] },
+            fully_redacted_debug(base_ident, &generics),
+        )
+    } else if any_redacted {
         let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
         let arms = fields
             .iter()
@@ -3003,4 +3014,17 @@ pub(crate) fn resolve_owned_path(
         .ctx
         .rust_type_relative(type_name, scope.current_package, scope.nesting)
         .ok_or_else(|| CodeGenError::Other(format!("message type '{type_name}' not found")))
+}
+
+/// Keep view trait bounds and wrapper formatting without reading any data.
+pub(crate) fn fully_redacted_debug(ident: &Ident, generics: &TokenStream) -> TokenStream {
+    let placeholder = crate::message::DEBUG_REDACT_PLACEHOLDER;
+    let label = format!("{ident}({placeholder})");
+    quote! {
+        impl #generics ::core::fmt::Debug for #ident #generics {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                f.write_str(#label)
+            }
+        }
+    }
 }

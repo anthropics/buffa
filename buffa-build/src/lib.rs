@@ -227,11 +227,12 @@ impl Config {
     /// added if missing and trailing dots are trimmed. Repeated calls
     /// accumulate.
     ///
-    /// View types keep their generated `Debug`, so a view still prints every
-    /// field. To hide a field's value in all generated `Debug` output, use
-    /// the `[debug_redact = true]` field option instead. That option does
-    /// not reach a matched message or oneof: your impl decides what it
-    /// prints.
+    /// Eager, lazy, and owned views of matched messages, and their view oneofs,
+    /// keep `Debug` but print only the type name and `[REDACTED]`. This also
+    /// hides preserved unknown wire fields. The rule affects generated
+    /// formatting only. For selective redaction in generated and reflective
+    /// formatting, use `[debug_redact = true]`. A hand-written `Debug` impl
+    /// for a matched owned message or oneof decides what that value prints.
     ///
     /// Your crate then implements `Debug`:
     ///
