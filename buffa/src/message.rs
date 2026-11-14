@@ -1208,6 +1208,7 @@ pub struct DecodeOptions {
     unbounded_reader_size: bool,
     unknown_field_limit: usize,
     element_memory_limit: usize,
+    clear_on_merge_error: bool,
 }
 
 /// Default maximum message size: 2 GiB - 1 (matches the sub-message limit
@@ -1236,6 +1237,7 @@ impl DecodeOptions {
             unbounded_reader_size: false,
             unknown_field_limit: DEFAULT_UNKNOWN_FIELD_LIMIT,
             element_memory_limit: DEFAULT_ELEMENT_MEMORY_LIMIT,
+            clear_on_merge_error: false,
         }
     }
 
@@ -1484,34 +1486,50 @@ impl DecodeOptions {
         Ok(msg)
     }
 
+    /// Clear the entire destination if either merge method returns an error,
+    /// including when the input exceeds the message size limit.
+    ///
+    /// Use this when a failed replacement must not leave old values or a
+    /// partially merged message available to the caller. This calls
+    /// [`Message::clear`], so memory is wiped only if the message's
+    /// implementation wipes its fields. The input buffer is left to its owner.
+    /// This option only applies to [`Self::merge`] and [`Self::merge_from_slice`].
+    #[must_use]
+    pub fn clear_on_merge_error(mut self) -> Self {
+        self.clear_on_merge_error = true;
+        self
+    }
+
     /// Merge fields from a buffer into an existing message.
+    ///
+    /// On error the destination can contain old and partially merged fields,
+    /// unless [`Self::clear_on_merge_error`] was requested.
     pub fn merge<M: Message>(&self, msg: &mut M, buf: &mut impl Buf) -> Result<(), DecodeError> {
-        if buf.remaining() > self.max_message_size {
-            return Err(DecodeError::MessageTooLarge);
+        let result = if buf.remaining() > self.max_message_size {
+            Err(DecodeError::MessageTooLarge)
+        } else {
+            let limit = core::cell::Cell::new(self.unknown_field_limit);
+            let elem_budget = core::cell::Cell::new(self.element_memory_limit);
+            msg.merge(
+                buf,
+                DecodeContext::new(self.recursion_limit, &limit).with_element_memory(&elem_budget),
+            )
+        };
+        if self.clear_on_merge_error && result.is_err() {
+            msg.clear();
         }
-        let limit = core::cell::Cell::new(self.unknown_field_limit);
-        let elem_budget = core::cell::Cell::new(self.element_memory_limit);
-        msg.merge(
-            buf,
-            DecodeContext::new(self.recursion_limit, &limit).with_element_memory(&elem_budget),
-        )
+        result
     }
 
     /// Merge fields from a byte slice into an existing message.
+    ///
+    /// The destination follows the same failure policy as [`Self::merge`].
     pub fn merge_from_slice<M: Message>(
         &self,
         msg: &mut M,
-        data: &[u8],
+        mut data: &[u8],
     ) -> Result<(), DecodeError> {
-        if data.len() > self.max_message_size {
-            return Err(DecodeError::MessageTooLarge);
-        }
-        let limit = core::cell::Cell::new(self.unknown_field_limit);
-        let elem_budget = core::cell::Cell::new(self.element_memory_limit);
-        msg.merge(
-            &mut &*data,
-            DecodeContext::new(self.recursion_limit, &limit).with_element_memory(&elem_budget),
-        )
+        self.merge(msg, &mut data)
     }
 
     /// Decode a zero-copy view from a byte slice.
@@ -1970,6 +1988,36 @@ mod tests {
             .with_max_message_size(1)
             .merge_from_slice(&mut msg, &bytes);
         assert_eq!(result, Err(DecodeError::MessageTooLarge));
+    }
+
+    #[test]
+    fn merge_error_clears_destination_only_when_requested() {
+        let mut message = FlatMsg { value: 17 };
+        let mut malformed = FlatMsg { value: 42 }.encode_to_vec();
+        malformed.push(0); // illegal field number
+        assert_eq!(
+            DecodeOptions::new().merge_from_slice(&mut message, &malformed),
+            Err(DecodeError::InvalidFieldNumber)
+        );
+        assert_eq!(message.value, 42);
+
+        let options = DecodeOptions::new().clear_on_merge_error();
+        assert_eq!(
+            options.merge(&mut message, &mut malformed.as_slice()),
+            Err(DecodeError::InvalidFieldNumber)
+        );
+        assert_eq!(message.value, 0);
+
+        let wire = FlatMsg { value: 27 }.encode_to_vec();
+        options.merge_from_slice(&mut message, &wire).unwrap();
+        assert_eq!(message.value, 27);
+        assert_eq!(
+            options
+                .with_max_message_size(1)
+                .merge_from_slice(&mut message, &wire),
+            Err(DecodeError::MessageTooLarge)
+        );
+        assert_eq!(message.value, 0);
     }
 
     #[test]
