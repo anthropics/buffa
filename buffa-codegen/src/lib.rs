@@ -1313,7 +1313,8 @@ pub struct CodeGenConfig {
     /// matches every message in the package and its sub-packages, and `"."`
     /// matches every message. The oneof enums of a matched message lose
     /// their `Debug` with it. An enum loses its `Debug` only when a rule is
-    /// its exact name, such as `".pkg.Level"`. View types keep theirs.
+    /// its exact name, such as `".pkg.Level"`. Matched views and view oneofs
+    /// implement `Debug` with fully redacted output.
     ///
     /// A matched enum does not compile until the crate implements `Debug`
     /// for it, because `buffa::Enumeration` requires `Debug`. A matched

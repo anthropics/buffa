@@ -1440,8 +1440,8 @@ impl<'a> CodeGenContext<'a> {
     }
 
     /// Whether a [`skip_debug`](crate::CodeGenConfig::skip_debug) rule covers
-    /// the message at `message_fqn`, so that the generated `Debug` impls of
-    /// the message and of its oneof enums are omitted.
+    /// the message at `message_fqn`. Matched owned messages and their oneofs
+    /// omit the generated `Debug` impl; matched views redact their output.
     ///
     /// Rules use the same proto-segment-aware prefix matching as
     /// [`preserve_unknown_fields`](Self::preserve_unknown_fields): a rule

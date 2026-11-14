@@ -135,8 +135,8 @@ fn a_message_rule_covers_its_oneofs_and_nested_messages() {
     assert!(content.contains(&enum_derive("Level", true)), "{content}");
 
     assert!(
-        content.contains("#[derive(Clone,Debug,Default)]pubstructOuterView"),
-        "a view keeps its Debug: {content}"
+        content.contains("impl<'a>::core::fmt::DebugforOuterView<'a>"),
+        "a matched view keeps a manual Debug impl: {content}"
     );
 }
 

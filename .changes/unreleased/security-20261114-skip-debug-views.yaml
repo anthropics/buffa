@@ -1,0 +1,3 @@
+kind: Security
+body: 'Views and view oneofs of messages selected by skip_debug retain Debug with fully redacted output, including when the message preserves unknown fields. Wire encoding is unchanged. Regenerate existing bindings to replace their old Debug implementations.'
+time: 2026-11-14T00:45:00Z

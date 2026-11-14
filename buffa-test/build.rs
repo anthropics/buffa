@@ -1099,6 +1099,7 @@ fn main() {
         .files(&["protos/skip_debug.proto"])
         .includes(&["protos/"])
         .generate_views(true)
+        .lazy_views(true)
         .skip_debug(&[".skip_debug.Token", ".skip_debug.Level"])
         .compile()
         .expect("buffa_build failed for skip_debug.proto");
