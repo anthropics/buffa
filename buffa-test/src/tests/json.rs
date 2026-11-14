@@ -47,6 +47,46 @@ fn test_json_enum_round_trip() {
 }
 
 #[test]
+fn standalone_enum_json_errors_omit_input() {
+    use crate::json_types::Color;
+    use serde_json::{from_value, json};
+
+    for (input, expected) in [
+        (json!("unrecognized-marker"), "unknown enum name"),
+        (json!(123456), "unknown enum number"),
+        (json!(-123456), "unknown enum number"),
+        (json!(i64::MIN), "enum number out of i32 range"),
+        (json!(u64::MAX), "enum number out of i32 range"),
+        (json!(1.0), "expected a protobuf enum name or integer"),
+        (json!(true), "expected a protobuf enum name or integer"),
+    ] {
+        let err = from_value::<Color>(input).unwrap_err();
+        assert_eq!(err.to_string(), expected);
+    }
+
+    for input in [json!("RED"), json!(1)] {
+        assert_eq!(from_value::<Color>(input).unwrap(), Color::RED);
+    }
+    assert_eq!(from_value::<Color>(json!(null)).unwrap(), Color::default());
+}
+
+#[test]
+fn standalone_enum_json_remains_strict_in_lenient_mode() {
+    use crate::json_types::Color;
+
+    let opts = buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+    buffa::json::with_json_parse_options(&opts, || {
+        for (input, expected) in [
+            (serde_json::json!("unknown-marker"), "unknown enum name"),
+            (serde_json::json!(123456), "unknown enum number"),
+        ] {
+            let err = serde_json::from_value::<Color>(input).unwrap_err();
+            assert_eq!(err.to_string(), expected);
+        }
+    });
+}
+
+#[test]
 fn test_json_oneof_round_trip() {
     use crate::json_types::WithOneof;
 
@@ -538,6 +578,46 @@ fn test_proto2_closed_enum_json_unknown_value_rejected() {
         result.is_err(),
         "expected error for unknown closed-enum value"
     );
+}
+
+#[test]
+fn closed_enum_json_diagnostics_do_not_echo_collection_values() {
+    use crate::p2json::ClosedEnumJson;
+    use serde_json::{from_value, json};
+
+    for (value, expected, unknown) in [
+        (json!("unrecognized-marker"), "unknown enum name", true),
+        (json!(123456), "unknown enum number", true),
+        (json!(u64::MAX), "enum number out of i32 range", false),
+        (
+            json!(42.25),
+            "expected a protobuf enum name or integer",
+            false,
+        ),
+        (
+            json!(true),
+            "expected a protobuf enum name or integer",
+            false,
+        ),
+    ] {
+        for input in [
+            json!({"tier": value}),
+            json!({"tiers": [value]}),
+            json!({"byName": {"a": value}}),
+        ] {
+            let err = from_value::<ClosedEnumJson>(input.clone()).unwrap_err();
+            assert_eq!(err.to_string(), expected);
+
+            let opts = buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+            let result =
+                buffa::json::with_json_parse_options(&opts, || from_value::<ClosedEnumJson>(input));
+            if unknown {
+                assert_eq!(result.unwrap(), ClosedEnumJson::default());
+            } else {
+                assert_eq!(result.unwrap_err().to_string(), expected);
+            }
+        }
+    }
 }
 
 #[test]

@@ -564,10 +564,27 @@ pub mod proto_string {
 
 // ── enum ─────────────────────────────────────────────────────────────────────
 
+/// Shared reasons for protobuf enum JSON errors. Keep diagnostics independent
+/// of the input value so reporting a parse failure does not disclose it.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum EnumJsonErrorReason {
+    #[error("unknown enum name")]
+    UnknownName,
+    #[error("unknown enum number")]
+    UnknownNumber,
+    #[error("enum number out of i32 range")]
+    OutOfRange,
+    #[error("expected a protobuf enum name or integer")]
+    InvalidType,
+}
+
 /// Serde with-module for `EnumValue<E>` fields that accepts JSON `null` as the default.
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::proto_enum")]`.
 pub mod proto_enum {
+    use super::EnumJsonErrorReason;
     use serde::{Deserializer, Serializer};
 
     pub fn serialize<E: crate::Enumeration, S: Serializer>(
@@ -590,22 +607,20 @@ pub mod proto_enum {
                 Ok(crate::EnumValue::from(0))
             }
             fn visit_i64<Err: serde::de::Error>(self, v: i64) -> Result<crate::EnumValue<E>, Err> {
-                let i = i32::try_from(v).map_err(|_| {
-                    serde::de::Error::invalid_value(
-                        serde::de::Unexpected::Signed(v),
-                        &"an integer in i32 range",
-                    )
-                })?;
+                let i =
+                    i32::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
                 Ok(crate::EnumValue::from(i))
             }
             fn visit_u64<Err: serde::de::Error>(self, v: u64) -> Result<crate::EnumValue<E>, Err> {
-                let i = i32::try_from(v).map_err(|_| {
-                    serde::de::Error::invalid_value(
-                        serde::de::Unexpected::Unsigned(v),
-                        &"an integer in i32 range",
-                    )
-                })?;
+                let i =
+                    i32::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
                 Ok(crate::EnumValue::from(i))
+            }
+            fn visit_f64<Err: serde::de::Error>(self, _: f64) -> Result<Self::Value, Err> {
+                Err(Err::custom(EnumJsonErrorReason::InvalidType))
+            }
+            fn visit_bool<Err: serde::de::Error>(self, _: bool) -> Result<Self::Value, Err> {
+                Err(Err::custom(EnumJsonErrorReason::InvalidType))
             }
             fn visit_str<Err: serde::de::Error>(self, v: &str) -> Result<crate::EnumValue<E>, Err> {
                 match E::from_proto_name(v) {
@@ -614,10 +629,7 @@ pub mod proto_enum {
                         if crate::json::ignore_unknown_enum_values() {
                             return Ok(crate::EnumValue::from(0));
                         }
-                        Err(serde::de::Error::invalid_value(
-                            serde::de::Unexpected::Str(v),
-                            &"a known enum variant name",
-                        ))
+                        Err(Err::custom(EnumJsonErrorReason::UnknownName))
                     }
                 }
             }
@@ -656,11 +668,11 @@ pub mod proto_enum {
 #[inline]
 fn try_deserialize_closed_enum<E: crate::Enumeration + Default>(
     raw: &serde_json::Value,
-) -> Result<Option<E>, serde_json::Error> {
+) -> Result<Option<E>, EnumJsonErrorReason> {
     match decode_closed_enum::<E>(raw) {
         Ok(e) => Ok(Some(e)),
         Err(ClosedEnumError::Unknown(_)) if crate::json::ignore_unknown_enum_values() => Ok(None),
-        Err(ClosedEnumError::Unknown(e) | ClosedEnumError::Malformed(e)) => Err(e),
+        Err(ClosedEnumError::Unknown(reason) | ClosedEnumError::Malformed(reason)) => Err(reason),
     }
 }
 
@@ -668,10 +680,10 @@ fn try_deserialize_closed_enum<E: crate::Enumeration + Default>(
 enum ClosedEnumError {
     /// A name, or a number in `i32` range, that the enum does not declare.
     /// Lenient parsing drops the value.
-    Unknown(serde_json::Error),
+    Unknown(EnumJsonErrorReason),
     /// Null, a float, a number outside `i32`, a bool, an object or an array. An
     /// error whether or not parsing is lenient.
-    Malformed(serde_json::Error),
+    Malformed(EnumJsonErrorReason),
 }
 
 /// Closed-enum decode of a buffered `serde_json::Value`, bound only on
@@ -685,28 +697,14 @@ enum ClosedEnumError {
 fn decode_closed_enum<E: crate::Enumeration + Default>(
     raw: &serde_json::Value,
 ) -> Result<E, ClosedEnumError> {
-    use serde::de::{Error as _, Unexpected};
     use serde_json::Value;
 
-    // The error names the value's JSON type and leaves its contents out: an
-    // object or array here can be as large as the input.
-    let malformed = |unexpected: Unexpected<'_>| {
-        ClosedEnumError::Malformed(serde_json::Error::invalid_type(
-            unexpected,
-            &"a protobuf enum name string or integer value",
-        ))
-    };
-
     match raw {
-        Value::Null => Err(malformed(Unexpected::Unit)),
-        Value::String(s) => E::from_proto_name(s).ok_or_else(|| {
-            ClosedEnumError::Unknown(serde_json::Error::invalid_value(
-                Unexpected::Str(s),
-                &"a known enum variant name",
-            ))
-        }),
+        Value::String(s) => {
+            E::from_proto_name(s).ok_or(ClosedEnumError::Unknown(EnumJsonErrorReason::UnknownName))
+        }
         Value::Number(n) if n.is_f64() => {
-            Err(malformed(Unexpected::Float(n.as_f64().unwrap_or(f64::NAN))))
+            Err(ClosedEnumError::Malformed(EnumJsonErrorReason::InvalidType))
         }
         Value::Number(n) => {
             // `as_i64()` / `as_u64()` are exclusive (a `Number` is stored
@@ -716,20 +714,12 @@ fn decode_closed_enum<E: crate::Enumeration + Default>(
                 .as_i64()
                 .and_then(|v| i32::try_from(v).ok())
                 .or_else(|| n.as_u64().and_then(|v| i32::try_from(v).ok()))
-                .ok_or_else(|| {
-                    ClosedEnumError::Malformed(serde_json::Error::custom(alloc::format!(
-                        "enum value {n} out of i32 range"
-                    )))
-                })?;
-            E::from_i32(v32).ok_or_else(|| {
-                ClosedEnumError::Unknown(serde_json::Error::custom(alloc::format!(
-                    "unknown enum value {v32}"
-                )))
-            })
+                .ok_or(ClosedEnumError::Malformed(EnumJsonErrorReason::OutOfRange))?;
+            E::from_i32(v32).ok_or(ClosedEnumError::Unknown(EnumJsonErrorReason::UnknownNumber))
         }
-        Value::Bool(b) => Err(malformed(Unexpected::Bool(*b))),
-        Value::Array(_) => Err(malformed(Unexpected::Seq)),
-        Value::Object(_) => Err(malformed(Unexpected::Map)),
+        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => {
+            Err(ClosedEnumError::Malformed(EnumJsonErrorReason::InvalidType))
+        }
     }
 }
 
@@ -2022,6 +2012,7 @@ pub mod skip_if {
 /// and integer via `from_i32`. When `ignore_unknown_enum_values` is active,
 /// unknown string values produce `E::default()` instead of an error.
 pub mod closed_enum {
+    use super::EnumJsonErrorReason;
     use serde::{Deserializer, Serializer};
 
     pub fn serialize<E: crate::Enumeration, S: Serializer>(
@@ -2034,7 +2025,29 @@ pub mod closed_enum {
     pub fn deserialize<'de, E: crate::Enumeration + Default, D: Deserializer<'de>>(
         d: D,
     ) -> Result<E, D::Error> {
-        struct V<E>(core::marker::PhantomData<E>);
+        deserialize_with_unknown_names(d, true)
+    }
+
+    /// Standalone enum values always reject unknown names, even in lenient mode.
+    #[doc(hidden)]
+    pub fn deserialize_strict<'de, E: crate::Enumeration + Default, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<E, D::Error> {
+        deserialize_with_unknown_names(d, false)
+    }
+
+    fn deserialize_with_unknown_names<
+        'de,
+        E: crate::Enumeration + Default,
+        D: Deserializer<'de>,
+    >(
+        d: D,
+        allow_lenient: bool,
+    ) -> Result<E, D::Error> {
+        struct V<E> {
+            allow_lenient: bool,
+            marker: core::marker::PhantomData<E>,
+        }
         impl<'de, E: crate::Enumeration + Default> serde::de::Visitor<'de> for V<E> {
             type Value = E;
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -2044,37 +2057,37 @@ pub mod closed_enum {
                 Ok(E::default())
             }
             fn visit_i64<Err: serde::de::Error>(self, v: i64) -> Result<E, Err> {
-                let v32 = i32::try_from(v).map_err(|_| {
-                    serde::de::Error::custom(alloc::format!("enum value {} out of i32 range", v))
-                })?;
-                E::from_i32(v32).ok_or_else(|| {
-                    serde::de::Error::custom(alloc::format!("unknown enum value {}", v32))
-                })
+                let v32 =
+                    i32::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
+                E::from_i32(v32).ok_or_else(|| Err::custom(EnumJsonErrorReason::UnknownNumber))
             }
             fn visit_u64<Err: serde::de::Error>(self, v: u64) -> Result<E, Err> {
-                let v32 = i32::try_from(v).map_err(|_| {
-                    serde::de::Error::custom(alloc::format!("enum value {} out of i32 range", v))
-                })?;
-                E::from_i32(v32).ok_or_else(|| {
-                    serde::de::Error::custom(alloc::format!("unknown enum value {}", v32))
-                })
+                let v32 =
+                    i32::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
+                E::from_i32(v32).ok_or_else(|| Err::custom(EnumJsonErrorReason::UnknownNumber))
+            }
+            fn visit_f64<Err: serde::de::Error>(self, _: f64) -> Result<E, Err> {
+                Err(Err::custom(EnumJsonErrorReason::InvalidType))
+            }
+            fn visit_bool<Err: serde::de::Error>(self, _: bool) -> Result<E, Err> {
+                Err(Err::custom(EnumJsonErrorReason::InvalidType))
             }
             fn visit_str<Err: serde::de::Error>(self, v: &str) -> Result<E, Err> {
                 match E::from_proto_name(v) {
                     Some(e) => Ok(e),
                     None => {
-                        if crate::json::ignore_unknown_enum_values() {
+                        if self.allow_lenient && crate::json::ignore_unknown_enum_values() {
                             return Ok(E::default());
                         }
-                        Err(serde::de::Error::invalid_value(
-                            serde::de::Unexpected::Str(v),
-                            &"a known enum variant name",
-                        ))
+                        Err(Err::custom(EnumJsonErrorReason::UnknownName))
                     }
                 }
             }
         }
-        d.deserialize_any(V(core::marker::PhantomData))
+        d.deserialize_any(V {
+            allow_lenient,
+            marker: core::marker::PhantomData,
+        })
     }
 }
 
