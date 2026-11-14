@@ -133,7 +133,7 @@ fn bytes_use_base64_without_remote_serde() {
     roundtrip(Bytes::from(vec![0, 255, 128]), r#""AP+A""#);
     type_error::<Bytes>("[0,255,128]", "sequence", "a base64-encoded string");
     let err = serde_json::from_str::<Bytes>(r#""!!!""#).expect_err("invalid base64");
-    assert!(err.to_string().contains("Invalid symbol 33"), "{err}");
+    assert!(err.to_string().contains("invalid base64 string"), "{err}");
     // The URL-safe alphabet and unpadded input are accepted.
     assert_eq!(
         serde_json::from_str::<Bytes>(r#""AP-A""#).unwrap(),

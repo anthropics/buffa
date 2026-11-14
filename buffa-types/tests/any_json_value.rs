@@ -47,7 +47,7 @@ fn registered_wkts_require_a_value_key() {
                 serde_json::from_value::<Any>(input),
             ] {
                 let error = result.expect_err(&type_url).to_string();
-                assert!(error.contains(&type_url), "{error}");
+                assert!(!error.contains(&type_url), "{error}");
                 assert!(error.contains("requires a \"value\" key"), "{error}");
             }
         }
@@ -96,8 +96,11 @@ fn a_nested_any_requires_its_wkt_value_key() {
     let error = serde_json::from_value::<Any>(input)
         .unwrap_err()
         .to_string();
-    assert!(error.contains(BoolValue::TYPE_URL), "{error}");
-    assert!(error.contains("requires a \"value\" key"), "{error}");
+    assert!(!error.contains(BoolValue::TYPE_URL), "{error}");
+    assert!(
+        error.contains("invalid JSON value for a registered Any well-known type"),
+        "{error}"
+    );
 }
 
 #[test]

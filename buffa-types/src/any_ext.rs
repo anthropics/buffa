@@ -506,6 +506,9 @@ impl serde::Serialize for Any {
 #[cfg(feature = "json")]
 impl<'de> serde::Deserialize<'de> for Any {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use buffa::json_helpers::JsonValueError;
+        use serde::de::Error as _;
+
         // Buffer the entire object so @type can appear at any position.
         // `BufferedObject`, never `serde_json::Map`'s own `Deserialize`:
         // see `buffa::json_helpers::buffered`.
@@ -534,14 +537,10 @@ impl<'de> serde::Deserialize<'de> for Any {
             None => (true, type_url.as_str()),
         };
         if type_name.is_empty() {
-            return Err(serde::de::Error::custom(alloc::format!(
-                "@type {type_url:?} is not a valid type URL: it names no type (e.g. type.googleapis.com/pkg.Type)"
-            )));
+            return Err(D::Error::custom(JsonValueError::AnyEmptyType));
         }
         if bare_name && buffa::__private::strict_any_type_urls() {
-            return Err(serde::de::Error::custom(alloc::format!(
-                "@type {type_url:?} must contain a '/' (e.g. type.googleapis.com/pkg.Type)"
-            )));
+            return Err(D::Error::custom(JsonValueError::AnyBareType));
         }
 
         let (registry_installed, lookup) = buffa::any_registry::with_any_registry(|reg| {
@@ -551,83 +550,47 @@ impl<'de> serde::Deserialize<'de> for Any {
 
         let value = match lookup {
             Some((from_json, true)) => {
-                let json_val = obj.remove("value").ok_or_else(|| {
-                    serde::de::Error::custom(alloc::format!(
-                        "Any with WKT type {type_url:?} requires a \"value\" key"
-                    ))
-                })?;
-                if let Some(field) = obj.keys().next() {
-                    return Err(serde::de::Error::custom(alloc::format!(
-                        "Any with WKT type {type_url:?} has unexpected field {field:?}"
-                    )));
+                let json_val = obj
+                    .remove("value")
+                    .ok_or_else(|| D::Error::custom(JsonValueError::AnyMissingValue))?;
+                if !obj.is_empty() {
+                    return Err(D::Error::custom(JsonValueError::AnyUnexpectedField));
                 }
-                from_json(json_val).map_err(serde::de::Error::custom)?
+                // Registry callbacks can include payload values in their
+                // errors. Report only the kind of payload that failed.
+                from_json(json_val)
+                    .map_err(|_| D::Error::custom(JsonValueError::AnyWellKnownType))?
             }
-            Some((from_json, false)) => {
-                let json_obj = serde_json::Value::Object(obj);
-                from_json(json_obj).map_err(serde::de::Error::custom)?
-            }
-            // The opaque form below is for a type URL. An unresolved bare
-            // name is as likely to be a mistyped value as a message name.
+            Some((from_json, false)) => from_json(serde_json::Value::Object(obj))
+                .map_err(|_| D::Error::custom(JsonValueError::AnyMessage))?,
+            // The opaque form below requires a type URL.
             None if bare_name => {
-                return Err(if registry_installed {
-                    serde::de::Error::custom(alloc::format!(
-                        "Any: @type {type_url:?} has no '/', and the message it names has no JSON entry in the type registry; register the message (generated `register_types` or `TypeRegistry::register_json_any`), or send a type URL (e.g. type.googleapis.com/pkg.Type)"
-                    ))
+                let reason = if registry_installed {
+                    JsonValueError::AnyBareTypeWithoutEntry
                 } else {
-                    serde::de::Error::custom(alloc::format!(
-                        "Any: no type registry is installed to resolve @type {type_url:?}, which has no '/'; install one that registers the message with `set_type_registry`, or send a type URL (e.g. type.googleapis.com/pkg.Type)"
-                    ))
-                });
+                    JsonValueError::AnyBareTypeWithoutRegistry
+                };
+                return Err(D::Error::custom(reason));
             }
             None => {
-                // The type has no JSON entry, so the message's own JSON cannot
-                // be read. What parses is the encoded message as base64 under
-                // "value", which is what `Serialize` writes for such a type; a
-                // missing or null "value" is an empty payload. Any other key
-                // is a field of the message and an error, whatever the
-                // surrounding message does with unknown keys.
-                let opaque = |problem: core::fmt::Arguments<'_>, alternative: &str| -> D::Error {
-                    if registry_installed {
-                        serde::de::Error::custom(format_args!(
-                            "Any: type {type_url:?} has no JSON entry in the type registry, so its {problem}; register the message (generated `register_types` or `TypeRegistry::register_json_any`){alternative}"
-                        ))
-                    } else {
-                        serde::de::Error::custom(format_args!(
-                            "Any: no type registry is installed to resolve type {type_url:?}, so its {problem}; install one that registers the message with `set_type_registry`{alternative}"
-                        ))
-                    }
+                let context = if registry_installed {
+                    JsonValueError::AnyOpaqueWithoutEntry
+                } else {
+                    JsonValueError::AnyOpaqueWithoutRegistry
                 };
-                const OR_BASE64: &str = ", or send the message encoded as base64 under \"value\"";
-                const FOR_JSON_FORM: &str = " to parse its JSON form";
-
+                let opaque =
+                    |reason: JsonValueError| D::Error::custom(format_args!("{context}; {reason}"));
                 let payload = obj.remove("value");
-                if let Some(key) = obj.keys().next() {
-                    return Err(opaque(
-                        format_args!("field {key:?} cannot be parsed"),
-                        OR_BASE64,
-                    ));
+                if !obj.is_empty() {
+                    return Err(opaque(JsonValueError::AnyOpaqueField));
                 }
                 match payload {
                     Some(serde_json::Value::String(s)) => buffa::json_helpers::bytes::deserialize(
                         serde::de::value::StringDeserializer::<D::Error>::new(s),
                     )
-                    .map_err(|e| {
-                        // The decoder's message ends in a full stop.
-                        let e = alloc::string::ToString::to_string(&e);
-                        let e = e.trim_end_matches('.');
-                        opaque(
-                            format_args!("\"value\" must be a base64 string: {e}"),
-                            FOR_JSON_FORM,
-                        )
-                    })?,
+                    .map_err(|_| opaque(JsonValueError::Base64))?,
                     None | Some(serde_json::Value::Null) => alloc::vec::Vec::new(),
-                    Some(_) => {
-                        return Err(opaque(
-                            format_args!("\"value\" must be a base64 string"),
-                            FOR_JSON_FORM,
-                        ));
-                    }
+                    Some(_) => return Err(opaque(JsonValueError::Base64)),
                 }
             }
         };
@@ -1405,10 +1368,8 @@ mod tests {
             });
         }
 
-        const UNKNOWN_NO_REGISTRY: &str =
-            r#"no type registry is installed to resolve type "type.googleapis.com/unknown.Type""#;
-        const UNKNOWN_NO_ENTRY: &str =
-            r#"type "type.googleapis.com/unknown.Type" has no JSON entry in the type registry"#;
+        const UNKNOWN_NO_REGISTRY: &str = "no type registry is installed";
+        const UNKNOWN_NO_ENTRY: &str = "has no JSON entry in the type registry";
 
         /// Runs `check` with no registry and with one that lacks
         /// `unknown.Type`, passing the cause the error names in each state.
@@ -1426,7 +1387,7 @@ mod tests {
                     );
                     let err = serde_json::from_str::<Any>(&json).unwrap_err().to_string();
                     assert!(
-                        err.contains(cause) && err.contains("must be a base64 string;"),
+                        err.contains(cause) && err.contains("invalid base64 string"),
                         "{json}: {err}"
                     );
                 }
@@ -1463,14 +1424,17 @@ mod tests {
                     let any: Any = serde_json::from_str(json).unwrap();
                     assert_eq!(any.value.as_ref(), expected, "{json}");
                 }
-                // The base64 decoder's own error follows the cause.
+                // Decoder diagnostics omit the offending byte and offset.
                 let json = r#"{"@type":"type.googleapis.com/unknown.Type","value":"!!!"}"#;
                 let err = serde_json::from_str::<Any>(json).unwrap_err().to_string();
                 assert!(
-                    err.contains(cause) && err.contains("must be a base64 string: "),
+                    err.contains(cause) && err.contains("invalid base64 string"),
                     "{err}"
                 );
-                assert!(!err.contains(".;"), "{err}");
+                assert!(
+                    !err.contains("33") && !err.contains("unknown.Type"),
+                    "{err}"
+                );
             });
         }
 
@@ -1488,7 +1452,8 @@ mod tests {
                 ] {
                     let err = serde_json::from_str::<Any>(json).unwrap_err().to_string();
                     assert!(
-                        err.contains(cause) && err.contains(r#"field "name" cannot be parsed"#),
+                        err.contains(cause)
+                            && err.contains("opaque payload field cannot be parsed"),
                         "{json}: {err}"
                     );
                 }
@@ -1502,7 +1467,7 @@ mod tests {
                 let err = serde_json::from_str::<Any>(&json).unwrap_err().to_string();
                 assert!(
                     err.starts_with("Any: no type registry is installed")
-                        && err.contains(r#""value" must be a base64 string: "#)
+                        && err.contains("invalid base64 string")
                         && err.contains("`set_type_registry`"),
                     "{err}"
                 );
@@ -1679,7 +1644,11 @@ mod tests {
                     // The option covers an `Any` nested in an `Any`.
                     let nested = r#"{"@type":"x/google.protobuf.Any","value":{"@type":"google.protobuf.Duration","value":"1.500s"}}"#;
                     let err = serde_json::from_str::<Any>(nested).unwrap_err();
-                    assert!(err.to_string().contains("must contain a '/'"), "{err}");
+                    assert!(
+                        err.to_string()
+                            .contains("invalid JSON value for a registered Any well-known type"),
+                        "{err}"
+                    );
 
                     let url = r#"{"@type":"x/google.protobuf.Duration","value":"1.500s"}"#;
                     let any: Any = serde_json::from_str(url).unwrap();
@@ -1750,6 +1719,58 @@ mod tests {
             Tag::new(1, WireType::Varint).encode(&mut buf);
             encode_varint(id as u64, &mut buf);
             Ok(buf)
+        }
+
+        #[test]
+        fn registered_any_omits_errors_from_both_callback_shapes() {
+            fn reject(value: serde_json::Value) -> Result<alloc::vec::Vec<u8>, String> {
+                Err(value.to_string())
+            }
+
+            let _guard = REGISTRY_LOCK.lock().unwrap();
+            let mut reg = TypeRegistry::new();
+            for (name, is_wkt) in [
+                ("type.example.com/user.Thing", false),
+                ("type.example.com/user.Wrapped", true),
+            ] {
+                reg.register_json_any(buffa::type_registry::JsonAnyEntry {
+                    type_url: name,
+                    to_json: user_type_to_json,
+                    from_json: reject,
+                    is_wkt,
+                });
+            }
+            set_type_registry(reg);
+            let ordinary = serde_json::from_value::<Any>(serde_json::json!({
+                "@type": "type.example.com/user.Thing", "id": "private-marker"
+            }));
+            let wrapped = serde_json::from_value::<Any>(serde_json::json!({
+                "@type": "type.example.com/user.Wrapped", "value": "private-marker"
+            }));
+            let malformed = serde_json::from_value::<Any>(serde_json::json!({
+                "@type": "private-marker/"
+            }));
+            let extra = serde_json::from_value::<Any>(serde_json::json!({
+                "@type": "private-marker/user.Wrapped", "value": "", "private-field": 0
+            }));
+            clear_any_registry();
+            clear_text_registry();
+            for (result, expected) in [
+                (
+                    ordinary,
+                    "invalid JSON payload for a registered Any message",
+                ),
+                (
+                    wrapped,
+                    "invalid JSON value for a registered Any well-known type",
+                ),
+                (malformed, "@type is not a valid type URL: it names no type"),
+                (extra, "Any with a well-known type has an unexpected field"),
+            ] {
+                let error = result.unwrap_err().to_string();
+                assert_eq!(error, expected);
+                assert!(!error.contains("private"));
+            }
         }
 
         fn with_user_type_registry<R>(f: impl FnOnce() -> R) -> R {

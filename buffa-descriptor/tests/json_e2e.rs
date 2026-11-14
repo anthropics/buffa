@@ -222,8 +222,12 @@ fn json_integer_parsing_matches_generated_messages() {
         let err = DynamicMessage::from_json(Arc::clone(&p), idx, input)
             .expect_err("unsafe unquoted integer float must be rejected");
         assert!(
-            err.to_string().contains("invalid value"),
-            "rejection should name the offending value, got: {err}"
+            err.to_string().starts_with(if input.contains("fUint64") {
+                "invalid u64 value"
+            } else {
+                "invalid i64 value"
+            }),
+            "rejection should identify the expected type, got: {err}"
         );
     }
 }
@@ -307,8 +311,16 @@ fn json_quoted_integer_bounds_match_generated_messages() {
         let err = DynamicMessage::from_json(Arc::clone(&p), idx, input)
             .expect_err("out-of-range or non-integral quoted integer must be rejected");
         assert!(
-            err.to_string().contains("invalid value"),
-            "rejection should name the offending value for {input}, got: {err}"
+            err.to_string().starts_with(if input.contains("fInt32") {
+                "invalid i32 value"
+            } else if input.contains("fUint32") {
+                "invalid u32 value"
+            } else if input.contains("fUint64") {
+                "invalid u64 value"
+            } else {
+                "invalid i64 value"
+            }),
+            "rejection should identify the expected type for {input}, got: {err}"
         );
     }
 }
@@ -370,8 +382,12 @@ fn json_quoted_float_bounds_match_generated_messages() {
         let err = DynamicMessage::from_json(Arc::clone(&p), idx, input)
             .expect_err("out-of-range or non-token quoted float must be rejected");
         assert!(
-            err.to_string().contains("invalid value"),
-            "rejection should name the offending value for {input}, got: {err}"
+            err.to_string().starts_with(if input.contains("fDouble") {
+                "invalid double value"
+            } else {
+                "invalid float value"
+            }),
+            "rejection should identify the expected type for {input}, got: {err}"
         );
     }
 }
@@ -648,8 +664,8 @@ fn json_float_round_trips_and_reads_canonical_text() {
         let err = DynamicMessage::from_json(Arc::clone(&p), idx, input)
             .expect_err("out-of-range unquoted float must be rejected");
         assert!(
-            err.to_string().contains("invalid value"),
-            "rejection should name the offending value for {input}, got: {err}"
+            err.to_string().starts_with("invalid float value"),
+            "rejection should identify the expected type for {input}, got: {err}"
         );
     }
 }
@@ -689,23 +705,17 @@ fn json_double_text_is_f64_precision() {
 }
 
 #[test]
-fn json_unknown_enum_name_error_names_the_value() {
+fn json_unknown_enum_name_error_omits_the_value() {
     let p = pool();
     let idx = p.message_index("reflect.test.Containers").unwrap();
     let err = DynamicMessage::from_json(p, idx, r#"{"color": "PURPLE"}"#).unwrap_err();
-    assert!(
-        err.to_string()
-            .contains(r#"invalid value: string "PURPLE", expected a known enum variant name"#),
-        "got: {err}"
-    );
+    assert!(err.to_string().contains("unknown enum name"), "got: {err}");
+    assert!(!err.to_string().contains("PURPLE"));
 }
 
 #[test]
-fn generated_enum_unknown_name_error_names_the_value() {
+fn generated_enum_unknown_name_error_omits_the_value() {
     use buffa_descriptor::generated::descriptor::Edition;
     let err = serde_json::from_str::<Edition>(r#""PURPLE""#).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        r#"invalid value: string "PURPLE", expected a known enum variant name at line 1 column 8"#
-    );
+    assert_eq!(err.to_string(), "unknown enum name at line 1 column 8");
 }
