@@ -1,8 +1,8 @@
 kind: Fixed
 body: >-
-  **Reject duplicate singular textproto fields.** Parsing now reports an error
-  for duplicate singular fields and oneof members, including extensions and
-  map-entry fields. Repeated fields and separate map entries remain valid.
-  Manual registries should use `register_repeated_text_ext` for repeated
-  extensions.
+  **Reject duplicate singular textproto fields** (#834). Parsing now reports
+  an error for duplicate singular fields and oneof members, including
+  extensions and map-entry fields. Repeated fields and separate map entries
+  remain valid. Manual registries should use `register_repeated_text_ext` for
+  repeated extensions.
 time: 2026-11-15T00:00:00Z
