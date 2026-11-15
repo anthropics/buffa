@@ -221,9 +221,16 @@ impl ::buffa::text::TextFormat for SourceContext {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "file_name" => self.file_name = dec.read_string()?.into_owned(),
+                "file_name" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.file_name = dec.read_string()?.into_owned();
+                }
                 _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }

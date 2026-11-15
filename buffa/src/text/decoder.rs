@@ -152,6 +152,16 @@ impl<'a> TextDecoder<'a> {
         ParseError::new(line, col, ParseErrorKind::UnknownField)
     }
 
+    /// Construct a duplicate-field error pointing at the last name returned
+    /// by [`read_field_name`](Self::read_field_name).
+    ///
+    /// Generated `merge_text` implementations return this when a singular
+    /// field or a oneof member appears more than once in the input message.
+    pub fn duplicate_field(&self) -> ParseError {
+        let (line, col) = self.tok.line_col(self.last_name_pos);
+        ParseError::new(line, col, ParseErrorKind::DuplicateField)
+    }
+
     /// Read a scalar token, checking it has the right kind.
     fn read_scalar(&mut self, want: ScalarKind) -> Result<Token<'a>, ParseError> {
         let tok = self.tok.read()?;
@@ -769,6 +779,29 @@ impl<'a> TextDecoder<'a> {
             return Err(self.unknown_field());
         }
         (entry.text_merge)(self, entry.number)
+    }
+
+    /// Look up an extension's number and repeated label by its bracketed name.
+    ///
+    /// Generated `merge_text` implementations use this to reject duplicate
+    /// singular extensions while still accepting repeated extensions.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ParseErrorKind::UnknownField`] if the extension name is not
+    /// registered for `extendee`.
+    #[doc(hidden)]
+    pub fn extension_info(&self, name: &str, extendee: &str) -> Result<(u32, bool), ParseError> {
+        let full = normalize_bracket_name(name).ok_or_else(|| self.unknown_field())?;
+        let Some((entry, repeated)) =
+            crate::type_registry::global_text_ext_info_by_name(full.as_ref())
+        else {
+            return Err(self.unknown_field());
+        };
+        if entry.extendee != extendee {
+            return Err(self.unknown_field());
+        }
+        Ok((entry.number, repeated))
     }
 
     /// Consume a field's value without interpreting it.

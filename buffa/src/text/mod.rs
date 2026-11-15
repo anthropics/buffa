@@ -82,9 +82,14 @@ pub trait TextFormat: crate::Message {
     /// implementations can explicitly call
     /// [`skip_value`](TextDecoder::skip_value) when lenient parsing is needed.
     ///
+    /// A singular field or any member of a oneof must appear at most once in
+    /// the message body. Return [`duplicate_field`](TextDecoder::duplicate_field)
+    /// when a second occurrence is found. Repeated fields may appear multiple
+    /// times.
+    ///
     /// # Errors
     ///
-    /// Any [`ParseError`] from the decoder.
+    /// Any [`ParseError`] from the decoder, including a duplicate-field error.
     fn merge_text(&mut self, dec: &mut TextDecoder<'_>) -> Result<(), ParseError>;
 }
 
@@ -121,7 +126,7 @@ pub fn encode_to_string_pretty<M: TextFormat>(msg: &M) -> String {
 /// # Errors
 ///
 /// Any [`ParseError`] — syntax errors, unknown field names, type
-/// mismatches, depth limit exceeded, or
+/// mismatches, duplicate singular fields, depth limit exceeded, or
 /// [`ParseErrorKind::ElementMemoryLimitExceeded`] when the repeated and map
 /// elements would materialize more than
 /// [`DEFAULT_ELEMENT_MEMORY_LIMIT`](crate::DEFAULT_ELEMENT_MEMORY_LIMIT).
@@ -134,8 +139,9 @@ pub fn decode_from_str<M: TextFormat + Default>(s: &str) -> Result<M, ParseError
 
 /// Merge a textproto string into an existing message.
 ///
-/// Proto merge semantics: scalar fields are overwritten, repeated fields are
-/// appended, message fields are recursively merged.
+/// Each singular field may appear only once in the input. Scalar fields
+/// overwrite existing values, repeated fields are appended, and message
+/// fields are recursively merged.
 ///
 /// # Errors
 ///

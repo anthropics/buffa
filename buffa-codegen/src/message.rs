@@ -23,8 +23,9 @@ pub(crate) struct RegistryPaths {
     pub text_any: Vec<TokenStream>,
     /// `__*_JSON_EXT` consts (relative to the message's module scope).
     pub json_ext: Vec<TokenStream>,
-    /// `__*_TEXT_EXT` consts (relative to the message's module scope).
-    pub text_ext: Vec<TokenStream>,
+    /// `__*_TEXT_EXT` consts (relative to the message's module scope) and
+    /// whether each extension is repeated.
+    pub text_ext: Vec<(TokenStream, bool)>,
 }
 
 impl RegistryPaths {
@@ -681,8 +682,10 @@ fn generate_message_with_nesting(
         for p in nested_out.reg.json_ext {
             reg_paths.json_ext.push(quote! { #nested_mod :: #p });
         }
-        for p in nested_out.reg.text_ext {
-            reg_paths.text_ext.push(quote! { #nested_mod :: #p });
+        for (p, repeated) in nested_out.reg.text_ext {
+            reg_paths
+                .text_ext
+                .push((quote! { #nested_mod :: #p }, repeated));
         }
         // Any paths: nested's struct-scope → our struct-scope = prefix with the
         // module our owned_mod is wrapped in.
@@ -731,8 +734,8 @@ fn generate_message_with_nesting(
     for id in nested_ext_json {
         reg_paths.json_ext.push(quote! { #id });
     }
-    for id in nested_ext_text {
-        reg_paths.text_ext.push(quote! { #id });
+    for (id, repeated) in nested_ext_text {
+        reg_paths.text_ext.push((quote! { #id }, repeated));
     }
 
     // "Natural-path" re-exports of this message's ancillary types — `pub use`
