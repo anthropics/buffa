@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **The warning for a field-type rule that matched no field reads the same from `protoc-gen-buffa` and `buffa-build`, and says when the rule names an extension.** `CodeGenWarning::FieldTypeRuleMatchedNothing` named the internal `CodeGenConfig` list (`bytes_fields`) and labelled the option names as `buffa-build` methods, and for a rule on an extension field it blamed the path's format. The text now names the rule's kind and the `buffa-build` methods, whose bytes, string and repeated `*_custom_in` forms are also the plugin option names (`bytes type rule '.pkg.Msg.field' (bytes_type_in / use_bytes_type_in / bytes_type_custom_in)`), says that only the files of the current run are checked, and, through the new `names_extension` field, says that custom field-type rules do not apply to extensions, which keep their default Rust type.
+time: 2026-11-17T12:00:01+01:00
