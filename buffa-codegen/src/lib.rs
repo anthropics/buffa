@@ -225,6 +225,36 @@ pub fn decode_request(input: &[u8]) -> Result<generated::compiler::CodeGenerator
         .map_err(|e| decode_failure("CodeGeneratorRequest", &e, options.element_memory_limit()))
 }
 
+/// A `CodeGeneratorResponse` carrying only the plugin capability fields:
+/// `supported_features` (proto3 `optional` and editions) and the edition
+/// range this crate's code generation supports, currently `EDITION_PROTO2`
+/// through `EDITION_2024`. The range widens when buffa-codegen gains support
+/// for a newer edition.
+///
+/// Attach these to every response a plugin writes, success or error, with
+/// struct-update syntax:
+/// `CodeGeneratorResponse { error: Some(msg), ..plugin_response_metadata() }`.
+/// Buf validates them even on an error response: when editions support is
+/// advertised without an edition range, it reports a protocol error in place
+/// of the plugin's own message. A plugin whose output supports a narrower
+/// range should override `maximum_edition` (or `supported_features`) in the
+/// same struct expression.
+// Both buffa plugin binaries build every response from this, so their
+// advertisements cannot drift apart.
+#[must_use]
+pub fn plugin_response_metadata() -> generated::compiler::CodeGeneratorResponse {
+    use generated::compiler::code_generator_response::Feature;
+    use generated::descriptor::Edition;
+    generated::compiler::CodeGeneratorResponse {
+        supported_features: Some(
+            Feature::FEATURE_PROTO3_OPTIONAL as u64 | Feature::FEATURE_SUPPORTS_EDITIONS as u64,
+        ),
+        minimum_edition: Some(Edition::EDITION_PROTO2 as i32),
+        maximum_edition: Some(Edition::EDITION_2024 as i32),
+        ..Default::default()
+    }
+}
+
 /// Resolve [`ELEMENT_MEMORY_LIMIT_ENV`]'s value to a byte count.
 ///
 /// `None` and an all-whitespace value both mean "unset", yielding
