@@ -1,0 +1,15 @@
+syntax = "proto2";
+
+package test.extopenenum.owner;
+
+// Compiled in build.rs with an enum-level `open_enums_in` rule that opens
+// Color in this generation only.
+enum Color {
+  COLOR_RED = 0;
+  COLOR_GREEN = 1;
+}
+
+// Shows the rule took effect here: this field is typed `EnumValue<Color>`.
+message OwnerColors {
+  repeated Color colors = 1;
+}

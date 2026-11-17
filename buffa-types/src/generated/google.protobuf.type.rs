@@ -61,6 +61,14 @@ impl ::buffa::Enumeration for Syntax {
         &[Self::SYNTAX_PROTO2, Self::SYNTAX_PROTO3, Self::SYNTAX_EDITIONS]
     }
 }
+#[cfg(feature = "reflect")]
+impl ::buffa_descriptor::reflect::ReflectElement for Syntax {
+    fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+        ::buffa_descriptor::reflect::ValueRef::EnumNumber(
+            ::buffa::Enumeration::to_i32(self),
+        )
+    }
+}
 /// A protocol buffer message type.
 ///
 /// New usages of this message as an alternative to DescriptorProto are strongly
@@ -1306,6 +1314,14 @@ pub mod field {
             ]
         }
     }
+    #[cfg(feature = "reflect")]
+    impl ::buffa_descriptor::reflect::ReflectElement for Kind {
+        fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            ::buffa_descriptor::reflect::ValueRef::EnumNumber(
+                ::buffa::Enumeration::to_i32(self),
+            )
+        }
+    }
     /// Whether a field is optional, required, or repeated.
     #[allow(non_camel_case_types)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -1385,6 +1401,14 @@ pub mod field {
                 Self::CARDINALITY_REQUIRED,
                 Self::CARDINALITY_REPEATED,
             ]
+        }
+    }
+    #[cfg(feature = "reflect")]
+    impl ::buffa_descriptor::reflect::ReflectElement for Cardinality {
+        fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+            ::buffa_descriptor::reflect::ValueRef::EnumNumber(
+                ::buffa::Enumeration::to_i32(self),
+            )
         }
     }
 }

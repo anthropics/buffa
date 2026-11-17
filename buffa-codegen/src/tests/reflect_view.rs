@@ -188,3 +188,99 @@ fn implicit_float_has_arms_compare_bit_patterns() {
         );
     }
 }
+
+/// An editions file whose enums are open by default, with one enum that
+/// declares itself closed and one that keeps the default.
+fn editions_enum_override_file() -> FileDescriptorProto {
+    use crate::generated::descriptor::{feature_set::EnumType, Edition, EnumOptions, FeatureSet};
+
+    let closed_options = EnumOptions {
+        features: FeatureSet {
+            enum_type: Some(EnumType::CLOSED),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    };
+    let closed = EnumDescriptorProto {
+        name: Some("Closed".to_string()),
+        value: vec![enum_value("CLOSED_ZERO", 0), enum_value("CLOSED_ONE", 1)],
+        options: closed_options.into(),
+        ..Default::default()
+    };
+    let open = EnumDescriptorProto {
+        name: Some("Open".to_string()),
+        value: vec![enum_value("OPEN_ZERO", 0), enum_value("OPEN_ONE", 1)],
+        ..Default::default()
+    };
+
+    let mut closed_values = make_field("closed_values", 1, Label::LABEL_REPEATED, Type::TYPE_ENUM);
+    closed_values.type_name = Some(".ed.Closed".to_string());
+    let mut open_values = make_field("open_values", 2, Label::LABEL_REPEATED, Type::TYPE_ENUM);
+    open_values.type_name = Some(".ed.Open".to_string());
+
+    FileDescriptorProto {
+        name: Some("ed_enum.proto".to_string()),
+        package: Some("ed".to_string()),
+        syntax: Some("editions".to_string()),
+        edition: Some(Edition::EDITION_2023),
+        enum_type: vec![closed, open],
+        message_type: vec![DescriptorProto {
+            name: Some("Holder".to_string()),
+            field: vec![closed_values, open_values],
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn vtable_enums_get_element_impl_regardless_of_openness() {
+    let files = generate(
+        &[editions_enum_override_file()],
+        &["ed_enum.proto".to_string()],
+        &vtable_config(),
+    )
+    .expect("should generate");
+    let content = joined(&files);
+
+    // The enum's own `enum_type = CLOSED` overrides the file default, so its
+    // repeated field is typed as a bare `Closed` and needs the element impl.
+    assert!(
+        content.contains("impl ::buffa_descriptor::reflect::ReflectElement for Closed"),
+        "an enum that declares itself closed must get ReflectElement: {content}"
+    );
+    // The open enum's own fields use `EnumValue<Open>`, but another generation
+    // that reaches it through `extern_path` may resolve it as closed and type
+    // it bare, and only the owning crate can provide the impl.
+    assert!(
+        content.contains("impl ::buffa_descriptor::reflect::ReflectElement for Open"),
+        "an open enum must also get ReflectElement: {content}"
+    );
+}
+
+#[test]
+fn bridge_mode_enums_get_element_impl() {
+    // A vtable-mode generation that reaches a bridge-mode crate's enum through
+    // `extern_path` may type it bare in a repeated or map field, and only the
+    // owning crate can provide the impl.
+    let config = CodeGenConfig {
+        generate_reflection: true,
+        ..Default::default()
+    };
+    let files = generate(
+        &[editions_enum_override_file()],
+        &["ed_enum.proto".to_string()],
+        &config,
+    )
+    .expect("should generate");
+    let content = joined(&files);
+    for name in ["Closed", "Open"] {
+        assert!(
+            content.contains(&format!(
+                "impl ::buffa_descriptor::reflect::ReflectElement for {name}"
+            )),
+            "bridge mode must emit ReflectElement for enum {name}: {content}"
+        );
+    }
+}

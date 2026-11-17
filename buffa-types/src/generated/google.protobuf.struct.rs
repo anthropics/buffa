@@ -48,6 +48,14 @@ impl ::buffa::Enumeration for NullValue {
         &[Self::NULL_VALUE]
     }
 }
+#[cfg(feature = "reflect")]
+impl ::buffa_descriptor::reflect::ReflectElement for NullValue {
+    fn as_value_ref(&self) -> ::buffa_descriptor::reflect::ValueRef<'_> {
+        ::buffa_descriptor::reflect::ValueRef::EnumNumber(
+            ::buffa::Enumeration::to_i32(self),
+        )
+    }
+}
 /// `Struct` represents a structured data value, consisting of fields
 /// which map to dynamically typed values. In some languages, `Struct`
 /// might be supported by a native representation. For example, in
