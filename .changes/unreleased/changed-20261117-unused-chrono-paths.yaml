@@ -1,0 +1,3 @@
+kind: Changed
+body: Remove unused pbjson-types from the Prost benchmark and stop forcing the optional chrono feature through buffa-test. The buffa-types Chrono conversion API and its explicit-feature test coverage remain available.
+time: 2026-11-17T00:00:00Z
