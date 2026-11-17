@@ -26,7 +26,7 @@ use crate::{
 use buffa::bytes::Buf;
 use buffa::editions::EnumType;
 use buffa::encoding::{
-    check_wire_type, decode_unknown_field, decode_varint, encode_varint, skip_field_depth, Tag,
+    check_wire_type, decode_unknown_field, decode_varint, encode_varint, skip_unknown_field, Tag,
     WireType,
 };
 use buffa::types::{
@@ -762,7 +762,7 @@ impl DynamicMessage {
                         }
                     }
                 }
-                _ => skip_field_depth(entry_tag, &mut entry, ctx.depth())?,
+                _ => skip_unknown_field(entry_tag, &mut entry, ctx)?,
             }
         }
         let k = key.unwrap_or_else(|| default_map_key(key_ty));
@@ -819,11 +819,15 @@ impl DynamicMessage {
                         value = Some(Value::EnumNumber(raw));
                         value_unknown = false;
                     } else {
+                        // Check every unknown occurrence, as the owned map
+                        // codec does: a later known value can still replace
+                        // this one, which must not hide it from rejection.
+                        ctx.check_unknown_field()?;
                         value = None;
                         value_unknown = true;
                     }
                 }
-                _ => skip_field_depth(entry_tag, &mut entry_buf, ctx.depth())?,
+                _ => skip_unknown_field(entry_tag, &mut entry_buf, ctx)?,
             }
         }
         if value_unknown {

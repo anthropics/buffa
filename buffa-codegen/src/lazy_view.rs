@@ -183,11 +183,12 @@ pub(crate) fn generate_lazy_view_with_nesting(
     };
     let unknown_field_handling = if preserve_unknown_fields {
         quote! {
+            ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
             let span_len = before_tag.len() - cur.len();
             view.__buffa_unknown_fields.push_record(before_tag, span_len, ctx)?;
         }
     } else {
-        quote! {}
+        quote! { ::buffa::encoding::skip_unknown_field(tag, &mut cur, ctx)?; }
     };
 
     // Lazy views differ from eager ones only in the message field: a lazy
@@ -336,7 +337,6 @@ pub(crate) fn generate_lazy_view_with_nesting(
                         #(#repeated_arms)*
                         #(#oneof_arms)*
                         _ => {
-                            ::buffa::encoding::skip_field_depth(tag, &mut cur, ctx.depth())?;
                             #unknown_field_handling
                         }
                     }

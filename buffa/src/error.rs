@@ -70,7 +70,8 @@ pub enum DecodeError {
     /// Unknown fields can be far smaller on the wire than in memory (a
     /// 2-byte varint field occupies ~40 bytes as an
     /// [`UnknownField`](crate::UnknownField)), so the decoder bounds how
-    /// many it will materialize rather than trusting the input size. By
+    /// many records it materializes rather than trusting the input size. A
+    /// zero limit additionally rejects discarded unknown occurrences. By
     /// default the limit is
     /// [`DEFAULT_UNKNOWN_FIELD_LIMIT`](crate::DEFAULT_UNKNOWN_FIELD_LIMIT)
     /// (1,000,000 fields per decode); use

@@ -34,9 +34,7 @@
 
 use crate::bytes::Buf;
 use crate::encode_sink::EncodeSink;
-use crate::encoding::{
-    check_wire_type, decode_varint, encode_varint, skip_field_depth, varint_len, Tag, WireType,
-};
+use crate::encoding::{check_wire_type, decode_varint, encode_varint, varint_len, Tag, WireType};
 use crate::error::DecodeError;
 use crate::types;
 use crate::{DecodeContext, EnumValue, Enumeration, Message, SizeCache};
@@ -997,9 +995,12 @@ where
             2 => {
                 check_wire_type(entry_tag, VC::WIRE_TYPE)?;
                 val_status = VC::merge(val, buf, ctx)?;
+                if matches!(val_status, MapValueDecodeStatus::Unknown) {
+                    ctx.check_unknown_field()?;
+                }
             }
             _ => {
-                skip_field_depth(entry_tag, buf, ctx.depth())?;
+                crate::encoding::skip_unknown_field(entry_tag, buf, ctx)?;
             }
         }
     }
@@ -1126,9 +1127,12 @@ where
             2 => {
                 check_wire_type(entry_tag, VC::WIRE_TYPE)?;
                 val_status = VC::merge(&mut val, buf, ctx)?;
+                if matches!(val_status, MapValueDecodeStatus::Unknown) {
+                    ctx.check_unknown_field()?;
+                }
             }
             _ => {
-                skip_field_depth(entry_tag, buf, ctx.depth())?;
+                crate::encoding::skip_unknown_field(entry_tag, buf, ctx)?;
             }
         }
     }
@@ -1151,6 +1155,7 @@ mod tests {
     use super::*;
     use crate::alloc::string::String;
     use crate::alloc::vec::Vec;
+    use crate::encoding::skip_field_depth;
 
     fn encode_field<KC: MapCodec, VC: MapCodec>(
         map: &Map<KC::Value, VC::Value>,
