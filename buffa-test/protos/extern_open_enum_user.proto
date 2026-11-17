@@ -1,0 +1,17 @@
+syntax = "proto2";
+
+package test.extopenenum.user;
+
+import "extern_bridge_enum_owner.proto";
+import "extern_open_enum_owner.proto";
+
+// Compiled in build.rs with vtable-mode reflection and both owner packages
+// resolved via extern_path, without the owner's open rule. Color and Shade are
+// closed here, so their repeated and map-value fields are typed as the bare
+// enum.
+message Palette {
+  repeated test.extopenenum.owner.Color colors = 1;
+  map<int32, test.extopenenum.owner.Color> by_id = 2;
+  repeated test.extopenenum.bridge.Shade shades = 3;
+  map<int32, test.extopenenum.bridge.Shade> shade_by_id = 4;
+}

@@ -1,0 +1,14 @@
+edition = "2023";
+package reflect_enum_override;
+
+// Editions default to open enums; reflection must honor this local override.
+enum ClosedState {
+  option features.enum_type = CLOSED;
+  STATE_UNSPECIFIED = 0;
+  STATE_SET = 1;
+}
+
+message States {
+  repeated ClosedState values = 1;
+  map<int32, ClosedState> entries = 2;
+}

@@ -134,7 +134,7 @@ pub fn generate_enum(
     enum_desc: &EnumDescriptorProto,
     rust_name: &str,
     proto_fqn: &str,
-    features: &ResolvedFeatures,
+    _features: &ResolvedFeatures,
     _resolver: &crate::imports::ImportResolver,
 ) -> Result<TokenStream, CodeGenError> {
     let name_ident = format_ident!("{}", rust_name);
@@ -341,14 +341,16 @@ pub fn generate_enum(
         };
 
     // Vtable-mode reflection: closed enums appear as bare `#name_ident` in
-    // `RepeatedView` / `MapView`, so they need a `ReflectElement` impl for the
-    // generic container impls to apply. Open enums use `EnumValue<E>`, which
-    // `buffa-descriptor` already covers, so the impl is emitted only for closed
-    // enums — emitting it for open ones would just be dead `cargo doc` noise.
-    let reflect_element_impl = if ctx.config.generate_reflection
-        && ctx.config.generate_reflection_vtable
-        && crate::message::is_closed_enum(features)
-    {
+    // `Vec` / `RepeatedView` / map values, so they need a `ReflectElement`
+    // impl for the generic container impls to apply. The impl is emitted for
+    // every enum under either reflection mode, whatever its openness here:
+    // openness is resolved per field by the generation that compiles the
+    // field, so a vtable-mode generation that reaches this enum through
+    // `extern_path` (without this generation's `open_enums_in` rules, or
+    // while this generation uses bridge mode) may still type it bare, and only
+    // this crate can provide the impl. It does not overlap `buffa-descriptor`'s
+    // impl for `EnumValue<E>`, which covers open-enum fields.
+    let reflect_element_impl = if ctx.config.generate_reflection {
         crate::feature_gates::cfg_block(
             quote! {
                 impl ::buffa_descriptor::reflect::ReflectElement for #name_ident {

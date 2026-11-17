@@ -294,7 +294,7 @@ for E` for bare (closed) enums. So:
   constructor) impls in `buffa-descriptor`. `EnumValue<E>` is fine because it is
   a distinct type constructor, not a bare type parameter — it cannot overlap a
   scalar.
-- **Message views (`FooView<'a>`) and bare closed enums (`SomeEnum`)** get a
+- **Message views (`FooView<'a>`) and generated enums (`SomeEnum`)** get a
   one-line `impl ReflectElement` emitted by codegen — an impl of a foreign
   trait for a local type, which the orphan rule allows in the consumer crate.
   This is per *type*, not per *field*: a message used in ten repeated fields

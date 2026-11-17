@@ -251,6 +251,15 @@ fn rustc_minor() -> u32 {
 }
 
 fn main() {
+    // Compile ordinary vtable collections over an enum-local CLOSED override,
+    // independently of the guarded inspection path.
+    buffa_build::Config::new()
+        .files(&["protos/reflect_enum_override.proto"])
+        .includes(&["protos/"])
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("closed-enum reflection fixture generation failed");
+
     // Each schema in `tests::table_codec` is compiled once with the unrolled
     // codec and once with the table codec, under renamed packages, so a test can
     // compare them.
@@ -934,6 +943,36 @@ fn main() {
         .reflect_mode(buffa_build::ReflectMode::VTable)
         .compile()
         .expect("buffa_build failed for open_enums_enum_rule.proto");
+
+    // An enum opened by an enum-level rule in its owning generation, or owned
+    // by a bridge-mode generation, must still get the `ReflectElement` impl: a
+    // vtable-mode generation that reaches it through extern_path without the
+    // rule resolves it as closed and types its repeated and map-value fields
+    // as the bare enum.
+    buffa_build::Config::new()
+        .files(&["protos/extern_open_enum_owner.proto"])
+        .includes(&["protos/"])
+        .open_enums_in(&[".test.extopenenum.owner.Color"])
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for extern_open_enum_owner.proto");
+    buffa_build::Config::new()
+        .files(&["protos/extern_bridge_enum_owner.proto"])
+        .includes(&["protos/"])
+        .reflect_mode(buffa_build::ReflectMode::Bridge)
+        .compile()
+        .expect("buffa_build failed for extern_bridge_enum_owner.proto");
+    buffa_build::Config::new()
+        .files(&["protos/extern_open_enum_user.proto"])
+        .includes(&["protos/"])
+        .extern_path(".test.extopenenum.owner", "crate::extern_open_enum_owner")
+        .extern_path(
+            ".test.extopenenum.bridge",
+            "crate::extern_bridge_enum_owner",
+        )
+        .reflect_mode(buffa_build::ReflectMode::VTable)
+        .compile()
+        .expect("buffa_build failed for extern_open_enum_user.proto");
 
     // open_enums_no_unknowns: same open_enums_in override coverage with
     // unknown-field preservation disabled, so matching enum unknowns surface

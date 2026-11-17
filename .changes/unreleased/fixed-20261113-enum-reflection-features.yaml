@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    Reflection now emits `ReflectElement` for every generated enum, whatever its openness and in either reflection mode. Previously the impl was emitted only under vtable reflection and only for enums closed by the file's default, so a `repeated` or `map` field of an enum that declares `features.enum_type = CLOSED` in an editions file whose default is open failed to compile with vtable reflection enabled.
+    The impl is also needed when a vtable-mode generation reaches an enum through `extern_path` and types it as a closed enum while the owning generation opened it with `open_enums_in` or uses bridge reflection. Regenerate (or upgrade) the crate that owns the enum with reflection enabled, and enable that crate's reflection feature if its impl is feature-gated. Regenerating only the referencing crate cannot supply the missing impl for a foreign type. A crate that worked around the gap with its own `impl ReflectElement` for a generated enum must remove it.
+time: 2026-11-13T09:04:51+01:00

@@ -1,0 +1,10 @@
+syntax = "proto2";
+
+package test.extopenenum.bridge;
+
+// Compiled in build.rs with bridge-mode reflection and referenced through
+// extern_path by a vtable-mode generation.
+enum Shade {
+  SHADE_LIGHT = 0;
+  SHADE_DARK = 1;
+}

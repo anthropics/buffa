@@ -9,6 +9,12 @@ pub mod basic {
     buffa::include_proto!("basic");
 }
 
+/// Ordinary vtable reflection over an enum-local editions override.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod reflect_enum_override {
+    buffa::include_proto!("reflect_enum_override");
+}
+
 /// `[debug_redact = true]` — generated Debug impls print a placeholder
 /// instead of the annotated field's value.
 #[allow(clippy::derivable_impls, clippy::match_single_binding)]
@@ -722,6 +728,40 @@ pub mod open_enums {
 )]
 pub mod open_enums_enum_rule {
     buffa::include_proto!("test.openenums_enumrule");
+}
+
+/// Owner of an enum opened by an enum-level `open_enums_in` rule, referenced
+/// through extern_path by [`extern_open_enum_user`] without the rule.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types
+)]
+pub mod extern_open_enum_owner {
+    buffa::include_proto!("test.extopenenum.owner");
+}
+
+/// Owner of an enum generated with bridge-mode reflection, referenced through
+/// extern_path by the vtable-mode [`extern_open_enum_user`].
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types
+)]
+pub mod extern_bridge_enum_owner {
+    buffa::include_proto!("test.extopenenum.bridge");
+}
+
+/// References the enums of [`extern_open_enum_owner`] and
+/// [`extern_bridge_enum_owner`] as closed in repeated and map-value position
+/// under vtable reflection.
+#[allow(
+    clippy::derivable_impls,
+    clippy::match_single_binding,
+    non_camel_case_types
+)]
+pub mod extern_open_enum_user {
+    buffa::include_proto!("test.extopenenum.user");
 }
 
 /// `open_enums_in` fixture with unknown-field preservation disabled.
