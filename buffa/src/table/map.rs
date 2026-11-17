@@ -384,7 +384,8 @@ pub(super) unsafe fn merge_map(
     // table describes what it passes to the closure.
     let inserted = unsafe {
         (vt.decode_entry)(slot, &mut |key, value| {
-            merge_entry(&entry_table, key, value, payload, ctx)
+            // `payload` holds exactly the entry.
+            merge_entry(&entry_table, key, value, payload, ctx.with_message_end(0))
         })?
     };
     if !inserted && table.unknown != NO_UNKNOWN {

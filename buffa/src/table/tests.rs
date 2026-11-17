@@ -671,6 +671,30 @@ fn merge_field_decodes_one_field_from_a_contiguous_buffer() {
 }
 
 #[test]
+fn merge_field_stops_at_the_end_of_the_enclosing_message() {
+    // Field 2 (`label`) is "ok"; one byte of something else follows.
+    let wire = [0x12, 0x02, b'o', b'k', 0xff];
+    let tag = Tag::new(2, WireType::LengthDelimited);
+
+    let mut msg = Inner::default();
+    let mut buf = &wire[1..];
+    with_ctx(|ctx| msg.merge_field(tag, &mut buf, ctx.with_message_end(1))).unwrap();
+    assert_eq!(msg.label, "ok");
+    assert_eq!(buf, [0xff]);
+
+    // The enclosing message ends before the field does.
+    let mut msg = Inner::default();
+    for message_end in [2, 5] {
+        assert_eq!(
+            with_ctx(|ctx| msg.merge_field(tag, &mut &wire[1..], ctx.with_message_end(message_end))),
+            Err(DecodeError::UnexpectedEof),
+            "message end {message_end}"
+        );
+    }
+    assert_eq!(msg, Inner::default());
+}
+
+#[test]
 fn merge_field_rejects_a_non_contiguous_buffer() {
     let wire = [0x2a, 0x01];
     let mut chained = (&wire[..1]).chain(&wire[1..]);

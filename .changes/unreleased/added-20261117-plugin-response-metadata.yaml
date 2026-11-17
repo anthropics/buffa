@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    `buffa_codegen::plugin_response_metadata()` returns a `CodeGeneratorResponse` carrying buffa's supported plugin features and the `EDITION_PROTO2` to `EDITION_2024` edition range. Plugins built on buffa-codegen can merge it into each success and error response with `..plugin_response_metadata()`; `protoc-gen-buffa` and `protoc-gen-buffa-packaging` both build their responses from it.
+time: 2026-11-17T12:00:01+01:00
