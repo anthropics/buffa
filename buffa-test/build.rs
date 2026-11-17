@@ -436,6 +436,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for string_copy_counted.proto");
 
+    // `RecStr` and `RecBytes` override `decode_length_delimited` to record the
+    // window they are given: a test can check that no field's window reaches
+    // past the message that holds it.
+    buffa_build::Config::new()
+        .files(&["protos/decode_hook_frame.proto"])
+        .includes(&["protos/"])
+        .string_type_custom("crate::decode_hook_frame::RecStr")
+        .bytes_type_custom("crate::decode_hook_frame::RecBytes")
+        .compile()
+        .expect("buffa_build failed for decode_hook_frame.proto");
+
     // box_type: a crate-LOCAL `CustomBox<T>` pointer (a `ProtoBox<T>` impl) for
     // singular message fields, via the `*`-templated knob. The crate compiling
     // is most of the test — the field type, decode (`get_or_insert_default`),

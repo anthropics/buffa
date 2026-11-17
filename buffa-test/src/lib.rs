@@ -1125,6 +1125,7 @@ pub mod self_recursive_lazy {
 #[cfg(test)]
 mod tests;
 
+pub mod decode_hook_frame;
 pub mod string_copy;
 pub mod string_copy_counted;
 

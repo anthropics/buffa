@@ -1441,8 +1441,8 @@ fn inline_string_field_mapping() {
     );
     // Non-optional singular decode must use the generic helper, not merge_string.
     assert!(
-        content.contains("::buffa::types::decode_string_to"),
-        "decode must use decode_string_to for non-default string repr: {content}"
+        content.contains("::buffa::types::decode_string_to_ctx(buf, ctx)"),
+        "decode must use decode_string_to_ctx for non-default string repr: {content}"
     );
     assert!(
         !content.contains("merge_string(&mut self"),

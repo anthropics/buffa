@@ -1,0 +1,22 @@
+syntax = "proto3";
+package decode_hook_frame;
+
+// Every field shape of a custom string or bytes representation, nested so
+// that the parent's next field follows the nested message on the wire.
+message Inner {
+  string s = 1;
+  bytes b = 2;
+  repeated string rs = 3;
+  map<string, string> m = 4;
+  oneof choice {
+    string os = 5;
+  }
+  optional string opt = 6;
+  repeated bytes rb = 7;
+  map<int32, bytes> mb = 8;
+}
+
+message Outer {
+  Inner inner = 1;
+  string after = 2;
+}

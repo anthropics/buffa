@@ -1062,7 +1062,7 @@ fn bytes_decode_expr(repr: &crate::BytesRepr) -> TokenStream {
     match repr {
         crate::BytesRepr::Vec => quote! { ::buffa::types::decode_bytes(buf)? },
         crate::BytesRepr::Bytes => quote! { ::buffa::types::decode_bytes_to_bytes(buf)? },
-        crate::BytesRepr::Custom(_) => quote! { ::buffa::types::decode_bytes_to(buf)? },
+        crate::BytesRepr::Custom(_) => quote! { ::buffa::types::decode_bytes_to_ctx(buf, ctx)? },
     }
 }
 
@@ -1895,7 +1895,7 @@ fn explicit_presence_merge_arm(
             #field_number => {
                 #wire_check
                 self.#ident = ::core::option::Option::Some(
-                    ::buffa::types::decode_string_to(buf)?
+                    ::buffa::types::decode_string_to_ctx(buf, ctx)?
                 );
             }
         },
@@ -2019,7 +2019,7 @@ fn scalar_merge_arm(
                 quote! {
                     #field_number => {
                         #wire_check
-                        self.#ident = ::buffa::types::decode_string_to(buf)?;
+                        self.#ident = ::buffa::types::decode_string_to_ctx(buf, ctx)?;
                     }
                 }
             });
@@ -2449,7 +2449,7 @@ fn repeated_merge_arm(
             Type::TYPE_STRING if field_string_repr(ctx, proto_fqn, field_name).is_default() => {
                 quote! { ::buffa::types::decode_string(buf)? }
             }
-            Type::TYPE_STRING => quote! { ::buffa::types::decode_string_to(buf)? },
+            Type::TYPE_STRING => quote! { ::buffa::types::decode_string_to_ctx(buf, ctx)? },
             Type::TYPE_BYTES => bytes_decode_expr(&bytes_repr),
             // Message and group are handled by early returns above; the
             // remaining types satisfy `is_packed_type` and never reach this
@@ -2792,7 +2792,7 @@ fn oneof_merge_arm(
             let decoded = if string_repr.is_default() {
                 quote! { ::buffa::types::decode_string(buf)? }
             } else {
-                quote! { ::buffa::types::decode_string_to(buf)? }
+                quote! { ::buffa::types::decode_string_to_ctx(buf, ctx)? }
             };
             quote! {
                 #field_number => {
