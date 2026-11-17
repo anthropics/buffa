@@ -32,8 +32,20 @@
 //! types, and functions for `#[serde(deserialize_with = "...")]`.
 
 pub mod buffered;
+mod policy;
 #[doc(hidden)]
 pub mod wkt;
+
+#[doc(hidden)]
+pub use policy::{
+    bytes_policy, map_bytes_policy, map_bytes_policy_bytes_key, map_bytes_policy_policy_key,
+    map_bytes_policy_serde_key, map_string_policy, map_string_policy_bytes_key,
+    map_string_policy_policy_key, map_string_policy_serde_key, opt_bytes_policy, opt_string_policy,
+    policy_str_key_map, repeated_bytes_policy, repeated_string_policy, string_policy,
+    BytesPolicyJson, BytesPolicySeed, BytesPolicySeqJson, StringPolicyJson, StringPolicySeed,
+    StringPolicySeqJson,
+};
+pub use policy::{ProtoBytesJson, ProtoStringJson};
 
 use buffered::BufferedValue;
 
@@ -55,8 +67,8 @@ const LENIENT_CFG: GeneralPurposeConfig = GeneralPurposeConfig::new()
     .with_decode_allow_trailing_bits(true)
     .with_decode_padding_mode(DecodePaddingMode::Indifferent);
 
-const STANDARD_LENIENT: GeneralPurpose = GeneralPurpose::new(&alphabet::STANDARD, LENIENT_CFG);
-const URL_SAFE_LENIENT: GeneralPurpose = GeneralPurpose::new(&alphabet::URL_SAFE, LENIENT_CFG);
+static STANDARD_LENIENT: GeneralPurpose = GeneralPurpose::new(&alphabet::STANDARD, LENIENT_CFG);
+static URL_SAFE_LENIENT: GeneralPurpose = GeneralPurpose::new(&alphabet::URL_SAFE, LENIENT_CFG);
 
 /// Maximum elements to pre-allocate from a deserializer's `size_hint`.
 ///
@@ -1411,15 +1423,96 @@ pub mod bytes {
     use base64::Engine as _;
     use serde::{Deserializer, Serializer};
 
+    #[derive(Debug, thiserror::Error)]
+    enum DecodeErrorReason {
+        #[error("invalid base64")]
+        InvalidBase64,
+    }
+
     /// Serialize as a base64-encoded string.
     ///
     /// Takes `&[u8]` so both `Vec<u8>` and `bytes::Bytes` fields are
     /// accepted via deref coercion at the `#[serde(with = ...)]` call site.
+    ///
+    /// The encoding is streamed through [`Serializer::collect_str`], so a
+    /// serializer that writes strings incrementally (such as `serde_json`'s)
+    /// receives it without an intermediate heap `String`. A serializer that
+    /// does not override `collect_str` still builds one, and the output is
+    /// that of the serializer's `collect_str`, which for a conforming
+    /// serializer matches `serialize_str`.
     pub fn serialize<S: Serializer>(value: &[u8], s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&STANDARD.encode(value))
+        s.collect_str(&base64::display::Base64Display::new(value, &STANDARD))
+    }
+
+    /// Upper bound on the number of bytes `text` decodes to, for sizing the
+    /// buffer passed to [`decode_into`].
+    #[must_use]
+    pub fn max_decoded_len(text: &str) -> usize {
+        base64::decoded_len_estimate(text.len())
+    }
+
+    /// Decode base64 `text` into storage the caller owns, returning the number
+    /// of bytes written to the front of `out`.
+    ///
+    /// Accepts exactly the strings [`deserialize`] accepts (standard or
+    /// URL-safe alphabet, padded or unpadded) and decodes once, without
+    /// allocating decoding storage. `out` needs room only for the decoded
+    /// bytes, so a fixed-size key buffer works; a buffer of [`max_decoded_len`]
+    /// bytes is always enough. Meant for a [`ProtoBytesJson`](super::ProtoBytesJson)
+    /// implementation whose visitor borrows the JSON string and wants the
+    /// decoded bytes to land only in storage it wipes.
+    ///
+    /// The error type is generic so that the call fits a
+    /// [`Visitor`](serde::de::Visitor) method; name it with a turbofish, as
+    /// `?` alone cannot infer it.
+    ///
+    /// The example uses ordinary, non-sensitive storage. A sensitive policy
+    /// must establish its wiping owner **before** calling `decode_into`, so
+    /// partially decoded bytes are also cleaned up when decoding fails.
+    ///
+    /// ```
+    /// use buffa::json_helpers::bytes;
+    /// use serde::de::{Deserializer as _, Error, Visitor};
+    ///
+    /// struct DecodedBytes(Vec<u8>);
+    ///
+    /// struct BytesVisitor;
+    /// impl<'de> Visitor<'de> for BytesVisitor {
+    ///     type Value = DecodedBytes;
+    ///     fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    ///         f.write_str("a base64-encoded string")
+    ///     }
+    ///     fn visit_str<E: Error>(self, text: &str) -> Result<DecodedBytes, E> {
+    ///         let mut buf = vec![0; bytes::max_decoded_len(text)];
+    ///         let len = bytes::decode_into::<E>(text, &mut buf)?;
+    ///         buf.truncate(len);
+    ///         Ok(DecodedBytes(buf))
+    ///     }
+    /// }
+    ///
+    /// let mut de = serde_json::Deserializer::from_str(r#""AP-A""#);
+    /// let decoded = de.deserialize_str(BytesVisitor).unwrap();
+    /// assert_eq!(decoded.0, [0, 255, 128]);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error built with [`serde::de::Error::custom`] when `text` is
+    /// not valid base64 or `out` is too small. On error, `out` may hold part
+    /// of the decoded bytes. Constructing the caller's error type may allocate;
+    /// the allocation-free guarantee covers decoding, not error construction.
+    /// The error reason is fixed and does not include input symbols or offsets.
+    pub fn decode_into<E: serde::de::Error>(text: &str, out: &mut [u8]) -> Result<usize, E> {
+        super::lenient_engine(text)
+            .decode_slice(text, out)
+            .map_err(|_| E::custom(DecodeErrorReason::InvalidBase64))
     }
 
     /// Deserialize from a base64-encoded string (or JSON `null` → empty).
+    ///
+    /// The bytes are decoded once into a `Vec<u8>` sized from the base64
+    /// length, which `T::from` then takes ownership of. Use [`decode_into`]
+    /// to decode into storage the caller provides instead.
     ///
     /// Generic over the return type so that codegen's `use_bytes_type()`
     /// (which types the field as `bytes::Bytes`) works without a shim:
@@ -1716,13 +1809,27 @@ impl serde::Serialize for Base64Wrapper<'_> {
     }
 }
 
+/// The lenient engine for `v`'s alphabet.
+///
+/// `-` and `_` occur only in the URL-safe alphabet, and `+` and `/` only in
+/// the standard one; the other symbols decode to the same values in both, and
+/// both engines share one padding and trailing-bit configuration. The first of
+/// these four symbols therefore decides: an input that mixes the alphabets
+/// fails under either engine. Choosing this way accepts exactly the inputs
+/// that "standard, else URL-safe" accepts, with the same output, while
+/// decoding only once and usually scanning only a short prefix.
+fn lenient_engine(v: &str) -> &'static GeneralPurpose {
+    match v.bytes().find(|b| matches!(b, b'+' | b'/' | b'-' | b'_')) {
+        Some(b'-' | b'_') => &URL_SAFE_LENIENT,
+        _ => &STANDARD_LENIENT,
+    }
+}
+
 /// Decode a base64 string, accepting standard and URL-safe alphabets with
 /// lenient trailing-bit and padding handling.
 pub(crate) fn decode_base64(v: &str) -> Result<alloc::vec::Vec<u8>, base64::DecodeError> {
     use base64::Engine as _;
-    STANDARD_LENIENT
-        .decode(v)
-        .or_else(|std_err| URL_SAFE_LENIENT.decode(v).map_err(|_| std_err))
+    lenient_engine(v).decode(v)
 }
 
 // ── Option<T> wrappers for proto2 optional scalar fields ─────────────────────
