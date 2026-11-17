@@ -685,7 +685,7 @@ fn an_entry_with_an_unknown_closed_enum_number_is_dropped_without_unknown_fields
 }
 
 #[test]
-fn the_unknown_field_limit_counts_kept_entries_in_both_codecs() {
+fn positive_unknown_limits_only_charge_preserved_entries_in_both_codecs() {
     let wire: Vec<u8> = (0..100)
         .flat_map(|_| entry(1, &[&length_delimited_field(1, b"k"), &varint_field(2, 7)]))
         .collect();
@@ -702,8 +702,17 @@ fn the_unknown_field_limit_counts_kept_entries_in_both_codecs() {
         outcome_with::<crate::tc2t::ClosedMaps>(&options, &wire),
         Err(DecodeError::UnknownFieldLimitExceeded)
     );
-    // Dropped entries are not counted.
     assert!(outcome_with::<crate::tclt::ClosedMaps>(&options, &wire).is_ok());
+    assert!(outcome_with::<crate::tclu::ClosedMaps>(&options, &wire).is_ok());
+    let reject = DecodeOptions::new().reject_unknown_fields();
+    assert_eq!(
+        outcome_with::<crate::tclt::ClosedMaps>(&reject, &wire),
+        Err(DecodeError::UnknownFieldLimitExceeded)
+    );
+    assert_eq!(
+        outcome_with::<crate::tclu::ClosedMaps>(&reject, &wire),
+        Err(DecodeError::UnknownFieldLimitExceeded)
+    );
 }
 
 #[test]

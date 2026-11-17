@@ -763,7 +763,7 @@ fn the_element_memory_limit_counts_each_entry() {
 }
 
 #[test]
-fn the_unknown_field_limit_counts_preserved_entries() {
+fn the_unknown_field_limit_counts_stored_entries_and_zero_rejects_discarded_entries() {
     let wire: Vec<u8> = (0..100).flat_map(|_| ld(3, &vf(2, 7))).collect();
     assert!(Maps::decode_from_slice(&wire).is_ok());
     let limited = DecodeOptions::new().with_unknown_field_limit(10);
@@ -775,8 +775,21 @@ fn the_unknown_field_limit_counts_preserved_entries() {
         limited.decode_from_slice::<Reference>(&wire).map(|r| r.0),
         Err(DecodeError::UnknownFieldLimitExceeded)
     );
-    // Dropped entries do not count.
     assert!(limited.decode_from_slice::<Lossy>(&wire).is_ok());
+    assert_eq!(DecodeOptions::new().reject_unknown_fields().decode_from_slice::<Lossy>(&wire),
+        Err(DecodeError::UnknownFieldLimitExceeded));
+}
+
+
+#[test]
+fn overwritten_unknown_map_enums_cannot_bypass_rejection() {
+    for values in [&[7, 0][..], &[7, 8][..]] {
+        let body: Vec<u8> = values.iter().flat_map(|value| vf(2, *value)).collect();
+        let wire = ld(3, &body);
+        let options = DecodeOptions::new().reject_unknown_fields();
+        assert_eq!(options.decode_from_slice::<Maps>(&wire), Err(DecodeError::UnknownFieldLimitExceeded));
+        assert_eq!(options.decode_from_slice::<Lossy>(&wire), Err(DecodeError::UnknownFieldLimitExceeded));
+    }
 }
 
 #[test]

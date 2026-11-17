@@ -7,7 +7,7 @@
 //! flag per message is generated for both kinds in one crate; these tests
 //! check the observable difference through each.
 
-use super::{length_delimited_field, repeated_varint_field, varint_field};
+use super::{length_delimited_field, packed_field, repeated_varint_field, varint_field};
 use crate::scopedunknown::{keep, Color, Keep, KeepLazyView, KeepView, Keeper};
 use buffa::view::LazyMessageView;
 use buffa::{Message, MessageView, ViewEncode};
@@ -194,4 +194,46 @@ fn reflection_exposes_unknown_fields_only_where_preserved() {
     assert_eq!(kept.reflect().unknown_fields().iter().count(), 1);
     let dropped = DropMsg::decode_from_slice(&wire).unwrap();
     assert_eq!(dropped.reflect().unknown_fields().iter().count(), 0);
+}
+
+#[test]
+fn rejection_covers_fields_a_non_preserving_message_discards() {
+    use crate::scopedunknown::{Drop as Lossy, DropLazyView, DropView};
+    use buffa::{DecodeError, DecodeOptions};
+
+    const UNKNOWN_COLOR: u64 = 9;
+    let child_with_unknown = length_delimited_field(7, &varint_field(UNKNOWN, 1));
+    let cases = [
+        // An unknown field number.
+        with_unknown().1,
+        // Unknown closed-enum values: singular, repeated, packed, oneof.
+        varint_field(2, UNKNOWN_COLOR),
+        repeated_varint_field(3, &[1, UNKNOWN_COLOR]),
+        packed_field(3, &[1, UNKNOWN_COLOR]),
+        varint_field(6, UNKNOWN_COLOR),
+        // An unknown field inside a nested message.
+        child_with_unknown.clone(),
+    ];
+    let reject = DecodeOptions::new().reject_unknown_fields();
+    for wire in &cases {
+        // Without rejection, the message discards them as before.
+        assert!(Lossy::decode_from_slice(wire).is_ok());
+        assert!(DropView::decode_view(wire).is_ok());
+        assert_eq!(
+            reject.decode_from_slice::<Lossy>(wire).map(|_| ()),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        );
+        assert!(matches!(
+            reject.decode_view::<DropView<'_>>(wire),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        ));
+    }
+    // A lazy view rejects what it reads itself; a deferred child is checked
+    // when it is materialized.
+    for wire in &cases[..5] {
+        assert!(matches!(
+            reject.decode_lazy_view::<DropLazyView<'_>>(wire),
+            Err(DecodeError::UnknownFieldLimitExceeded)
+        ));
+    }
 }

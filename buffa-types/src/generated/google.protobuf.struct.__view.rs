@@ -88,10 +88,10 @@ impl<'a> ::buffa::MessageView<'a> for StructView<'a> {
                             )?;
                         }
                         _ => {
-                            ::buffa::encoding::skip_field_depth(
+                            ::buffa::encoding::skip_unknown_field(
                                 entry_tag,
                                 &mut entry_cur,
-                                ctx.depth(),
+                                ctx,
                             )?;
                         }
                     }
