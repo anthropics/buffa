@@ -108,6 +108,11 @@ jobs:
       - name: Shared descriptor pool compile
         run: cargo test -p buffa-codegen --test shared_pool_compile -- --ignored
 
+      # Associated type projections and parentheses can name working custom
+      # representations; verify the generated code compiles and round-trips.
+      - name: Custom type path compatibility
+        run: cargo test -p buffa-codegen --test custom_type_paths_compile -- --ignored
+
       # `examples/bsr-quickstart` is outside the workspace, and its `src/gen/`
       # is checked-in output from the published BSR plugin, not in-tree
       # codegen. Its runtime deps are pinned to the plugin's release (see its

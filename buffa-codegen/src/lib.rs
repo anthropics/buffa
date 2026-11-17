@@ -379,10 +379,34 @@ pub enum GeneratedFileKind {
 /// Parse a custom owned-type path string (e.g. `"::smol_str::SmolStr"`) into a
 /// token stream, validating it as a Rust type so a malformed path surfaces as a
 /// codegen error rather than unparseable generated output.
+///
+/// The type must be a Rust type path (`crate::Name`, `::a::B<C>`), optionally
+/// parenthesized. Associated type projections such as `<T as Trait>::Value`
+/// are also supported. Other Rust types such as `_`, `()`, `[u8; 4]`,
+/// `&'static [u8]` or `impl Trait` parse,
+/// but are not supported as a custom representation (most cannot implement
+/// `ProtoString` / `ProtoBytes` in the consumer crate, or appear in a struct
+/// field at all), so they are rejected here rather than surfacing as a compile
+/// error inside generated code. A type alias names anything else.
 pub(crate) fn parse_custom_type_path(path: &str) -> Result<proc_macro2::TokenStream, CodeGenError> {
     let ty: syn::Type =
         syn::parse_str(path).map_err(|_| CodeGenError::InvalidTypePath(path.to_string()))?;
+    if !is_type_path(&ty) {
+        return Err(CodeGenError::InvalidTypePath(format!(
+            "{path} (a custom type must be a type path such as `crate::Name`)"
+        )));
+    }
     Ok(quote::quote! { #ty })
+}
+
+/// Parentheses and associated type projections can name the same supported
+/// representations as ordinary paths; rejecting either would break working
+/// custom-type configurations without making generated code safer.
+fn is_type_path(mut ty: &syn::Type) -> bool {
+    while let syn::Type::Paren(inner) = ty {
+        ty = &inner.elem;
+    }
+    matches!(ty, syn::Type::Path(_))
 }
 
 /// Parse a custom **map** container path, which is applied as `path<K, V>`.
@@ -444,7 +468,9 @@ pub(crate) fn parse_wildcard_type_path(
 /// so substitution is textual — every `*` in `template` is replaced by the
 /// element's token text before the whole string is parsed. The template must
 /// contain at least one `*`, otherwise the element type would have nowhere to
-/// go and the field would silently drop its element type.
+/// go and the field would silently drop its element type. As with
+/// [`parse_custom_type_path`], the substituted type must be a Rust type path,
+/// optionally parenthesized, and may name an associated type.
 pub(crate) fn parse_custom_list_path(
     template: &str,
     elem: &proc_macro2::TokenStream,
@@ -454,7 +480,13 @@ pub(crate) fn parse_custom_list_path(
     }
     let substituted = template.replace('*', &elem.to_string());
     let ty: syn::Type = syn::parse_str(&substituted)
-        .map_err(|_| CodeGenError::InvalidTypePath(template.to_string()))?;
+        .map_err(|_| CodeGenError::InvalidTypePath(format!("{template} (as {substituted})")))?;
+    if !is_type_path(&ty) {
+        return Err(CodeGenError::InvalidTypePath(format!(
+            "{template} (as {substituted}; a custom collection must be a type path \
+             such as `crate::List<*>`)"
+        )));
+    }
     Ok(quote::quote! { #ty })
 }
 
@@ -496,7 +528,8 @@ pub enum StringRepr {
     ///   oneof field, or used as a `map` key or value, must implement
     ///   `serde::Serialize` and `serde::Deserialize`. A singular field without
     ///   `optional` needs no `serde` impl.
-    /// - A path that does not parse as a Rust type surfaces as
+    /// - A path that is not a Rust type path like `crate::Name` (for example
+    ///   `_`, `()` or `&'static [u8]`) surfaces as
     ///   [`CodeGenError::InvalidTypePath`] at generation (`.compile()`) time.
     /// - The per-element impls are deduplicated within a single generation, but
     ///   the *same* crate-local type used as a `repeated` element across two
@@ -516,8 +549,8 @@ impl StringRepr {
     ///
     /// # Errors
     ///
-    /// Returns [`CodeGenError::InvalidTypePath`] if a custom path does not parse
-    /// as a Rust type.
+    /// Returns [`CodeGenError::InvalidTypePath`] if a custom path is not a Rust
+    /// type path.
     pub(crate) fn type_path(
         &self,
         resolver: &imports::ImportResolver,
@@ -577,7 +610,8 @@ pub enum BytesRepr {
     ///   `generate_reflection_vtable`, codegen emits `ProtoElemJson` /
     ///   `ReflectElement` impls for the value type, so it must be a
     ///   crate-local type.
-    /// - A path that does not parse as a Rust type surfaces as
+    /// - A path that is not a Rust type path like `crate::Name` (for example
+    ///   `_`, `()` or `&'static [u8]`) surfaces as
     ///   [`CodeGenError::InvalidTypePath`] at generation (`.compile()`) time.
     /// - The per-element impls are deduplicated within a single generation, but
     ///   the *same* crate-local type used as a `repeated` element across two
@@ -596,8 +630,8 @@ impl BytesRepr {
     ///
     /// # Errors
     ///
-    /// Returns [`CodeGenError::InvalidTypePath`] if a custom path does not parse
-    /// as a Rust type.
+    /// Returns [`CodeGenError::InvalidTypePath`] if a custom path is not a Rust
+    /// type path.
     pub(crate) fn type_path(
         &self,
         resolver: &imports::ImportResolver,
@@ -920,7 +954,7 @@ pub enum RepeatedRepr {
     ///   substituted for every `*` before the result is parsed as a Rust type.
     ///   A template that omits `*` surfaces as
     ///   [`CodeGenError::MissingListPlaceholder`], and one whose substitution
-    ///   does not parse as [`CodeGenError::InvalidTypePath`], at generation
+    ///   is not a Rust type path as [`CodeGenError::InvalidTypePath`], at generation
     ///   (`.compile()`) time.
     /// - A custom collection always needs a crate-local newtype — this is not
     ///   limited to the reflection path. The generated decode and clear code
@@ -948,8 +982,8 @@ impl RepeatedRepr {
     /// # Errors
     ///
     /// Returns [`CodeGenError::MissingListPlaceholder`] if a custom template
-    /// omits `*`, or [`CodeGenError::InvalidTypePath`] if it does not parse as a
-    /// Rust type once the element is substituted.
+    /// omits `*`, or [`CodeGenError::InvalidTypePath`] if it is not a Rust type
+    /// path once the element is substituted.
     pub(crate) fn type_path(
         &self,
         elem: &proc_macro2::TokenStream,
@@ -2470,10 +2504,15 @@ pub enum CodeGenWarning {
     /// type (a `string_fields` rule on an `int32` field) is also inert and
     /// does not warn. It runs once per `generate` call, so a config shared by
     /// several calls warns in each call whose files lack the field.
+    ///
+    /// The `Display` text names the rule by its kind and the `buffa-build`
+    /// methods (the bytes, string and repeated `*_custom_in` ones are also the
+    /// `protoc-gen-buffa` option names), not by the [`CodeGenConfig`] list,
+    /// and does not name a front end, so it reads the same from either.
     #[non_exhaustive]
     FieldTypeRuleMatchedNothing {
         /// The rule's path as it is in the [`CodeGenConfig`] list
-        /// (`buffa-build` has normalized it).
+        /// (`buffa-build` or `protoc-gen-buffa` has normalized it).
         rule: String,
         /// The [`CodeGenConfig`] list that contains the rule: `"bytes_fields"`,
         /// `"string_fields"`, `"map_fields"` or `"repeated_fields"`.
@@ -2483,6 +2522,12 @@ pub enum CodeGenWarning {
         /// `extern_path` or `exclude_packages`. The `Display` text then says
         /// so, in place of the path hint.
         matches_ungenerated: bool,
+        /// Whether the rule names an extension field (or a scope that holds
+        /// only extension fields). Field-type rules never apply to extensions,
+        /// which keep their default Rust type; the `Display` text then says
+        /// so, in place of the path hint. When `matches_ungenerated` is also
+        /// set, the text gives that reason instead.
+        names_extension: bool,
     },
     /// A [`codec_strategy_in`](CodeGenConfig::codec_strategy_in) rule matched no
     /// message being generated, so it changed nothing. Usually a typo, a field
@@ -2509,16 +2554,22 @@ pub enum CodeGenWarning {
     },
 }
 
-/// The `buffa-build` methods that add to the field-type rule list `option`,
-/// for [`CodeGenWarning::FieldTypeRuleMatchedNothing`]'s text. A user of
-/// `buffa-build` typed one of these, not the [`CodeGenConfig`] field's name.
-fn field_type_rule_builders(option: &str) -> &'static str {
+/// The kind of field the rule list `option` covers, and the options that add
+/// to it, for [`CodeGenWarning::FieldTypeRuleMatchedNothing`]'s text. These
+/// are the `buffa-build` method names; `bytes_type_custom_in`,
+/// `string_type_custom_in` and `repeated_type_custom_in` are also the
+/// `protoc-gen-buffa` option names, so a user of either front end finds the
+/// option they wrote, rather than the [`CodeGenConfig`] field's name.
+fn field_type_rule_kind(option: &str) -> (&'static str, &'static str) {
     match option {
-        "bytes_fields" => "bytes_type_in / use_bytes_type_in / bytes_type_custom_in",
-        "string_fields" => "string_type_in / string_type_custom_in",
-        "map_fields" => "map_type_in / map_type_custom_in",
-        "repeated_fields" => "repeated_type_in / repeated_type_custom_in",
-        _ => "",
+        "bytes_fields" => (
+            "bytes",
+            "bytes_type_in / use_bytes_type_in / bytes_type_custom_in",
+        ),
+        "string_fields" => ("string", "string_type_in / string_type_custom_in"),
+        "map_fields" => ("map", "map_type_in / map_type_custom_in"),
+        "repeated_fields" => ("repeated", "repeated_type_in / repeated_type_custom_in"),
+        _ => ("field", ""),
     }
 }
 
@@ -2727,9 +2778,10 @@ impl core::fmt::Display for CodeGenWarning {
                 rule,
                 option,
                 matches_ungenerated,
+                names_extension,
             } => {
-                let builders = field_type_rule_builders(option);
-                write!(f, "{option} rule '{rule}' (buffa-build: {builders}) ")?;
+                let (kind, options) = field_type_rule_kind(option);
+                write!(f, "{kind} type rule '{rule}' ({options}) ")?;
                 if *matches_ungenerated {
                     write!(
                         f,
@@ -2737,13 +2789,22 @@ impl core::fmt::Display for CodeGenWarning {
                          (an imported file, or a package under extern_path or \
                          exclude_package), so it changed nothing here"
                     )
+                } else if *names_extension {
+                    write!(
+                        f,
+                        "names (or covers only) extension fields, so it changed nothing — custom field \
+                         type rules do not apply to extensions, which keep their default \
+                         Rust type"
+                    )
                 } else {
                     write!(
                         f,
                         "matched no field of a generated message, so it changed nothing — \
                          a rule is a fully-qualified proto path with its leading dot \
                          ('.my.pkg', '.my.pkg.Msg' or '.my.pkg.Msg.field'); a bare name \
-                         such as 'field' or 'Msg.field' does not match"
+                         such as 'field' or 'Msg.field' does not match. Only the files \
+                         this run generates are checked, so a rule for files that a \
+                         separate run generates also warns here"
                     )
                 }
             }
@@ -2851,6 +2912,34 @@ fn rule_matches_field_in(
     rule == "."
         || generated_files(file_descriptors, file_names)
             .any(|(fd, package_fqn)| any_field_matches(rule, &package_fqn, &fd.message_type))
+}
+
+/// Whether field-type rule `rule` names an extension field declared in any of
+/// `file_descriptors`, at file scope or nested in a message: the rule is a
+/// proto-path prefix of the extension's fully-qualified name.
+fn rule_matches_extension_in(rule: &str, file_descriptors: &[FileDescriptorProto]) -> bool {
+    fn any_extension_matches(
+        rule: &str,
+        parent_fqn: &str,
+        extensions: &[crate::generated::descriptor::FieldDescriptorProto],
+        messages: &[DescriptorProto],
+    ) -> bool {
+        extensions.iter().any(|ext| {
+            let ext_fqn = format!("{parent_fqn}.{}", ext.name.as_deref().unwrap_or(""));
+            context::matches_proto_prefix(rule, &ext_fqn)
+        }) || messages.iter().any(|m| {
+            let fqn = format!("{parent_fqn}.{}", m.name.as_deref().unwrap_or(""));
+            any_extension_matches(rule, &fqn, &m.extension, &m.nested_type)
+        })
+    }
+
+    file_descriptors.iter().any(|fd| {
+        let package_fqn = match fd.package.as_deref() {
+            Some(pkg) if !pkg.is_empty() => format!(".{pkg}"),
+            _ => String::new(),
+        };
+        any_extension_matches(rule, &package_fqn, &fd.extension, &fd.message_type)
+    })
 }
 
 /// The paths of a field-type rule list such as
@@ -3573,6 +3662,7 @@ pub fn generate_with_diagnostics(
                 rule: rule.clone(),
                 option,
                 matches_ungenerated: rule_matches_field_in(rule, file_descriptors, every_file),
+                names_extension: rule_matches_extension_in(rule, file_descriptors),
             });
         }
     }
@@ -5525,7 +5615,8 @@ pub enum CodeGenError {
     /// `field.type_name`.
     #[error("missing required descriptor field: {0}")]
     MissingField(&'static str),
-    /// A resolved type path string could not be parsed as a Rust type.
+    /// A resolved type path string could not be parsed as a Rust type, or is
+    /// not a Rust type path where a custom field representation requires one.
     #[error("invalid Rust type path: '{0}'")]
     InvalidTypePath(String),
     /// A `box_type_custom` pointer template did not contain the `*` placeholder.

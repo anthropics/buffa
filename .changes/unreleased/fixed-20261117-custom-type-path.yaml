@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **A custom field type that is not a Rust type path is a codegen error.** `string_type_custom`/`bytes_type_custom`/`repeated_type_custom` and their `_in` variants in `buffa-build`, the matching `protoc-gen-buffa` options and `buffa_codegen::StringRepr::Custom`, `BytesRepr::Custom` and `RepeatedRepr::Custom` accepted any Rust type, so `_`, `()`, `[u8; 4]`, `&'static [u8]` or `impl Trait` were spliced into the generated struct and failed only when the consumer crate compiled. Codegen now rejects them with `CodeGenError::InvalidTypePath`, which the plugin returns in its response. Qualified associated type paths such as `<A as Trait>::B` and parenthesized type paths remain supported, preserving existing custom representations.
+time: 2026-11-17T12:00:00+01:00

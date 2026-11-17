@@ -1281,8 +1281,9 @@ impl Config {
     /// - A `Custom` rule **does** apply to `map<K, bytes>` values (honored like
     ///   the built-in [`BytesRepr::Bytes`]); only the `map<bytes, bytes>`
     ///   carve-out keeps `Vec<u8>` values.
-    /// - A `path` that does not parse as a Rust type is reported as a codegen
-    ///   error from [`compile`](Self::compile).
+    /// - A `path` that is not a Rust type path like `crate::Name` (for
+    ///   example `_`, `()` or `&'static [u8]`) is reported as a codegen error
+    ///   from [`compile`](Self::compile).
     /// - A custom bytes type needs no native `arbitrary::Arbitrary` impl (a
     ///   generic builder handles it under `generate_arbitrary`).
     #[must_use]
@@ -1428,8 +1429,9 @@ impl Config {
     ///   `proto_string` with-module and needs no `serde` impl.
     /// - A custom type used as a `map` key must implement `Hash + Eq` for the
     ///   default `HashMap` container, or `Ord` for `BTreeMap`.
-    /// - A `path` that does not parse as a Rust type is reported as a codegen
-    ///   error from [`compile`](Self::compile).
+    /// - A `path` that is not a Rust type path like `crate::Name` (for
+    ///   example `_`, `()` or `&'static [u8]`) is reported as a codegen error
+    ///   from [`compile`](Self::compile).
     /// - A custom string type needs no native `arbitrary::Arbitrary` impl (a
     ///   generic builder handles it under `generate_arbitrary`, as a `map` key
     ///   or value too).
@@ -1787,7 +1789,7 @@ impl Config {
     /// # Limitations
     ///
     /// - The template must contain at least one `*`; a template that omits it,
-    ///   or whose substitution does not parse as a Rust type, is reported as a
+    ///   or whose substitution is not a Rust type path, is reported as a
     ///   codegen error from [`compile`](Self::compile).
     /// - The template must name a **crate-local newtype** — a foreign collection
     ///   cannot implement the buffa-owned `ProtoList` (orphan rule). This applies
