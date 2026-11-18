@@ -1,0 +1,3 @@
+kind: Added
+body: 'Add an optional GuardedOwnedView API with private wiping wire storage, direct bounded encoding and borrowed access without clonable Bytes handles. Decoded view-owned values keep their own cleanup contract.'
+time: 2026-11-18T22:00:00+01:00

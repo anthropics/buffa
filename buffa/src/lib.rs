@@ -813,3 +813,7 @@ pub mod __doctest_fixtures {
     // none can retain a buffer borrow past `Self`.
     unsafe impl view::ViewLifetimeParametric for PersonView<'static> {}
 }
+
+/// Opt-in wire owners whose private buffers are wiped on drop.
+#[cfg(feature = "zeroize")]
+pub mod sensitive;
