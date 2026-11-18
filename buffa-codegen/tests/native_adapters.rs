@@ -1009,3 +1009,57 @@ fn generated_native_api_compiles_and_runs_without_std() {
         ));
     }
 }
+
+#[test]
+fn adapter_output_names_reject_windows_device_stems() {
+    for stem in ["CON", "PRN", "AUX", "NUL"] {
+        for name in [
+            format!("{stem}.rs"),
+            format!("{}.rs", stem.to_ascii_lowercase()),
+        ] {
+            reject(
+                |config| config.selectors[0].file = name,
+                ErrorReason::InvalidOutput,
+            );
+        }
+    }
+    for prefix in ["COM", "LPT"] {
+        for number in 1..=9 {
+            reject(
+                |config| config.selectors[0].file = format!("{prefix}{number}.rs"),
+                ErrorReason::InvalidOutput,
+            );
+        }
+    }
+    reject(
+        |config| config.payloads[0].file = "NuL.rs".into(),
+        ErrorReason::InvalidOutput,
+    );
+    reject(
+        |config| config.borrowed[0].file = "lPt9.rs".into(),
+        ErrorReason::InvalidOutput,
+    );
+    // Non-ASCII legacy device digits already fail the portable ASCII rule.
+    reject(
+        |config| config.selectors[0].file = "COM¹.rs".into(),
+        ErrorReason::InvalidOutput,
+    );
+}
+
+#[test]
+fn adapter_output_names_keep_ordinary_stems_containing_device_names() {
+    for name in [
+        "console.rs",
+        "null.rs",
+        "nul_output.rs",
+        "_CON.rs",
+        "COM10.rs",
+        "LPT10.rs",
+    ] {
+        let mut config = manifest();
+        config.selectors[0].file = name.into();
+        let output = generate_adapters(&descriptors().file, &[FIXTURE.into()], &config).unwrap();
+        assert_eq!(output.len(), 24);
+        assert!(output.iter().any(|file| file.name == name));
+    }
+}

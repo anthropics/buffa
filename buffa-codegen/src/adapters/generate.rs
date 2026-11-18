@@ -262,6 +262,7 @@ pub fn generate_adapters(
         if stem.is_empty()
             || stem.eq_ignore_ascii_case("mod")
             || !stem.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            || is_reserved_windows_file_stem(stem)
         {
             return Err(ErrorReason::InvalidOutput.into());
         }
@@ -921,4 +922,20 @@ fn complete_payload(
         }
     }
     Ok(())
+}
+
+/// These names resolve to devices on Windows even with an `.rs` extension.
+/// Apply the restriction on every host so generated files remain portable.
+fn is_reserved_windows_file_stem(stem: &str) -> bool {
+    if ["CON", "PRN", "AUX", "NUL"]
+        .iter()
+        .any(|reserved| stem.eq_ignore_ascii_case(reserved))
+    {
+        return true;
+    }
+    let Some((&number, prefix)) = stem.as_bytes().split_last() else {
+        return false;
+    };
+    (b'1'..=b'9').contains(&number)
+        && (prefix.eq_ignore_ascii_case(b"COM") || prefix.eq_ignore_ascii_case(b"LPT"))
 }
