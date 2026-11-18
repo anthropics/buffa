@@ -90,6 +90,8 @@ serde_norway = { version = "0.9" }
 arbitrary = { version = "1", default-features = false, features = ["derive"] }
 smoothutf8 = { version = "0.2.3", default-features = false }
 thiserror = { version = "2", default-features = false }
+# Minimum tested on Rust 1.75 with an MSRV-compatible lockfile.
+zeroize = { version = "1.8.2", default-features = false }
 # Optional `string` field representations that will be selectable via
 # `buffa_build`'s forthcoming `string_type` knob. Declared
 # `default-features = false` so they stay `no_std`; the relevant

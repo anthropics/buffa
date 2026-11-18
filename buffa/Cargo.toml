@@ -43,6 +43,8 @@ json = [
 ]
 arbitrary = ["dep:arbitrary"]
 text = []
+# Opt-in cleanup hooks for temporary map-entry slots.
+zeroize = ["dep:zeroize"]
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }
@@ -56,6 +58,8 @@ serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 smoothutf8 = { workspace = true, optional = true }
 thiserror = { workspace = true }
+
+zeroize = { workspace = true, optional = true }
 
 [dev-dependencies]
 # The JSON buffering tests need `serde_json::Value` to parse the string under

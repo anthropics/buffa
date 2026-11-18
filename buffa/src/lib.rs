@@ -813,3 +813,5 @@ pub mod __doctest_fixtures {
     // none can retain a buffer borrow past `Self`.
     unsafe impl view::ViewLifetimeParametric for PersonView<'static> {}
 }
+
+mod erasing;
