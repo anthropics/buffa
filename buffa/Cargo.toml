@@ -43,8 +43,11 @@ json = [
 ]
 arbitrary = ["dep:arbitrary"]
 text = []
+# Private wire buffers are erased before their allocation is released.
+zeroize = ["dep:zeroize"]
 
 [dependencies]
+zeroize = { workspace = true, optional = true }
 arbitrary = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 bytes = { workspace = true }
