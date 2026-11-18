@@ -409,9 +409,10 @@ jobs:
       # Check crates separately: workspace feature unification would hide a
       # missing std dependency in an arbitrary-only consumer.
       - name: Check isolated arbitrary features (host and Wasm)
+        working-directory: ${{ runner.temp }}
         run: |
-          scripts/check-arbitrary-features.sh
-          scripts/check-arbitrary-features.sh wasm32-unknown-unknown
+          "$GITHUB_WORKSPACE/scripts/check-arbitrary-features.sh"
+          "$GITHUB_WORKSPACE/scripts/check-arbitrary-features.sh" wasm32-unknown-unknown
 
       - name: Check workspace 32-bit
         run: cargo check --workspace --target i686-unknown-linux-gnu

@@ -7,6 +7,9 @@ if (( $# > 1 )); then
     exit 2
 fi
 repo_root="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# Rustup and Cargo discover toolchains and configuration from the working
+# directory, even when each manifest path is absolute.
+cd "$repo_root"
 check_args=(--locked --no-default-features)
 if (( $# == 1 )); then
     check_args+=(--target "$1")
