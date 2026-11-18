@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **`json_helpers::bytes::decode_into` and `bytes::max_decoded_len`** decode a base64 string into a buffer the caller provides, without allocating decoding storage and accepting exactly what `bytes::deserialize` accepts. Constructing the caller's Serde error on failure may allocate. They let a `ProtoBytesJson` implementation keep decoded bytes only in storage it owns.
+time: 2026-11-17T10:00:01+01:00

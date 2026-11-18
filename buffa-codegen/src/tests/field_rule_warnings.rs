@@ -83,6 +83,7 @@ fn inert_rules(warnings: Vec<CodeGenWarning>) -> Vec<(&'static str, String, bool
                 rule,
                 option,
                 matches_ungenerated,
+                ..
             } => Some((option, rule, matches_ungenerated)),
             _ => None,
         })
@@ -300,34 +301,213 @@ fn a_rule_the_generator_applies_does_not_warn() {
     );
 }
 
+/// Package `ext.test`, proto2:
+///
+/// ```proto
+/// message Holder {
+///   optional bytes data = 1;
+///   extensions 100 to 199;
+///   extend Holder { optional bytes nested_ext = 101; }
+/// }
+/// extend Holder { optional bytes file_ext = 100; }
+/// ```
+fn extension_file() -> FileDescriptorProto {
+    let ext = |name: &str, number: i32| FieldDescriptorProto {
+        extendee: Some(".ext.test.Holder".to_string()),
+        ..make_field(name, number, Label::LABEL_OPTIONAL, Type::TYPE_BYTES)
+    };
+    let holder = DescriptorProto {
+        name: Some("Holder".to_string()),
+        field: vec![make_field(
+            "data",
+            1,
+            Label::LABEL_OPTIONAL,
+            Type::TYPE_BYTES,
+        )],
+        extension: vec![ext("nested_ext", 101)],
+        extension_range: vec![
+            crate::generated::descriptor::descriptor_proto::ExtensionRange {
+                start: Some(100),
+                end: Some(200),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+    FileDescriptorProto {
+        name: Some("ext.proto".to_string()),
+        package: Some("ext.test".to_string()),
+        syntax: Some("proto2".to_string()),
+        message_type: vec![holder],
+        extension: vec![ext("file_ext", 100)],
+        ..Default::default()
+    }
+}
+
 #[test]
-fn the_warning_names_the_buffa_build_methods() {
+fn a_rule_naming_an_extension_says_so() {
+    let rules = [
+        ".ext.test.file_ext",
+        ".ext.test.Holder.nested_ext",
+        ".ext.test.Holder.data",
+        ".ext.test.Holder.nope",
+    ];
+    let config = CodeGenConfig {
+        bytes_fields: rules
+            .iter()
+            .map(|rule| ((*rule).to_string(), BytesRepr::Bytes))
+            .collect(),
+        ..Default::default()
+    };
+    let (_, warnings) =
+        generate_with_diagnostics(&[extension_file()], &["ext.proto".to_string()], &config)
+            .expect("should generate");
+    let mut inert: Vec<(String, bool)> = warnings
+        .into_iter()
+        .filter_map(|w| match w {
+            CodeGenWarning::FieldTypeRuleMatchedNothing {
+                rule,
+                names_extension,
+                ..
+            } => Some((rule, names_extension)),
+            _ => None,
+        })
+        .collect();
+    inert.sort_unstable();
+    assert_eq!(
+        inert,
+        [
+            (".ext.test.Holder.nested_ext".to_string(), true),
+            (".ext.test.Holder.nope".to_string(), false),
+            (".ext.test.file_ext".to_string(), true),
+        ]
+    );
+}
+
+#[test]
+fn the_warning_names_the_rule_kind_and_its_options() {
     let typo = CodeGenWarning::FieldTypeRuleMatchedNothing {
         rule: ".items".to_string(),
         option: "map_fields",
         matches_ungenerated: false,
+        names_extension: false,
     }
     .to_string();
     assert!(
         typo.starts_with(
-            "map_fields rule '.items' (buffa-build: map_type_in / map_type_custom_in) \
+            "map type rule '.items' (map_type_in / map_type_custom_in) \
              matched no field of a generated message"
         ),
         "{typo}"
     );
+    assert!(typo.contains("a separate run generates"), "{typo}");
 
     let dependency = CodeGenWarning::FieldTypeRuleMatchedNothing {
         rule: ".dep.Dep.value".to_string(),
         option: "bytes_fields",
         matches_ungenerated: true,
+        names_extension: false,
     }
     .to_string();
     assert!(
         dependency.starts_with(
-            "bytes_fields rule '.dep.Dep.value' (buffa-build: bytes_type_in / \
-             use_bytes_type_in / bytes_type_custom_in) matches only fields of messages \
-             this run does not generate"
+            "bytes type rule '.dep.Dep.value' (bytes_type_in / use_bytes_type_in / \
+             bytes_type_custom_in) matches only fields of messages this run does not generate"
         ),
         "{dependency}"
+    );
+
+    let extension = CodeGenWarning::FieldTypeRuleMatchedNothing {
+        rule: ".ext.test.file_ext".to_string(),
+        option: "string_fields",
+        matches_ungenerated: false,
+        names_extension: true,
+    }
+    .to_string();
+    assert!(
+        extension.starts_with(
+            "string type rule '.ext.test.file_ext' (string_type_in / string_type_custom_in) \
+             names (or covers only) extension fields"
+        ),
+        "{extension}"
+    );
+    assert!(
+        extension.contains("do not apply to extensions"),
+        "{extension}"
+    );
+
+    // The text is shared by `buffa-build` and `protoc-gen-buffa`, so it names
+    // neither front end, nor the internal `CodeGenConfig` list.
+    for text in [&typo, &dependency, &extension] {
+        assert!(!text.contains("buffa-build"), "{text}");
+        assert!(!text.contains("_fields"), "{text}");
+    }
+}
+
+#[test]
+fn extension_detection_covers_files_without_a_package_and_ungenerated_files() {
+    // No package: the extension's name is `.file_ext`.
+    let mut unpackaged = extension_file();
+    unpackaged.name = Some("unpackaged.proto".to_string());
+    unpackaged.package = None;
+    for ext in unpackaged
+        .extension
+        .iter_mut()
+        .chain(unpackaged.message_type[0].extension.iter_mut())
+    {
+        ext.extendee = Some(".Holder".to_string());
+    }
+    let config = CodeGenConfig {
+        bytes_fields: vec![(".file_ext".to_string(), BytesRepr::Bytes)],
+        ..Default::default()
+    };
+    let (_, warnings) = generate_with_diagnostics(
+        &[unpackaged.clone()],
+        &["unpackaged.proto".to_string()],
+        &config,
+    )
+    .expect("should generate");
+    assert!(
+        warnings.iter().any(|w| matches!(
+            w,
+            CodeGenWarning::FieldTypeRuleMatchedNothing {
+                names_extension: true,
+                matches_ungenerated: false,
+                ..
+            }
+        )),
+        "{warnings:?}"
+    );
+
+    // `ext.proto` only as a dependency: the package rule matches a field there
+    // and its extensions, and the `Display` text gives the first reason.
+    let config = CodeGenConfig {
+        bytes_fields: vec![(".ext.test".to_string(), BytesRepr::Bytes)],
+        ..Default::default()
+    };
+    let (_, warnings) = generate_with_diagnostics(
+        &[extension_file(), unpackaged],
+        &["unpackaged.proto".to_string()],
+        &config,
+    )
+    .expect("should generate");
+    let warning = warnings
+        .iter()
+        .find(|w| {
+            matches!(
+                w,
+                CodeGenWarning::FieldTypeRuleMatchedNothing {
+                    names_extension: true,
+                    matches_ungenerated: true,
+                    ..
+                }
+            )
+        })
+        .unwrap_or_else(|| panic!("{warnings:?}"));
+    assert!(
+        warning
+            .to_string()
+            .contains("matches only fields of messages this run does not generate"),
+        "{warning}"
     );
 }

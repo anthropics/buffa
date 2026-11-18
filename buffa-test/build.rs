@@ -251,6 +251,42 @@ fn rustc_minor() -> u32 {
 }
 
 fn main() {
+    buffa_build::Config::new()
+        .files(&["protos/guarded.proto"])
+        .includes(&["protos/"])
+        .bytes_type_custom_in("crate::guarded_repr::SecretBytes", &[".guarded"])
+        .string_type_custom_in(
+            "crate::guarded_repr::SecretString",
+            &[
+                ".guarded.Credentials.identity",
+                ".guarded.Credentials.labels",
+                ".guarded.Credentials.keys",
+                ".guarded.Credentials.identities",
+                ".guarded.Credentials.members",
+                ".guarded.Credentials.text",
+                ".guarded.Sealed.by_secret_name",
+                ".guarded.Sealed.texts",
+            ],
+        )
+        // An unlisted custom string key beside policy values.
+        .string_type_custom_in("::buffa_smolstr::SmolStr", &[".guarded.Sealed.by_tag"])
+        .bytes_type_custom_in("crate::guarded_repr::SealedBytes", &[".guarded.Sealed"])
+        .repeated_type_custom_in(
+            "crate::guarded_repr::SecretList<*>",
+            &[
+                ".guarded.Credentials.embedding",
+                ".guarded.Sealed.sealed_list",
+            ],
+        )
+        .json_policy_type("crate::guarded_repr::SecretBytes")
+        .json_policy_type("crate::guarded_repr::SecretString")
+        .json_policy_type("crate::guarded_repr::SealedBytes")
+        .preserve_unknown_fields(false)
+        .generate_json(true)
+        .lazy_views(true)
+        .compile()
+        .expect("guarded fixture generation failed");
+
     // Each schema in `tests::table_codec` is compiled once with the unrolled
     // codec and once with the table codec, under renamed packages, so a test can
     // compare them.
@@ -435,6 +471,17 @@ fn main() {
         .generate_json(true)
         .compile()
         .expect("buffa_build failed for string_copy_counted.proto");
+
+    // `RecStr` and `RecBytes` override `decode_length_delimited` to record the
+    // window they are given: a test can check that no field's window reaches
+    // past the message that holds it.
+    buffa_build::Config::new()
+        .files(&["protos/decode_hook_frame.proto"])
+        .includes(&["protos/"])
+        .string_type_custom("crate::decode_hook_frame::RecStr")
+        .bytes_type_custom("crate::decode_hook_frame::RecBytes")
+        .compile()
+        .expect("buffa_build failed for decode_hook_frame.proto");
 
     // box_type: a crate-LOCAL `CustomBox<T>` pointer (a `ProtoBox<T>` impl) for
     // singular message fields, via the `*`-templated knob. The crate compiling

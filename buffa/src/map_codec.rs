@@ -527,7 +527,8 @@ scalar_codec!(
 
 /// `bytes` codec for a custom [`ProtoBytes`](crate::types::ProtoBytes) map-value
 /// representation (via `bytes_type_custom`). Decodes through
-/// [`from_wire`](crate::types::ProtoBytes::from_wire); encodes the borrowed
+/// [`decode_length_delimited`](crate::types::ProtoBytes::decode_length_delimited),
+/// whose default delegates to `from_wire`; encodes the borrowed
 /// `&[u8]`. Generic over the value type, so the codec itself stays sealed in
 /// buffa while the concrete representation is a downstream (crate-local) type.
 pub struct ProtoBytesMap<B>(core::marker::PhantomData<B>);
@@ -542,9 +543,9 @@ impl<B: crate::types::ProtoBytes> MapValueDecode for ProtoBytesMap<B> {
     fn merge(
         value: &mut Self::Value,
         buf: &mut impl Buf,
-        _ctx: DecodeContext<'_>,
+        ctx: DecodeContext<'_>,
     ) -> Result<MapValueDecodeStatus, DecodeError> {
-        *value = crate::types::decode_bytes_to::<B>(buf)?;
+        *value = crate::types::decode_bytes_to_ctx::<B>(buf, ctx)?;
         Ok(MapValueDecodeStatus::Known)
     }
 }
@@ -570,8 +571,9 @@ impl<B: crate::types::ProtoBytes> MapCodec for ProtoBytesMap<B> {
 
 /// `string` codec for a custom [`ProtoString`](crate::types::ProtoString)
 /// map key or value representation (via `string_type_custom`). Decodes through
-/// [`from_wire`](crate::types::ProtoString::from_wire) (UTF-8 validation
-/// included); encodes the borrowed `&str`. Generic over the type, so the codec
+/// [`decode_length_delimited`](crate::types::ProtoString::decode_length_delimited)
+/// (UTF-8 validation included), whose default delegates to `from_wire`.
+/// Encodes the borrowed `&str`. Generic over the type, so the codec
 /// itself stays sealed in buffa while the concrete representation is a
 /// downstream (crate-local) type.
 ///
@@ -592,9 +594,9 @@ impl<S: crate::types::ProtoString> MapValueDecode for ProtoStringMap<S> {
     fn merge(
         value: &mut Self::Value,
         buf: &mut impl Buf,
-        _ctx: DecodeContext<'_>,
+        ctx: DecodeContext<'_>,
     ) -> Result<MapValueDecodeStatus, DecodeError> {
-        *value = crate::types::decode_string_to::<S>(buf)?;
+        *value = crate::types::decode_string_to_ctx::<S>(buf, ctx)?;
         Ok(MapValueDecodeStatus::Known)
     }
 }
@@ -1011,6 +1013,12 @@ where
 /// Closed-enum entries with unknown values are skipped. Use
 /// [`merge_entry_with_unknowns`] when generated code has a parent
 /// `UnknownFields` set available and needs to preserve those skipped entries.
+///
+/// # Errors
+///
+/// As [`merge_entry_with_unknowns`], including
+/// [`DecodeError::UnexpectedEof`] for an entry that runs past the message `ctx`
+/// is decoding.
 pub fn merge_entry<KC, VC, C>(
     map: &mut C,
     buf: &mut impl Buf,
@@ -1039,10 +1047,14 @@ where
 /// preserved verbatim as a length-delimited unknown field with the outer map
 /// field number.
 ///
+/// The entry must end within the message `ctx` is decoding (see
+/// [`DecodeContext`]), and each key or value within the entry.
+///
 /// # Errors
 ///
 /// Returns a [`DecodeError`] on malformed lengths, payloads, or wire-type
-/// mismatches inside the entry.
+/// mismatches inside the entry, and [`DecodeError::UnexpectedEof`] if the entry
+/// runs past the end of the buffer or of the enclosing message.
 pub fn merge_entry_with_unknowns<KC, VC, C>(
     map: &mut C,
     buf: &mut impl Buf,
@@ -1056,9 +1068,8 @@ where
 {
     let entry_len = decode_varint(buf)?;
     let entry_len = usize::try_from(entry_len).map_err(|_| DecodeError::MessageTooLarge)?;
-    if buf.remaining() < entry_len {
-        return Err(DecodeError::UnexpectedEof);
-    }
+    // The entry must also end within the message that holds the map.
+    ctx.check_len(buf.remaining(), entry_len)?;
     // An entry amplifies exactly as a repeated element does, and by the same
     // route: a message value omitted from the wire still materializes a whole
     // `VC::Value` in the map, and a few bytes of key buy a distinct slot. Charge
@@ -1078,6 +1089,8 @@ where
             let preserved = {
                 let entry_slice = &buf.chunk()[..entry_len];
                 let mut entry_cur = entry_slice;
+                // `entry_cur` holds exactly the entry.
+                let ctx = ctx.with_message_end(0);
                 let status =
                     merge_entry_contents::<KC, VC>(&mut key, &mut val, &mut entry_cur, ctx)?;
                 matches!(status, MapValueDecodeStatus::Unknown).then(|| entry_slice.to_vec())
@@ -1101,7 +1114,12 @@ where
         // preserved verbatim if decoding reports `Unknown`.
         let entry_payload = buf.copy_to_bytes(entry_len);
         let mut entry_cur = entry_payload.clone();
-        let status = merge_entry_contents::<KC, VC>(&mut key, &mut val, &mut entry_cur, ctx)?;
+        let status = merge_entry_contents::<KC, VC>(
+            &mut key,
+            &mut val,
+            &mut entry_cur,
+            ctx.with_message_end(0),
+        )?;
         if matches!(status, MapValueDecodeStatus::Known) {
             map.storage_insert(key, val);
         } else if let Some((field_number, unknown_fields)) = unknown_fields {
@@ -1115,6 +1133,7 @@ where
     }
 
     let entry_limit = buf.remaining() - entry_len;
+    let ctx = ctx.with_message_end(entry_limit);
     let mut val_status = MapValueDecodeStatus::Known;
     while buf.remaining() > entry_limit {
         let entry_tag = Tag::decode(buf)?;
@@ -1210,6 +1229,93 @@ mod tests {
                 Self::A => "A",
                 Self::B => "B",
             }
+        }
+    }
+
+    #[test]
+    fn entries_end_within_the_enclosing_message() {
+        type K = ProtoStringMap<String>;
+        type V = ProtoStringMap<String>;
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let ctx = DecodeContext::new(crate::RECURSION_LIMIT, &limit);
+        // A six-byte entry `k` -> `v`, then one byte of something else.
+        let wire = [6, 0x0a, 1, b'k', 0x12, 1, b'v', 0xff];
+
+        let mut map: Map<String, String> = Map::default();
+        let mut input = &wire[..];
+        merge_entry::<K, V, _>(&mut map, &mut input, ctx.with_message_end(1)).unwrap();
+        assert_eq!(map.get("k").map(String::as_str), Some("v"));
+        assert_eq!(input, [0xff]);
+
+        // The message holding the map ends before the entry does.
+        let mut map: Map<String, String> = Map::default();
+        assert_eq!(
+            merge_entry::<K, V, _>(&mut map, &mut &wire[..], ctx.with_message_end(2)),
+            Err(DecodeError::UnexpectedEof)
+        );
+        assert!(map.is_empty());
+
+        // A three-byte entry whose key declares three bytes reaches past it.
+        let wire = [3, 0x0a, 3, b'k', b'x', b'y'];
+        let mut map: Map<String, String> = Map::default();
+        assert_eq!(
+            merge_entry::<K, V, _>(&mut map, &mut &wire[..], ctx),
+            Err(DecodeError::UnexpectedEof)
+        );
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn an_empty_entry_cannot_read_its_length_prefix_from_the_following_frame() {
+        type K = ProtoStringMap<String>;
+        type V = ProtoStringMap<String>;
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let ctx = DecodeContext::new(crate::RECURSION_LIMIT, &limit).with_message_end(1);
+        for split in 0..=2 {
+            let (head, tail) = b"\x80\x00".split_at(split);
+            let mut map: Map<String, String> = Map::default();
+            assert_eq!(
+                merge_entry::<K, V, _>(&mut map, &mut head.chain(tail), ctx),
+                Err(DecodeError::UnexpectedEof)
+            );
+            assert!(map.is_empty());
+        }
+        // Omitting both key and value is a valid empty entry when its prefix
+        // is wholly inside the message, including a noncanonical zero varint.
+        for split in 0..=3 {
+            let (head, tail) = b"\x80\x00\xff".split_at(split);
+            let mut input = head.chain(tail);
+            let mut map: Map<String, String> = Map::default();
+            merge_entry::<K, V, _>(&mut map, &mut input, ctx).unwrap();
+            assert_eq!(map.get("").map(String::as_str), Some(""));
+            assert_eq!(input.get_u8(), 0xff);
+        }
+    }
+
+    #[test]
+    fn buffered_entries_are_bounded_by_themselves() {
+        // An entry that may turn out unknown is decoded from a copy of its
+        // own bytes, so the end of the enclosing message recorded for the
+        // outer buffer does not apply to it.
+        type K = ProtoStringMap<String>;
+        type V = ClosedEnum<FirstIsOne>;
+        let limit = core::cell::Cell::new(crate::DEFAULT_UNKNOWN_FIELD_LIMIT);
+        let ctx = DecodeContext::new(crate::RECURSION_LIMIT, &limit).with_message_end(1);
+        let wire = [5, 0x0a, 1, b'k', 0x10, 0, 0xff];
+        for split in 0..=wire.len() {
+            let (head, tail) = wire.split_at(split);
+            let mut input = head.chain(tail);
+            let mut map: Map<String, FirstIsOne> = Map::default();
+            let mut unknown = crate::UnknownFields::default();
+            merge_entry_with_unknowns::<K, V, _>(
+                &mut map,
+                &mut input,
+                ctx,
+                Some((5, &mut unknown)),
+            )
+            .unwrap();
+            assert_eq!(map.get("k"), Some(&FirstIsOne::B), "split {split}");
+            assert_eq!(input.remaining(), 1, "split {split}");
         }
     }
 

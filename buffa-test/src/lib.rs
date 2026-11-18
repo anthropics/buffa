@@ -1125,6 +1125,7 @@ pub mod self_recursive_lazy {
 #[cfg(test)]
 mod tests;
 
+pub mod decode_hook_frame;
 pub mod string_copy;
 pub mod string_copy_counted;
 
@@ -1357,4 +1358,13 @@ pub mod xti {
         env!("OUT_DIR"),
         "/cross_package_idiomatic/_include.rs"
     ));
+}
+
+/// Test-local guarded field representations.
+pub mod guarded_repr;
+
+/// Ordinary generated messages with per-field guarded representations.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod guarded {
+    buffa::include_proto!("guarded");
 }

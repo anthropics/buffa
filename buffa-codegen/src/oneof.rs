@@ -334,6 +334,9 @@ struct VariantInfo {
     /// Variant's field carries `[debug_redact = true]`; the enum's `Debug`
     /// impl prints a placeholder instead of the payload.
     debug_redact: bool,
+    /// The JSON policy of a custom `bytes` / `string` variant listed in
+    /// `json_policy_types`.
+    json_policy: Option<crate::json_policy::JsonPolicyKind>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -432,7 +435,14 @@ fn collect_variant_info(
                      variant boxed while inlining the rest."
                 )));
             }
+            let json_policy = crate::json_policy::JsonPolicyKind::of_field(
+                ctx,
+                field_type,
+                &bytes_repr,
+                &string_repr,
+            );
             Ok(VariantInfo {
+                json_policy,
                 variant_ident,
                 rust_type,
                 json_name,
@@ -779,6 +789,14 @@ fn generate_oneof_serialize(
                         map.serialize_entry(#json_name, &**v)?;
                     }
                 }
+            } else if let Some(policy) = v.json_policy {
+                // A JSON policy type serializes through its policy trait.
+                let entry = policy.serialize_owned(&v.rust_type, &quote! { v });
+                quote! {
+                    Self::#ident(v) => {
+                        map.serialize_entry(#json_name, #entry)?;
+                    }
+                }
             } else if serde_helper_path(v.field_type).is_some() {
                 // Type needs special proto JSON encoding — route through the
                 // runtime ProtoJson adapter (ProtoElemJson covers every type
@@ -831,6 +849,9 @@ pub(crate) struct OneofVariantDeserInput<'a> {
     /// Owned pointer for a boxed variant (default `Box`); only consulted when
     /// `is_boxed`.
     pub pointer_repr: &'a crate::PointerRepr,
+    /// The JSON policy of a custom `bytes` / `string` variant listed in
+    /// `json_policy_types`.
+    pub json_policy: Option<crate::json_policy::JsonPolicyKind>,
     pub enum_ident: &'a TokenStream,
     /// The identifier of the `Option<EnumIdent>` accumulator
     /// (e.g. `result` or `__oneof_foo`).
@@ -879,6 +900,7 @@ pub(crate) fn oneof_variant_deser_arm(
         enum_ident,
         result_var,
         oneof_name,
+        json_policy,
         ..
     } = input;
     let dup_err_msg = format!("multiple oneof fields set for '{oneof_name}'");
@@ -906,7 +928,16 @@ pub(crate) fn oneof_variant_deser_arm(
         };
         (deser, set)
     } else {
-        let deser = if let Some(helper) = serde_helper_path(*field_type) {
+        let deser = if let Some(policy) = json_policy {
+            // A JSON policy type deserializes through its policy trait; JSON
+            // `null` leaves the variant unset before the policy runs.
+            let seed = policy.seed(variant_type);
+            quote! {
+                let v: ::core::option::Option<#variant_type> = map.next_value_seed(
+                    ::buffa::json_helpers::NullableDeserializeSeed(#seed)
+                )?;
+            }
+        } else if let Some(helper) = serde_helper_path(*field_type) {
             // For bytes: json_helpers::bytes::deserialize is generic over
             // T: From<Vec<u8>>; the `-> Result<#variant_type, _>` return
             // type pins T to either Vec<u8> (default) or bytes::Bytes

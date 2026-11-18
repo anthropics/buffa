@@ -38,6 +38,14 @@ serde_json = { workspace = true }
 ecow = { workspace = true, features = ["serde"] }
 compact_str = { workspace = true, features = ["serde"] }
 
+# Guarded field representations exercise allocation ownership without adding
+# runtime dependencies to buffa itself.
+secrecy = { workspace = true }
+zeroize = { workspace = true }
+subtle = { workspace = true }
+base64 = { workspace = true }
+thiserror = { workspace = true }
+
 [dev-dependencies]
 # `src/tests/json_private_key.rs` needs `serde_json::Value` to parse the string under
 # its private `RawValue` key: see `buffa/src/json_helpers/buffered.rs`.
