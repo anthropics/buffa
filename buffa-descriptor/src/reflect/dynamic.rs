@@ -305,6 +305,14 @@ impl DynamicMessage {
 
     /// Merge additional wire bytes under caller-supplied limits.
     ///
+    /// On error the message can contain old and partially merged fields,
+    /// unless [`DecodeOptions::clear_on_merge_error`] was requested, in which
+    /// case every set field and unknown field is removed. This is logical
+    /// clearing without memory wiping; backing storage may be retained.
+    /// The descriptor pool and message type remain unchanged.
+    ///
+    /// [`DecodeOptions::clear_on_merge_error`]: buffa::DecodeOptions::clear_on_merge_error
+    ///
     /// # Errors
     ///
     /// Returns a [`DecodeError`] if the wire data is malformed or exceeds one
@@ -314,16 +322,23 @@ impl DynamicMessage {
         bytes: &[u8],
         options: &buffa::DecodeOptions,
     ) -> Result<(), DecodeError> {
-        if bytes.len() > options.max_message_size() {
-            return Err(DecodeError::MessageTooLarge);
+        let result = if bytes.len() > options.max_message_size() {
+            Err(DecodeError::MessageTooLarge)
+        } else {
+            let limit = core::cell::Cell::new(options.unknown_field_limit());
+            let elem_budget = core::cell::Cell::new(options.element_memory_limit());
+            let mut buf = bytes;
+            self.merge_buf(
+                &mut buf,
+                DecodeContext::new(options.recursion_limit(), &limit)
+                    .with_element_memory(&elem_budget),
+            )
+        };
+        if result.is_err() && options.clears_on_merge_error() {
+            self.fields.clear();
+            self.unknown.clear();
         }
-        let limit = core::cell::Cell::new(options.unknown_field_limit());
-        let elem_budget = core::cell::Cell::new(options.element_memory_limit());
-        let mut buf = bytes;
-        self.merge_buf(
-            &mut buf,
-            DecodeContext::new(options.recursion_limit(), &limit).with_element_memory(&elem_budget),
-        )
+        result
     }
 
     /// [`decode`](Self::decode) with `depth` levels of nesting budget instead

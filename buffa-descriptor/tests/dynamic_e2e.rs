@@ -2580,3 +2580,76 @@ fn take_field_panics_on_a_foreign_descriptor() {
     let mut msg = DynamicMessage::new(Arc::clone(&p), owner_idx);
     let _ = msg.take_field(foreign);
 }
+
+/// A `Scalars` message holding only `f_int32 = -3`, and wire bytes that set
+/// `f_string`, add an unknown varint field, then end inside a
+/// length-delimited `f_bytes`.
+fn clear_on_merge_error_fixture(p: &Arc<DescriptorPool>) -> (DynamicMessage, Vec<u8>) {
+    let idx = p.message_index("reflect.test.Scalars").unwrap();
+    let md = p.message_by_name("reflect.test.Scalars").unwrap();
+    let mut msg = DynamicMessage::new(Arc::clone(p), idx);
+    msg.set(md.field(3).unwrap(), Value::I32(-3));
+
+    let mut wire = Vec::new();
+    Tag::new(14, WireType::LengthDelimited).encode(&mut wire);
+    buffa::types::encode_string("partial", &mut wire);
+    wire.extend_from_slice(&varint_field(99, 7));
+    Tag::new(15, WireType::LengthDelimited).encode(&mut wire);
+    encode_varint(10, &mut wire);
+    wire.extend_from_slice(&[1, 2]);
+    (msg, wire)
+}
+
+#[test]
+fn merge_with_options_keeps_partial_merge_without_clear_on_merge_error() {
+    let p = pool();
+    let (mut msg, wire) = clear_on_merge_error_fixture(&p);
+    assert_eq!(
+        msg.merge_with_options(&wire, &buffa::DecodeOptions::new()),
+        Err(DecodeError::UnexpectedEof)
+    );
+    assert_eq!(msg.field_by_number(3), Some(&Value::I32(-3)));
+    assert_eq!(
+        msg.field_by_number(14),
+        Some(&Value::String("partial".into()))
+    );
+    assert!(!msg.unknown_fields().is_empty());
+
+    let (mut msg, wire) = clear_on_merge_error_fixture(&p);
+    let before = msg.clone();
+    let too_small = buffa::DecodeOptions::new().with_max_message_size(1);
+    assert_eq!(
+        msg.merge_with_options(&wire, &too_small),
+        Err(DecodeError::MessageTooLarge)
+    );
+    assert_eq!(msg, before);
+}
+
+#[test]
+fn merge_with_options_clears_message_on_error_when_requested() {
+    let options = buffa::DecodeOptions::new().clear_on_merge_error();
+    let p = pool();
+    let (mut msg, wire) = clear_on_merge_error_fixture(&p);
+    let empty = DynamicMessage::new(Arc::clone(&p), msg.message_index());
+    assert_eq!(
+        msg.merge_with_options(&wire, &options),
+        Err(DecodeError::UnexpectedEof)
+    );
+    assert_eq!(msg, empty);
+    assert!(msg.unknown_fields().is_empty());
+
+    // A successful merge is unaffected by the option.
+    let (mut msg, _) = clear_on_merge_error_fixture(&p);
+    msg.merge_with_options(&varint_field(16, 5), &options)
+        .expect("a well-formed merge succeeds");
+    assert_eq!(msg.field_by_number(3), Some(&Value::I32(-3)));
+    assert_eq!(msg.field_by_number(16), Some(&Value::I32(5)));
+
+    let (mut msg, wire) = clear_on_merge_error_fixture(&p);
+    assert_eq!(
+        msg.merge_with_options(&wire, &options.with_max_message_size(1)),
+        Err(DecodeError::MessageTooLarge)
+    );
+    assert_eq!(msg, empty);
+    assert!(msg.unknown_fields().is_empty());
+}
