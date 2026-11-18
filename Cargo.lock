@@ -104,9 +104,12 @@ version = "0.9.2"
 dependencies = [
  "buffa",
  "buffa-descriptor",
+ "buffa-proto-options",
  "prettyplease",
  "proc-macro2",
  "quote",
+ "serde",
+ "serde_json",
  "syn",
  "tempfile",
  "thiserror",

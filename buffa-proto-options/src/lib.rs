@@ -97,7 +97,7 @@ pub const OPTIONS_PROTO: &str = include_str!("../protos/buffa/ext/options.proto"
 // re-exported because the generated code needs an `#[allow]` that a crate
 // root would otherwise apply to hand-written code too: a message without
 // fields generates a `match` with a single wildcard arm.
-#[allow(clippy::match_single_binding)]
+#[allow(clippy::match_single_binding, clippy::derivable_impls)]
 mod generated {
     include!("generated/buffa.ext.mod.rs");
 }

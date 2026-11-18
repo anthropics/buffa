@@ -31,7 +31,11 @@ package buffa.ext;
 import "google/protobuf/descriptor.proto";
 
 // Settings for the code generated from one `.proto` file.
-message FileOptions {}
+message FileOptions {
+  // Native adapters are emitted only when the generator explicitly enables
+  // adapters. Keeping this off preserves the portable protobuf surface.
+  optional NativeAdapters adapters = 1;
+}
 
 // Settings for the code generated from one message.
 message MessageOptions {}
@@ -76,4 +80,150 @@ extend google.protobuf.EnumOptions {
 extend google.protobuf.EnumValueOptions {
   // The `buffa.ext.EnumValueOptions` for the enum value that sets this option.
   optional EnumValueOptions enum_value = 1381;
+}
+
+
+// Explicit native API declarations; read only with adapters=true.
+message NativeAdapters {
+  required uint32 version = 1;
+  repeated NativeClosedSelector selectors = 2;
+  repeated NativePayloadSelector payloads = 3;
+  repeated NativeBorrowedAdapter borrowed = 4;
+  repeated NativeCapabilityPort ports = 5;
+}
+
+// Fixed domain error construction. Both members are plain Rust paths.
+message NativeErrorMapping {
+  required string rust_type = 1;
+  required string value = 2;
+}
+
+// Descriptor identity and an existing generated wire enum.
+message NativeWireEnum {
+  required string source = 1;
+  required string rust_type = 2;
+}
+
+// A canonical nonzero descriptor case, with optional external registration.
+message NativeSelectorVariant {
+  required string source = 1;
+  required string name = 2;
+  repeated string aliases = 3;
+  optional int64 identifier = 4;
+}
+
+// Explicit compatibility normalization, never inferred from names.
+message NativeNormalization {
+  required string source = 1;
+  required string target = 2;
+}
+
+// Additional checked input enum; reverse conversion stays canonical.
+message NativeLegacySelector {
+  required NativeWireEnum wire = 1;
+  repeated NativeNormalization normalizations = 2;
+  repeated string rejected = 3;
+}
+
+// Closed native enum with exhaustive metadata coverage.
+message NativeClosedSelector {
+  required string file = 1;
+  required string name = 2;
+  required NativeWireEnum wire = 3;
+  required NativeErrorMapping error = 4;
+  optional bool non_exhaustive = 5 [default = false];
+  repeated NativeSelectorVariant variants = 6;
+  repeated NativeNormalization normalizations = 7;
+  repeated string rejected = 8;
+  repeated NativeLegacySelector legacy = 9;
+  optional NativeErrorMapping identifier_error = 10;
+}
+
+// Schema field path through singular messages.
+message NativeFieldSource {
+  required string message = 1;
+  repeated string path = 2;
+}
+
+// Restricted payload representations. Owners cannot contain raw bytes.
+enum NativePayloadTypeKind {
+  NATIVE_PAYLOAD_TYPE_UNSPECIFIED = 0;
+  NATIVE_PAYLOAD_TYPE_BYTES = 1;
+  NATIVE_PAYLOAD_TYPE_VALUE = 2;
+}
+
+// Descriptor-checked type mapping. VALUE requires source and rust_type;
+// BYTES forbids them and always means a borrowed byte slice.
+message NativePayloadType {
+  required NativePayloadTypeKind kind = 1;
+  optional string source = 2;
+  optional string rust_type = 3;
+}
+
+// One declared payload field.
+message NativePayloadField {
+  required string name = 1;
+  required NativeFieldSource source = 2;
+  required NativePayloadType representation = 3;
+}
+
+// Native enum payload shape.
+enum NativePayloadKind {
+  NATIVE_PAYLOAD_UNSPECIFIED = 0;
+  NATIVE_PAYLOAD_UNIT = 1;
+  NATIVE_PAYLOAD_TUPLE = 2;
+  NATIVE_PAYLOAD_STRUCT = 3;
+  NATIVE_PAYLOAD_PORT = 4;
+}
+
+// Only fields belonging to the selected shape may be present. TUPLE has one
+// field, STRUCT has named fields, PORT has only port, UNIT has neither.
+message NativePayload {
+  required NativePayloadKind kind = 1;
+  repeated NativePayloadField fields = 2;
+  optional string port = 3;
+}
+
+// A native case covering canonical descriptor cases exactly once.
+message NativePayloadVariant {
+  required string name = 1;
+  repeated string cases = 2;
+  required NativePayload payload = 3;
+}
+
+// Copy enum with a validated payload.
+message NativePayloadSelector {
+  required string file = 1;
+  required string name = 2;
+  required string source = 3;
+  repeated NativePayloadVariant variants = 4;
+}
+
+// Source of canonical borrowed alternatives.
+enum NativeBorrowedSourceKind {
+  NATIVE_BORROWED_SOURCE_UNSPECIFIED = 0;
+  NATIVE_BORROWED_SOURCE_ENUM = 1;
+  NATIVE_BORROWED_SOURCE_ONEOF = 2;
+}
+
+// ENUM uses source; ONEOF uses message and name. Extra members are rejected.
+message NativeBorrowedSource {
+  required NativeBorrowedSourceKind kind = 1;
+  optional string source = 2;
+  optional string message = 3;
+  optional string name = 4;
+}
+
+// Borrowed API enum without wire, owning cleanup or diagnostic impls.
+message NativeBorrowedAdapter {
+  required string file = 1;
+  required string name = 2;
+  required NativeBorrowedSource source = 3;
+  repeated NativePayloadVariant variants = 4;
+}
+
+// Declared process-local object-safe capability. Never a wire field.
+message NativeCapabilityPort {
+  required string name = 1;
+  required string rust_trait = 2;
 }

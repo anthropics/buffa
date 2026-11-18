@@ -1,0 +1,33 @@
+syntax = "proto3";
+package aliascompat;
+
+enum AliasedWire {
+  option allow_alias = true;
+  C_ALIAS_UNSPECIFIED = 0;
+  C_ALIAS_NONE = 0;
+  C_ALIAS_ERROR = 1;
+  C_ALIAS_FAILURE = 1;
+  C_ALIAS_READY = 2;
+}
+
+enum LegacyWire {
+  option allow_alias = true;
+  L_ALIAS_UNSPECIFIED = 0;
+  L_ALIAS_NONE = 0;
+  L_ALIAS_ERROR = 11;
+  L_ALIAS_FAILURE = 11;
+  L_ALIAS_READY = 12;
+}
+
+enum ModeWire {
+  option allow_alias = true;
+  M_ALIAS_UNSPECIFIED = 0;
+  M_ALIAS_NONE = 0;
+  M_ALIAS_MESSAGE = 1;
+  M_ALIAS_DIGEST = 2;
+}
+
+message Projection {
+  AliasedWire status = 1;
+  bytes body = 2;
+}

@@ -1,0 +1,3 @@
+kind: Added
+body: Add opt-in descriptor-checked native selectors, payload selectors and borrowed adapters without changing portable generation. Native selectors support valid wire aliases and variants named Error while rejecting unspecified and unknown values. Include-tree destinations are checked for adapter collisions before any output is written, including relative and absolute aliases.
+time: 2026-11-17T00:00:00.000000Z
