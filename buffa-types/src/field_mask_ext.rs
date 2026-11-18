@@ -324,9 +324,10 @@ impl serde::Serialize for FieldMask {
             .iter()
             .map(|p| {
                 if !field_mask_path_round_trips(p) {
-                    return Err(serde::ser::Error::custom(alloc::format!(
-                        "FieldMask path '{p}' is not a valid field mask path"
-                    )));
+                    // The diagnostic omits the rejected path.
+                    return Err(serde::ser::Error::custom(
+                        buffa::json_helpers::JsonValueError::FieldMaskEncode,
+                    ));
                 }
                 Ok(snake_to_camel(p))
             })
@@ -344,23 +345,22 @@ impl<'de> serde::Deserialize<'de> for FieldMask {
     /// Returns an error if any path is not a valid lowerCamelCase path in the
     /// JSON representation.
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let s: String = serde::Deserialize::deserialize(d)?;
+        let s = buffa::json_helpers::wkt::deserialize_string(d)?;
         let paths = if s.is_empty() {
             Vec::new()
         } else {
             s.split(',')
                 .map(|component| {
+                    // The diagnostic omits the rejected component.
+                    let invalid =
+                        || serde::de::Error::custom(buffa::json_helpers::JsonValueError::FieldMask);
+                    // An underscore is invalid in the lowerCamelCase form.
                     if component.contains('_') {
-                        return Err(serde::de::Error::custom(alloc::format!(
-                            "FieldMask path '{component}' contains underscore, \
-                             which is invalid in JSON (lowerCamelCase) representation"
-                        )));
+                        return Err(invalid());
                     }
                     let snake = camel_to_snake(component);
                     if !field_mask_path_round_trips(&snake) || snake_to_camel(&snake) != component {
-                        return Err(serde::de::Error::custom(alloc::format!(
-                            "FieldMask path '{component}' is not a valid lowerCamelCase path"
-                        )));
+                        return Err(invalid());
                     }
                     Ok(snake)
                 })

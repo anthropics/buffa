@@ -32,12 +32,227 @@
 //! types, and functions for `#[serde(deserialize_with = "...")]`.
 
 pub mod buffered;
+mod ignored_key;
+mod map_key;
+#[doc(hidden)]
+pub use ignored_key::IgnoredObjectKey;
 #[doc(hidden)]
 pub mod wkt;
 
 use buffered::BufferedValue;
 
 use alloc::string::ToString;
+
+/// Ignore a carrier's tag and decode its payload with the same JSON-kind
+/// visitor. Typed string/map/sequence entry points historically ignored YAML
+/// tags; switching to `deserialize_any` must not reject those valid payloads.
+/// The tag itself is discarded without retaining its text.
+///
+/// # Errors
+///
+/// Propagates tag traversal errors and the visitor's payload errors.
+#[doc(hidden)]
+pub fn deserialize_tagged<'de, V, A>(visitor: V, tagged: A) -> Result<V::Value, A::Error>
+where
+    V: serde::de::Visitor<'de>,
+    A: serde::de::EnumAccess<'de>,
+{
+    struct Seed<V>(V);
+    impl<'de, V: serde::de::Visitor<'de>> serde::de::DeserializeSeed<'de> for Seed<V> {
+        type Value = V::Value;
+        fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> Result<V::Value, D::Error> {
+            d.deserialize_any(self.0)
+        }
+    }
+    let (_, variant) = tagged.variant::<serde::de::IgnoredAny>()?;
+    serde::de::VariantAccess::newtype_variant_seed(variant, Seed(visitor))
+}
+
+/// Fixed diagnostics shared by the runtime and its well-known type codecs.
+///
+/// Never include the token or a parser's original error in these reasons.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum JsonValueError {
+    #[error("invalid protobuf map key")]
+    MapKey,
+    #[error("invalid i32 value")]
+    Int32,
+    #[error("invalid u32 value")]
+    Uint32,
+    #[error("invalid i64 value")]
+    Int64,
+    #[error("invalid u64 value")]
+    Uint64,
+    #[error("invalid float value, expected a finite f32 or a protobuf special value")]
+    Float,
+    #[error("invalid double value, expected a finite f64 or a protobuf special value")]
+    Double,
+    #[error("invalid base64 string")]
+    Base64,
+    #[error("invalid Duration string")]
+    Duration,
+    #[error("invalid RFC 3339 timestamp")]
+    Timestamp,
+    #[error("invalid FieldMask path, expected comma-separated lowerCamelCase paths")]
+    FieldMask,
+    #[error("invalid FieldMask path, it has no proto3 JSON representation")]
+    FieldMaskEncode,
+    #[error("invalid JSON payload for a registered Any message")]
+    AnyMessage,
+    #[error("invalid JSON value for a registered Any well-known type")]
+    AnyWellKnownType,
+    #[error("@type is not a valid type URL: it names no type")]
+    AnyEmptyType,
+    #[error("@type must contain a '/' (e.g. type.googleapis.com/pkg.Type)")]
+    AnyBareType,
+    #[error("Any with a well-known type requires a \"value\" key")]
+    AnyMissingValue,
+    #[error("Any with a well-known type has an unexpected field")]
+    AnyUnexpectedField,
+    #[error("Any type is not registered in the descriptor pool")]
+    AnyUnregisteredType,
+    #[error("Any: no type registry is installed to resolve a bare @type; install one with `set_type_registry`, or send a type URL")]
+    AnyBareTypeWithoutRegistry,
+    #[error("Any: bare @type has no JSON entry in the type registry; register the message or send a type URL")]
+    AnyBareTypeWithoutEntry,
+    #[error("Any: no type registry is installed; send the message encoded as a base64 string under \"value\", or install a registry with `set_type_registry`")]
+    AnyOpaqueWithoutRegistry,
+    #[error("Any: type has no JSON entry in the type registry; send the message encoded as a base64 string under \"value\", or register the message with `register_types`")]
+    AnyOpaqueWithoutEntry,
+    #[error("Any opaque payload field cannot be parsed")]
+    AnyOpaqueField,
+}
+
+/// Implements `serde::de::Visitor` methods that reject the listed input kinds
+/// without echoing the rejected value.
+///
+/// serde's default `visit_bool`, `visit_i64`, `visit_u64`, `visit_i128`,
+/// `visit_u128`, `visit_f64` and `visit_str` report
+/// `invalid_type(Unexpected::Bool(v) | Signed(v) | Str(v) | ..)`, which
+/// formats the input into the error. The methods generated here return the
+/// same `invalid_type` error with `Unexpected::Other(kind)`, which names the
+/// kind but not the value. List every kind the visitor does not accept:
+/// `bool`, `i64`, `u64`, `i128`, `u128`, `f64`, `str` and `bytes`. The
+/// narrower integer and float methods, `visit_char`, `visit_string`,
+/// `visit_borrowed_str` and the byte-buffer methods forward to these by
+/// default.
+///
+/// The `i128` and `u128` kinds also suit a visitor that accepts integers: a
+/// value that fits in 64 bits is forwarded to the visitor's `visit_i64` or
+/// `visit_u64`, because serde does not promise that a 128-bit visit means a
+/// wide value. Only a wider value is rejected here.
+///
+/// The visitor only sees the input when the deserializer is driven with
+/// `deserialize_any`: `serde_json`'s typed entry points (`deserialize_map`,
+/// `deserialize_str`, ...) format a mismatched value themselves.
+///
+/// Invoke it inside an `impl Visitor<'de> for ...` block. The calling crate
+/// must depend on `serde`, as generated code already does.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __buffa_reject_other_json_kinds {
+    ($($kind:ident),* $(,)?) => {
+        $($crate::__buffa_reject_other_json_kinds!(@kind $kind);)*
+    };
+    (@kind bool) => {
+        $crate::__buffa_reject_other_json_kinds!(@fn visit_bool, ::core::primitive::bool, "boolean");
+    };
+    (@kind i64) => {
+        $crate::__buffa_reject_other_json_kinds!(@fn visit_i64, ::core::primitive::i64, "integer");
+    };
+    (@kind u64) => {
+        $crate::__buffa_reject_other_json_kinds!(@fn visit_u64, ::core::primitive::u64, "integer");
+    };
+    (@kind i128) => {
+        fn visit_i128<__E: ::serde::de::Error>(
+            self,
+            v: ::core::primitive::i128,
+        ) -> ::core::result::Result<Self::Value, __E> {
+            if let ::core::result::Result::Ok(v) = <::core::primitive::i64 as ::core::convert::TryFrom<::core::primitive::i128>>::try_from(v) {
+                return ::serde::de::Visitor::visit_i64(self, v);
+            }
+            if let ::core::result::Result::Ok(v) = <::core::primitive::u64 as ::core::convert::TryFrom<::core::primitive::i128>>::try_from(v) {
+                return ::serde::de::Visitor::visit_u64(self, v);
+            }
+            ::core::result::Result::Err(__E::invalid_type(
+                ::serde::de::Unexpected::Other("integer"),
+                &self,
+            ))
+        }
+    };
+    (@kind u128) => {
+        fn visit_u128<__E: ::serde::de::Error>(
+            self,
+            v: ::core::primitive::u128,
+        ) -> ::core::result::Result<Self::Value, __E> {
+            if let ::core::result::Result::Ok(v) = <::core::primitive::u64 as ::core::convert::TryFrom<::core::primitive::u128>>::try_from(v) {
+                return ::serde::de::Visitor::visit_u64(self, v);
+            }
+            ::core::result::Result::Err(__E::invalid_type(
+                ::serde::de::Unexpected::Other("integer"),
+                &self,
+            ))
+        }
+    };
+    (@kind f64) => {
+        $crate::__buffa_reject_other_json_kinds!(@fn visit_f64, ::core::primitive::f64, "floating point");
+    };
+    (@kind str) => {
+        $crate::__buffa_reject_other_json_kinds!(@fn visit_str, &::core::primitive::str, "string");
+    };
+    (@kind bytes) => {
+        $crate::__buffa_reject_other_json_kinds!(@fn visit_bytes, &[::core::primitive::u8], "byte array");
+    };
+    (@fn $method:ident, $arg:ty, $kind:literal) => {
+        fn $method<__E: ::serde::de::Error>(
+            self,
+            _: $arg,
+        ) -> ::core::result::Result<Self::Value, __E> {
+            ::core::result::Result::Err(__E::invalid_type(
+                ::serde::de::Unexpected::Other($kind),
+                &self,
+            ))
+        }
+    };
+}
+
+#[doc(hidden)]
+pub use crate::__buffa_reject_other_json_kinds as reject_other_json_kinds;
+
+/// The object key under which `serde_json`'s `arbitrary_precision` feature
+/// hands a number to `visit_map`.
+///
+/// A message visitor driven by `deserialize_any` rejects this key as a
+/// number, as `deserialize_map` would. An explicit schema `json_name` can
+/// legally use this spelling; those messages retain typed map deserialization
+/// to distinguish genuine objects from synthetic number objects.
+#[doc(hidden)]
+pub const SERDE_JSON_NUMBER_KEY: &str = "$serde_json::private::Number";
+
+/// `visit_i128` / `visit_u128` for a numeric helper: a value that fits in 64
+/// bits goes to the visitor's `visit_i64` / `visit_u64`, and a wider one is
+/// rejected with the helper's fixed reason.
+macro_rules! visit_wide_ints {
+    ($reason:expr) => {
+        fn visit_i128<E: serde::de::Error>(self, v: i128) -> Result<Self::Value, E> {
+            if let Ok(v) = i64::try_from(v) {
+                return serde::de::Visitor::visit_i64(self, v);
+            }
+            match u64::try_from(v) {
+                Ok(v) => serde::de::Visitor::visit_u64(self, v),
+                Err(_) => Err(E::custom($reason)),
+            }
+        }
+        fn visit_u128<E: serde::de::Error>(self, v: u128) -> Result<Self::Value, E> {
+            match u64::try_from(v) {
+                Ok(v) => serde::de::Visitor::visit_u64(self, v),
+                Err(_) => Err(E::custom($reason)),
+            }
+        }
+    };
+}
 
 // ── Lenient base64 engines ──────────────────────────────────────────────────
 //
@@ -229,6 +444,7 @@ impl<'de, T: ProtoElemJson> serde::de::DeserializeSeed<'de> for ProtoElemSeed<T>
             fn visit_some<D2: serde::Deserializer<'de>>(self, d: D2) -> Result<T, D2::Error> {
                 T::deserialize_proto_json(d)
             }
+            crate::__buffa_reject_other_json_kinds!(bool, i64, u64, i128, u128, f64, str, bytes);
         }
         d.deserialize_option(NoNull::<T>(core::marker::PhantomData))
     }
@@ -240,6 +456,26 @@ impl<'de, T: ProtoElemJson> serde::de::DeserializeSeed<'de> for ProtoElemSeed<T>
 /// module already exists (int64, float, bytes, etc.), the ProtoElemJson
 /// impl just forwards to that module's serialize/deserialize.
 macro_rules! proto_elem_json_delegate {
+    ($ty:ty, $mod:ident, null = $expected:literal) => {
+        impl ProtoElemJson for $ty {
+            fn serialize_proto_json<S: serde::Serializer>(
+                v: &Self,
+                s: S,
+            ) -> Result<S::Ok, S::Error> {
+                $mod::serialize(v, s)
+            }
+            fn deserialize_proto_json<'de, D: serde::Deserializer<'de>>(
+                d: D,
+            ) -> Result<Self, D::Error> {
+                $mod::deserialize(d)
+            }
+            // The diagnostic native serde gave a `null` element or map value
+            // before these types were routed through the containers.
+            fn deserialize_proto_json_null<E: serde::de::Error>() -> Result<Self, E> {
+                Err(E::invalid_type(serde::de::Unexpected::Unit, &$expected))
+            }
+        }
+    };
     ($ty:ty, $mod:ident) => {
         impl ProtoElemJson for $ty {
             fn serialize_proto_json<S: serde::Serializer>(
@@ -292,9 +528,16 @@ pub mod proto_seq {
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("an array or null")
             }
+            fn visit_enum<A: serde::de::EnumAccess<'de>>(
+                self,
+                tagged: A,
+            ) -> Result<Self::Value, A::Error> {
+                super::deserialize_tagged(self, tagged)
+            }
             fn visit_unit<E>(self) -> Result<Vec<T>, E> {
                 Ok(Vec::new())
             }
+            crate::__buffa_reject_other_json_kinds!(bool, i64, u64, i128, u128, f64, str, bytes);
             fn visit_seq<A: serde::de::SeqAccess<'de>>(
                 self,
                 mut seq: A,
@@ -310,6 +553,59 @@ pub mod proto_seq {
         }
         d.deserialize_any(V::<T>(core::marker::PhantomData))
             .map(C::from)
+    }
+}
+
+/// Serde support for native bool/string collections newly routed through
+/// ProtoJSON visitors. Keep the old native container decoder for binary
+/// formats; changing the existing generic helpers' bounds would break users.
+#[doc(hidden)]
+pub mod native_seq {
+    // These native elements already have canonical JSON scalar encodings.
+    // Keep the container's own serializer, including any binary envelope.
+    pub fn serialize<C: serde::Serialize, S: serde::Serializer>(
+        v: &C,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(v, s)
+    }
+
+    pub fn deserialize<'de, T, C, D>(d: D) -> Result<C, D::Error>
+    where
+        T: super::ProtoElemJson,
+        C: From<alloc::vec::Vec<T>> + serde::Deserialize<'de> + Default,
+        D: serde::Deserializer<'de>,
+    {
+        if d.is_human_readable() {
+            super::proto_seq::deserialize(d)
+        } else {
+            super::null_as_default(d)
+        }
+    }
+}
+
+/// Native string-keyed map counterpart of [`native_seq`].
+#[doc(hidden)]
+pub mod native_str_key_map {
+    pub fn serialize<C: serde::Serialize, S: serde::Serializer>(
+        v: &C,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(v, s)
+    }
+
+    pub fn deserialize<'de, C, D>(d: D) -> Result<C, D::Error>
+    where
+        C: crate::map_codec::MapStorage + serde::Deserialize<'de> + Default,
+        C::Key: serde::Deserialize<'de>,
+        C::Value: super::ProtoElemJson,
+        D: serde::Deserializer<'de>,
+    {
+        if d.is_human_readable() {
+            super::proto_str_key_map::deserialize(d)
+        } else {
+            super::null_as_default(d)
+        }
     }
 }
 
@@ -364,7 +660,6 @@ pub mod proto_map {
     where
         C: MapStorage + Default,
         C::Key: FromStr,
-        <C::Key as FromStr>::Err: Display,
         C::Value: ProtoElemJson,
         D: Deserializer<'de>,
     {
@@ -373,7 +668,6 @@ pub mod proto_map {
         where
             C: MapStorage + Default,
             C::Key: FromStr,
-            <C::Key as FromStr>::Err: Display,
             C::Value: ProtoElemJson,
         {
             type Value = C;
@@ -383,15 +677,15 @@ pub mod proto_map {
             fn visit_unit<E>(self) -> Result<Self::Value, E> {
                 Ok(C::default())
             }
+            crate::__buffa_reject_other_json_kinds!(bool, i64, u64, i128, u128, f64, str, bytes);
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
                 let mut out = C::default();
                 while let Some(key) = map.next_key::<String>()? {
-                    let k = <C::Key as FromStr>::from_str(&key).map_err(|e| {
-                        serde::de::Error::custom(alloc::format!("invalid map key '{key}': {e}"))
-                    })?;
+                    let k = <C::Key as FromStr>::from_str(&key)
+                        .map_err(|_| serde::de::Error::custom(super::JsonValueError::MapKey))?;
                     let v =
                         map.next_value_seed(ProtoElemSeed::<C::Value>(core::marker::PhantomData))?;
                     out.storage_insert(k, v);
@@ -405,7 +699,7 @@ pub mod proto_map {
 
 /// Serde with-module for `map<string, V>` fields whose **value** needs
 /// proto3-JSON encoding ([`ProtoElemJson`]: int64→quoted, float→NaN token,
-/// bytes→base64) and whose **key** is a custom
+/// bytes→base64) and whose **key** is a `String` or a custom
 /// [`ProtoString`](crate::types::ProtoString) type.
 ///
 /// This is the string-key twin of [`proto_map`]. [`proto_map`] stringifies its
@@ -453,9 +747,16 @@ pub mod proto_str_key_map {
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("a JSON object with string keys, or null")
             }
+            fn visit_enum<A: serde::de::EnumAccess<'de>>(
+                self,
+                tagged: A,
+            ) -> Result<Self::Value, A::Error> {
+                super::deserialize_tagged(self, tagged)
+            }
             fn visit_unit<E>(self) -> Result<Self::Value, E> {
                 Ok(C::default())
             }
+            crate::__buffa_reject_other_json_kinds!(bool, i64, u64, i128, u128, f64, str, bytes);
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
@@ -498,6 +799,7 @@ pub mod proto_bool {
             fn visit_bool<E>(self, v: bool) -> Result<bool, E> {
                 Ok(v)
             }
+            crate::__buffa_reject_other_json_kinds!(i64, u64, i128, u128, f64, str, bytes);
         }
         d.deserialize_any(V)
     }
@@ -557,6 +859,7 @@ pub mod proto_string {
             fn visit_string<E>(self, v: alloc::string::String) -> Result<T, E> {
                 Ok(T::from(v))
             }
+            crate::__buffa_reject_other_json_kinds!(bool, i64, u64, i128, u128, f64, bytes);
         }
         d.deserialize_any(V::<T>(core::marker::PhantomData))
     }
@@ -564,10 +867,73 @@ pub mod proto_string {
 
 // ── enum ─────────────────────────────────────────────────────────────────────
 
+/// Shared reasons for protobuf enum values and collection-shape errors.
+/// Reflective list and map fields also use the collection reasons. Diagnostics
+/// stay independent of the input value so a parse failure does not disclose it.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum EnumJsonErrorReason {
+    #[error("unknown enum name")]
+    UnknownName,
+    #[error("unknown enum number")]
+    UnknownNumber,
+    #[error("enum number out of i32 range")]
+    OutOfRange,
+    #[error("expected a protobuf enum name or integer")]
+    InvalidType,
+    #[error("expected a protobuf list or null")]
+    InvalidListType,
+    #[error("expected a protobuf map or null")]
+    InvalidMapType,
+}
+
+// Wrong-shaped scalar values must not bypass redaction at a collection boundary.
+macro_rules! reject_container_scalar_values {
+    ($reason:ident) => {
+        fn visit_str<Err: serde::de::Error>(self, _: &str) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                crate::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+        fn visit_i64<Err: serde::de::Error>(self, _: i64) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                crate::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+        fn visit_u64<Err: serde::de::Error>(self, _: u64) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                crate::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+        fn visit_i128<Err: serde::de::Error>(self, _: i128) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                crate::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+        fn visit_u128<Err: serde::de::Error>(self, _: u128) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                crate::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+        fn visit_f64<Err: serde::de::Error>(self, _: f64) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                crate::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+        fn visit_bool<Err: serde::de::Error>(self, _: bool) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                crate::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+    };
+}
+
 /// Serde with-module for `EnumValue<E>` fields that accepts JSON `null` as the default.
 ///
 /// Use with `#[serde(with = "::buffa::json_helpers::proto_enum")]`.
 pub mod proto_enum {
+    use super::EnumJsonErrorReason;
     use serde::{Deserializer, Serializer};
 
     pub fn serialize<E: crate::Enumeration, S: Serializer>(
@@ -590,22 +956,32 @@ pub mod proto_enum {
                 Ok(crate::EnumValue::from(0))
             }
             fn visit_i64<Err: serde::de::Error>(self, v: i64) -> Result<crate::EnumValue<E>, Err> {
-                let i = i32::try_from(v).map_err(|_| {
-                    serde::de::Error::invalid_value(
-                        serde::de::Unexpected::Signed(v),
-                        &"an integer in i32 range",
-                    )
-                })?;
+                let i =
+                    i32::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
                 Ok(crate::EnumValue::from(i))
             }
             fn visit_u64<Err: serde::de::Error>(self, v: u64) -> Result<crate::EnumValue<E>, Err> {
-                let i = i32::try_from(v).map_err(|_| {
-                    serde::de::Error::invalid_value(
-                        serde::de::Unexpected::Unsigned(v),
-                        &"an integer in i32 range",
-                    )
-                })?;
+                let i =
+                    i32::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
                 Ok(crate::EnumValue::from(i))
+            }
+            // Formats that deliver 128-bit integers (YAML, for one) take the
+            // 64-bit path; serde's defaults would echo the number.
+            fn visit_i128<Err: serde::de::Error>(self, v: i128) -> Result<Self::Value, Err> {
+                let v =
+                    i64::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
+                self.visit_i64(v)
+            }
+            fn visit_u128<Err: serde::de::Error>(self, v: u128) -> Result<Self::Value, Err> {
+                let v =
+                    u64::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
+                self.visit_u64(v)
+            }
+            fn visit_f64<Err: serde::de::Error>(self, _: f64) -> Result<Self::Value, Err> {
+                Err(Err::custom(EnumJsonErrorReason::InvalidType))
+            }
+            fn visit_bool<Err: serde::de::Error>(self, _: bool) -> Result<Self::Value, Err> {
+                Err(Err::custom(EnumJsonErrorReason::InvalidType))
             }
             fn visit_str<Err: serde::de::Error>(self, v: &str) -> Result<crate::EnumValue<E>, Err> {
                 match E::from_proto_name(v) {
@@ -614,10 +990,7 @@ pub mod proto_enum {
                         if crate::json::ignore_unknown_enum_values() {
                             return Ok(crate::EnumValue::from(0));
                         }
-                        Err(serde::de::Error::invalid_value(
-                            serde::de::Unexpected::Str(v),
-                            &"a known enum variant name",
-                        ))
+                        Err(Err::custom(EnumJsonErrorReason::UnknownName))
                     }
                 }
             }
@@ -656,11 +1029,11 @@ pub mod proto_enum {
 #[inline]
 fn try_deserialize_closed_enum<E: crate::Enumeration + Default>(
     raw: &serde_json::Value,
-) -> Result<Option<E>, serde_json::Error> {
+) -> Result<Option<E>, EnumJsonErrorReason> {
     match decode_closed_enum::<E>(raw) {
         Ok(e) => Ok(Some(e)),
         Err(ClosedEnumError::Unknown(_)) if crate::json::ignore_unknown_enum_values() => Ok(None),
-        Err(ClosedEnumError::Unknown(e) | ClosedEnumError::Malformed(e)) => Err(e),
+        Err(ClosedEnumError::Unknown(reason) | ClosedEnumError::Malformed(reason)) => Err(reason),
     }
 }
 
@@ -668,10 +1041,10 @@ fn try_deserialize_closed_enum<E: crate::Enumeration + Default>(
 enum ClosedEnumError {
     /// A name, or a number in `i32` range, that the enum does not declare.
     /// Lenient parsing drops the value.
-    Unknown(serde_json::Error),
+    Unknown(EnumJsonErrorReason),
     /// Null, a float, a number outside `i32`, a bool, an object or an array. An
     /// error whether or not parsing is lenient.
-    Malformed(serde_json::Error),
+    Malformed(EnumJsonErrorReason),
 }
 
 /// Closed-enum decode of a buffered `serde_json::Value`, bound only on
@@ -685,28 +1058,14 @@ enum ClosedEnumError {
 fn decode_closed_enum<E: crate::Enumeration + Default>(
     raw: &serde_json::Value,
 ) -> Result<E, ClosedEnumError> {
-    use serde::de::{Error as _, Unexpected};
     use serde_json::Value;
 
-    // The error names the value's JSON type and leaves its contents out: an
-    // object or array here can be as large as the input.
-    let malformed = |unexpected: Unexpected<'_>| {
-        ClosedEnumError::Malformed(serde_json::Error::invalid_type(
-            unexpected,
-            &"a protobuf enum name string or integer value",
-        ))
-    };
-
     match raw {
-        Value::Null => Err(malformed(Unexpected::Unit)),
-        Value::String(s) => E::from_proto_name(s).ok_or_else(|| {
-            ClosedEnumError::Unknown(serde_json::Error::invalid_value(
-                Unexpected::Str(s),
-                &"a known enum variant name",
-            ))
-        }),
+        Value::String(s) => {
+            E::from_proto_name(s).ok_or(ClosedEnumError::Unknown(EnumJsonErrorReason::UnknownName))
+        }
         Value::Number(n) if n.is_f64() => {
-            Err(malformed(Unexpected::Float(n.as_f64().unwrap_or(f64::NAN))))
+            Err(ClosedEnumError::Malformed(EnumJsonErrorReason::InvalidType))
         }
         Value::Number(n) => {
             // `as_i64()` / `as_u64()` are exclusive (a `Number` is stored
@@ -716,20 +1075,12 @@ fn decode_closed_enum<E: crate::Enumeration + Default>(
                 .as_i64()
                 .and_then(|v| i32::try_from(v).ok())
                 .or_else(|| n.as_u64().and_then(|v| i32::try_from(v).ok()))
-                .ok_or_else(|| {
-                    ClosedEnumError::Malformed(serde_json::Error::custom(alloc::format!(
-                        "enum value {n} out of i32 range"
-                    )))
-                })?;
-            E::from_i32(v32).ok_or_else(|| {
-                ClosedEnumError::Unknown(serde_json::Error::custom(alloc::format!(
-                    "unknown enum value {v32}"
-                )))
-            })
+                .ok_or(ClosedEnumError::Malformed(EnumJsonErrorReason::OutOfRange))?;
+            E::from_i32(v32).ok_or(ClosedEnumError::Unknown(EnumJsonErrorReason::UnknownNumber))
         }
-        Value::Bool(b) => Err(malformed(Unexpected::Bool(*b))),
-        Value::Array(_) => Err(malformed(Unexpected::Seq)),
-        Value::Object(_) => Err(malformed(Unexpected::Map)),
+        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => {
+            Err(ClosedEnumError::Malformed(EnumJsonErrorReason::InvalidType))
+        }
     }
 }
 
@@ -813,6 +1164,8 @@ pub mod repeated_enum {
                 Ok(Vec::new())
             }
 
+            reject_container_scalar_values!(InvalidListType);
+            crate::__buffa_reject_other_json_kinds!(bytes);
             fn visit_seq<A: serde::de::SeqAccess<'de>>(
                 self,
                 mut seq: A,
@@ -887,12 +1240,14 @@ pub mod map_enum {
                 Ok(C::default())
             }
 
+            reject_container_scalar_values!(InvalidMapType);
+            crate::__buffa_reject_other_json_kinds!(bytes);
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
                 let mut out = C::default();
-                while let Some(key) = map.next_key::<C::Key>()? {
+                while let Some(key) = map.next_key_seed(super::map_key::KeySeed::<C::Key>::new())? {
                     let super::BufferedValue(raw) = map.next_value()?;
                     match super::try_deserialize_enum::<C::Value>(raw) {
                         Ok(Some(v)) => {
@@ -1060,18 +1415,16 @@ fn f64_to_int<I: TryFrom<i128>>(v: f64) -> Option<I> {
 ///   value identifier and serializer identifier.
 /// - `expecting`: expecting string for the visitor.
 /// - `doc`: doc string for the generated module.
-/// - `visit_i64_body` / `visit_u64_body`: function pointers
-///   `fn(value, &Expected) -> Result` for converting incoming visitor values.
-/// - `visit_str_body`: function pointer for `visit_str`.
+/// - `reason`: fixed diagnostic for malformed or out-of-range values.
+/// - `parse_str`: parser for the quoted numeric form.
 macro_rules! int_serde_module {
     (
         $mod_name:ident, $int_type:ty,
         doc = $doc:expr,
         serialize_body = |$val:ident, $ser:ident| $ser_body:expr,
         expecting = $expecting:expr,
-        visit_i64_body = $visit_i64:expr,
-        visit_u64_body = $visit_u64:expr,
-        visit_str_body = $visit_str:expr $(,)?
+        reason = $reason:ident,
+        parse_str = $parse_str:ident $(,)?
     ) => {
         #[doc = $doc]
         pub mod $mod_name {
@@ -1094,38 +1447,28 @@ macro_rules! int_serde_module {
                     fn visit_unit<E>(self) -> Result<$int_type, E> {
                         Ok(0)
                     }
+                    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<$int_type, E> {
+                        Err(E::custom(JsonValueError::$reason))
+                    }
                     fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<$int_type, E> {
-                        let convert: fn(i64, &dyn serde::de::Expected) -> Result<$int_type, E> =
-                            $visit_i64;
-                        convert(v, &self)
+                        <$int_type>::try_from(v).map_err(|_| E::custom(JsonValueError::$reason))
                     }
                     fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<$int_type, E> {
-                        let convert: fn(u64, &dyn serde::de::Expected) -> Result<$int_type, E> =
-                            $visit_u64;
-                        convert(v, &self)
+                        <$int_type>::try_from(v).map_err(|_| E::custom(JsonValueError::$reason))
                     }
                     fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<$int_type, E> {
-                        f64_to_int::<$int_type>(v)
-                            .ok_or_else(|| E::invalid_value(serde::de::Unexpected::Float(v), &self))
+                        f64_to_int::<$int_type>(v).ok_or_else(|| E::custom(JsonValueError::$reason))
                     }
                     fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<$int_type, E> {
-                        let convert: fn(&str, &dyn serde::de::Expected) -> Result<$int_type, E> =
-                            $visit_str;
-                        convert(v, &self)
+                        $parse_str(v).ok_or_else(|| E::custom(JsonValueError::$reason))
                     }
+                    visit_wide_ints!(JsonValueError::$reason);
+                    crate::__buffa_reject_other_json_kinds!(bytes);
                 }
                 d.deserialize_any(Vis)
             }
         }
     };
-}
-
-/// Default `visit_str` implementation: delegates to `parse_int_from_str`.
-fn default_visit_str<I: TryFrom<i128>, E: serde::de::Error>(
-    v: &str,
-    exp: &dyn serde::de::Expected,
-) -> Result<I, E> {
-    parse_int_from_str::<I>(v).ok_or_else(|| E::invalid_value(serde::de::Unexpected::Str(v), exp))
 }
 
 int_serde_module!(
@@ -1137,15 +1480,8 @@ int_serde_module!(
            Use with `#[serde(with = \"::buffa::json_helpers::int32\")]`.",
     serialize_body = |v, s| s.serialize_i32(*v),
     expecting = "an i32 as integer, string, float, or null",
-    visit_i64_body = |v, exp| {
-        i32::try_from(v)
-            .map_err(|_| serde::de::Error::invalid_value(serde::de::Unexpected::Signed(v), exp))
-    },
-    visit_u64_body = |v, exp| {
-        i32::try_from(v)
-            .map_err(|_| serde::de::Error::invalid_value(serde::de::Unexpected::Unsigned(v), exp))
-    },
-    visit_str_body = default_visit_str,
+    reason = Int32,
+    parse_str = parse_int_from_str,
 );
 
 int_serde_module!(
@@ -1157,15 +1493,8 @@ int_serde_module!(
            Use with `#[serde(with = \"::buffa::json_helpers::uint32\")]`.",
     serialize_body = |v, s| s.serialize_u32(*v),
     expecting = "a u32 as integer, string, float, or null",
-    visit_i64_body = |v, exp| {
-        u32::try_from(v)
-            .map_err(|_| serde::de::Error::invalid_value(serde::de::Unexpected::Signed(v), exp))
-    },
-    visit_u64_body = |v, exp| {
-        u32::try_from(v)
-            .map_err(|_| serde::de::Error::invalid_value(serde::de::Unexpected::Unsigned(v), exp))
-    },
-    visit_str_body = default_visit_str,
+    reason = Uint32,
+    parse_str = parse_int_from_str,
 );
 
 int_serde_module!(
@@ -1176,22 +1505,13 @@ int_serde_module!(
            Use with `#[serde(with = \"::buffa::json_helpers::int64\")]`.",
     serialize_body = |v, s| s.serialize_str(&v.to_string()),
     expecting = "an i64 as a quoted decimal string, integer, float, or null",
-    visit_i64_body = |v: i64, _exp| Ok(v),
-    visit_u64_body = |v, _exp| {
-        i64::try_from(v).map_err(|_| {
-            serde::de::Error::invalid_value(serde::de::Unexpected::Unsigned(v), &"an i64 value")
-        })
-    },
-    visit_str_body = default_visit_str,
+    reason = Int64,
+    parse_str = parse_int_from_str,
 );
 
-/// `visit_str` for `u64`: tries direct `parse::<u64>` first to handle large
-/// values exactly, then falls back to `parse_int_from_str` for float notation.
-fn u64_visit_str<E: serde::de::Error>(v: &str, exp: &dyn serde::de::Expected) -> Result<u64, E> {
-    if let Ok(n) = v.parse::<u64>() {
-        return Ok(n);
-    }
-    parse_int_from_str::<u64>(v).ok_or_else(|| E::invalid_value(serde::de::Unexpected::Str(v), exp))
+// Try the full unsigned range before accepting decimal or exponent notation.
+fn parse_u64(value: &str) -> Option<u64> {
+    value.parse().ok().or_else(|| parse_int_from_str(value))
 }
 
 int_serde_module!(
@@ -1202,13 +1522,8 @@ int_serde_module!(
            Use with `#[serde(with = \"::buffa::json_helpers::uint64\")]`.",
     serialize_body = |v, s| s.serialize_str(&v.to_string()),
     expecting = "a u64 as a quoted decimal string, integer, float, or null",
-    visit_i64_body = |v, _exp| {
-        u64::try_from(v).map_err(|_| {
-            serde::de::Error::invalid_value(serde::de::Unexpected::Signed(v), &"a u64 value")
-        })
-    },
-    visit_u64_body = |v: u64, _exp| Ok(v),
-    visit_str_body = u64_visit_str,
+    reason = Uint64,
+    parse_str = parse_u64,
 );
 
 // ── float ────────────────────────────────────────────────────────────────────
@@ -1267,6 +1582,10 @@ pub mod float {
                 Ok(0.0)
             }
 
+            fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<f32, E> {
+                Err(E::custom(super::JsonValueError::Float))
+            }
+
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<f32, E> {
                 match v {
                     "NaN" => Ok(f32::NAN),
@@ -1281,10 +1600,7 @@ pub mod float {
                     // up to infinity.
                     _ => match v.parse::<f32>() {
                         Ok(f) if f.is_finite() => Ok(f),
-                        _ => Err(E::invalid_value(
-                            serde::de::Unexpected::Str(v),
-                            &r#"a float within f32 range, or "NaN", "Infinity", "-Infinity""#,
-                        )),
+                        _ => Err(E::custom(super::JsonValueError::Float)),
                     },
                 }
             }
@@ -1299,10 +1615,7 @@ pub mod float {
                 // canonical text of `f32::MAX` (`3.4028235e+38`) does.
                 let f = v as f32;
                 if v.is_finite() && !f.is_finite() {
-                    return Err(E::invalid_value(
-                        serde::de::Unexpected::Float(v),
-                        &"a finite f32 value",
-                    ));
+                    return Err(E::custom(super::JsonValueError::Float));
                 }
                 Ok(f)
             }
@@ -1310,6 +1623,9 @@ pub mod float {
             fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<f32, E> {
                 Ok(v as f32)
             }
+
+            visit_wide_ints!(super::JsonValueError::Float);
+            crate::__buffa_reject_other_json_kinds!(bytes);
 
             fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<f32, E> {
                 Ok(v as f32)
@@ -1358,6 +1674,10 @@ pub mod double {
                 Ok(0.0)
             }
 
+            fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<f64, E> {
+                Err(E::custom(super::JsonValueError::Double))
+            }
+
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<f64, E> {
                 match v {
                     "NaN" => Ok(f64::NAN),
@@ -1367,10 +1687,7 @@ pub mod double {
                     // overflow or a spelling ProtoJSON does not have.
                     _ => match v.parse::<f64>() {
                         Ok(f) if f.is_finite() => Ok(f),
-                        _ => Err(E::invalid_value(
-                            serde::de::Unexpected::Str(v),
-                            &r#"a double within f64 range, or "NaN", "Infinity", "-Infinity""#,
-                        )),
+                        _ => Err(E::custom(super::JsonValueError::Double)),
                     },
                 }
             }
@@ -1386,6 +1703,9 @@ pub mod double {
             fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<f64, E> {
                 Ok(v as f64)
             }
+
+            visit_wide_ints!(super::JsonValueError::Double);
+            crate::__buffa_reject_other_json_kinds!(bytes);
 
             fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<f64, E> {
                 Ok(v as f64)
@@ -1443,6 +1763,25 @@ pub mod bytes {
                 f.write_str("a base64-encoded string, or null")
             }
 
+            fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<alloc::vec::Vec<u8>, E> {
+                Err(E::custom(super::JsonValueError::Base64))
+            }
+
+            fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<alloc::vec::Vec<u8>, E> {
+                Err(E::custom(super::JsonValueError::Base64))
+            }
+
+            fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<alloc::vec::Vec<u8>, E> {
+                Err(E::custom(super::JsonValueError::Base64))
+            }
+
+            fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<alloc::vec::Vec<u8>, E> {
+                Err(E::custom(super::JsonValueError::Base64))
+            }
+
+            visit_wide_ints!(super::JsonValueError::Base64);
+            crate::__buffa_reject_other_json_kinds!(bytes);
+
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<alloc::vec::Vec<u8>, E> {
                 super::decode_base64(v).map_err(serde::de::Error::custom)
             }
@@ -1463,15 +1802,15 @@ proto_elem_json_delegate!(i64, int64);
 proto_elem_json_delegate!(u64, uint64);
 proto_elem_json_delegate!(f32, float);
 proto_elem_json_delegate!(f64, double);
-proto_elem_json_delegate!(bool, proto_bool);
-proto_elem_json_delegate!(alloc::string::String, proto_string);
+proto_elem_json_delegate!(bool, proto_bool, null = "a boolean");
+proto_elem_json_delegate!(alloc::string::String, proto_string, null = "a string");
 proto_elem_json_delegate!(alloc::vec::Vec<u8>, bytes);
 
 // Only a custom `bytes` element used in a `repeated` / `map` field gets a
 // codegen-emitted `ProtoElemJson` impl (forwarding to the `bytes` base64
 // with-module) into the generating crate, where the type is local. A custom
-// `string` element does NOT: `repeated_serde_module` returns `None` for
-// `TYPE_STRING`, so a repeated string serializes through the element's own
+// `string` element does NOT: `repeated_serde_module` returns `None` for a
+// custom `string_type` element, so it serializes through the element's own
 // native `Serialize`/`Deserialize` rather than `proto_seq`/`ProtoElemJson`.
 
 // bytes::Bytes — for codegen's `use_bytes_type()` with `repeated bytes`.
@@ -1552,6 +1891,7 @@ pub mod bytes_key_map {
             fn visit_unit<E>(self) -> Result<Self::Value, E> {
                 Ok(C::default())
             }
+            crate::__buffa_reject_other_json_kinds!(bool, i64, u64, i128, u128, f64, str, bytes);
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
@@ -1610,6 +1950,7 @@ pub mod bytes_key_bytes_val_map {
             fn visit_unit<E>(self) -> Result<Self::Value, E> {
                 Ok(C::default())
             }
+            crate::__buffa_reject_other_json_kinds!(bool, i64, u64, i128, u128, f64, str, bytes);
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
@@ -1665,7 +2006,6 @@ pub mod string_key_map {
     where
         C: MapStorage + Default,
         C::Key: FromStr,
-        <C::Key as FromStr>::Err: Display,
         C::Value: serde::Deserialize<'de>,
         D: Deserializer<'de>,
     {
@@ -1674,7 +2014,6 @@ pub mod string_key_map {
         where
             C: MapStorage + Default,
             C::Key: FromStr,
-            <C::Key as FromStr>::Err: Display,
             C::Value: serde::Deserialize<'de>,
         {
             type Value = C;
@@ -1684,19 +2023,16 @@ pub mod string_key_map {
             fn visit_unit<E>(self) -> Result<Self::Value, E> {
                 Ok(C::default())
             }
+            crate::__buffa_reject_other_json_kinds!(bool, i64, u64, i128, u128, f64, str, bytes);
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
                 let mut out = C::default();
                 while let Some(key_str) = map.next_key::<alloc::string::String>()? {
-                    let key = key_str.parse::<C::Key>().map_err(|e| {
-                        serde::de::Error::custom(alloc::format!(
-                            "invalid map key '{}': {}",
-                            key_str,
-                            e
-                        ))
-                    })?;
+                    let key = key_str
+                        .parse::<C::Key>()
+                        .map_err(|_| serde::de::Error::custom(super::JsonValueError::MapKey))?;
                     let value = map.next_value()?;
                     out.storage_insert(key, value);
                 }
@@ -1718,11 +2054,12 @@ impl serde::Serialize for Base64Wrapper<'_> {
 
 /// Decode a base64 string, accepting standard and URL-safe alphabets with
 /// lenient trailing-bit and padding handling.
-pub(crate) fn decode_base64(v: &str) -> Result<alloc::vec::Vec<u8>, base64::DecodeError> {
+pub(crate) fn decode_base64(v: &str) -> Result<alloc::vec::Vec<u8>, JsonValueError> {
     use base64::Engine as _;
     STANDARD_LENIENT
         .decode(v)
-        .or_else(|std_err| URL_SAFE_LENIENT.decode(v).map_err(|_| std_err))
+        .or_else(|_| URL_SAFE_LENIENT.decode(v))
+        .map_err(|_| JsonValueError::Base64)
 }
 
 // ── Option<T> wrappers for proto2 optional scalar fields ─────────────────────
@@ -1732,7 +2069,8 @@ pub(crate) fn decode_base64(v: &str) -> Result<alloc::vec::Vec<u8>, base64::Deco
 // inner module for `Some` and pass through `None` transparently.
 
 macro_rules! opt_serde_module {
-    ($mod_name:ident, $inner:ident, $ty:ty) => {
+    ($(#[$attr:meta])* $mod_name:ident, $inner:ident, $ty:ty) => {
+        $(#[$attr])*
         pub mod $mod_name {
             use serde::{Deserializer, Serializer};
 
@@ -1744,19 +2082,18 @@ macro_rules! opt_serde_module {
             }
 
             pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<$ty>, D::Error> {
-                // Use Option<T> deserialization so null → None (unset),
-                // not Some(default).  For non-null values, delegate to the
-                // inner module's deserializer.
-                <Option<super::$mod_name::Helper> as serde::Deserialize>::deserialize(d)
-                    .map(|opt| opt.map(|h| h.0))
+                // null → None (unset), not Some(default). Non-null values go
+                // to the inner module's deserializer.
+                serde::de::DeserializeSeed::deserialize(super::NullableDeserializeSeed(Inner), d)
             }
 
-            /// Newtype that deserializes via the inner module.
-            struct Helper($ty);
+            /// Seed that deserializes via the inner module.
+            struct Inner;
 
-            impl<'de> serde::Deserialize<'de> for Helper {
-                fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                    super::$inner::deserialize(d).map(Helper)
+            impl<'de> serde::de::DeserializeSeed<'de> for Inner {
+                type Value = $ty;
+                fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<$ty, D::Error> {
+                    super::$inner::deserialize(d)
                 }
             }
         }
@@ -1769,6 +2106,92 @@ opt_serde_module!(opt_int64, int64, i64);
 opt_serde_module!(opt_uint64, uint64, u64);
 opt_serde_module!(opt_float, float, f32);
 opt_serde_module!(opt_double, double, f64);
+/// Option wrapper for bool fields with explicit presence.
+/// Pair it with `#[serde(default)]` so an omitted field remains `None`.
+/// Non-human-readable formats retain native Option encoding.
+pub mod opt_bool {
+    /// Serialize the optional bool using the carrier's existing representation.
+    ///
+    /// # Errors
+    /// Returns the serializer's error if writing fails.
+    pub fn serialize<S: serde::Serializer>(value: &Option<bool>, s: S) -> Result<S::Ok, S::Error> {
+        if s.is_human_readable() {
+            match value {
+                Some(value) => super::proto_bool::serialize(value, s),
+                None => s.serialize_none(),
+            }
+        } else {
+            serde::Serialize::serialize(value, s)
+        }
+    }
+    /// Deserialize an optional bool, preserving null as absence.
+    ///
+    /// # Errors
+    /// Returns the deserializer's error for invalid input or source failure.
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<bool>, D::Error> {
+        if !d.is_human_readable() {
+            return serde::Deserialize::deserialize(d);
+        }
+        struct Inner;
+        impl<'de> serde::de::DeserializeSeed<'de> for Inner {
+            type Value = bool;
+            fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> Result<bool, D::Error> {
+                super::proto_bool::deserialize(d)
+            }
+        }
+        serde::de::DeserializeSeed::deserialize(super::NullableDeserializeSeed(Inner), d)
+    }
+}
+
+/// Option wrapper for `string` fields with explicit presence.
+///
+/// Generic over the string type, like
+/// [`proto_string`]: `Option<String>` and
+/// any configured [`ProtoString`](crate::ProtoString) work. JSON `null`
+/// deserializes to `None`; other values go through `proto_string`. As with
+/// any `with` module on an `Option`, add `#[serde(default)]` so a missing key
+/// is `None`. Non-human-readable formats keep native `Option<String>`
+/// encoding. Generated non-default string representations retain their own
+/// Serde implementation rather than selecting this helper.
+pub mod opt_string {
+    use serde::{Deserializer, Serializer};
+
+    /// Serialize an optional `string` field.
+    pub fn serialize<T, S>(value: &Option<T>, s: S) -> Result<S::Ok, S::Error>
+    where
+        T: AsRef<str>,
+        S: Serializer,
+    {
+        match value {
+            Some(v) if s.is_human_readable() => super::proto_string::serialize(v.as_ref(), s),
+            Some(v) => s.serialize_some(v.as_ref()),
+            None => s.serialize_none(),
+        }
+    }
+
+    /// Deserialize an optional `string` field (JSON `null` → `None`).
+    pub fn deserialize<'de, T, D>(d: D) -> Result<Option<T>, D::Error>
+    where
+        T: crate::ProtoString,
+        D: Deserializer<'de>,
+    {
+        if !d.is_human_readable() {
+            return <Option<alloc::string::String> as serde::Deserialize>::deserialize(d)
+                .map(|value| value.map(T::from));
+        }
+        struct Inner<T>(core::marker::PhantomData<T>);
+        impl<'de, T: crate::ProtoString> serde::de::DeserializeSeed<'de> for Inner<T> {
+            type Value = T;
+            fn deserialize<D2: Deserializer<'de>>(self, d: D2) -> Result<T, D2::Error> {
+                super::proto_string::deserialize(d)
+            }
+        }
+        serde::de::DeserializeSeed::deserialize(
+            super::NullableDeserializeSeed(Inner(core::marker::PhantomData)),
+            d,
+        )
+    }
+}
 
 /// Option wrapper for bytes fields (base64 encoding).
 ///
@@ -1798,13 +2221,18 @@ pub mod opt_bytes {
     {
         // null → None (unset), non-null → delegate to bytes module.
         // The visitor stays Vec<u8>-typed; convert on the way out.
-        struct Helper(alloc::vec::Vec<u8>);
-        impl<'de> serde::Deserialize<'de> for Helper {
-            fn deserialize<D2: Deserializer<'de>>(d: D2) -> Result<Self, D2::Error> {
-                super::bytes::deserialize::<alloc::vec::Vec<u8>, _>(d).map(Helper)
+        struct Inner;
+        impl<'de> serde::de::DeserializeSeed<'de> for Inner {
+            type Value = alloc::vec::Vec<u8>;
+            fn deserialize<D2: Deserializer<'de>>(
+                self,
+                d: D2,
+            ) -> Result<alloc::vec::Vec<u8>, D2::Error> {
+                super::bytes::deserialize(d)
             }
         }
-        <Option<Helper> as serde::Deserialize>::deserialize(d).map(|opt| opt.map(|h| h.0.into()))
+        serde::de::DeserializeSeed::deserialize(super::NullableDeserializeSeed(Inner), d)
+            .map(|opt| opt.map(T::from))
     }
 }
 
@@ -1846,7 +2274,8 @@ pub mod opt_enum {
 
 /// `DeserializeSeed` that detects JSON null and returns `None` instead of
 /// delegating to the inner seed. Used by generated oneof deserializers so
-/// that `null` means "this variant is not set".
+/// that `null` means "this variant is not set", and by the `opt_*` modules so
+/// that `null` means "this field is not set".
 pub struct NullableDeserializeSeed<S>(pub S);
 
 impl<'de, S> serde::de::DeserializeSeed<'de> for NullableDeserializeSeed<S>
@@ -1875,6 +2304,8 @@ where
     fn visit_none<E>(self) -> Result<Self::Value, E> {
         Ok(None)
     }
+
+    crate::__buffa_reject_other_json_kinds!(bool, i64, u64, i128, u128, f64, str, bytes);
 
     fn visit_unit<E>(self) -> Result<Self::Value, E> {
         Ok(None)
@@ -2022,6 +2453,7 @@ pub mod skip_if {
 /// and integer via `from_i32`. When `ignore_unknown_enum_values` is active,
 /// unknown string values produce `E::default()` instead of an error.
 pub mod closed_enum {
+    use super::EnumJsonErrorReason;
     use serde::{Deserializer, Serializer};
 
     pub fn serialize<E: crate::Enumeration, S: Serializer>(
@@ -2034,7 +2466,29 @@ pub mod closed_enum {
     pub fn deserialize<'de, E: crate::Enumeration + Default, D: Deserializer<'de>>(
         d: D,
     ) -> Result<E, D::Error> {
-        struct V<E>(core::marker::PhantomData<E>);
+        deserialize_with_unknown_names(d, true)
+    }
+
+    /// Standalone enum values always reject unknown names, even in lenient mode.
+    #[doc(hidden)]
+    pub fn deserialize_strict<'de, E: crate::Enumeration + Default, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<E, D::Error> {
+        deserialize_with_unknown_names(d, false)
+    }
+
+    fn deserialize_with_unknown_names<
+        'de,
+        E: crate::Enumeration + Default,
+        D: Deserializer<'de>,
+    >(
+        d: D,
+        allow_lenient: bool,
+    ) -> Result<E, D::Error> {
+        struct V<E> {
+            allow_lenient: bool,
+            marker: core::marker::PhantomData<E>,
+        }
         impl<'de, E: crate::Enumeration + Default> serde::de::Visitor<'de> for V<E> {
             type Value = E;
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -2044,37 +2498,49 @@ pub mod closed_enum {
                 Ok(E::default())
             }
             fn visit_i64<Err: serde::de::Error>(self, v: i64) -> Result<E, Err> {
-                let v32 = i32::try_from(v).map_err(|_| {
-                    serde::de::Error::custom(alloc::format!("enum value {} out of i32 range", v))
-                })?;
-                E::from_i32(v32).ok_or_else(|| {
-                    serde::de::Error::custom(alloc::format!("unknown enum value {}", v32))
-                })
+                let v32 =
+                    i32::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
+                E::from_i32(v32).ok_or_else(|| Err::custom(EnumJsonErrorReason::UnknownNumber))
             }
             fn visit_u64<Err: serde::de::Error>(self, v: u64) -> Result<E, Err> {
-                let v32 = i32::try_from(v).map_err(|_| {
-                    serde::de::Error::custom(alloc::format!("enum value {} out of i32 range", v))
-                })?;
-                E::from_i32(v32).ok_or_else(|| {
-                    serde::de::Error::custom(alloc::format!("unknown enum value {}", v32))
-                })
+                let v32 =
+                    i32::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
+                E::from_i32(v32).ok_or_else(|| Err::custom(EnumJsonErrorReason::UnknownNumber))
+            }
+            // Formats that deliver 128-bit integers (YAML, for one) take the
+            // 64-bit path; serde's defaults would echo the number.
+            fn visit_i128<Err: serde::de::Error>(self, v: i128) -> Result<E, Err> {
+                let v =
+                    i64::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
+                self.visit_i64(v)
+            }
+            fn visit_u128<Err: serde::de::Error>(self, v: u128) -> Result<E, Err> {
+                let v =
+                    u64::try_from(v).map_err(|_| Err::custom(EnumJsonErrorReason::OutOfRange))?;
+                self.visit_u64(v)
+            }
+            fn visit_f64<Err: serde::de::Error>(self, _: f64) -> Result<E, Err> {
+                Err(Err::custom(EnumJsonErrorReason::InvalidType))
+            }
+            fn visit_bool<Err: serde::de::Error>(self, _: bool) -> Result<E, Err> {
+                Err(Err::custom(EnumJsonErrorReason::InvalidType))
             }
             fn visit_str<Err: serde::de::Error>(self, v: &str) -> Result<E, Err> {
                 match E::from_proto_name(v) {
                     Some(e) => Ok(e),
                     None => {
-                        if crate::json::ignore_unknown_enum_values() {
+                        if self.allow_lenient && crate::json::ignore_unknown_enum_values() {
                             return Ok(E::default());
                         }
-                        Err(serde::de::Error::invalid_value(
-                            serde::de::Unexpected::Str(v),
-                            &"a known enum variant name",
-                        ))
+                        Err(Err::custom(EnumJsonErrorReason::UnknownName))
                     }
                 }
             }
         }
-        d.deserialize_any(V(core::marker::PhantomData))
+        d.deserialize_any(V {
+            allow_lenient,
+            marker: core::marker::PhantomData,
+        })
     }
 }
 
@@ -2154,6 +2620,8 @@ pub mod repeated_closed_enum {
                 Ok(Vec::new())
             }
 
+            reject_container_scalar_values!(InvalidListType);
+            crate::__buffa_reject_other_json_kinds!(bytes);
             fn visit_seq<A: serde::de::SeqAccess<'de>>(
                 self,
                 mut seq: A,
@@ -2226,12 +2694,14 @@ pub mod map_closed_enum {
                 Ok(C::default())
             }
 
+            reject_container_scalar_values!(InvalidMapType);
+            crate::__buffa_reject_other_json_kinds!(bytes);
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
                 let mut out = C::default();
-                while let Some(key) = map.next_key::<C::Key>()? {
+                while let Some(key) = map.next_key_seed(super::map_key::KeySeed::<C::Key>::new())? {
                     let super::BufferedValue(raw) = map.next_value()?;
                     match super::try_deserialize_closed_enum::<C::Value>(&raw) {
                         Ok(Some(v)) => {

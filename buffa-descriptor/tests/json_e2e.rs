@@ -37,9 +37,13 @@ fn json_field_mask_round_trip_and_rejects_invalid_paths() {
         r#"{"fFieldMask":"foo."}"#,
         r#"{"fFieldMask":"foo..bar"}"#,
     ] {
+        let err = DynamicMessage::from_json(Arc::clone(&p), idx, input).unwrap_err();
+        // The same fixed text as the generated `FieldMask`, without the path.
         assert!(
-            DynamicMessage::from_json(Arc::clone(&p), idx, input).is_err(),
-            "JSON {input} must be rejected"
+            err.to_string().starts_with(
+                "invalid FieldMask path, expected comma-separated lowerCamelCase paths"
+            ),
+            "JSON {input}: {err}"
         );
     }
 
@@ -222,8 +226,12 @@ fn json_integer_parsing_matches_generated_messages() {
         let err = DynamicMessage::from_json(Arc::clone(&p), idx, input)
             .expect_err("unsafe unquoted integer float must be rejected");
         assert!(
-            err.to_string().contains("invalid value"),
-            "rejection should name the offending value, got: {err}"
+            err.to_string().starts_with(if input.contains("fUint64") {
+                "invalid u64 value"
+            } else {
+                "invalid i64 value"
+            }),
+            "rejection should identify the expected type, got: {err}"
         );
     }
 }
@@ -307,8 +315,16 @@ fn json_quoted_integer_bounds_match_generated_messages() {
         let err = DynamicMessage::from_json(Arc::clone(&p), idx, input)
             .expect_err("out-of-range or non-integral quoted integer must be rejected");
         assert!(
-            err.to_string().contains("invalid value"),
-            "rejection should name the offending value for {input}, got: {err}"
+            err.to_string().starts_with(if input.contains("fInt32") {
+                "invalid i32 value"
+            } else if input.contains("fUint32") {
+                "invalid u32 value"
+            } else if input.contains("fUint64") {
+                "invalid u64 value"
+            } else {
+                "invalid i64 value"
+            }),
+            "rejection should identify the expected type for {input}, got: {err}"
         );
     }
 }
@@ -370,8 +386,12 @@ fn json_quoted_float_bounds_match_generated_messages() {
         let err = DynamicMessage::from_json(Arc::clone(&p), idx, input)
             .expect_err("out-of-range or non-token quoted float must be rejected");
         assert!(
-            err.to_string().contains("invalid value"),
-            "rejection should name the offending value for {input}, got: {err}"
+            err.to_string().starts_with(if input.contains("fDouble") {
+                "invalid double value"
+            } else {
+                "invalid float value"
+            }),
+            "rejection should identify the expected type for {input}, got: {err}"
         );
     }
 }
@@ -648,8 +668,8 @@ fn json_float_round_trips_and_reads_canonical_text() {
         let err = DynamicMessage::from_json(Arc::clone(&p), idx, input)
             .expect_err("out-of-range unquoted float must be rejected");
         assert!(
-            err.to_string().contains("invalid value"),
-            "rejection should name the offending value for {input}, got: {err}"
+            err.to_string().starts_with("invalid float value"),
+            "rejection should identify the expected type for {input}, got: {err}"
         );
     }
 }
@@ -689,23 +709,62 @@ fn json_double_text_is_f64_precision() {
 }
 
 #[test]
-fn json_unknown_enum_name_error_names_the_value() {
+fn json_unknown_enum_name_error_omits_the_value() {
     let p = pool();
     let idx = p.message_index("reflect.test.Containers").unwrap();
     let err = DynamicMessage::from_json(p, idx, r#"{"color": "PURPLE"}"#).unwrap_err();
-    assert!(
-        err.to_string()
-            .contains(r#"invalid value: string "PURPLE", expected a known enum variant name"#),
-        "got: {err}"
-    );
+    assert!(err.to_string().contains("unknown enum name"), "got: {err}");
+    assert!(!err.to_string().contains("PURPLE"));
+}
+
+/// A deserializer can hand integers outside the 64-bit range to
+/// `visit_i128` / `visit_u128`; the reflective enum visitor must report the
+/// fixed out-of-range reason rather than serde's default, which echoes them.
+#[test]
+fn reflect_enum_128_bit_integer_error_omits_the_value() {
+    use buffa_descriptor::reflect::DynamicMessageSeed;
+    use serde::de::value::{
+        Error, I128Deserializer, MapDeserializer, SeqDeserializer, U128Deserializer,
+    };
+    use serde::de::{DeserializeSeed, IntoDeserializer};
+
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    let check = |err: Error| {
+        let msg = err.to_string();
+        assert_eq!(msg, "enum number out of i32 range");
+        assert!(!msg.contains(&u128::MAX.to_string()), "{msg}");
+        assert!(!msg.contains(&i128::MIN.to_string()), "{msg}");
+    };
+
+    let singular = |d: U128Deserializer<Error>| {
+        let fields = [("color", d)].into_iter();
+        DynamicMessageSeed::new(Arc::clone(&p), idx)
+            .deserialize(MapDeserializer::<_, Error>::new(fields))
+            .unwrap_err()
+    };
+    check(singular(u128::MAX.into_deserializer()));
+
+    let repeated = |d: I128Deserializer<Error>| {
+        let seq = SeqDeserializer::<_, Error>::new([d].into_iter());
+        let fields = [("colors", seq)].into_iter();
+        DynamicMessageSeed::new(Arc::clone(&p), idx)
+            .deserialize(MapDeserializer::<_, Error>::new(fields))
+            .unwrap_err()
+    };
+    check(repeated(i128::MIN.into_deserializer()));
+
+    // An in-range number delivered as a 128-bit integer takes the usual path.
+    let fields = [("color", 1u128.into_deserializer())].into_iter();
+    let msg = DynamicMessageSeed::new(Arc::clone(&p), idx)
+        .deserialize(MapDeserializer::<_, Error>::new(fields))
+        .unwrap();
+    assert_eq!(msg.to_json().unwrap(), r#"{"color":"RED"}"#);
 }
 
 #[test]
-fn generated_enum_unknown_name_error_names_the_value() {
+fn generated_enum_unknown_name_error_omits_the_value() {
     use buffa_descriptor::generated::descriptor::Edition;
     let err = serde_json::from_str::<Edition>(r#""PURPLE""#).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        r#"invalid value: string "PURPLE", expected a known enum variant name at line 1 column 8"#
-    );
+    assert_eq!(err.to_string(), "unknown enum name at line 1 column 8");
 }

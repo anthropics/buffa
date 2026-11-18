@@ -47,6 +47,154 @@ fn test_json_enum_round_trip() {
 }
 
 #[test]
+fn standalone_enum_json_errors_omit_input() {
+    use crate::json_types::Color;
+    use serde_json::{from_value, json};
+
+    for (input, expected) in [
+        (json!("unrecognized-marker"), "unknown enum name"),
+        (json!(123456), "unknown enum number"),
+        (json!(-123456), "unknown enum number"),
+        (json!(i64::MIN), "enum number out of i32 range"),
+        (json!(u64::MAX), "enum number out of i32 range"),
+        (json!(1.0), "expected a protobuf enum name or integer"),
+        (json!(true), "expected a protobuf enum name or integer"),
+    ] {
+        let err = from_value::<Color>(input).unwrap_err();
+        assert_eq!(err.to_string(), expected);
+    }
+
+    for input in [json!("RED"), json!(1)] {
+        assert_eq!(from_value::<Color>(input).unwrap(), Color::RED);
+    }
+    assert_eq!(from_value::<Color>(json!(null)).unwrap(), Color::default());
+}
+
+/// Non-JSON carriers (YAML, for one) hand integers outside the 64-bit range to
+/// `visit_i128` / `visit_u128`, whose serde defaults echo the number. Every
+/// enum visitor must report the fixed out-of-range reason instead.
+#[test]
+fn enum_128_bit_integer_errors_omit_input() {
+    use crate::json_types::Color;
+    use crate::p2json::Tier;
+    use buffa::json_helpers::{closed_enum, proto_enum};
+    use buffa::EnumValue;
+    use serde::de::value::{Error, I128Deserializer, U128Deserializer};
+    use serde::Deserialize;
+
+    const EXPECTED: &str = "enum number out of i32 range";
+    let u = || U128Deserializer::<Error>::new(u128::MAX);
+    let i = || I128Deserializer::<Error>::new(i128::MIN);
+    let check = |err: Error| {
+        let msg = err.to_string();
+        assert_eq!(msg, EXPECTED);
+        assert!(!msg.contains(&u128::MAX.to_string()), "{msg}");
+        assert!(!msg.contains(&i128::MIN.to_string()), "{msg}");
+    };
+
+    check(EnumValue::<Color>::deserialize(u()).unwrap_err());
+    check(EnumValue::<Color>::deserialize(i()).unwrap_err());
+    check(proto_enum::deserialize::<Color, _>(u()).unwrap_err());
+    check(proto_enum::deserialize::<Color, _>(i()).unwrap_err());
+    check(closed_enum::deserialize::<Tier, _>(u()).unwrap_err());
+    check(closed_enum::deserialize::<Tier, _>(i()).unwrap_err());
+    // Generated standalone `Deserialize` (`closed_enum::deserialize_strict`).
+    check(Color::deserialize(u()).unwrap_err());
+    check(Tier::deserialize(i()).unwrap_err());
+
+    // An in-range number delivered as a 128-bit integer takes the usual path.
+    let u1 = || U128Deserializer::<Error>::new(1);
+    let i1 = || I128Deserializer::<Error>::new(1);
+    assert_eq!(EnumValue::<Color>::deserialize(u1()).unwrap(), Color::RED);
+    assert_eq!(EnumValue::<Color>::deserialize(i1()).unwrap(), Color::RED);
+    assert_eq!(
+        proto_enum::deserialize::<Color, _>(u1()).unwrap(),
+        Color::RED
+    );
+    assert_eq!(
+        proto_enum::deserialize::<Color, _>(i1()).unwrap(),
+        Color::RED
+    );
+    assert_eq!(
+        closed_enum::deserialize::<Tier, _>(u1()).unwrap(),
+        Tier::PRO
+    );
+    assert_eq!(
+        closed_enum::deserialize::<Tier, _>(i1()).unwrap(),
+        Tier::PRO
+    );
+    assert_eq!(Color::deserialize(i1()).unwrap(), Color::RED);
+    assert_eq!(Tier::deserialize(u1()).unwrap(), Tier::PRO);
+    let err = Tier::deserialize(I128Deserializer::<Error>::new(123456)).unwrap_err();
+    assert_eq!(err.to_string(), "unknown enum number");
+}
+
+/// The carrier's integer width must not change the enum's i32 range or
+/// known/unknown-value rules. Compare against the established 64-bit path.
+#[test]
+fn enum_128_bit_integer_range_matches_64_bit() {
+    use crate::json_types::Color;
+    use crate::p2json::Tier;
+    use buffa::EnumValue;
+    use serde::de::value::{
+        Error, I128Deserializer, I64Deserializer, U128Deserializer, U64Deserializer,
+    };
+    use serde::de::DeserializeOwned;
+
+    fn compare<T: DeserializeOwned + core::fmt::Debug + PartialEq>() {
+        for value in [
+            i64::MIN,
+            i64::from(i32::MIN) - 1,
+            i64::from(i32::MIN),
+            -1,
+            0,
+            1,
+            i64::from(i32::MAX),
+            i64::from(i32::MAX) + 1,
+            i64::MAX,
+        ] {
+            let expected =
+                T::deserialize(I64Deserializer::<Error>::new(value)).map_err(|e| e.to_string());
+            let actual = T::deserialize(I128Deserializer::<Error>::new(i128::from(value)))
+                .map_err(|e| e.to_string());
+            assert_eq!(actual, expected);
+        }
+        for value in [
+            0,
+            1,
+            u64::try_from(i32::MAX).unwrap(),
+            u64::try_from(i32::MAX).unwrap() + 1,
+            u64::MAX,
+        ] {
+            let expected =
+                T::deserialize(U64Deserializer::<Error>::new(value)).map_err(|e| e.to_string());
+            let actual = T::deserialize(U128Deserializer::<Error>::new(u128::from(value)))
+                .map_err(|e| e.to_string());
+            assert_eq!(actual, expected);
+        }
+    }
+    compare::<EnumValue<Color>>();
+    compare::<Color>();
+    compare::<Tier>();
+}
+
+#[test]
+fn standalone_enum_json_remains_strict_in_lenient_mode() {
+    use crate::json_types::Color;
+
+    let opts = buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+    buffa::json::with_json_parse_options(&opts, || {
+        for (input, expected) in [
+            (serde_json::json!("unknown-marker"), "unknown enum name"),
+            (serde_json::json!(123456), "unknown enum number"),
+        ] {
+            let err = serde_json::from_value::<Color>(input).unwrap_err();
+            assert_eq!(err.to_string(), expected);
+        }
+    });
+}
+
+#[test]
 fn test_json_oneof_round_trip() {
     use crate::json_types::WithOneof;
 
@@ -541,6 +689,46 @@ fn test_proto2_closed_enum_json_unknown_value_rejected() {
 }
 
 #[test]
+fn closed_enum_json_diagnostics_do_not_echo_collection_values() {
+    use crate::p2json::ClosedEnumJson;
+    use serde_json::{from_value, json};
+
+    for (value, expected, unknown) in [
+        (json!("unrecognized-marker"), "unknown enum name", true),
+        (json!(123456), "unknown enum number", true),
+        (json!(u64::MAX), "enum number out of i32 range", false),
+        (
+            json!(42.25),
+            "expected a protobuf enum name or integer",
+            false,
+        ),
+        (
+            json!(true),
+            "expected a protobuf enum name or integer",
+            false,
+        ),
+    ] {
+        for input in [
+            json!({"tier": value}),
+            json!({"tiers": [value]}),
+            json!({"byName": {"a": value}}),
+        ] {
+            let err = from_value::<ClosedEnumJson>(input.clone()).unwrap_err();
+            assert_eq!(err.to_string(), expected);
+
+            let opts = buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+            let result =
+                buffa::json::with_json_parse_options(&opts, || from_value::<ClosedEnumJson>(input));
+            if unknown {
+                assert_eq!(result.unwrap(), ClosedEnumJson::default());
+            } else {
+                assert_eq!(result.unwrap_err().to_string(), expected);
+            }
+        }
+    }
+}
+
+#[test]
 fn test_proto2_closed_enum_json_null_defaults() {
     // null for closed-enum fields → None / empty.
     use crate::p2json::ClosedEnumJson;
@@ -741,4 +929,129 @@ fn test_json_mixed_value_field_null_forwarding() {
     let decoded: MixedOneofAndFields = serde_json::from_str("{}").unwrap();
     assert!(!decoded.dynamic.is_set());
     let _ = NullValue::NULL_VALUE; // silence unused import if not needed
+}
+
+/// Text that would appear in a diagnostic that echoes one of the inputs of
+/// [`test_json_wrong_kind_errors_omit_the_input`].
+const WRONG_KIND_MARKERS: [&str; 5] = [
+    "123456789",
+    "1.5e",
+    "true",
+    "marker",
+    "340282366920938463463374607431768211455",
+];
+
+fn assert_wrong_kinds_redacted<T: serde::de::DeserializeOwned>(field: &str, kinds: &[&str]) {
+    for kind in kinds {
+        let input = if field.is_empty() {
+            kind.to_string()
+        } else {
+            format!(r#"{{"{field}":{kind}}}"#)
+        };
+        let text = match serde_json::from_str::<T>(&input) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("{input} decoded"),
+        };
+        for marker in WRONG_KIND_MARKERS {
+            assert!(
+                !text.contains(marker),
+                "error for {input} echoes {marker:?}: {text}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_json_wrong_kind_errors_omit_the_input() {
+    use crate::json_types::{MixedOneofAndFields, Scalar, WithOneof, WrongKindFields};
+
+    const INT: &str = "123456789";
+    const FLOAT: &str = "-1.5e300";
+    const BOOL: &str = "true";
+    const STR: &str = r#""marker-secret""#;
+    const SEQ: &str = "[]";
+    const MAP: &str = "{}";
+    let not_bool = [INT, FLOAT, STR, SEQ, MAP];
+    let not_string = [INT, FLOAT, BOOL, SEQ, MAP];
+    let not_array = [INT, FLOAT, BOOL, STR, MAP];
+    let not_object = [INT, FLOAT, BOOL, STR, SEQ];
+
+    // Singular fields of a derived and of a custom (oneof) `Deserialize`.
+    assert_wrong_kinds_redacted::<Scalar>("boolVal", &not_bool);
+    assert_wrong_kinds_redacted::<Scalar>("stringVal", &not_string);
+    assert_wrong_kinds_redacted::<MixedOneofAndFields>("text", &not_string);
+    assert_wrong_kinds_redacted::<WithOneof>("flag", &not_bool);
+    // Optional, repeated and map positions.
+    assert_wrong_kinds_redacted::<WrongKindFields>("oBool", &not_bool);
+    assert_wrong_kinds_redacted::<WrongKindFields>("oString", &not_string);
+    assert_wrong_kinds_redacted::<WrongKindFields>("flags", &not_array);
+    assert_wrong_kinds_redacted::<WrongKindFields>("names", &not_array);
+    assert_wrong_kinds_redacted::<MixedOneofAndFields>("tags", &not_array);
+    assert_wrong_kinds_redacted::<WrongKindFields>("boolMap", &not_object);
+    assert_wrong_kinds_redacted::<WrongKindFields>("labels", &not_object);
+    assert_wrong_kinds_redacted::<WrongKindFields>("intKeyStrings", &not_object);
+    // Elements and values.
+    assert_wrong_kinds_redacted::<WrongKindFields>("flags", &[r#"["marker-secret"]"#]);
+    assert_wrong_kinds_redacted::<WrongKindFields>("names", &["[true]", "[123456789]"]);
+    assert_wrong_kinds_redacted::<MixedOneofAndFields>("tags", &["[-1.5e300]"]);
+    assert_wrong_kinds_redacted::<WrongKindFields>("boolMap", &[r#"{"k":"marker-secret"}"#]);
+    assert_wrong_kinds_redacted::<WrongKindFields>("labels", &[r#"{"k":true}"#]);
+    assert_wrong_kinds_redacted::<WrongKindFields>("intKeyStrings", &[r#"{"1":123456789}"#]);
+    // A message with a custom `Deserialize` given a non-object.
+    assert_wrong_kinds_redacted::<MixedOneofAndFields>("", &not_object);
+    assert_wrong_kinds_redacted::<WithOneof>("", &not_object);
+
+    let de = serde::de::IntoDeserializer::<serde::de::value::Error>::into_deserializer(u128::MAX);
+    let text = <MixedOneofAndFields as serde::Deserialize>::deserialize(de)
+        .err()
+        .map(|e| e.to_string())
+        .unwrap_or_default();
+    assert!(text.contains("invalid type"), "{text}");
+    assert!(!text.contains(WRONG_KIND_MARKERS[4]), "{text}");
+
+    // `serde_json`'s `arbitrary_precision` feature hands a number to the
+    // visitor as an object with this key; it is rejected as a number.
+    let token = r#"{"$serde_json::private::Number":"1.5"}"#;
+    let err = serde_json::from_str::<MixedOneofAndFields>(token).unwrap_err();
+    assert!(err.to_string().starts_with("invalid type: number"), "{err}");
+}
+
+#[test]
+fn test_json_bool_and_string_containers_round_trip() {
+    use crate::json_types::WrongKindFields;
+
+    let json = r#"{"oBool":false,"oString":"","flags":[true,false],"names":["a",""],"boolMap":{"k":true},"labels":{"k":"v"},"intKeyStrings":{"-1":"x"}}"#;
+    let decoded: WrongKindFields = serde_json::from_str(json).unwrap();
+    assert_eq!(decoded.o_bool, Some(false));
+    assert_eq!(decoded.o_string.as_deref(), Some(""));
+    assert_eq!(decoded.flags, [true, false]);
+    assert_eq!(decoded.names, ["a", ""]);
+    assert_eq!(decoded.bool_map.get("k"), Some(&true));
+    assert_eq!(decoded.labels.get("k").map(String::as_str), Some("v"));
+    assert_eq!(
+        decoded.int_key_strings.get(&-1).map(String::as_str),
+        Some("x")
+    );
+    let back: WrongKindFields =
+        serde_json::from_str(&serde_json::to_string(&decoded).unwrap()).unwrap();
+    assert_eq!(back, decoded);
+
+    // null keeps its meaning: unset for optional fields, empty for containers.
+    let nulls = r#"{"oBool":null,"oString":null,"flags":null,"names":null,"boolMap":null,"labels":null,"intKeyStrings":null}"#;
+    assert_eq!(
+        serde_json::from_str::<WrongKindFields>(nulls).unwrap(),
+        WrongKindFields::default()
+    );
+    // A null element or map value is still rejected.
+    for json in [
+        r#"{"flags":[null]}"#,
+        r#"{"names":[null]}"#,
+        r#"{"boolMap":{"k":null}}"#,
+        r#"{"labels":{"k":null}}"#,
+    ] {
+        assert!(
+            serde_json::from_str::<WrongKindFields>(json).is_err(),
+            "{json}"
+        );
+    }
 }

@@ -350,7 +350,7 @@ fn the_budget_error_is_identifiable_through_nested_any_layers() {
     );
     assert!(
         err.to_string()
-            .starts_with("Any inner deserialize failed: "),
+            .starts_with("invalid JSON payload for a registered Any message"),
         "{err}"
     );
 }

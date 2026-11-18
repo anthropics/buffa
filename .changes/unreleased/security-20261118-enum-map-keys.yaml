@@ -1,0 +1,4 @@
+kind: Security
+body: |-
+  Enum-valued maps now redact rejected primitive, string, newtype and unit-enum key conversions with invalid protobuf map key. Native key parsing, borrowed keys, enum filtering, syntax errors and reader errors are preserved. Conversion context is discarded without formatting it. Ignoring unknown fields in typed or reflective Empty no longer copies each key into an input-sized allocation.
+time: 2026-11-18T00:01:00Z

@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+  Add json_helpers::opt_bool and json_helpers::opt_string for explicitly present scalar fields. They preserve None versus Some(default), and require serde(default) when a missing field must remain unset. Runtime, well-known-type, descriptor and generator crates that use the new helpers must ship together with internal dependency minimums raised to that release; these helpers are unavailable in older runtimes.
+time: 2026-11-18T00:00:00Z

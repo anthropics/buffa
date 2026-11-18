@@ -1,0 +1,23 @@
+syntax = "proto3";
+package compat;
+message Optional { optional bool flag = 1; optional string text = 2; }
+message CustomOptional { optional string text = 1; }
+message CustomOneof { oneof choice { string text = 1; bool flag = 2; } }
+message Renamed { oneof choice { string field = 1 [json_name = "$serde_json::private::Number"]; } }
+
+message RepeatedBool { repeated bool values = 1; }
+message RepeatedString { repeated string values = 1; }
+message BoolMap { map<string, bool> values = 1; }
+message StringMap { map<string, string> values = 1; }
+
+message CustomCollections {
+  repeated bool bools = 1;
+  repeated string strings = 2;
+  map<string, bool> bool_map = 3;
+  map<string, string> string_map = 4;
+}
+message CustomCollectionsWithOneof {
+  repeated bool bools = 1;
+  map<string, string> string_map = 2;
+  oneof choice { int32 marker = 3; }
+}

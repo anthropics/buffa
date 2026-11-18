@@ -439,3 +439,24 @@ fn enum_roundtrip() {
     let bytes = en.encode_to_vec();
     assert_eq!(view_roundtrip::<wkt_view::EnumView>(&bytes), en);
 }
+
+#[cfg(feature = "json")]
+#[test]
+fn temporal_json_errors_omit_the_rejected_value() {
+    let timestamp =
+        serde_json::from_value::<wkt::Timestamp>(serde_json::json!("temporal-marker")).unwrap_err();
+    assert_eq!(timestamp.to_string(), "invalid RFC 3339 timestamp");
+
+    let duration =
+        serde_json::from_value::<wkt::Duration>(serde_json::json!("temporal-marker")).unwrap_err();
+    assert_eq!(duration.to_string(), "invalid Duration string");
+
+    for path in ["marker_x", "Marker..x", "a,marker_secret", "marker-secret"] {
+        let field_mask =
+            serde_json::from_value::<wkt::FieldMask>(serde_json::json!(path)).unwrap_err();
+        assert_eq!(
+            field_mask.to_string(),
+            "invalid FieldMask path, expected comma-separated lowerCamelCase paths"
+        );
+    }
+}

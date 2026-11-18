@@ -105,7 +105,9 @@ impl WktKind {
                 if let Some(Value::List(items)) = msg.field_by_number(1) {
                     for v in items {
                         let Value::Message(inner) = v else {
-                            return Err(serde::ser::Error::custom("ListValue elem must be message"));
+                            return Err(serde::ser::Error::custom(
+                                "ListValue elem must be message",
+                            ));
                         };
                         seq.serialize_element(&Nested::charge(inner, depth)?)?;
                     }
@@ -133,17 +135,17 @@ impl WktKind {
         match self {
             Self::Any => deserialize_any(pool, midx, d, flags, budget),
             Self::Timestamp => {
-                let s: String = String::deserialize(d)?;
+                let s = buffa::json_helpers::wkt::deserialize_string(d)?;
                 let (secs, nanos) = parse_rfc3339(&s).map_err(de::Error::custom)?;
                 Ok(make_two_field(pool, midx, secs, nanos))
             }
             Self::Duration => {
-                let s: String = String::deserialize(d)?;
+                let s = buffa::json_helpers::wkt::deserialize_string(d)?;
                 let (secs, nanos) = parse_duration(&s).map_err(de::Error::custom)?;
                 Ok(make_two_field(pool, midx, secs, nanos))
             }
             Self::FieldMask => {
-                let s: String = String::deserialize(d)?;
+                let s = buffa::json_helpers::wkt::deserialize_string(d)?;
                 // A `FieldMask` is `repeated string paths`, and each comma
                 // in the input buys another `Value` slot — the same
                 // amplification a repeated field has, so the same charge.
@@ -178,22 +180,61 @@ impl WktKind {
                     fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                         write!(f, "an empty object")
                     }
+                    buffa::json_helpers::reject_other_json_kinds!(
+                        bool, i64, u64, i128, u128, f64, str, bytes
+                    );
+                    // Absent documents are distinct from JSON null. Preserve the previous
+                    // typed entry point's empty-container behavior without accepting null.
+                    fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+                        Ok(())
+                    }
+                    fn visit_enum<A: serde::de::EnumAccess<'de>>(
+                        self,
+                        tagged: A,
+                    ) -> Result<Self::Value, A::Error> {
+                        buffa::json_helpers::deserialize_tagged(self, tagged)
+                    }
                     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
                         if self.ignore_unknown {
-                            while map.next_entry::<de::IgnoredAny, de::IgnoredAny>()?.is_some() {}
+                            while let Some(key) =
+                                map.next_key::<buffa::json_helpers::IgnoredObjectKey>()?
+                            {
+                                if matches!(key, buffa::json_helpers::IgnoredObjectKey::NumberToken)
+                                {
+                                    return Err(de::Error::invalid_type(
+                                        de::Unexpected::Other("number"),
+                                        &self,
+                                    ));
+                                }
+                                map.next_value::<de::IgnoredAny>()?;
+                            }
                             return Ok(());
                         }
-                        if let Some(key) = map.next_key::<String>()? {
-                            return Err(de::Error::custom(format!(
-                                "unknown field {key:?} on message google.protobuf.Empty"
-                            )));
+                        while let Some(key) = map.next_key::<String>()? {
+                            if key == buffa::json_helpers::SERDE_JSON_NUMBER_KEY {
+                                return Err(de::Error::invalid_type(
+                                    de::Unexpected::Other("number"),
+                                    &self,
+                                ));
+                            }
+                            if !self.ignore_unknown {
+                                return Err(de::Error::custom(format!(
+                                    "unknown field {key:?} on message google.protobuf.Empty"
+                                )));
+                            }
+                            map.next_value::<de::IgnoredAny>()?;
                         }
                         Ok(())
                     }
                 }
-                d.deserialize_map(EmptyVisitor {
+                let visitor = EmptyVisitor {
                     ignore_unknown: flags.ignore_unknown,
-                })?;
+                };
+                if d.is_human_readable() {
+                    d.deserialize_any(visitor)?;
+                } else {
+                    d.deserialize_map(visitor)?;
+                }
                 Ok(DynamicMessage::new(pool, midx))
             }
             Self::Wrapper(sc) => {
@@ -349,6 +390,7 @@ fn deserialize_json_value<'de, D: Deserializer<'de>>(
             m.set_by_number(3, Value::String(v.to_owned()));
             Ok(m)
         }
+        buffa::json_helpers::reject_other_json_kinds!(i128, u128, bytes);
         fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
             let lv_idx = self
                 .pool
@@ -394,6 +436,17 @@ impl<'de> Visitor<'de> for StructVisitor<'_> {
     fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "a JSON object")
     }
+    buffa::json_helpers::reject_other_json_kinds!(bool, i64, u64, i128, u128, f64, str, bytes);
+    // Absent documents are distinct from JSON null. Preserve the previous
+    // typed entry point's empty-container behavior without accepting null.
+    fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+        let mut message = DynamicMessage::new(self.pool, self.midx);
+        message.set_by_number(1, Value::Map(MapValue::from_entries(Vec::new())));
+        Ok(message)
+    }
+    fn visit_enum<A: serde::de::EnumAccess<'de>>(self, tagged: A) -> Result<Self::Value, A::Error> {
+        buffa::json_helpers::deserialize_tagged(self, tagged)
+    }
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
         let value_idx = self
             .pool
@@ -431,7 +484,14 @@ fn deserialize_struct<'de, D: Deserializer<'de>>(
     d: D,
     budget: &Cell<usize>,
 ) -> Result<DynamicMessage, D::Error> {
-    d.deserialize_map(StructVisitor { pool, midx, budget })
+    // `deserialize_any` here and below so a mismatched kind reaches the
+    // visitor, whose rejections name the JSON kind but not the value.
+    let visitor = StructVisitor { pool, midx, budget };
+    if d.is_human_readable() {
+        d.deserialize_any(visitor)
+    } else {
+        d.deserialize_map(visitor)
+    }
 }
 
 struct ListValueVisitor<'a> {
@@ -444,6 +504,17 @@ impl<'de> Visitor<'de> for ListValueVisitor<'_> {
     type Value = DynamicMessage;
     fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "a JSON array")
+    }
+    buffa::json_helpers::reject_other_json_kinds!(bool, i64, u64, i128, u128, f64, str, bytes);
+    // Absent documents are distinct from JSON null. Preserve the previous
+    // typed entry point's empty-container behavior without accepting null.
+    fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+        let mut message = DynamicMessage::new(self.pool, self.midx);
+        message.set_by_number(1, Value::List(Vec::new()));
+        Ok(message)
+    }
+    fn visit_enum<A: serde::de::EnumAccess<'de>>(self, tagged: A) -> Result<Self::Value, A::Error> {
+        buffa::json_helpers::deserialize_tagged(self, tagged)
     }
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
         let value_idx = self
@@ -475,7 +546,12 @@ fn deserialize_list_value<'de, D: Deserializer<'de>>(
     d: D,
     budget: &Cell<usize>,
 ) -> Result<DynamicMessage, D::Error> {
-    d.deserialize_seq(ListValueVisitor { pool, midx, budget })
+    let visitor = ListValueVisitor { pool, midx, budget };
+    if d.is_human_readable() {
+        d.deserialize_any(visitor)
+    } else {
+        d.deserialize_seq(visitor)
+    }
 }
 
 // ── google.protobuf.Any ─────────────────────────────────────────────────────
@@ -492,11 +568,7 @@ fn deserialize_list_value<'de, D: Deserializer<'de>>(
 /// of `depth`, and its binary decode runs on the *remaining* budget rather
 /// than a fresh [`RECURSION_LIMIT`], so nesting inside `Any.value` — which
 /// the outer decode saw only as opaque bytes — cannot restart the count.
-fn serialize_any<S: Serializer>(
-    msg: &DynamicMessage,
-    depth: u32,
-    s: S,
-) -> Result<S::Ok, S::Error> {
+fn serialize_any<S: Serializer>(msg: &DynamicMessage, depth: u32, s: S) -> Result<S::Ok, S::Error> {
     use serde::ser::Error as _;
     let type_url = match msg.field_by_number(1) {
         Some(Value::String(u)) => u.as_str(),
@@ -583,14 +655,10 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
         return Err(D::Error::custom("Any object missing string \"@type\""));
     };
     if flags.strict_any_type_urls && !type_url.contains('/') {
-        return Err(D::Error::custom(format!(
-            "Any type_url {type_url:?} must contain a '/' (e.g. type.googleapis.com/pkg.Type)"
-        )));
+        return Err(D::Error::custom(JsonValueError::AnyBareType));
     }
     let Some(inner_idx) = resolve_any_type(&pool, &type_url) else {
-        return Err(D::Error::custom(format!(
-            "Any type_url {type_url:?} not registered in the descriptor pool"
-        )));
+        return Err(D::Error::custom(JsonValueError::AnyUnregisteredType));
     };
     let inner_md = pool.message(inner_idx);
     let inner_wkt = WktKind::from_full_name(&inner_md.full_name);
@@ -598,17 +666,11 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
     // (for WKTs) or the remaining fields.
     let inner_json = if let Some(wkt) = inner_wkt {
         if wkt.uses_any_value_wrapping() {
-            let value = obj.remove("value").ok_or_else(|| {
-                D::Error::custom(format!(
-                    "Any with WKT type {type_url:?} requires a \"value\" key"
-                ))
-            })?;
-            if !flags.ignore_unknown {
-                if let Some(key) = obj.keys().next() {
-                    return Err(D::Error::custom(format!(
-                        "unknown field {key:?} in Any wrapper for {type_url:?}"
-                    )));
-                }
+            let value = obj
+                .remove("value")
+                .ok_or_else(|| D::Error::custom(JsonValueError::AnyMissingValue))?;
+            if !flags.ignore_unknown && !obj.is_empty() {
+                return Err(D::Error::custom(JsonValueError::AnyUnexpectedField));
             }
             value
         } else {
@@ -631,9 +693,13 @@ fn deserialize_any<'de, D: Deserializer<'de>>(
         // The budget error keeps its own text at any `Any` depth, so
         // `DynamicMessageSeed::is_element_memory_limit_error` recognises it.
         if DynamicMessageSeed::is_element_memory_limit_error(&e) {
-            D::Error::custom(e)
+            D::Error::custom(ELEMENT_MEMORY_LIMIT_EXCEEDED)
         } else {
-            D::Error::custom(format!("Any inner deserialize failed: {e}"))
+            D::Error::custom(if inner_wkt.is_some_and(WktKind::uses_any_value_wrapping) {
+                JsonValueError::AnyWellKnownType
+            } else {
+                JsonValueError::AnyMessage
+            })
         }
     })?;
     // The decode is done with the buffer, so its charge goes back. The error
@@ -655,7 +721,6 @@ fn resolve_any_type(pool: &DescriptorPool, type_url: &str) -> Option<MessageInde
     pool.message_index(name)
 }
 
-
 // ── Timestamp / Duration / FieldMask formatting ─────────────────────────────
 //
 // The shared formatting and parsing primitives live in
@@ -671,19 +736,20 @@ use buffa::json_helpers::wkt::{
 /// Convert a snake_case field-mask path to lowerCamelCase, rejecting paths
 /// that don't round-trip per the proto3 JSON spec (empty components, invalid
 /// characters, double underscores, underscore-digit, uppercase).
-fn field_mask_to_camel(p: &str) -> Result<String, &'static str> {
+fn field_mask_to_camel(p: &str) -> Result<String, buffa::json_helpers::JsonValueError> {
     if !field_mask_path_round_trips(p) {
-        return Err("FieldMask path does not round-trip through camelCase");
+        return Err(buffa::json_helpers::JsonValueError::FieldMaskEncode);
     }
     Ok(snake_to_camel(p))
 }
 
 /// Convert a lowerCamelCase field-mask path to snake_case, rejecting paths
 /// that don't round-trip.
-fn field_mask_to_snake(p: &str) -> Result<String, &'static str> {
+fn field_mask_to_snake(p: &str) -> Result<String, buffa::json_helpers::JsonValueError> {
     let snake = camel_to_snake(p);
     if !field_mask_path_round_trips(&snake) || snake_to_camel(&snake) != p {
-        return Err("FieldMask JSON path is not canonical lowerCamelCase");
+        // The same fixed text as the generated `FieldMask`.
+        return Err(buffa::json_helpers::JsonValueError::FieldMask);
     }
     Ok(snake)
 }

@@ -281,11 +281,25 @@ fn test_json_oneof_deserialize_null_and_duplicate_handling() {
                 json_name: Some("name".to_string()),
                 ..Default::default()
             },
+            FieldDescriptorProto {
+                name: Some("child".to_string()),
+                number: Some(3),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_MESSAGE),
+                type_name: Some(".Child".to_string()),
+                oneof_index: Some(0),
+                json_name: Some("child".to_string()),
+                ..Default::default()
+            },
         ],
         oneof_decl: vec![OneofDescriptorProto {
             name: Some("kind".to_string()),
             ..Default::default()
         }],
+        ..Default::default()
+    });
+    file.message_type.push(DescriptorProto {
+        name: Some("Child".to_string()),
         ..Default::default()
     });
 
@@ -321,10 +335,27 @@ fn test_json_oneof_deserialize_null_and_duplicate_handling() {
         "oneof enum must NOT have Deserialize impl: {content}"
     );
 
-    // Default-serde type (string) should use DefaultDeserializeSeed
+    // A string variant deserializes through `proto_string`, whose
+    // wrong-kind errors omit the value.
+    assert!(
+        content.contains("::buffa::json_helpers::proto_string::deserialize(d)"),
+        "string variant must use proto_string: {content}"
+    );
+
+    // Default-serde type (message) should use DefaultDeserializeSeed
     assert!(
         content.contains("DefaultDeserializeSeed"),
         "default-serde variant must use DefaultDeserializeSeed: {content}"
+    );
+
+    // The visitor sees every JSON kind and rejects the foreign ones itself.
+    assert!(
+        content.contains("d.deserialize_any(_V)"),
+        "custom Deserialize must drive _V with deserialize_any: {content}"
+    );
+    assert!(
+        content.contains("::buffa::json_helpers::reject_other_json_kinds!"),
+        "_V must reject other JSON kinds without echoing them: {content}"
     );
 }
 
@@ -671,5 +702,68 @@ fn message_named_result_does_not_shadow_std_result_in_serde() {
     assert!(
         content.contains("::core::result::Result<Self"),
         "serde Deserialize should use ::core::result::Result.\nGenerated code:\n{content}"
+    );
+}
+
+#[test]
+fn test_json_bool_and_string_fields_use_redacting_helpers() {
+    // Every position of a bool or default-`String` field deserializes through
+    // a `json_helpers` module, whose wrong-kind errors omit the value.
+    let map_entry = |name: &str, key: Type, value: Type| DescriptorProto {
+        name: Some(name.to_string()),
+        field: vec![
+            make_field("key", 1, Label::LABEL_OPTIONAL, key),
+            make_field("value", 2, Label::LABEL_OPTIONAL, value),
+        ],
+        options: MessageOptions {
+            map_entry: Some(true),
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    };
+    let map_field = |name: &str, number: i32, entry: &str| FieldDescriptorProto {
+        type_name: Some(format!(".Msg.{entry}")),
+        ..make_field(name, number, Label::LABEL_REPEATED, Type::TYPE_MESSAGE)
+    };
+    let mut file = proto3_file("redacting_helpers.proto");
+    file.syntax = Some("proto2".to_string());
+    file.message_type.push(DescriptorProto {
+        name: Some("Msg".to_string()),
+        field: vec![
+            make_field("o_bool", 1, Label::LABEL_OPTIONAL, Type::TYPE_BOOL),
+            make_field("o_string", 2, Label::LABEL_OPTIONAL, Type::TYPE_STRING),
+            make_field("flags", 3, Label::LABEL_REPEATED, Type::TYPE_BOOL),
+            make_field("names", 4, Label::LABEL_REPEATED, Type::TYPE_STRING),
+            map_field("labels", 5, "LabelsEntry"),
+            map_field("by_id", 6, "ByIdEntry"),
+        ],
+        nested_type: vec![
+            map_entry("LabelsEntry", Type::TYPE_STRING, Type::TYPE_STRING),
+            map_entry("ByIdEntry", Type::TYPE_INT32, Type::TYPE_BOOL),
+        ],
+        ..Default::default()
+    });
+
+    let files = generate(
+        &[file],
+        &["redacting_helpers.proto".to_string()],
+        &json_config(),
+    )
+    .expect("should generate");
+    let content = &joined(&files);
+    for module in [
+        "opt_bool",
+        "opt_string",
+        "native_seq",
+        "native_str_key_map",
+        "proto_map",
+    ] {
+        let attr = format!(r#"with = "::buffa::json_helpers::{module}""#);
+        assert!(content.contains(&attr), "missing {attr}: {content}");
+    }
+    assert!(
+        !content.contains("null_as_default"),
+        "standard bool/string containers must use redacting helpers: {content}"
     );
 }
