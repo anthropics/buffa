@@ -41,7 +41,8 @@ json = ["buffa/json", "dep:serde", "dep:serde_json"]
 ## `buffa::text::TextFormat` impls for textproto encode/decode.
 text = ["buffa/text"]
 ## `arbitrary::Arbitrary` derive for fuzzing.
-arbitrary = ["buffa/arbitrary", "dep:arbitrary"]
+# Generated derives require std; forward it to buffa for the map representation.
+arbitrary = ["std", "buffa/arbitrary", "dep:arbitrary"]
 ## Runtime reflection: `DescriptorPool`, edition feature resolution.
 reflect = []
 

@@ -106,7 +106,8 @@
 //!   `Empty`, wrappers). `Api`/`Type`/`Enum`/`SourceContext` and the messages
 //!   they contain have no serde impls; a `json = true` message embedding one
 //!   of them does not compile.
-//! - **`arbitrary`** — `arbitrary::Arbitrary` derives for fuzzing.
+//! - **`arbitrary`** — `arbitrary::Arbitrary` derives for fuzzing. Enables
+//!   `std`, which the generated derives and their map implementations require.
 //! - **`chrono`** — `Timestamp` ↔ `chrono::DateTime` and `Duration` ↔
 //!   `chrono::TimeDelta` conversions. `no_std`-compatible (`chrono` is pulled
 //!   with `default-features = false`).

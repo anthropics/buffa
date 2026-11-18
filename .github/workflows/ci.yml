@@ -360,7 +360,7 @@ jobs:
       # file then bypasses, and the bare-metal check fails with E0463.
       - uses: dtolnay/rust-toolchain@46817827a5bfabe028bf34e1cce71fd40e2ff697 # 1.95.0 (sha-pinned)
         with:
-          targets: i686-unknown-linux-gnu, thumbv7em-none-eabihf
+          targets: i686-unknown-linux-gnu, thumbv7em-none-eabihf, wasm32-unknown-unknown
 
       - name: Install protoc
         run: |
@@ -400,6 +400,19 @@ jobs:
 
       - name: Check buffa-proto-options no_std + json/text/views
         run: cargo check -p buffa-proto-options --no-default-features --features json,text,views
+
+      - name: Check ordinary generated crates remain no_std (bare-metal ARM)
+        run: |
+          cargo check --manifest-path buffa-types/Cargo.toml --no-default-features --target thumbv7em-none-eabihf
+          cargo check --manifest-path buffa-descriptor/Cargo.toml --no-default-features --target thumbv7em-none-eabihf
+
+      # Check crates separately: workspace feature unification would hide a
+      # missing std dependency in an arbitrary-only consumer.
+      - name: Check isolated arbitrary features (host and Wasm)
+        working-directory: ${{ runner.temp }}
+        run: |
+          "$GITHUB_WORKSPACE/scripts/check-arbitrary-features.sh"
+          "$GITHUB_WORKSPACE/scripts/check-arbitrary-features.sh" wasm32-unknown-unknown
 
       - name: Check workspace 32-bit
         run: cargo check --workspace --target i686-unknown-linux-gnu
