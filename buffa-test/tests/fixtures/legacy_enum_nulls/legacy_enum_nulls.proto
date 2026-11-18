@@ -1,0 +1,4 @@
+syntax = "proto3";
+package legacy_enum_nulls;
+import "google/protobuf/struct.proto";
+message Legacy { google.protobuf.NullValue value = 1; repeated google.protobuf.NullValue values = 2; map<int32, google.protobuf.NullValue> by_id = 3; optional google.protobuf.NullValue optional_value = 4; }

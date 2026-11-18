@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Serialize marked canonical NullValue repeated elements as JSON null through the explicit open/closed enum collection helpers, including frozen older bindings. Pair closed-list null output with canonical-null input support. Preserve unknown numbers, ordinary-enum null rejection, map/optional legacy behavior and wire bytes.'
+time: 2026-11-18T22:00:00+01:00

@@ -775,15 +775,30 @@ fn try_deserialize_enum<T: serde::de::DeserializeOwned>(
     }
 }
 
+/// A null element is only meaningful for an explicitly marked NullValue enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+enum EnumCollectionErrorReason {
+    #[error("null is not an enum collection element")]
+    NullElement,
+}
+
+// A handwritten Enumeration can opt into the canonical marker incorrectly.
+// Reject that contract violation without retaining input or another PR's API.
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+enum NullValueErrorReason {
+    #[error("invalid NullValue enum marker: numeric zero is not recognized")]
+    MissingZero,
+}
+
 // ── repeated_enum: Vec<EnumValue<E>> with unknown-value filtering ────────────
 
 /// Serde with-module for `Vec<EnumValue<E>>` repeated enum fields, or any
 /// collection that is `From<Vec<EnumValue<E>>>`.
 ///
 /// When `ignore_unknown_enum_values` is active, unknown enum string values
-/// are silently skipped instead of producing an error. In default mode this
-/// behaves identically to the standard `Vec<EnumValue<E>>` deserialization
-/// with null→empty-vec handling.
+/// are silently skipped instead of producing an error. A null field becomes
+/// an empty collection. Null elements are rejected in both modes unless
+/// [`Enumeration::IS_NULL_VALUE`](crate::Enumeration::IS_NULL_VALUE) is set.
 pub mod repeated_enum {
     use alloc::vec::Vec;
     use serde::{Deserializer, Serializer};
@@ -792,7 +807,22 @@ pub mod repeated_enum {
         value: &[crate::EnumValue<E>],
         s: S,
     ) -> Result<S::Ok, S::Error> {
-        serde::Serialize::serialize(value, s)
+        // Older generated bindings call this helper directly. Use the
+        // explicit canonical marker, not the type/name spelling, and retain
+        // the existing representation for non-human-readable serializers.
+        if !E::IS_NULL_VALUE || !s.is_human_readable() {
+            return serde::Serialize::serialize(value, s);
+        }
+        use serde::ser::SerializeSeq as _;
+        let mut sequence = s.serialize_seq(Some(value.len()))?;
+        for element in value {
+            if element.to_i32() == 0 {
+                sequence.serialize_element(&())?;
+            } else {
+                sequence.serialize_element(element)?;
+            }
+        }
+        sequence.end()
     }
 
     pub fn deserialize<'de, E, C, D>(d: D) -> Result<C, D::Error>
@@ -819,6 +849,13 @@ pub mod repeated_enum {
             ) -> Result<Vec<crate::EnumValue<E>>, A::Error> {
                 let mut out = Vec::with_capacity(super::clamp_size_hint(seq.size_hint()));
                 while let Some(super::BufferedValue(raw)) = seq.next_element()? {
+                    // Scalar enum null means default; sequence null is invalid
+                    // except for the canonical WKT's explicit null sentinel.
+                    if raw.is_null() && !E::IS_NULL_VALUE {
+                        return Err(serde::de::Error::custom(
+                            super::EnumCollectionErrorReason::NullElement,
+                        ));
+                    }
                     match super::try_deserialize_enum::<crate::EnumValue<E>>(raw) {
                         Ok(Some(v)) => out.push(v),
                         Ok(None) => continue,
@@ -2119,7 +2156,10 @@ pub mod opt_closed_enum {
 /// When `ignore_unknown_enum_values` is active, an unknown enum name, or a
 /// number in `i32` range that the enum does not declare, is silently
 /// skipped.
-/// JSON null deserializes to an empty vec, but null elements are rejected.
+/// JSON null deserializes to an empty vec. Null elements are rejected unless
+/// [`Enumeration::IS_NULL_VALUE`](crate::Enumeration::IS_NULL_VALUE) explicitly
+/// marks the canonical enum and numeric zero is recognized. Its repeated zero
+/// elements serialize as JSON null; other enums retain their names.
 pub mod repeated_closed_enum {
     use alloc::vec::Vec;
     use serde::{Deserializer, Serializer};
@@ -2129,9 +2169,14 @@ pub mod repeated_closed_enum {
         s: S,
     ) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeSeq;
+        let null_sentinel = E::IS_NULL_VALUE && s.is_human_readable();
         let mut seq = s.serialize_seq(Some(value.len()))?;
         for v in value {
-            seq.serialize_element(&crate::json_helpers::EnumProtoNameRef(v))?;
+            if null_sentinel && v.to_i32() == 0 {
+                seq.serialize_element(&())?;
+            } else {
+                seq.serialize_element(&crate::json_helpers::EnumProtoNameRef(v))?;
+            }
         }
         seq.end()
     }
@@ -2160,6 +2205,15 @@ pub mod repeated_closed_enum {
             ) -> Result<Vec<E>, A::Error> {
                 let mut out = Vec::with_capacity(super::clamp_size_hint(seq.size_hint()));
                 while let Some(super::BufferedValue(raw)) = seq.next_element()? {
+                    if raw.is_null() && E::IS_NULL_VALUE {
+                        let value = E::from_i32(0).ok_or_else(|| {
+                            <A::Error as serde::de::Error>::custom(
+                                super::NullValueErrorReason::MissingZero,
+                            )
+                        })?;
+                        out.push(value);
+                        continue;
+                    }
                     match super::try_deserialize_closed_enum::<E>(&raw) {
                         Ok(Some(v)) => out.push(v),
                         Ok(None) => continue,

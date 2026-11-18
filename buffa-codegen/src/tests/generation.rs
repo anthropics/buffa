@@ -3506,3 +3506,33 @@ fn repeated_message_named_like_a_local_map_entry_is_a_list() {
         "{content}"
     );
 }
+
+#[test]
+fn null_value_marker_requires_the_exact_protobuf_type() {
+    for (package, name, expected) in [
+        ("google.protobuf", "NullValue", true),
+        ("other", "NullValue", false),
+        ("google.protobuf", "NullValueLike", false),
+        ("google.protobuf.child", "NullValue", false),
+    ] {
+        let mut file = proto3_file("null_marker.proto");
+        file.package = Some(package.into());
+        file.enum_type.push(EnumDescriptorProto {
+            name: Some(name.into()),
+            value: vec![enum_value("NULL_VALUE", 0)],
+            ..Default::default()
+        });
+        let generated = generate(
+            &[file],
+            &["null_marker.proto".into()],
+            &CodeGenConfig::default(),
+        )
+        .unwrap();
+        let output = joined(&generated);
+        assert_eq!(
+            output.contains("const IS_NULL_VALUE: bool = true;"),
+            expected,
+            "{package}.{name}"
+        );
+    }
+}

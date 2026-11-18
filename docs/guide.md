@@ -1807,6 +1807,22 @@ struct Event {
 let buffa::json_helpers::buffered::BufferedValue(payload) = map.next_value()?;
 ```
 
+### Null elements in repeated enums
+
+A null repeated field is empty. Inside an ordinary enum list, null is invalid,
+even when `ignore_unknown_enum_values` is enabled. Open-enum lists of
+`google.protobuf.NullValue` accept its null sentinel. Enums that merely declare
+a `NULL_VALUE` variant do not receive that exception.
+
+This uses defaulted `Enumeration::IS_NULL_VALUE` metadata. Existing enum
+implementations continue to compile. Update the runtime and canonical
+`buffa-types` provider together to preserve NullValue list input; existing
+generated messages that use that provider do not need regeneration. External,
+vendored or handwritten NullValue providers must regenerate or explicitly set
+the marker and recognize numeric zero. Newly generated canonical providers
+require a runtime containing the marker. Serialization and other field shapes
+retain their existing behavior.
+
 ### Unknown fields in JSON
 
 Generated JSON deserializers **ignore** unknown keys by default, so a

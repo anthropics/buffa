@@ -393,6 +393,9 @@ pub fn generate_enum(
     // the enum carries it too, like the scoped `non_snake_case` allow on
     // messages (#408). A regular `//` comment inside `quote!` is dropped,
     // which is why this note sits outside it.
+    let null_value_marker = (proto_fqn == "google.protobuf.NullValue")
+        .then(|| quote! { const IS_NULL_VALUE: bool = true; });
+
     Ok(quote! {
         #enum_doc
         #[allow(non_camel_case_types)]
@@ -413,6 +416,8 @@ pub fn generate_enum(
 
         #deprecated_value_allow
         impl ::buffa::Enumeration for #name_ident {
+            #null_value_marker
+
             fn from_i32(value: i32) -> ::core::option::Option<Self> {
                 match value {
                     #(#from_i32_arms,)*
