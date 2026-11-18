@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Enum deserialization through serde formats that deliver 128-bit integers, including JSON Value deserialization with serde_json/arbitrary_precision enabled, no longer echoes the number in errors. A number beyond the 64-bit range reports that it is out of range, and an in-range number takes the same path as a 64-bit one instead of being rejected as an invalid type. This covers generated enum values, enum fields, and reflective enum values.'
+time: 2026-11-17T12:00:00Z

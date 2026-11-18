@@ -97,70 +97,7 @@ const _: () = {
         fn deserialize<__D: ::serde::Deserializer<'de>>(
             d: __D,
         ) -> ::core::result::Result<Self, __D::Error> {
-            struct _V;
-            impl ::serde::de::Visitor<'_> for _V {
-                type Value = Edition;
-                fn expecting(
-                    &self,
-                    f: &mut ::core::fmt::Formatter<'_>,
-                ) -> ::core::fmt::Result {
-                    f.write_str(
-                        concat!("a string, integer, or null for ", stringify!(Edition)),
-                    )
-                }
-                fn visit_str<__E: ::serde::de::Error>(
-                    self,
-                    v: &str,
-                ) -> ::core::result::Result<Edition, __E> {
-                    <Edition as ::buffa::Enumeration>::from_proto_name(v)
-                        .ok_or_else(|| {
-                            ::serde::de::Error::invalid_value(
-                                ::serde::de::Unexpected::Str(v),
-                                &"a known enum variant name",
-                            )
-                        })
-                }
-                fn visit_i64<__E: ::serde::de::Error>(
-                    self,
-                    v: i64,
-                ) -> ::core::result::Result<Edition, __E> {
-                    let v32 = i32::try_from(v)
-                        .map_err(|_| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                            )
-                        })?;
-                    <Edition as ::buffa::Enumeration>::from_i32(v32)
-                        .ok_or_else(|| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {v32}"),
-                            )
-                        })
-                }
-                fn visit_u64<__E: ::serde::de::Error>(
-                    self,
-                    v: u64,
-                ) -> ::core::result::Result<Edition, __E> {
-                    let v32 = i32::try_from(v)
-                        .map_err(|_| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                            )
-                        })?;
-                    <Edition as ::buffa::Enumeration>::from_i32(v32)
-                        .ok_or_else(|| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {v32}"),
-                            )
-                        })
-                }
-                fn visit_unit<__E: ::serde::de::Error>(
-                    self,
-                ) -> ::core::result::Result<Edition, __E> {
-                    ::core::result::Result::Ok(::core::default::Default::default())
-                }
-            }
-            d.deserialize_any(_V)
+            ::buffa::json_helpers::closed_enum::deserialize_strict(d)
         }
     }
     impl ::buffa::json_helpers::ProtoElemJson for Edition {
@@ -306,73 +243,7 @@ const _: () = {
         fn deserialize<__D: ::serde::Deserializer<'de>>(
             d: __D,
         ) -> ::core::result::Result<Self, __D::Error> {
-            struct _V;
-            impl ::serde::de::Visitor<'_> for _V {
-                type Value = SymbolVisibility;
-                fn expecting(
-                    &self,
-                    f: &mut ::core::fmt::Formatter<'_>,
-                ) -> ::core::fmt::Result {
-                    f.write_str(
-                        concat!(
-                            "a string, integer, or null for ",
-                            stringify!(SymbolVisibility)
-                        ),
-                    )
-                }
-                fn visit_str<__E: ::serde::de::Error>(
-                    self,
-                    v: &str,
-                ) -> ::core::result::Result<SymbolVisibility, __E> {
-                    <SymbolVisibility as ::buffa::Enumeration>::from_proto_name(v)
-                        .ok_or_else(|| {
-                            ::serde::de::Error::invalid_value(
-                                ::serde::de::Unexpected::Str(v),
-                                &"a known enum variant name",
-                            )
-                        })
-                }
-                fn visit_i64<__E: ::serde::de::Error>(
-                    self,
-                    v: i64,
-                ) -> ::core::result::Result<SymbolVisibility, __E> {
-                    let v32 = i32::try_from(v)
-                        .map_err(|_| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                            )
-                        })?;
-                    <SymbolVisibility as ::buffa::Enumeration>::from_i32(v32)
-                        .ok_or_else(|| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {v32}"),
-                            )
-                        })
-                }
-                fn visit_u64<__E: ::serde::de::Error>(
-                    self,
-                    v: u64,
-                ) -> ::core::result::Result<SymbolVisibility, __E> {
-                    let v32 = i32::try_from(v)
-                        .map_err(|_| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                            )
-                        })?;
-                    <SymbolVisibility as ::buffa::Enumeration>::from_i32(v32)
-                        .ok_or_else(|| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {v32}"),
-                            )
-                        })
-                }
-                fn visit_unit<__E: ::serde::de::Error>(
-                    self,
-                ) -> ::core::result::Result<SymbolVisibility, __E> {
-                    ::core::result::Result::Ok(::core::default::Default::default())
-                }
-            }
-            d.deserialize_any(_V)
+            ::buffa::json_helpers::closed_enum::deserialize_strict(d)
         }
     }
     impl ::buffa::json_helpers::ProtoElemJson for SymbolVisibility {
@@ -3487,73 +3358,7 @@ pub mod extension_range_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = VerificationState;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(VerificationState)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<VerificationState, __E> {
-                        <VerificationState as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<VerificationState, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <VerificationState as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<VerificationState, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <VerificationState as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<VerificationState, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for VerificationState {
@@ -4801,70 +4606,7 @@ pub mod field_descriptor_proto {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = Type;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!("a string, integer, or null for ", stringify!(Type)),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<Type, __E> {
-                        <Type as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<Type, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Type as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<Type, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Type as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<Type, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for Type {
@@ -5019,70 +4761,7 @@ pub mod field_descriptor_proto {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = Label;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!("a string, integer, or null for ", stringify!(Label)),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<Label, __E> {
-                        <Label as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<Label, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Label as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<Label, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Label as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<Label, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for Label {
@@ -8732,72 +8411,7 @@ pub mod file_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = OptimizeMode;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ", stringify!(OptimizeMode)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<OptimizeMode, __E> {
-                        <OptimizeMode as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<OptimizeMode, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <OptimizeMode as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<OptimizeMode, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <OptimizeMode as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<OptimizeMode, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for OptimizeMode {
@@ -10925,70 +10539,7 @@ pub mod field_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = CType;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!("a string, integer, or null for ", stringify!(CType)),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<CType, __E> {
-                        <CType as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<CType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <CType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<CType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <CType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<CType, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for CType {
@@ -11078,72 +10629,7 @@ pub mod field_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = JSType;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ", stringify!(JSType)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<JSType, __E> {
-                        <JSType as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<JSType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <JSType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<JSType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <JSType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<JSType, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for JSType {
@@ -11231,73 +10717,7 @@ pub mod field_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = OptionRetention;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(OptionRetention)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<OptionRetention, __E> {
-                        <OptionRetention as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<OptionRetention, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <OptionRetention as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<OptionRetention, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <OptionRetention as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<OptionRetention, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for OptionRetention {
@@ -11421,73 +10841,7 @@ pub mod field_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = OptionTargetType;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(OptionTargetType)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<OptionTargetType, __E> {
-                        <OptionTargetType as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<OptionTargetType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <OptionTargetType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<OptionTargetType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <OptionTargetType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<OptionTargetType, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for OptionTargetType {
@@ -14873,73 +14227,7 @@ pub mod method_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = IdempotencyLevel;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(IdempotencyLevel)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<IdempotencyLevel, __E> {
-                        <IdempotencyLevel as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<IdempotencyLevel, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <IdempotencyLevel as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<IdempotencyLevel, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <IdempotencyLevel as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<IdempotencyLevel, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for IdempotencyLevel {
@@ -16665,72 +15953,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = FieldPresence;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ", stringify!(FieldPresence)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<FieldPresence, __E> {
-                        <FieldPresence as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<FieldPresence, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <FieldPresence as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<FieldPresence, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <FieldPresence as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<FieldPresence, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for FieldPresence {
@@ -16827,72 +16050,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = EnumType;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ", stringify!(EnumType)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<EnumType, __E> {
-                        <EnumType as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<EnumType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <EnumType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<EnumType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <EnumType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<EnumType, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for EnumType {
@@ -16981,75 +16139,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = RepeatedFieldEncoding;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(RepeatedFieldEncoding)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<RepeatedFieldEncoding, __E> {
-                        <RepeatedFieldEncoding as ::buffa::Enumeration>::from_proto_name(
-                                v,
-                            )
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<RepeatedFieldEncoding, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <RepeatedFieldEncoding as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<RepeatedFieldEncoding, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <RepeatedFieldEncoding as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<RepeatedFieldEncoding, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for RepeatedFieldEncoding {
@@ -17142,73 +16232,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = Utf8Validation;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(Utf8Validation)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<Utf8Validation, __E> {
-                        <Utf8Validation as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<Utf8Validation, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Utf8Validation as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<Utf8Validation, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Utf8Validation as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<Utf8Validation, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for Utf8Validation {
@@ -17297,73 +16321,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = MessageEncoding;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(MessageEncoding)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<MessageEncoding, __E> {
-                        <MessageEncoding as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<MessageEncoding, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <MessageEncoding as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<MessageEncoding, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <MessageEncoding as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<MessageEncoding, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for MessageEncoding {
@@ -17452,72 +16410,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = JsonFormat;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ", stringify!(JsonFormat)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<JsonFormat, __E> {
-                        <JsonFormat as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<JsonFormat, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <JsonFormat as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<JsonFormat, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <JsonFormat as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<JsonFormat, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for JsonFormat {
@@ -17608,73 +16501,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = EnforceNamingStyle;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(EnforceNamingStyle)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<EnforceNamingStyle, __E> {
-                        <EnforceNamingStyle as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<EnforceNamingStyle, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <EnforceNamingStyle as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<EnforceNamingStyle, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <EnforceNamingStyle as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<EnforceNamingStyle, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for EnforceNamingStyle {
@@ -17916,81 +16743,7 @@ pub mod feature_set {
                 fn deserialize<__D: ::serde::Deserializer<'de>>(
                     d: __D,
                 ) -> ::core::result::Result<Self, __D::Error> {
-                    struct _V;
-                    impl ::serde::de::Visitor<'_> for _V {
-                        type Value = DefaultSymbolVisibility;
-                        fn expecting(
-                            &self,
-                            f: &mut ::core::fmt::Formatter<'_>,
-                        ) -> ::core::fmt::Result {
-                            f.write_str(
-                                concat!(
-                                    "a string, integer, or null for ",
-                                    stringify!(DefaultSymbolVisibility)
-                                ),
-                            )
-                        }
-                        fn visit_str<__E: ::serde::de::Error>(
-                            self,
-                            v: &str,
-                        ) -> ::core::result::Result<DefaultSymbolVisibility, __E> {
-                            <DefaultSymbolVisibility as ::buffa::Enumeration>::from_proto_name(
-                                    v,
-                                )
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::invalid_value(
-                                        ::serde::de::Unexpected::Str(v),
-                                        &"a known enum variant name",
-                                    )
-                                })
-                        }
-                        fn visit_i64<__E: ::serde::de::Error>(
-                            self,
-                            v: i64,
-                        ) -> ::core::result::Result<DefaultSymbolVisibility, __E> {
-                            let v32 = i32::try_from(v)
-                                .map_err(|_| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                    )
-                                })?;
-                            <DefaultSymbolVisibility as ::buffa::Enumeration>::from_i32(
-                                    v32,
-                                )
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("unknown enum value {v32}"),
-                                    )
-                                })
-                        }
-                        fn visit_u64<__E: ::serde::de::Error>(
-                            self,
-                            v: u64,
-                        ) -> ::core::result::Result<DefaultSymbolVisibility, __E> {
-                            let v32 = i32::try_from(v)
-                                .map_err(|_| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                    )
-                                })?;
-                            <DefaultSymbolVisibility as ::buffa::Enumeration>::from_i32(
-                                    v32,
-                                )
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("unknown enum value {v32}"),
-                                    )
-                                })
-                        }
-                        fn visit_unit<__E: ::serde::de::Error>(
-                            self,
-                        ) -> ::core::result::Result<DefaultSymbolVisibility, __E> {
-                            ::core::result::Result::Ok(
-                                ::core::default::Default::default(),
-                            )
-                        }
-                    }
-                    d.deserialize_any(_V)
+                    ::buffa::json_helpers::closed_enum::deserialize_strict(d)
                 }
             }
             impl ::buffa::json_helpers::ProtoElemJson for DefaultSymbolVisibility {
@@ -20315,74 +19068,7 @@ pub mod generated_code_info {
                 fn deserialize<__D: ::serde::Deserializer<'de>>(
                     d: __D,
                 ) -> ::core::result::Result<Self, __D::Error> {
-                    struct _V;
-                    impl ::serde::de::Visitor<'_> for _V {
-                        type Value = Semantic;
-                        fn expecting(
-                            &self,
-                            f: &mut ::core::fmt::Formatter<'_>,
-                        ) -> ::core::fmt::Result {
-                            f.write_str(
-                                concat!(
-                                    "a string, integer, or null for ", stringify!(Semantic)
-                                ),
-                            )
-                        }
-                        fn visit_str<__E: ::serde::de::Error>(
-                            self,
-                            v: &str,
-                        ) -> ::core::result::Result<Semantic, __E> {
-                            <Semantic as ::buffa::Enumeration>::from_proto_name(v)
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::invalid_value(
-                                        ::serde::de::Unexpected::Str(v),
-                                        &"a known enum variant name",
-                                    )
-                                })
-                        }
-                        fn visit_i64<__E: ::serde::de::Error>(
-                            self,
-                            v: i64,
-                        ) -> ::core::result::Result<Semantic, __E> {
-                            let v32 = i32::try_from(v)
-                                .map_err(|_| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                    )
-                                })?;
-                            <Semantic as ::buffa::Enumeration>::from_i32(v32)
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("unknown enum value {v32}"),
-                                    )
-                                })
-                        }
-                        fn visit_u64<__E: ::serde::de::Error>(
-                            self,
-                            v: u64,
-                        ) -> ::core::result::Result<Semantic, __E> {
-                            let v32 = i32::try_from(v)
-                                .map_err(|_| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                    )
-                                })?;
-                            <Semantic as ::buffa::Enumeration>::from_i32(v32)
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("unknown enum value {v32}"),
-                                    )
-                                })
-                        }
-                        fn visit_unit<__E: ::serde::de::Error>(
-                            self,
-                        ) -> ::core::result::Result<Semantic, __E> {
-                            ::core::result::Result::Ok(
-                                ::core::default::Default::default(),
-                            )
-                        }
-                    }
-                    d.deserialize_any(_V)
+                    ::buffa::json_helpers::closed_enum::deserialize_strict(d)
                 }
             }
             impl ::buffa::json_helpers::ProtoElemJson for Semantic {

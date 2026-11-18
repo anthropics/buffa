@@ -1621,14 +1621,11 @@ fn closed_enum_deserialize_table() {
 }
 
 #[test]
-fn closed_enum_unknown_string_error_names_the_value() {
+fn closed_enum_unknown_string_error_omits_the_value() {
     let err = serde_json::from_str::<SerdeClosedEnum>(r#""PURPLE""#)
         .map(|v| v.0)
         .unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        r#"invalid value: string "PURPLE", expected a known enum variant name at line 1 column 8"#
-    );
+    assert_eq!(err.to_string(), "unknown enum name at line 1 column 8");
 }
 
 // ── opt_closed_enum tests ─────────────────────────────────────────────
@@ -1791,13 +1788,10 @@ fn opt_closed_enum_works_without_deserialize_impl() {
 }
 
 #[test]
-fn opt_closed_enum_unknown_string_error_names_the_value() {
+fn opt_closed_enum_unknown_string_error_omits_the_value() {
     let mut d = serde_json::Deserializer::from_str(r#""PURPLE""#);
     let err = opt_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        r#"invalid value: string "PURPLE", expected a known enum variant name"#
-    );
+    assert_eq!(err.to_string(), "unknown enum name");
 }
 
 #[test]
