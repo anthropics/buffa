@@ -377,6 +377,11 @@ jobs:
       - name: Test buffa no_std JSON options
         run: cargo test -p buffa --no-default-features --features json --test nostd_json_options
 
+      # The policy helpers must use the runtime's feature-selected map type,
+      # even though the integration test executable itself links std.
+      - name: Test buffa no_std JSON policies
+        run: cargo test -p buffa --no-default-features --features json --test json_policy_containers
+
       - name: Check buffa no_std (bare-metal ARM)
         run: cargo check -p buffa --no-default-features --target thumbv7em-none-eabihf
 

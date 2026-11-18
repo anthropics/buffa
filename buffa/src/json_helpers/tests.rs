@@ -460,6 +460,111 @@ fn bytes_url_safe_padded_with_trailing_bits() {
     assert_eq!(val.0, vec![0xFB]);
 }
 
+/// `bytes::serialize` streams through `collect_str`; the text must stay
+/// byte-identical to the `STANDARD.encode` string it replaced, as a value, a
+/// map key and through `serde_json::to_value` (which builds its own string).
+#[test]
+fn bytes_serialize_matches_standard_encode() {
+    use base64::Engine as _;
+    // `Base64Display` encodes in 768-byte chunks: cross that boundary too.
+    for len in (0..=300usize).chain([767, 768, 769, 1536, 1537, 3000]) {
+        let data: Vec<u8> = (0..len).map(|i| (i * 37 + len) as u8).collect();
+        let expected = alloc::format!(
+            "\"{}\"",
+            base64::engine::general_purpose::STANDARD.encode(&data)
+        );
+        assert_eq!(
+            serde_json::to_string(&SerdeBytes(data.clone())).unwrap(),
+            expected
+        );
+        assert_eq!(
+            serde_json::to_value(SerdeBytes(data.clone())).unwrap(),
+            serde_json::from_str::<serde_json::Value>(&expected).unwrap()
+        );
+        let mut keyed = alloc::collections::BTreeMap::new();
+        keyed.insert(data, 1i32);
+        let key_json = serde_json::to_string(&BytesKeyHolder(keyed)).unwrap();
+        assert_eq!(key_json, alloc::format!("{{{expected}:1}}"));
+    }
+}
+
+#[derive(serde::Serialize)]
+struct BytesKeyHolder(#[serde(with = "bytes_key_map")] alloc::collections::BTreeMap<Vec<u8>, i32>);
+
+/// The decoder `decode_base64` replaced: standard alphabet first, URL-safe on
+/// failure.
+fn decode_base64_two_pass(v: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    use base64::Engine as _;
+    STANDARD_LENIENT
+        .decode(v)
+        .or_else(|std_err| URL_SAFE_LENIENT.decode(v).map_err(|_| std_err))
+}
+
+/// Choosing the alphabet up front accepts exactly what the two-pass decoder
+/// accepted, with the same output: every string of up to six symbols drawn
+/// from both alphabets' distinguishing characters, padding and shared
+/// symbols, plus std, URL-safe, padded and unpadded encodings of real data.
+#[test]
+fn decode_base64_accepts_exactly_what_two_pass_decoding_accepted() {
+    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+    use base64::Engine as _;
+    let symbols = [b'A', b'Q', b'w', b'+', b'/', b'-', b'_', b'='];
+    let mut checked = 0usize;
+    for len in 0..=6u32 {
+        for mut n in 0..symbols.len().pow(len) {
+            let mut text = alloc::string::String::new();
+            for _ in 0..len {
+                text.push(symbols[n % symbols.len()] as char);
+                n /= symbols.len();
+            }
+            assert_eq!(
+                decode_base64(&text).ok(),
+                decode_base64_two_pass(&text).ok(),
+                "{text:?}"
+            );
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 299_593);
+    for len in 0..=64usize {
+        let data: Vec<u8> = (0..len).map(|i| (i * 151 + 7) as u8).collect();
+        for engine in [STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD] {
+            let text = engine.encode(&data);
+            assert_eq!(decode_base64(&text).unwrap(), data, "{text:?}");
+            assert_eq!(decode_base64_two_pass(&text).unwrap(), data, "{text:?}");
+        }
+    }
+}
+
+#[test]
+fn bytes_decode_into_writes_caller_storage() {
+    for text in ["AP+A", "AP-A", "AP8", "AP8=", "-_", ""] {
+        let mut out = vec![0u8; bytes::max_decoded_len(text)];
+        let n = bytes::decode_into::<serde_json::Error>(text, &mut out).unwrap();
+        assert_eq!(
+            &out[..n],
+            decode_base64(text).unwrap().as_slice(),
+            "{text:?}"
+        );
+    }
+    // An exactly sized buffer suffices, though the bound is larger.
+    for len in 0..=100usize {
+        use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+        use base64::Engine as _;
+        let data: Vec<u8> = (0..len).map(|i| (i * 89 + 3) as u8).collect();
+        for text in [STANDARD.encode(&data), URL_SAFE_NO_PAD.encode(&data)] {
+            let mut exact = vec![0u8; len];
+            let n = bytes::decode_into::<serde_json::Error>(&text, &mut exact).unwrap();
+            assert_eq!((n, &exact), (len, &data), "{text:?}");
+        }
+    }
+    let mut short = [0u8; 2];
+    assert!(bytes::decode_into::<serde_json::Error>("AAAAAAAA", &mut short).is_err());
+    let mut out = [0u8; 8];
+    assert!(bytes::decode_into::<serde_json::Error>("!!!", &mut out).is_err());
+    assert!(bytes::decode_into::<serde_json::Error>("A+-A", &mut out).is_err());
+}
+
 /// `decode_base64` leaves the output buffer's size to the `base64` crate,
 /// and the input length comes from untrusted JSON. A multiply-first estimate
 /// (`len * 3 / 4`) overflows a 32-bit `usize` above ~1.33 GiB of input: it

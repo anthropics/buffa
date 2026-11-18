@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Keep rejected symbols and offsets out of bytes::decode_into errors. Invalid encoding and insufficient caller output capacity use a fixed reason; accepted padding, alphabets and trailing-bit leniency remain unchanged.'
+time: 2026-11-18T20:30:00+01:00
