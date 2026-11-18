@@ -42,7 +42,7 @@ use crate::{
     ScalarType, SingularKind,
 };
 use buffa::editions::EnumType;
-use buffa::json_helpers;
+use buffa::json_helpers::{self, EnumJsonErrorReason};
 use buffa::RECURSION_LIMIT;
 
 // ── Serialize ───────────────────────────────────────────────────────────────
@@ -1226,21 +1226,39 @@ fn deserialize_enum<'de, D: Deserializer<'de>>(
             let ed = self.pool.enumeration(self.eidx);
             ed.value_by_name(v)
                 .map(|ev| Some(Value::EnumNumber(ev.number)))
-                .ok_or_else(|| {
-                    de::Error::invalid_value(de::Unexpected::Str(v), &"a known enum variant name")
-                })
+                .ok_or_else(|| E::custom(EnumJsonErrorReason::UnknownName))
         }
         fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
-            let n = i32::try_from(v).map_err(de::Error::custom)?;
+            let n = i32::try_from(v).map_err(|_| E::custom(EnumJsonErrorReason::OutOfRange))?;
             // Closed enums reject unknown values; open enums accept any i32.
             let ed = self.pool.enumeration(self.eidx);
             if self.enum_type.unwrap_or(ed.enum_type) == EnumType::Closed && ed.value(n).is_none() {
-                return Err(de::Error::custom("unknown closed enum value"));
+                return Err(E::custom(EnumJsonErrorReason::UnknownNumber));
             }
             Ok(Some(Value::EnumNumber(n)))
         }
         fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
-            self.visit_i64(i64::try_from(v).map_err(de::Error::custom)?)
+            self.visit_i64(
+                i64::try_from(v).map_err(|_| E::custom(EnumJsonErrorReason::OutOfRange))?,
+            )
+        }
+        // Deserializers delivering 128-bit integers, including JSON Values
+        // with arbitrary precision, use checked narrowing to avoid echoing input.
+        fn visit_i128<E: de::Error>(self, v: i128) -> Result<Self::Value, E> {
+            self.visit_i64(
+                i64::try_from(v).map_err(|_| E::custom(EnumJsonErrorReason::OutOfRange))?,
+            )
+        }
+        fn visit_u128<E: de::Error>(self, v: u128) -> Result<Self::Value, E> {
+            self.visit_u64(
+                u64::try_from(v).map_err(|_| E::custom(EnumJsonErrorReason::OutOfRange))?,
+            )
+        }
+        fn visit_f64<E: de::Error>(self, _: f64) -> Result<Self::Value, E> {
+            Err(E::custom(EnumJsonErrorReason::InvalidType))
+        }
+        fn visit_bool<E: de::Error>(self, _: bool) -> Result<Self::Value, E> {
+            Err(E::custom(EnumJsonErrorReason::InvalidType))
         }
         fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
             // null for an enum: NullValue gets `None` from a unit; other
@@ -1267,6 +1285,47 @@ fn deserialize_enum<'de, D: Deserializer<'de>>(
     })
 }
 
+// Wrong-shaped scalar values must not bypass redaction at a collection boundary.
+macro_rules! reject_container_scalar_values {
+    ($reason:ident) => {
+        fn visit_str<Err: serde::de::Error>(self, _: &str) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                buffa::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+        fn visit_i64<Err: serde::de::Error>(self, _: i64) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                buffa::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+        fn visit_u64<Err: serde::de::Error>(self, _: u64) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                buffa::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+        fn visit_i128<Err: serde::de::Error>(self, _: i128) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                buffa::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+        fn visit_u128<Err: serde::de::Error>(self, _: u128) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                buffa::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+        fn visit_f64<Err: serde::de::Error>(self, _: f64) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                buffa::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+        fn visit_bool<Err: serde::de::Error>(self, _: bool) -> Result<Self::Value, Err> {
+            Err(Err::custom(
+                buffa::json_helpers::EnumJsonErrorReason::$reason,
+            ))
+        }
+    };
+}
+
 struct ListVisitor<'a> {
     pool: &'a Arc<DescriptorPool>,
     kind: SingularKind,
@@ -1280,6 +1339,8 @@ impl<'de> Visitor<'de> for ListVisitor<'_> {
     fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "a JSON array or null")
     }
+    reject_container_scalar_values!(InvalidListType);
+
     fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
         Ok(None)
     }
@@ -1318,6 +1379,8 @@ impl<'de> Visitor<'de> for MapFieldVisitor<'_> {
     fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "a JSON object or null")
     }
+    reject_container_scalar_values!(InvalidMapType);
+
     fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
         Ok(None)
     }

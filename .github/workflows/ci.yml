@@ -61,6 +61,11 @@ jobs:
       - name: Tests
         run: cargo test --workspace
 
+      # Feature unification can deliver wide JSON numbers through 128-bit
+      # visitor callbacks when decoding a Value instead of JSON text.
+      - name: Enum diagnostics with arbitrary precision
+        run: cargo test -p buffa-test --features serde_json/arbitrary_precision --test enum_json_precision -- --ignored
+
       # Optional features must keep compiling — #88 was a feature-flag-only
       # break that escaped the default-features test pass above. cargo check
       # is sufficient to catch compile breaks without doubling the test time.

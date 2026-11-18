@@ -47,6 +47,154 @@ fn test_json_enum_round_trip() {
 }
 
 #[test]
+fn standalone_enum_json_errors_omit_input() {
+    use crate::json_types::Color;
+    use serde_json::{from_value, json};
+
+    for (input, expected) in [
+        (json!("unrecognized-marker"), "unknown enum name"),
+        (json!(123456), "unknown enum number"),
+        (json!(-123456), "unknown enum number"),
+        (json!(i64::MIN), "enum number out of i32 range"),
+        (json!(u64::MAX), "enum number out of i32 range"),
+        (json!(1.0), "expected a protobuf enum name or integer"),
+        (json!(true), "expected a protobuf enum name or integer"),
+    ] {
+        let err = from_value::<Color>(input).unwrap_err();
+        assert_eq!(err.to_string(), expected);
+    }
+
+    for input in [json!("RED"), json!(1)] {
+        assert_eq!(from_value::<Color>(input).unwrap(), Color::RED);
+    }
+    assert_eq!(from_value::<Color>(json!(null)).unwrap(), Color::default());
+}
+
+/// Deserializers can hand integers outside the 64-bit range to
+/// `visit_i128` / `visit_u128`, whose serde defaults echo the number. Every
+/// enum visitor must report the fixed out-of-range reason instead.
+#[test]
+fn enum_128_bit_integer_errors_omit_input() {
+    use crate::json_types::Color;
+    use crate::p2json::Tier;
+    use buffa::json_helpers::{closed_enum, proto_enum};
+    use buffa::EnumValue;
+    use serde::de::value::{Error, I128Deserializer, U128Deserializer};
+    use serde::Deserialize;
+
+    const EXPECTED: &str = "enum number out of i32 range";
+    let u = || U128Deserializer::<Error>::new(u128::MAX);
+    let i = || I128Deserializer::<Error>::new(i128::MIN);
+    let check = |err: Error| {
+        let msg = err.to_string();
+        assert_eq!(msg, EXPECTED);
+        assert!(!msg.contains(&u128::MAX.to_string()), "{msg}");
+        assert!(!msg.contains(&i128::MIN.to_string()), "{msg}");
+    };
+
+    check(EnumValue::<Color>::deserialize(u()).unwrap_err());
+    check(EnumValue::<Color>::deserialize(i()).unwrap_err());
+    check(proto_enum::deserialize::<Color, _>(u()).unwrap_err());
+    check(proto_enum::deserialize::<Color, _>(i()).unwrap_err());
+    check(closed_enum::deserialize::<Tier, _>(u()).unwrap_err());
+    check(closed_enum::deserialize::<Tier, _>(i()).unwrap_err());
+    // Generated standalone `Deserialize` (`closed_enum::deserialize_strict`).
+    check(Color::deserialize(u()).unwrap_err());
+    check(Tier::deserialize(i()).unwrap_err());
+
+    // An in-range number delivered as a 128-bit integer takes the usual path.
+    let u1 = || U128Deserializer::<Error>::new(1);
+    let i1 = || I128Deserializer::<Error>::new(1);
+    assert_eq!(EnumValue::<Color>::deserialize(u1()).unwrap(), Color::RED);
+    assert_eq!(EnumValue::<Color>::deserialize(i1()).unwrap(), Color::RED);
+    assert_eq!(
+        proto_enum::deserialize::<Color, _>(u1()).unwrap(),
+        Color::RED
+    );
+    assert_eq!(
+        proto_enum::deserialize::<Color, _>(i1()).unwrap(),
+        Color::RED
+    );
+    assert_eq!(
+        closed_enum::deserialize::<Tier, _>(u1()).unwrap(),
+        Tier::PRO
+    );
+    assert_eq!(
+        closed_enum::deserialize::<Tier, _>(i1()).unwrap(),
+        Tier::PRO
+    );
+    assert_eq!(Color::deserialize(i1()).unwrap(), Color::RED);
+    assert_eq!(Tier::deserialize(u1()).unwrap(), Tier::PRO);
+    let err = Tier::deserialize(I128Deserializer::<Error>::new(123456)).unwrap_err();
+    assert_eq!(err.to_string(), "unknown enum number");
+}
+
+/// The carrier's integer width must not change the enum's i32 range or
+/// known/unknown-value rules. Compare against the established 64-bit path.
+#[test]
+fn enum_128_bit_integer_range_matches_64_bit() {
+    use crate::json_types::Color;
+    use crate::p2json::Tier;
+    use buffa::EnumValue;
+    use serde::de::value::{
+        Error, I128Deserializer, I64Deserializer, U128Deserializer, U64Deserializer,
+    };
+    use serde::de::DeserializeOwned;
+
+    fn compare<T: DeserializeOwned + core::fmt::Debug + PartialEq>() {
+        for value in [
+            i64::MIN,
+            i64::from(i32::MIN) - 1,
+            i64::from(i32::MIN),
+            -1,
+            0,
+            1,
+            i64::from(i32::MAX),
+            i64::from(i32::MAX) + 1,
+            i64::MAX,
+        ] {
+            let expected =
+                T::deserialize(I64Deserializer::<Error>::new(value)).map_err(|e| e.to_string());
+            let actual = T::deserialize(I128Deserializer::<Error>::new(i128::from(value)))
+                .map_err(|e| e.to_string());
+            assert_eq!(actual, expected);
+        }
+        for value in [
+            0,
+            1,
+            u64::try_from(i32::MAX).unwrap(),
+            u64::try_from(i32::MAX).unwrap() + 1,
+            u64::MAX,
+        ] {
+            let expected =
+                T::deserialize(U64Deserializer::<Error>::new(value)).map_err(|e| e.to_string());
+            let actual = T::deserialize(U128Deserializer::<Error>::new(u128::from(value)))
+                .map_err(|e| e.to_string());
+            assert_eq!(actual, expected);
+        }
+    }
+    compare::<EnumValue<Color>>();
+    compare::<Color>();
+    compare::<Tier>();
+}
+
+#[test]
+fn standalone_enum_json_remains_strict_in_lenient_mode() {
+    use crate::json_types::Color;
+
+    let opts = buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+    buffa::json::with_json_parse_options(&opts, || {
+        for (input, expected) in [
+            (serde_json::json!("unknown-marker"), "unknown enum name"),
+            (serde_json::json!(123456), "unknown enum number"),
+        ] {
+            let err = serde_json::from_value::<Color>(input).unwrap_err();
+            assert_eq!(err.to_string(), expected);
+        }
+    });
+}
+
+#[test]
 fn test_json_oneof_round_trip() {
     use crate::json_types::WithOneof;
 
@@ -538,6 +686,46 @@ fn test_proto2_closed_enum_json_unknown_value_rejected() {
         result.is_err(),
         "expected error for unknown closed-enum value"
     );
+}
+
+#[test]
+fn closed_enum_json_diagnostics_do_not_echo_collection_values() {
+    use crate::p2json::ClosedEnumJson;
+    use serde_json::{from_value, json};
+
+    for (value, expected, unknown) in [
+        (json!("unrecognized-marker"), "unknown enum name", true),
+        (json!(123456), "unknown enum number", true),
+        (json!(u64::MAX), "enum number out of i32 range", false),
+        (
+            json!(42.25),
+            "expected a protobuf enum name or integer",
+            false,
+        ),
+        (
+            json!(true),
+            "expected a protobuf enum name or integer",
+            false,
+        ),
+    ] {
+        for input in [
+            json!({"tier": value}),
+            json!({"tiers": [value]}),
+            json!({"byName": {"a": value}}),
+        ] {
+            let err = from_value::<ClosedEnumJson>(input.clone()).unwrap_err();
+            assert_eq!(err.to_string(), expected);
+
+            let opts = buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+            let result =
+                buffa::json::with_json_parse_options(&opts, || from_value::<ClosedEnumJson>(input));
+            if unknown {
+                assert_eq!(result.unwrap(), ClosedEnumJson::default());
+            } else {
+                assert_eq!(result.unwrap_err().to_string(), expected);
+            }
+        }
+    }
 }
 
 #[test]

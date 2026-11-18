@@ -407,7 +407,7 @@ fn field_rule_opens_reflective_json_for_repeated_and_map() {
     let err = DynamicMessage::from_json(pool.clone(), idx, r#"{"closed_control": 99}"#)
         .expect_err("a closed enum field must still reject an unknown numeric value");
     assert!(
-        err.to_string().contains("unknown closed enum value"),
+        err.to_string().contains("unknown enum number"),
         "expected a closed-enum rejection, got: {err}"
     );
 }
