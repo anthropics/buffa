@@ -81,6 +81,10 @@ pub struct MapVt {
 /// whether to insert the entry.
 type EntryReader<'a> = dyn FnMut(*mut u8, *mut u8) -> Result<bool, DecodeError> + 'a;
 
+#[cfg(all(test, feature = "zeroize"))]
+#[path = "map_cleanup_tests.rs"]
+mod cleanup_tests;
+
 /// # Safety
 ///
 /// `map` points to a live `Mp`, which nothing mutates during the call.
@@ -107,16 +111,16 @@ where
     Mp::Key: Default,
     Mp::Value: Default,
 {
-    let mut key = Mp::Key::default();
-    let mut value = Mp::Value::default();
+    let mut key = crate::erasing::Erasing::new(Mp::Key::default(), Mp::storage_erase_key);
+    let mut value = crate::erasing::Erasing::new(Mp::Value::default(), Mp::storage_erase_value);
     let keep = f(
-        (&mut key as *mut Mp::Key).cast(),
-        (&mut value as *mut Mp::Value).cast(),
+        (&mut *key as *mut Mp::Key).cast(),
+        (&mut *value as *mut Mp::Value).cast(),
     )?;
     if keep {
         // SAFETY: the caller passes a pointer to a live `Mp` that it has
         // exclusive access to.
-        unsafe { (*map.cast::<Mp>()).storage_insert(key, value) };
+        unsafe { (*map.cast::<Mp>()).storage_insert(key.into_inner(), value.into_inner()) };
     }
     Ok(keep)
 }
