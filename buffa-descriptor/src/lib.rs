@@ -21,6 +21,10 @@
 //!   import rules (`LinkOptions`), and the `DynamicMessage` runtime built on
 //!   it.
 //!
+//! The optional `arbitrary` feature enables `std`: generated fuzzing derives
+//! use standard-library recursion guards. Without it or another feature that
+//! enables `std`, disabling defaults retains `no_std` support.
+//!
 //! # Regenerating
 //!
 //! The generated code is checked in.  To regenerate (after a codegen output

@@ -17,7 +17,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = ["std"]
 std = ["buffa/std", "thiserror/std", "serde?/std", "serde_json?/std", "jiff?/std"]
 json = ["dep:serde", "dep:serde_json", "buffa/json"]
-arbitrary = ["dep:arbitrary", "buffa/arbitrary"]
+# Generated derives require std; forward it to buffa for the map representation.
+arbitrary = ["std", "dep:arbitrary", "buffa/arbitrary"]
 # Runtime reflection for the WKT views (`impl ReflectMessage for TimestampView`,
 # etc.) and owned types. Pulls `buffa-descriptor` and requires `std` (the
 # embedded descriptor pool uses `std::sync::OnceLock`). Off by default so

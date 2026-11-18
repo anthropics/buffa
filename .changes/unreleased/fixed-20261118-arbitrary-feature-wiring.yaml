@@ -1,0 +1,3 @@
+kind: Fixed
+body: 'Make the `buffa-types` and `buffa-descriptor` `arbitrary` features enable the standard-library support required by their generated derives and map representations. Builds with defaults disabled and arbitrary enabled now compile independently on native and Wasm targets; ordinary builds without these features retain no_std support.'
+time: 2026-11-18T11:00:00+01:00
