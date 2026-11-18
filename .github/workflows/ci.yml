@@ -61,6 +61,9 @@ jobs:
       - name: Tests
         run: cargo test --workspace
 
+      - name: Test optional Chrono conversions
+        run: cargo test -p buffa-types --features chrono,json chrono
+
       # Optional features must keep compiling — #88 was a feature-flag-only
       # break that escaped the default-features test pass above. cargo check
       # is sufficient to catch compile breaks without doubling the test time.

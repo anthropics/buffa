@@ -17,7 +17,7 @@ buffa = { workspace = true, features = ["std", "json", "text"] }
 # generated with `generate_text(true)` and the pool decodes the WKT
 # descriptors that need it.
 buffa-descriptor = { workspace = true, features = ["reflect", "json", "std"] }
-buffa-types = { workspace = true, features = ["json", "chrono", "jiff", "reflect"] }
+buffa-types = { workspace = true, features = ["json", "jiff", "reflect"] }
 # The `buffa.ext` option types, for reading the options that
 # `protos/ext_options.proto` sets (`src/tests/ext_options.rs`).
 buffa-proto-options = { workspace = true }
