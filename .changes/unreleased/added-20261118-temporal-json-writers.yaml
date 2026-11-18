@@ -1,0 +1,3 @@
+kind: Added
+body: 'Add typed caller-owned write_timestamp and write_duration JSON formatting helpers without intermediate heap strings. Existing fmt_timestamp and fmt_duration signatures, canonical output and validation remain unchanged. Quoted integer serializers also stream through Serializer::collect_str instead of allocating temporary decimal strings.'
+time: 2026-11-18T20:48:42+01:00
