@@ -615,6 +615,7 @@ impl<'de> serde::Deserialize<'de> for Value {
             fn visit_string<E>(self, v: String) -> Result<Value, E> {
                 Ok(Value::from(v))
             }
+            buffa::json_helpers::reject_other_json_kinds!(i128, u128, bytes);
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Value, A::Error> {
                 let mut st = Struct::default();
                 while let Some((k, v)) = map.next_entry::<String, Value>()? {
@@ -659,6 +660,20 @@ impl<'de> serde::Deserialize<'de> for Struct {
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("a JSON object")
             }
+            buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            // An empty YAML value reaches `deserialize_any` as `visit_none`;
+            // `deserialize_map` read it as an empty map. JSON never sends it.
+            fn visit_enum<A: serde::de::EnumAccess<'de>>(
+                self,
+                tagged: A,
+            ) -> Result<Self::Value, A::Error> {
+                buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
+            fn visit_none<E>(self) -> Result<Struct, E> {
+                Ok(Struct::default())
+            }
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Struct, A::Error> {
                 let mut st = Struct::default();
                 while let Some((k, v)) = map.next_entry::<String, Value>()? {
@@ -667,7 +682,13 @@ impl<'de> serde::Deserialize<'de> for Struct {
                 Ok(st)
             }
         }
-        d.deserialize_map(V)
+        // `deserialize_any` so a non-object reaches `V`, whose rejections
+        // name the JSON kind but not the value.
+        if d.is_human_readable() {
+            d.deserialize_any(V)
+        } else {
+            d.deserialize_map(V)
+        }
     }
 }
 
@@ -693,6 +714,21 @@ impl<'de> serde::Deserialize<'de> for ListValue {
             fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str("a JSON array")
             }
+            buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            // An empty YAML value reaches `deserialize_any` as `visit_none`;
+            // `deserialize_seq` read it as an empty sequence. JSON never
+            // sends it.
+            fn visit_enum<A: serde::de::EnumAccess<'de>>(
+                self,
+                tagged: A,
+            ) -> Result<Self::Value, A::Error> {
+                buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
+            fn visit_none<E>(self) -> Result<ListValue, E> {
+                Ok(ListValue::default())
+            }
             fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<ListValue, A::Error> {
                 let mut values = Vec::new();
                 while let Some(v) = seq.next_element::<Value>()? {
@@ -704,7 +740,13 @@ impl<'de> serde::Deserialize<'de> for ListValue {
                 })
             }
         }
-        d.deserialize_seq(V)
+        // `deserialize_any` so a non-array reaches `V`, whose rejections
+        // name the JSON kind but not the value.
+        if d.is_human_readable() {
+            d.deserialize_any(V)
+        } else {
+            d.deserialize_seq(V)
+        }
     }
 }
 

@@ -1,0 +1,27 @@
+// A message with a field at every JSON position the reflective codec parses,
+// for the wrong-kind diagnostics test in `json_wrong_kind.rs`.
+syntax = "proto3";
+
+package reflect.wrongkind;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+message Fields {
+  bool flag = 1;
+  string text = 2;
+  optional bool maybe_flag = 3;
+  repeated string texts = 4;
+  map<string, bool> flags = 5;
+  Fields child = 6;
+  google.protobuf.Timestamp timestamp = 7;
+  google.protobuf.Duration duration = 8;
+  google.protobuf.FieldMask field_mask = 9;
+  google.protobuf.Struct struct = 10;
+  google.protobuf.ListValue list = 11;
+  google.protobuf.Empty empty = 12;
+  google.protobuf.Value value = 13;
+}

@@ -290,6 +290,39 @@ mod tests {
         assert_eq!(round_trip(&msg), msg);
     }
 
+    #[test]
+    fn empty_ignores_tagged_and_structural_keys() {
+        for input in [
+            "? !Tag label\n: value\n",
+            "? [one, two]\n: value\n",
+            "1: value\n",
+        ] {
+            let _: buffa_types::Empty = from_str(input).unwrap();
+        }
+    }
+
+    #[test]
+    fn empty_document_decodes_as_default_for_object_and_list_types() {
+        // These types read every JSON kind so that a wrong kind is rejected
+        // without echoing it. An empty YAML document still decodes as the
+        // default, as it does for a message with a derived `Deserialize`.
+        use buffa_test::json_types::{Scalar, WithOneof};
+        assert_eq!(from_str::<WithOneof>("").unwrap(), WithOneof::default());
+        assert_eq!(from_str::<Scalar>("").unwrap(), Scalar::default());
+        assert_eq!(
+            from_str::<buffa_types::Struct>("").unwrap(),
+            buffa_types::Struct::default()
+        );
+        assert_eq!(
+            from_str::<buffa_types::ListValue>("").unwrap(),
+            buffa_types::ListValue::default()
+        );
+        assert_eq!(
+            from_str::<buffa_types::Empty>("").unwrap(),
+            buffa_types::Empty::default()
+        );
+    }
+
     // ── maps ──────────────────────────────────────────────────────────────────
 
     #[test]

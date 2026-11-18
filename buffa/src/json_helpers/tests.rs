@@ -1621,14 +1621,11 @@ fn closed_enum_deserialize_table() {
 }
 
 #[test]
-fn closed_enum_unknown_string_error_names_the_value() {
+fn closed_enum_unknown_string_error_omits_the_value() {
     let err = serde_json::from_str::<SerdeClosedEnum>(r#""PURPLE""#)
         .map(|v| v.0)
         .unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        r#"invalid value: string "PURPLE", expected a known enum variant name at line 1 column 8"#
-    );
+    assert_eq!(err.to_string(), "unknown enum name at line 1 column 8");
 }
 
 // ── opt_closed_enum tests ─────────────────────────────────────────────
@@ -1791,13 +1788,10 @@ fn opt_closed_enum_works_without_deserialize_impl() {
 }
 
 #[test]
-fn opt_closed_enum_unknown_string_error_names_the_value() {
+fn opt_closed_enum_unknown_string_error_omits_the_value() {
     let mut d = serde_json::Deserializer::from_str(r#""PURPLE""#);
     let err = opt_closed_enum::deserialize::<BareEnum, _>(&mut d).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        r#"invalid value: string "PURPLE", expected a known enum variant name"#
-    );
+    assert_eq!(err.to_string(), "unknown enum name");
 }
 
 #[test]
@@ -2285,5 +2279,202 @@ fn adapter_newtypes_match_their_helpers() {
     assert_eq!(
         serde_json::to_string(&ClosedEnumSeqJson(&[TestEnum::Zero, TestEnum::One][..])).unwrap(),
         r#"["ZERO","ONE"]"#
+    );
+}
+
+fn assert_fixed_json_error<T: serde::de::DeserializeOwned>(json: &str, reason: JsonValueError) {
+    let error = match serde_json::from_str::<T>(json) {
+        Err(error) => error,
+        Ok(_) => panic!("expected a JSON error for {json}"),
+    };
+    let text = error.to_string();
+    let expected = reason.to_string();
+    assert_eq!(text.split(" at line ").next(), Some(expected.as_str()));
+}
+
+#[test]
+fn numeric_errors_omit_invalid_text_and_numbers() {
+    use JsonValueError::{Double, Float, Int32, Int64, Uint32, Uint64};
+    for json in [
+        r#""number-marker""#,
+        "-2147483649",
+        "2147483648",
+        "123456.5",
+    ] {
+        assert_fixed_json_error::<SerdeInt32>(json, Int32);
+    }
+    for json in [r#""number-marker""#, "-123456", "4294967296"] {
+        assert_fixed_json_error::<SerdeUint32>(json, Uint32);
+    }
+    for json in [r#""number-marker""#, "9223372036854775808"] {
+        assert_fixed_json_error::<SerdeInt64>(json, Int64);
+    }
+    for json in [r#""number-marker""#, "-123456"] {
+        assert_fixed_json_error::<SerdeUint64>(json, Uint64);
+    }
+    for json in [r#""float-marker""#, "4.12345e39"] {
+        assert_fixed_json_error::<SerdeFloat>(json, Float);
+    }
+    assert_fixed_json_error::<SerdeInt32>("true", Int32);
+    assert_fixed_json_error::<SerdeFloat>("true", Float);
+    assert_fixed_json_error::<SerdeDouble>("true", Double);
+    assert_fixed_json_error::<SerdeDouble>(r#""double-marker""#, Double);
+}
+
+#[test]
+fn key_and_base64_errors_omit_the_rejected_value() {
+    use JsonValueError::{Base64, MapKey};
+    assert_fixed_json_error::<MapI32I64Holder>(r#"{"key-marker":"42"}"#, MapKey);
+    assert_fixed_json_error::<SerdeStringKeyMap>(r#"{"key-marker":"value"}"#, MapKey);
+    // '!' is reported as byte 33 by the underlying base64 decoder.
+    assert_fixed_json_error::<SerdeBytes>(r#""base64!marker""#, Base64);
+    assert_fixed_json_error::<SerdeBytes>("123456789", Base64);
+    assert_fixed_json_error::<BytesKeyWrapper>(r#"{"m":{"base64!marker":1}}"#, Base64);
+    assert_fixed_json_error::<BytesKeyBytesValWrapper>(r#"{"m":{"base64!marker":"AA=="}}"#, Base64);
+    assert_fixed_json_error::<BytesKeyBytesValWrapper>(r#"{"m":{"AA==":"base64!marker"}}"#, Base64);
+}
+
+// ── wrong-kind input is never echoed ─────────────────────────────────
+
+/// Text that would appear in a diagnostic that echoes one of the inputs fed
+/// by [`assert_wrong_kinds_redacted`].
+const WRONG_KIND_MARKERS: [&str; 5] = [
+    "123456789",
+    "1.5e",
+    "true",
+    "marker",
+    "340282366920938463463374607431768211455",
+];
+
+fn assert_no_marker(input: &str, error: Option<alloc::string::String>) {
+    let text = error.unwrap_or_else(|| panic!("expected an error for {input}"));
+    for marker in WRONG_KIND_MARKERS {
+        assert!(
+            !text.contains(marker),
+            "error for {input} echoes {marker:?}: {text}"
+        );
+    }
+}
+
+/// Feed each JSON input, and `u128::MAX` through serde's `U128Deserializer`,
+/// to a `deserialize` function and assert that every error omits the input.
+macro_rules! assert_wrong_kinds_redacted {
+    ($deserialize:expr; $($json:expr),+ $(,)?) => {{
+        $({
+            let json: &str = $json;
+            let mut de = serde_json::Deserializer::from_str(json);
+            assert_no_marker(json, $deserialize(&mut de).err().map(|e| e.to_string()));
+        })+
+        let de = serde::de::IntoDeserializer::<serde::de::value::Error>::into_deserializer(u128::MAX);
+        assert_no_marker("u128::MAX", $deserialize(de).err().map(|e| e.to_string()));
+    }};
+}
+
+const INT: &str = "123456789";
+const FLOAT: &str = "-1.5e300";
+const BOOL: &str = "true";
+const STR: &str = r#""marker-secret""#;
+const SEQ: &str = "[]";
+const MAP: &str = "{}";
+
+#[test]
+fn scalar_errors_omit_wrong_kind_input() {
+    use alloc::string::String;
+    assert_wrong_kinds_redacted!(proto_bool::deserialize; INT, FLOAT, STR, SEQ, MAP);
+    assert_wrong_kinds_redacted!(opt_bool::deserialize; INT, FLOAT, STR, SEQ, MAP);
+    assert_wrong_kinds_redacted!(proto_string::deserialize::<String, _>; INT, FLOAT, BOOL, SEQ, MAP);
+    assert_wrong_kinds_redacted!(proto_string::deserialize::<MyStr, _>; INT, FLOAT, BOOL, SEQ, MAP);
+    assert_wrong_kinds_redacted!(opt_string::deserialize::<String, _>; INT, FLOAT, BOOL, SEQ, MAP);
+    assert_wrong_kinds_redacted!(opt_string::deserialize::<MyStr, _>; INT, FLOAT, BOOL, SEQ, MAP);
+    assert_wrong_kinds_redacted!(int32::deserialize; BOOL, STR, SEQ, MAP);
+    assert_wrong_kinds_redacted!(opt_int32::deserialize; BOOL, STR, SEQ, MAP);
+    assert_wrong_kinds_redacted!(uint32::deserialize; BOOL, STR, SEQ, MAP);
+    assert_wrong_kinds_redacted!(int64::deserialize; BOOL, STR, SEQ, MAP);
+    assert_wrong_kinds_redacted!(opt_uint64::deserialize; BOOL, STR, SEQ, MAP);
+    assert_wrong_kinds_redacted!(float::deserialize; BOOL, STR, SEQ, MAP);
+    assert_wrong_kinds_redacted!(opt_double::deserialize; BOOL, STR, SEQ, MAP);
+    assert_wrong_kinds_redacted!(bytes::deserialize::<Vec<u8>, _>; INT, FLOAT, BOOL, STR, SEQ, MAP);
+    assert_wrong_kinds_redacted!(opt_bytes::deserialize::<Vec<u8>, _>; INT, FLOAT, BOOL, STR, SEQ, MAP);
+}
+
+#[test]
+fn container_errors_omit_wrong_kind_input() {
+    use alloc::string::String;
+    use std::collections::HashMap;
+    assert_wrong_kinds_redacted!(proto_seq::deserialize::<String, Vec<String>, _>; INT, FLOAT, BOOL, STR, MAP);
+    assert_wrong_kinds_redacted!(proto_map::deserialize::<HashMap<i32, bool>, _>; INT, FLOAT, BOOL, STR, SEQ);
+    assert_wrong_kinds_redacted!(proto_str_key_map::deserialize::<HashMap<String, i64>, _>; INT, FLOAT, BOOL, STR, SEQ);
+    assert_wrong_kinds_redacted!(bytes_key_map::deserialize::<HashMap<Vec<u8>, String>, _>; INT, FLOAT, BOOL, STR, SEQ);
+    assert_wrong_kinds_redacted!(bytes_key_bytes_val_map::deserialize::<HashMap<Vec<u8>, Vec<u8>>, _>; INT, FLOAT, BOOL, STR, SEQ);
+    assert_wrong_kinds_redacted!(string_key_map::deserialize::<HashMap<i32, String>, _>; INT, FLOAT, BOOL, STR, SEQ);
+    assert_wrong_kinds_redacted!(repeated_enum::deserialize::<Color, Vec<crate::EnumValue<Color>>, _>; INT, FLOAT, BOOL, STR, MAP);
+    assert_wrong_kinds_redacted!(map_enum::deserialize::<HashMap<String, crate::EnumValue<Color>>, _>; INT, FLOAT, BOOL, STR, SEQ);
+    assert_wrong_kinds_redacted!(repeated_closed_enum::deserialize::<Color, Vec<Color>, _>; INT, FLOAT, BOOL, STR, MAP);
+    assert_wrong_kinds_redacted!(map_closed_enum::deserialize::<HashMap<String, Color>, _>; INT, FLOAT, BOOL, STR, SEQ);
+    // Elements and values reach the scalar helpers.
+    assert_wrong_kinds_redacted!(proto_seq::deserialize::<bool, Vec<bool>, _>; r#"["marker-secret"]"#, "[123456789]");
+    assert_wrong_kinds_redacted!(proto_map::deserialize::<HashMap<String, String>, _>; r#"{"k":true}"#, r#"{"k":-1.5e300}"#);
+}
+
+#[test]
+fn in_range_128_bit_integers_are_forwarded() {
+    use serde::de::value::{Error, I128Deserializer, U128Deserializer};
+    assert_eq!(
+        int32::deserialize(I128Deserializer::<Error>::new(-5)).unwrap(),
+        -5
+    );
+    assert_eq!(
+        int32::deserialize(U128Deserializer::<Error>::new(5)).unwrap(),
+        5
+    );
+    assert_eq!(
+        uint64::deserialize(I128Deserializer::<Error>::new(i128::from(u64::MAX))).unwrap(),
+        u64::MAX
+    );
+    assert_eq!(
+        float::deserialize(U128Deserializer::<Error>::new(3)).unwrap(),
+        3.0
+    );
+    assert_eq!(
+        double::deserialize(I128Deserializer::<Error>::new(-3)).unwrap(),
+        -3.0
+    );
+
+    // Wider values keep the helper's fixed reason; other kinds reject them.
+    let err = int64::deserialize(I128Deserializer::<Error>::new(i128::MIN)).unwrap_err();
+    assert_eq!(err.to_string(), JsonValueError::Int64.to_string());
+    let err = uint32::deserialize(U128Deserializer::<Error>::new(u128::MAX)).unwrap_err();
+    assert_eq!(err.to_string(), JsonValueError::Uint32.to_string());
+    let err = proto_bool::deserialize(I128Deserializer::<Error>::new(1)).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "invalid type: integer, expected a boolean or null"
+    );
+    let err = proto_bool::deserialize(I128Deserializer::<Error>::new(i128::MIN)).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "invalid type: integer, expected a boolean or null"
+    );
+}
+
+#[test]
+fn bool_and_string_null_elements_keep_the_native_diagnostic() {
+    use std::collections::HashMap;
+    let err = serde_json::from_str::<Vec<bool>>("[null]")
+        .map(|_| ())
+        .unwrap_err()
+        .to_string();
+    let mut de = serde_json::Deserializer::from_str("[null]");
+    let ours = proto_seq::deserialize::<bool, Vec<bool>, _>(&mut de).unwrap_err();
+    let without_position = |text: &str| text.split(" at line ").next().unwrap().to_owned();
+    assert_eq!(without_position(&ours.to_string()), without_position(&err));
+    let mut de = serde_json::Deserializer::from_str(r#"{"k":null}"#);
+    let ours =
+        proto_map::deserialize::<HashMap<alloc::string::String, alloc::string::String>, _>(&mut de)
+            .unwrap_err();
+    assert!(
+        ours.to_string()
+            .starts_with("invalid type: null, expected a string"),
+        "{ours}"
     );
 }

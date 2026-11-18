@@ -1772,7 +1772,9 @@ limit of its own; see
 buffa does not support `serde_json`'s `arbitrary_precision` feature. When any
 crate in the build enables it, buffa rejects every number that has a fraction
 or an exponent, and every whole number outside the `i64` and `u64` ranges. It
-reads such a number in a `google.protobuf.Value` as a struct. To check your
+reads such a number in a `google.protobuf.Value` or `Struct` as a struct, and
+in a map field as an entry under the key `$serde_json::private::Number`, which
+the map's value type then parses. To check your
 build, run `cargo tree -e features -i serde_json` in your workspace, and look
 for `arbitrary_precision` in the output. Tracked in
 [#482](https://github.com/anthropics/buffa/issues/482).

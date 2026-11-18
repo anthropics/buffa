@@ -43,7 +43,11 @@ pub struct Version {
     /// Field 4: `suffix`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "suffix", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "suffix",
+            with = "::buffa::json_helpers::opt_string",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub suffix: ::core::option::Option<::buffa::alloc::string::String>,
     #[cfg_attr(feature = "json", serde(skip))]
@@ -322,8 +326,8 @@ pub struct CodeGeneratorRequest {
         serde(
             rename = "fileToGenerate",
             alias = "file_to_generate",
-            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-            deserialize_with = "::buffa::json_helpers::null_as_default"
+            with = "::buffa::json_helpers::native_seq",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
         )
     )]
     pub file_to_generate: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
@@ -334,6 +338,7 @@ pub struct CodeGeneratorRequest {
         feature = "json",
         serde(
             rename = "parameter",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -742,7 +747,11 @@ pub struct CodeGeneratorResponse {
     /// Field 1: `error`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "error", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "error",
+            with = "::buffa::json_helpers::opt_string",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub error: ::core::option::Option<::buffa::alloc::string::String>,
     /// A bitmask of supported features that the code generator supports.
@@ -1156,72 +1165,7 @@ pub mod code_generator_response {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = Feature;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ", stringify!(Feature)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<Feature, __E> {
-                        <Feature as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<Feature, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Feature as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<Feature, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Feature as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<Feature, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for Feature {
@@ -1300,6 +1244,7 @@ pub mod code_generator_response {
             feature = "json",
             serde(
                 rename = "name",
+                with = "::buffa::json_helpers::opt_string",
                 skip_serializing_if = "::core::option::Option::is_none"
             )
         )]
@@ -1348,6 +1293,7 @@ pub mod code_generator_response {
             serde(
                 rename = "insertionPoint",
                 alias = "insertion_point",
+                with = "::buffa::json_helpers::opt_string",
                 skip_serializing_if = "::core::option::Option::is_none"
             )
         )]
@@ -1359,6 +1305,7 @@ pub mod code_generator_response {
             feature = "json",
             serde(
                 rename = "content",
+                with = "::buffa::json_helpers::opt_string",
                 skip_serializing_if = "::core::option::Option::is_none"
             )
         )]

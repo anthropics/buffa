@@ -124,3 +124,15 @@ message MixedOneofAndFields {
     int32 num = 11;
   }
 }
+
+// Optional, repeated and map positions of bool and string fields, for the
+// wrong-kind JSON diagnostics test.
+message WrongKindFields {
+  optional bool o_bool = 1;
+  optional string o_string = 2;
+  repeated bool flags = 3;
+  repeated string names = 4;
+  map<string, bool> bool_map = 5;
+  map<string, string> labels = 6;
+  map<int32, string> int_key_strings = 7;
+}

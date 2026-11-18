@@ -15,6 +15,48 @@
 use crate::alloc::format;
 use crate::alloc::string::String;
 
+// ── String input ────────────────────────────────────────────────────────────
+
+/// Deserialize the JSON string that holds a `Timestamp`, `Duration` or
+/// `FieldMask`.
+///
+/// Unlike `String::deserialize`, this rejects a non-string input without
+/// echoing its value in the error.
+///
+/// # Errors
+///
+/// Returns the deserializer's `invalid_type` error for any input that is not
+/// a string.
+pub fn deserialize_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    struct V;
+    impl<'de> serde::de::Visitor<'de> for V {
+        type Value = String;
+        fn expecting(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.write_str("a string")
+        }
+        fn visit_enum<A: serde::de::EnumAccess<'de>>(
+            self,
+            tagged: A,
+        ) -> Result<Self::Value, A::Error> {
+            crate::json_helpers::deserialize_tagged(self, tagged)
+        }
+        fn visit_str<E>(self, v: &str) -> Result<String, E> {
+            Ok(String::from(v))
+        }
+        fn visit_string<E>(self, v: String) -> Result<String, E> {
+            Ok(v)
+        }
+        crate::__buffa_reject_other_json_kinds!(bool, i64, u64, i128, u128, f64, bytes);
+    }
+    // `deserialize_any` so a non-string reaches `V`: `deserialize_string`
+    // lets the deserializer format the mismatched value itself.
+    if d.is_human_readable() {
+        d.deserialize_any(V)
+    } else {
+        d.deserialize_string(V)
+    }
+}
+
 // ── Bounds ──────────────────────────────────────────────────────────────────
 
 /// Smallest valid `Timestamp.seconds`: `0001-01-01T00:00:00Z`.

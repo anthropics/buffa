@@ -97,70 +97,7 @@ const _: () = {
         fn deserialize<__D: ::serde::Deserializer<'de>>(
             d: __D,
         ) -> ::core::result::Result<Self, __D::Error> {
-            struct _V;
-            impl ::serde::de::Visitor<'_> for _V {
-                type Value = Edition;
-                fn expecting(
-                    &self,
-                    f: &mut ::core::fmt::Formatter<'_>,
-                ) -> ::core::fmt::Result {
-                    f.write_str(
-                        concat!("a string, integer, or null for ", stringify!(Edition)),
-                    )
-                }
-                fn visit_str<__E: ::serde::de::Error>(
-                    self,
-                    v: &str,
-                ) -> ::core::result::Result<Edition, __E> {
-                    <Edition as ::buffa::Enumeration>::from_proto_name(v)
-                        .ok_or_else(|| {
-                            ::serde::de::Error::invalid_value(
-                                ::serde::de::Unexpected::Str(v),
-                                &"a known enum variant name",
-                            )
-                        })
-                }
-                fn visit_i64<__E: ::serde::de::Error>(
-                    self,
-                    v: i64,
-                ) -> ::core::result::Result<Edition, __E> {
-                    let v32 = i32::try_from(v)
-                        .map_err(|_| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                            )
-                        })?;
-                    <Edition as ::buffa::Enumeration>::from_i32(v32)
-                        .ok_or_else(|| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {v32}"),
-                            )
-                        })
-                }
-                fn visit_u64<__E: ::serde::de::Error>(
-                    self,
-                    v: u64,
-                ) -> ::core::result::Result<Edition, __E> {
-                    let v32 = i32::try_from(v)
-                        .map_err(|_| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                            )
-                        })?;
-                    <Edition as ::buffa::Enumeration>::from_i32(v32)
-                        .ok_or_else(|| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {v32}"),
-                            )
-                        })
-                }
-                fn visit_unit<__E: ::serde::de::Error>(
-                    self,
-                ) -> ::core::result::Result<Edition, __E> {
-                    ::core::result::Result::Ok(::core::default::Default::default())
-                }
-            }
-            d.deserialize_any(_V)
+            ::buffa::json_helpers::closed_enum::deserialize_strict(d)
         }
     }
     impl ::buffa::json_helpers::ProtoElemJson for Edition {
@@ -306,73 +243,7 @@ const _: () = {
         fn deserialize<__D: ::serde::Deserializer<'de>>(
             d: __D,
         ) -> ::core::result::Result<Self, __D::Error> {
-            struct _V;
-            impl ::serde::de::Visitor<'_> for _V {
-                type Value = SymbolVisibility;
-                fn expecting(
-                    &self,
-                    f: &mut ::core::fmt::Formatter<'_>,
-                ) -> ::core::fmt::Result {
-                    f.write_str(
-                        concat!(
-                            "a string, integer, or null for ",
-                            stringify!(SymbolVisibility)
-                        ),
-                    )
-                }
-                fn visit_str<__E: ::serde::de::Error>(
-                    self,
-                    v: &str,
-                ) -> ::core::result::Result<SymbolVisibility, __E> {
-                    <SymbolVisibility as ::buffa::Enumeration>::from_proto_name(v)
-                        .ok_or_else(|| {
-                            ::serde::de::Error::invalid_value(
-                                ::serde::de::Unexpected::Str(v),
-                                &"a known enum variant name",
-                            )
-                        })
-                }
-                fn visit_i64<__E: ::serde::de::Error>(
-                    self,
-                    v: i64,
-                ) -> ::core::result::Result<SymbolVisibility, __E> {
-                    let v32 = i32::try_from(v)
-                        .map_err(|_| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                            )
-                        })?;
-                    <SymbolVisibility as ::buffa::Enumeration>::from_i32(v32)
-                        .ok_or_else(|| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {v32}"),
-                            )
-                        })
-                }
-                fn visit_u64<__E: ::serde::de::Error>(
-                    self,
-                    v: u64,
-                ) -> ::core::result::Result<SymbolVisibility, __E> {
-                    let v32 = i32::try_from(v)
-                        .map_err(|_| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                            )
-                        })?;
-                    <SymbolVisibility as ::buffa::Enumeration>::from_i32(v32)
-                        .ok_or_else(|| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {v32}"),
-                            )
-                        })
-                }
-                fn visit_unit<__E: ::serde::de::Error>(
-                    self,
-                ) -> ::core::result::Result<SymbolVisibility, __E> {
-                    ::core::result::Result::Ok(::core::default::Default::default())
-                }
-            }
-            d.deserialize_any(_V)
+            ::buffa::json_helpers::closed_enum::deserialize_strict(d)
         }
     }
     impl ::buffa::json_helpers::ProtoElemJson for SymbolVisibility {
@@ -609,6 +480,22 @@ impl<'de> ::serde::Deserialize<'de> for FileDescriptorSet {
             ) -> ::core::fmt::Result {
                 f.write_str("struct FileDescriptorSet")
             }
+            ::buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            fn visit_none<__E: ::serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<FileDescriptorSet, __E> {
+                ::core::result::Result::Ok(
+                    <FileDescriptorSet as ::core::default::Default>::default(),
+                )
+            }
+            fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(
+                self,
+                tagged: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                ::buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
             #[allow(clippy::field_reassign_with_default)]
             fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
@@ -620,6 +507,14 @@ impl<'de> ::serde::Deserialize<'de> for FileDescriptorSet {
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
+                        ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                            return ::core::result::Result::Err(
+                                <__A::Error as ::serde::de::Error>::invalid_type(
+                                    ::serde::de::Unexpected::Other("number"),
+                                    &self,
+                                ),
+                            );
+                        }
                         "file" => {
                             __f_file = Some({
                                 struct _S;
@@ -678,7 +573,7 @@ impl<'de> ::serde::Deserialize<'de> for FileDescriptorSet {
                 Ok(__r)
             }
         }
-        d.deserialize_map(_V)
+        if d.is_human_readable() { d.deserialize_any(_V) } else { d.deserialize_map(_V) }
     }
 }
 #[cfg(feature = "json")]
@@ -767,7 +662,11 @@ pub struct FileDescriptorProto {
     /// Field 1: `name`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "name",
+            with = "::buffa::json_helpers::opt_string",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// e.g. "foo", "foo.bar", etc.
@@ -777,6 +676,7 @@ pub struct FileDescriptorProto {
         feature = "json",
         serde(
             rename = "package",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -788,8 +688,8 @@ pub struct FileDescriptorProto {
         feature = "json",
         serde(
             rename = "dependency",
-            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-            deserialize_with = "::buffa::json_helpers::null_as_default"
+            with = "::buffa::json_helpers::native_seq",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
         )
     )]
     pub dependency: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
@@ -829,8 +729,8 @@ pub struct FileDescriptorProto {
         serde(
             rename = "optionDependency",
             alias = "option_dependency",
-            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-            deserialize_with = "::buffa::json_helpers::null_as_default"
+            with = "::buffa::json_helpers::native_seq",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
         )
     )]
     pub option_dependency: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
@@ -916,7 +816,11 @@ pub struct FileDescriptorProto {
     /// Field 12: `syntax`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "syntax", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "syntax",
+            with = "::buffa::json_helpers::opt_string",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub syntax: ::core::option::Option<::buffa::alloc::string::String>,
     /// The edition of the proto file.
@@ -1653,7 +1557,11 @@ pub struct DescriptorProto {
     /// Field 1: `name`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "name",
+            with = "::buffa::json_helpers::opt_string",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 2: `field`
@@ -1749,8 +1657,8 @@ pub struct DescriptorProto {
         serde(
             rename = "reservedName",
             alias = "reserved_name",
-            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-            deserialize_with = "::buffa::json_helpers::null_as_default"
+            with = "::buffa::json_helpers::native_seq",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
         )
     )]
     pub reserved_name: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
@@ -3227,6 +3135,22 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
             ) -> ::core::fmt::Result {
                 f.write_str("struct ExtensionRangeOptions")
             }
+            ::buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            fn visit_none<__E: ::serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<ExtensionRangeOptions, __E> {
+                ::core::result::Result::Ok(
+                    <ExtensionRangeOptions as ::core::default::Default>::default(),
+                )
+            }
+            fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(
+                self,
+                tagged: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                ::buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
             #[allow(clippy::field_reassign_with_default)]
             fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
@@ -3247,6 +3171,14 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
+                        ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                            return ::core::result::Result::Err(
+                                <__A::Error as ::serde::de::Error>::invalid_type(
+                                    ::serde::de::Unexpected::Other("number"),
+                                    &self,
+                                ),
+                            );
+                        }
                         "uninterpretedOption" | "uninterpreted_option" => {
                             __f_uninterpreted_option = Some({
                                 struct _S;
@@ -3369,7 +3301,7 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
                 Ok(__r)
             }
         }
-        d.deserialize_map(_V)
+        if d.is_human_readable() { d.deserialize_any(_V) } else { d.deserialize_map(_V) }
     }
 }
 #[cfg(feature = "json")]
@@ -3487,73 +3419,7 @@ pub mod extension_range_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = VerificationState;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(VerificationState)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<VerificationState, __E> {
-                        <VerificationState as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<VerificationState, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <VerificationState as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<VerificationState, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <VerificationState as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<VerificationState, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for VerificationState {
@@ -3624,6 +3490,7 @@ pub mod extension_range_options {
             serde(
                 rename = "fullName",
                 alias = "full_name",
+                with = "::buffa::json_helpers::opt_string",
                 skip_serializing_if = "::core::option::Option::is_none"
             )
         )]
@@ -3637,6 +3504,7 @@ pub mod extension_range_options {
             feature = "json",
             serde(
                 rename = "type",
+                with = "::buffa::json_helpers::opt_string",
                 skip_serializing_if = "::core::option::Option::is_none"
             )
         )]
@@ -3650,6 +3518,7 @@ pub mod extension_range_options {
             feature = "json",
             serde(
                 rename = "reserved",
+                with = "::buffa::json_helpers::opt_bool",
                 skip_serializing_if = "::core::option::Option::is_none"
             )
         )]
@@ -3662,6 +3531,7 @@ pub mod extension_range_options {
             feature = "json",
             serde(
                 rename = "repeated",
+                with = "::buffa::json_helpers::opt_bool",
                 skip_serializing_if = "::core::option::Option::is_none"
             )
         )]
@@ -3989,7 +3859,11 @@ pub struct FieldDescriptorProto {
     /// Field 1: `name`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "name",
+            with = "::buffa::json_helpers::opt_string",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 3: `number`
@@ -4037,6 +3911,7 @@ pub struct FieldDescriptorProto {
         serde(
             rename = "typeName",
             alias = "type_name",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -4049,6 +3924,7 @@ pub struct FieldDescriptorProto {
         feature = "json",
         serde(
             rename = "extendee",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -4064,6 +3940,7 @@ pub struct FieldDescriptorProto {
         serde(
             rename = "defaultValue",
             alias = "default_value",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -4093,6 +3970,7 @@ pub struct FieldDescriptorProto {
         serde(
             rename = "jsonName",
             alias = "json_name",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -4134,6 +4012,7 @@ pub struct FieldDescriptorProto {
         serde(
             rename = "proto3Optional",
             alias = "proto3_optional",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -4801,70 +4680,7 @@ pub mod field_descriptor_proto {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = Type;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!("a string, integer, or null for ", stringify!(Type)),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<Type, __E> {
-                        <Type as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<Type, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Type as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<Type, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Type as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<Type, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for Type {
@@ -5019,70 +4835,7 @@ pub mod field_descriptor_proto {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = Label;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!("a string, integer, or null for ", stringify!(Label)),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<Label, __E> {
-                        <Label as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<Label, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Label as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<Label, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Label as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<Label, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for Label {
@@ -5140,7 +4893,11 @@ pub struct OneofDescriptorProto {
     /// Field 1: `name`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "name",
+            with = "::buffa::json_helpers::opt_string",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 2: `options`
@@ -5368,7 +5125,11 @@ pub struct EnumDescriptorProto {
     /// Field 1: `name`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "name",
+            with = "::buffa::json_helpers::opt_string",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 2: `value`
@@ -5416,8 +5177,8 @@ pub struct EnumDescriptorProto {
         serde(
             rename = "reservedName",
             alias = "reserved_name",
-            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-            deserialize_with = "::buffa::json_helpers::null_as_default"
+            with = "::buffa::json_helpers::native_seq",
+            skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
         )
     )]
     pub reserved_name: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
@@ -6051,7 +5812,11 @@ pub struct EnumValueDescriptorProto {
     /// Field 1: `name`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "name",
+            with = "::buffa::json_helpers::opt_string",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 2: `number`
@@ -6321,7 +6086,11 @@ pub struct ServiceDescriptorProto {
     /// Field 1: `name`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "name",
+            with = "::buffa::json_helpers::opt_string",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Field 2: `method`
@@ -6604,7 +6373,11 @@ pub struct MethodDescriptorProto {
     /// Field 1: `name`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "name", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "name",
+            with = "::buffa::json_helpers::opt_string",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub name: ::core::option::Option<::buffa::alloc::string::String>,
     /// Input and output type names.  These are resolved in the same way as
@@ -6616,6 +6389,7 @@ pub struct MethodDescriptorProto {
         serde(
             rename = "inputType",
             alias = "input_type",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -6626,6 +6400,7 @@ pub struct MethodDescriptorProto {
         serde(
             rename = "outputType",
             alias = "output_type",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -6647,6 +6422,7 @@ pub struct MethodDescriptorProto {
         serde(
             rename = "clientStreaming",
             alias = "client_streaming",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -6659,6 +6435,7 @@ pub struct MethodDescriptorProto {
         serde(
             rename = "serverStreaming",
             alias = "server_streaming",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7061,6 +6838,7 @@ pub struct FileOptions {
         serde(
             rename = "javaPackage",
             alias = "java_package",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7077,6 +6855,7 @@ pub struct FileOptions {
         serde(
             rename = "javaOuterClassname",
             alias = "java_outer_classname",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7094,6 +6873,7 @@ pub struct FileOptions {
         serde(
             rename = "javaMultipleFiles",
             alias = "java_multiple_files",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7107,6 +6887,7 @@ pub struct FileOptions {
         serde(
             rename = "javaGenerateEqualsAndHash",
             alias = "java_generate_equals_and_hash",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7128,6 +6909,7 @@ pub struct FileOptions {
         serde(
             rename = "javaStringCheckUtf8",
             alias = "java_string_check_utf8",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7155,6 +6937,7 @@ pub struct FileOptions {
         serde(
             rename = "goPackage",
             alias = "go_package",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7176,6 +6959,7 @@ pub struct FileOptions {
         serde(
             rename = "ccGenericServices",
             alias = "cc_generic_services",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7186,6 +6970,7 @@ pub struct FileOptions {
         serde(
             rename = "javaGenericServices",
             alias = "java_generic_services",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7196,6 +6981,7 @@ pub struct FileOptions {
         serde(
             rename = "pyGenericServices",
             alias = "py_generic_services",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7210,6 +6996,7 @@ pub struct FileOptions {
         feature = "json",
         serde(
             rename = "deprecated",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7223,6 +7010,7 @@ pub struct FileOptions {
         serde(
             rename = "ccEnableArenas",
             alias = "cc_enable_arenas",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7236,6 +7024,7 @@ pub struct FileOptions {
         serde(
             rename = "objcClassPrefix",
             alias = "objc_class_prefix",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7248,6 +7037,7 @@ pub struct FileOptions {
         serde(
             rename = "csharpNamespace",
             alias = "csharp_namespace",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7263,6 +7053,7 @@ pub struct FileOptions {
         serde(
             rename = "swiftPrefix",
             alias = "swift_prefix",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7276,6 +7067,7 @@ pub struct FileOptions {
         serde(
             rename = "phpClassPrefix",
             alias = "php_class_prefix",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7290,6 +7082,7 @@ pub struct FileOptions {
         serde(
             rename = "phpNamespace",
             alias = "php_namespace",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7304,6 +7097,7 @@ pub struct FileOptions {
         serde(
             rename = "phpMetadataNamespace",
             alias = "php_metadata_namespace",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -7318,6 +7112,7 @@ pub struct FileOptions {
         serde(
             rename = "rubyPackage",
             alias = "ruby_package",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -8265,6 +8060,22 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
             ) -> ::core::fmt::Result {
                 f.write_str("struct FileOptions")
             }
+            ::buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            fn visit_none<__E: ::serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<FileOptions, __E> {
+                ::core::result::Result::Ok(
+                    <FileOptions as ::core::default::Default>::default(),
+                )
+            }
+            fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(
+                self,
+                tagged: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                ::buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
             #[allow(clippy::field_reassign_with_default)]
             fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
@@ -8336,37 +8147,108 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
-                        "javaPackage" | "java_package" => {
-                            __f_java_package = Some(
-                                map
-                                    .next_value::<
-                                        ::core::option::Option<::buffa::alloc::string::String>,
-                                    >()?,
+                        ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                            return ::core::result::Result::Err(
+                                <__A::Error as ::serde::de::Error>::invalid_type(
+                                    ::serde::de::Unexpected::Other("number"),
+                                    &self,
+                                ),
                             );
+                        }
+                        "javaPackage" | "java_package" => {
+                            __f_java_package = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        ::buffa::alloc::string::String,
+                                    >;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<::buffa::alloc::string::String>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_string::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "javaOuterClassname" | "java_outer_classname" => {
-                            __f_java_outer_classname = Some(
-                                map
-                                    .next_value::<
+                            __f_java_outer_classname = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        ::buffa::alloc::string::String,
+                                    >;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
                                         ::core::option::Option<::buffa::alloc::string::String>,
-                                    >()?,
-                            );
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_string::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "javaMultipleFiles" | "java_multiple_files" => {
-                            __f_java_multiple_files = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_java_multiple_files = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "javaGenerateEqualsAndHash"
                         | "java_generate_equals_and_hash" => {
-                            __f_java_generate_equals_and_hash = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_java_generate_equals_and_hash = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "javaStringCheckUtf8" | "java_string_check_utf8" => {
-                            __f_java_string_check_utf8 = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_java_string_check_utf8 = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "optimizeFor" | "optimize_for" => {
                             __f_optimize_for = Some({
@@ -8389,93 +8271,254 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             });
                         }
                         "goPackage" | "go_package" => {
-                            __f_go_package = Some(
-                                map
-                                    .next_value::<
+                            __f_go_package = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        ::buffa::alloc::string::String,
+                                    >;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
                                         ::core::option::Option<::buffa::alloc::string::String>,
-                                    >()?,
-                            );
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_string::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "ccGenericServices" | "cc_generic_services" => {
-                            __f_cc_generic_services = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_cc_generic_services = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "javaGenericServices" | "java_generic_services" => {
-                            __f_java_generic_services = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_java_generic_services = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "pyGenericServices" | "py_generic_services" => {
-                            __f_py_generic_services = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_py_generic_services = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "deprecated" => {
-                            __f_deprecated = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_deprecated = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "ccEnableArenas" | "cc_enable_arenas" => {
-                            __f_cc_enable_arenas = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_cc_enable_arenas = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "objcClassPrefix" | "objc_class_prefix" => {
-                            __f_objc_class_prefix = Some(
-                                map
-                                    .next_value::<
+                            __f_objc_class_prefix = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        ::buffa::alloc::string::String,
+                                    >;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
                                         ::core::option::Option<::buffa::alloc::string::String>,
-                                    >()?,
-                            );
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_string::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "csharpNamespace" | "csharp_namespace" => {
-                            __f_csharp_namespace = Some(
-                                map
-                                    .next_value::<
+                            __f_csharp_namespace = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        ::buffa::alloc::string::String,
+                                    >;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
                                         ::core::option::Option<::buffa::alloc::string::String>,
-                                    >()?,
-                            );
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_string::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "swiftPrefix" | "swift_prefix" => {
-                            __f_swift_prefix = Some(
-                                map
-                                    .next_value::<
+                            __f_swift_prefix = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        ::buffa::alloc::string::String,
+                                    >;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
                                         ::core::option::Option<::buffa::alloc::string::String>,
-                                    >()?,
-                            );
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_string::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "phpClassPrefix" | "php_class_prefix" => {
-                            __f_php_class_prefix = Some(
-                                map
-                                    .next_value::<
+                            __f_php_class_prefix = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        ::buffa::alloc::string::String,
+                                    >;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
                                         ::core::option::Option<::buffa::alloc::string::String>,
-                                    >()?,
-                            );
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_string::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "phpNamespace" | "php_namespace" => {
-                            __f_php_namespace = Some(
-                                map
-                                    .next_value::<
+                            __f_php_namespace = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        ::buffa::alloc::string::String,
+                                    >;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
                                         ::core::option::Option<::buffa::alloc::string::String>,
-                                    >()?,
-                            );
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_string::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "phpMetadataNamespace" | "php_metadata_namespace" => {
-                            __f_php_metadata_namespace = Some(
-                                map
-                                    .next_value::<
+                            __f_php_metadata_namespace = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        ::buffa::alloc::string::String,
+                                    >;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
                                         ::core::option::Option<::buffa::alloc::string::String>,
-                                    >()?,
-                            );
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_string::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "rubyPackage" | "ruby_package" => {
-                            __f_ruby_package = Some(
-                                map
-                                    .next_value::<
+                            __f_ruby_package = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<
+                                        ::buffa::alloc::string::String,
+                                    >;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
                                         ::core::option::Option<::buffa::alloc::string::String>,
-                                    >()?,
-                            );
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_string::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "features" => {
                             __f_features = Some(
@@ -8606,7 +8649,7 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                 Ok(__r)
             }
         }
-        d.deserialize_map(_V)
+        if d.is_human_readable() { d.deserialize_any(_V) } else { d.deserialize_map(_V) }
     }
 }
 #[cfg(feature = "json")]
@@ -8732,72 +8775,7 @@ pub mod file_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = OptimizeMode;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ", stringify!(OptimizeMode)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<OptimizeMode, __E> {
-                        <OptimizeMode as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<OptimizeMode, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <OptimizeMode as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<OptimizeMode, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <OptimizeMode as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<OptimizeMode, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for OptimizeMode {
@@ -8878,6 +8856,7 @@ pub struct MessageOptions {
         serde(
             rename = "messageSetWireFormat",
             alias = "message_set_wire_format",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -8892,6 +8871,7 @@ pub struct MessageOptions {
         serde(
             rename = "noStandardDescriptorAccessor",
             alias = "no_standard_descriptor_accessor",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -8906,6 +8886,7 @@ pub struct MessageOptions {
         feature = "json",
         serde(
             rename = "deprecated",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -8942,6 +8923,7 @@ pub struct MessageOptions {
         serde(
             rename = "mapEntry",
             alias = "map_entry",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -8964,6 +8946,7 @@ pub struct MessageOptions {
         serde(
             rename = "deprecatedLegacyJsonFieldConflicts",
             alias = "deprecated_legacy_json_field_conflicts",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -9382,6 +9365,22 @@ impl<'de> ::serde::Deserialize<'de> for MessageOptions {
             ) -> ::core::fmt::Result {
                 f.write_str("struct MessageOptions")
             }
+            ::buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            fn visit_none<__E: ::serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<MessageOptions, __E> {
+                ::core::result::Result::Ok(
+                    <MessageOptions as ::core::default::Default>::default(),
+                )
+            }
+            fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(
+                self,
+                tagged: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                ::buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
             #[allow(clippy::field_reassign_with_default)]
             fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
@@ -9411,32 +9410,105 @@ impl<'de> ::serde::Deserialize<'de> for MessageOptions {
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
-                        "messageSetWireFormat" | "message_set_wire_format" => {
-                            __f_message_set_wire_format = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
+                        ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                            return ::core::result::Result::Err(
+                                <__A::Error as ::serde::de::Error>::invalid_type(
+                                    ::serde::de::Unexpected::Other("number"),
+                                    &self,
+                                ),
                             );
+                        }
+                        "messageSetWireFormat" | "message_set_wire_format" => {
+                            __f_message_set_wire_format = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "noStandardDescriptorAccessor"
                         | "no_standard_descriptor_accessor" => {
-                            __f_no_standard_descriptor_accessor = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_no_standard_descriptor_accessor = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "deprecated" => {
-                            __f_deprecated = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_deprecated = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "mapEntry" | "map_entry" => {
-                            __f_map_entry = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_map_entry = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "deprecatedLegacyJsonFieldConflicts"
                         | "deprecated_legacy_json_field_conflicts" => {
-                            __f_deprecated_legacy_json_field_conflicts = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_deprecated_legacy_json_field_conflicts = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "features" => {
                             __f_features = Some(
@@ -9525,7 +9597,7 @@ impl<'de> ::serde::Deserialize<'de> for MessageOptions {
                 Ok(__r)
             }
         }
-        d.deserialize_map(_V)
+        if d.is_human_readable() { d.deserialize_any(_V) } else { d.deserialize_map(_V) }
     }
 }
 #[cfg(feature = "json")]
@@ -9637,7 +9709,11 @@ pub struct FieldOptions {
     /// Field 2: `packed`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "packed", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "packed",
+            with = "::buffa::json_helpers::opt_bool",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub packed: ::core::option::Option<bool>,
     /// The jstype option determines the JavaScript type used for values of the
@@ -9688,7 +9764,11 @@ pub struct FieldOptions {
     /// Field 5: `lazy`
     #[cfg_attr(
         feature = "json",
-        serde(rename = "lazy", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "lazy",
+            with = "::buffa::json_helpers::opt_bool",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub lazy: ::core::option::Option<bool>,
     /// unverified_lazy does no correctness checks on the byte stream. This should
@@ -9701,6 +9781,7 @@ pub struct FieldOptions {
         serde(
             rename = "unverifiedLazy",
             alias = "unverified_lazy",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -9715,6 +9796,7 @@ pub struct FieldOptions {
         feature = "json",
         serde(
             rename = "deprecated",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -9726,7 +9808,11 @@ pub struct FieldOptions {
     #[deprecated]
     #[cfg_attr(
         feature = "json",
-        serde(rename = "weak", skip_serializing_if = "::core::option::Option::is_none")
+        serde(
+            rename = "weak",
+            with = "::buffa::json_helpers::opt_bool",
+            skip_serializing_if = "::core::option::Option::is_none"
+        )
     )]
     pub weak: ::core::option::Option<bool>,
     /// Indicate that the field value should not be printed out when using debug
@@ -9738,6 +9824,7 @@ pub struct FieldOptions {
         serde(
             rename = "debugRedact",
             alias = "debug_redact",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -10504,6 +10591,22 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
             ) -> ::core::fmt::Result {
                 f.write_str("struct FieldOptions")
             }
+            ::buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            fn visit_none<__E: ::serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<FieldOptions, __E> {
+                ::core::result::Result::Ok(
+                    <FieldOptions as ::core::default::Default>::default(),
+                )
+            }
+            fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(
+                self,
+                tagged: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                ::buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
             #[allow(clippy::field_reassign_with_default)]
             fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
@@ -10553,6 +10656,14 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
+                        ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                            return ::core::result::Result::Err(
+                                <__A::Error as ::serde::de::Error>::invalid_type(
+                                    ::serde::de::Unexpected::Other("number"),
+                                    &self,
+                                ),
+                            );
+                        }
                         "ctype" => {
                             __f_ctype = Some({
                                 struct _S;
@@ -10572,9 +10683,22 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                             });
                         }
                         "packed" => {
-                            __f_packed = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_packed = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "jstype" => {
                             __f_jstype = Some({
@@ -10595,29 +10719,94 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                             });
                         }
                         "lazy" => {
-                            __f_lazy = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_lazy = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "unverifiedLazy" | "unverified_lazy" => {
-                            __f_unverified_lazy = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_unverified_lazy = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "deprecated" => {
-                            __f_deprecated = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_deprecated = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "weak" => {
-                            __f_weak = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_weak = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "debugRedact" | "debug_redact" => {
-                            __f_debug_redact = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_debug_redact = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "retention" => {
                             __f_retention = Some({
@@ -10798,7 +10987,7 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                 Ok(__r)
             }
         }
-        d.deserialize_map(_V)
+        if d.is_human_readable() { d.deserialize_any(_V) } else { d.deserialize_map(_V) }
     }
 }
 #[cfg(feature = "json")]
@@ -10925,70 +11114,7 @@ pub mod field_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = CType;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!("a string, integer, or null for ", stringify!(CType)),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<CType, __E> {
-                        <CType as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<CType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <CType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<CType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <CType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<CType, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for CType {
@@ -11078,72 +11204,7 @@ pub mod field_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = JSType;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ", stringify!(JSType)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<JSType, __E> {
-                        <JSType as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<JSType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <JSType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<JSType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <JSType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<JSType, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for JSType {
@@ -11231,73 +11292,7 @@ pub mod field_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = OptionRetention;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(OptionRetention)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<OptionRetention, __E> {
-                        <OptionRetention as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<OptionRetention, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <OptionRetention as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<OptionRetention, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <OptionRetention as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<OptionRetention, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for OptionRetention {
@@ -11421,73 +11416,7 @@ pub mod field_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = OptionTargetType;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(OptionTargetType)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<OptionTargetType, __E> {
-                        <OptionTargetType as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<OptionTargetType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <OptionTargetType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<OptionTargetType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <OptionTargetType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<OptionTargetType, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for OptionTargetType {
@@ -11609,6 +11538,7 @@ pub mod field_options {
             feature = "json",
             serde(
                 rename = "value",
+                with = "::buffa::json_helpers::opt_string",
                 skip_serializing_if = "::core::option::Option::is_none"
             )
         )]
@@ -11878,6 +11808,7 @@ pub mod field_options {
             serde(
                 rename = "deprecationWarning",
                 alias = "deprecation_warning",
+                with = "::buffa::json_helpers::opt_string",
                 skip_serializing_if = "::core::option::Option::is_none"
             )
         )]
@@ -12463,6 +12394,22 @@ impl<'de> ::serde::Deserialize<'de> for OneofOptions {
             ) -> ::core::fmt::Result {
                 f.write_str("struct OneofOptions")
             }
+            ::buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            fn visit_none<__E: ::serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<OneofOptions, __E> {
+                ::core::result::Result::Ok(
+                    <OneofOptions as ::core::default::Default>::default(),
+                )
+            }
+            fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(
+                self,
+                tagged: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                ::buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
             #[allow(clippy::field_reassign_with_default)]
             fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
@@ -12477,6 +12424,14 @@ impl<'de> ::serde::Deserialize<'de> for OneofOptions {
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
+                        ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                            return ::core::result::Result::Err(
+                                <__A::Error as ::serde::de::Error>::invalid_type(
+                                    ::serde::de::Unexpected::Other("number"),
+                                    &self,
+                                ),
+                            );
+                        }
                         "features" => {
                             __f_features = Some(
                                 map
@@ -12549,7 +12504,7 @@ impl<'de> ::serde::Deserialize<'de> for OneofOptions {
                 Ok(__r)
             }
         }
-        d.deserialize_map(_V)
+        if d.is_human_readable() { d.deserialize_any(_V) } else { d.deserialize_map(_V) }
     }
 }
 #[cfg(feature = "json")]
@@ -12641,6 +12596,7 @@ pub struct EnumOptions {
         serde(
             rename = "allowAlias",
             alias = "allow_alias",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -12655,6 +12611,7 @@ pub struct EnumOptions {
         feature = "json",
         serde(
             rename = "deprecated",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -12673,6 +12630,7 @@ pub struct EnumOptions {
         serde(
             rename = "deprecatedLegacyJsonFieldConflicts",
             alias = "deprecated_legacy_json_field_conflicts",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -13019,6 +12977,22 @@ impl<'de> ::serde::Deserialize<'de> for EnumOptions {
             ) -> ::core::fmt::Result {
                 f.write_str("struct EnumOptions")
             }
+            ::buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            fn visit_none<__E: ::serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<EnumOptions, __E> {
+                ::core::result::Result::Ok(
+                    <EnumOptions as ::core::default::Default>::default(),
+                )
+            }
+            fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(
+                self,
+                tagged: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                ::buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
             #[allow(clippy::field_reassign_with_default)]
             fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
@@ -13042,21 +13016,68 @@ impl<'de> ::serde::Deserialize<'de> for EnumOptions {
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
-                        "allowAlias" | "allow_alias" => {
-                            __f_allow_alias = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
+                        ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                            return ::core::result::Result::Err(
+                                <__A::Error as ::serde::de::Error>::invalid_type(
+                                    ::serde::de::Unexpected::Other("number"),
+                                    &self,
+                                ),
                             );
                         }
+                        "allowAlias" | "allow_alias" => {
+                            __f_allow_alias = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
+                        }
                         "deprecated" => {
-                            __f_deprecated = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_deprecated = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "deprecatedLegacyJsonFieldConflicts"
                         | "deprecated_legacy_json_field_conflicts" => {
-                            __f_deprecated_legacy_json_field_conflicts = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_deprecated_legacy_json_field_conflicts = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "features" => {
                             __f_features = Some(
@@ -13139,7 +13160,7 @@ impl<'de> ::serde::Deserialize<'de> for EnumOptions {
                 Ok(__r)
             }
         }
-        d.deserialize_map(_V)
+        if d.is_human_readable() { d.deserialize_any(_V) } else { d.deserialize_map(_V) }
     }
 }
 #[cfg(feature = "json")]
@@ -13232,6 +13253,7 @@ pub struct EnumValueOptions {
         feature = "json",
         serde(
             rename = "deprecated",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -13260,6 +13282,7 @@ pub struct EnumValueOptions {
         serde(
             rename = "debugRedact",
             alias = "debug_redact",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -13600,6 +13623,22 @@ impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
             ) -> ::core::fmt::Result {
                 f.write_str("struct EnumValueOptions")
             }
+            ::buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            fn visit_none<__E: ::serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<EnumValueOptions, __E> {
+                ::core::result::Result::Ok(
+                    <EnumValueOptions as ::core::default::Default>::default(),
+                )
+            }
+            fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(
+                self,
+                tagged: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                ::buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
             #[allow(clippy::field_reassign_with_default)]
             fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
@@ -13626,10 +13665,31 @@ impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
-                        "deprecated" => {
-                            __f_deprecated = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
+                        ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                            return ::core::result::Result::Err(
+                                <__A::Error as ::serde::de::Error>::invalid_type(
+                                    ::serde::de::Unexpected::Other("number"),
+                                    &self,
+                                ),
                             );
+                        }
+                        "deprecated" => {
+                            __f_deprecated = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "features" => {
                             __f_features = Some(
@@ -13643,9 +13703,22 @@ impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
                             );
                         }
                         "debugRedact" | "debug_redact" => {
-                            __f_debug_redact = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_debug_redact = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "featureSupport" | "feature_support" => {
                             __f_feature_support = Some(
@@ -13728,7 +13801,7 @@ impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
                 Ok(__r)
             }
         }
-        d.deserialize_map(_V)
+        if d.is_human_readable() { d.deserialize_any(_V) } else { d.deserialize_map(_V) }
     }
 }
 #[cfg(feature = "json")]
@@ -13840,6 +13913,7 @@ pub struct ServiceOptions {
         feature = "json",
         serde(
             rename = "deprecated",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -14098,6 +14172,22 @@ impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
             ) -> ::core::fmt::Result {
                 f.write_str("struct ServiceOptions")
             }
+            ::buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            fn visit_none<__E: ::serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<ServiceOptions, __E> {
+                ::core::result::Result::Ok(
+                    <ServiceOptions as ::core::default::Default>::default(),
+                )
+            }
+            fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(
+                self,
+                tagged: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                ::buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
             #[allow(clippy::field_reassign_with_default)]
             fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
@@ -14115,6 +14205,14 @@ impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
+                        ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                            return ::core::result::Result::Err(
+                                <__A::Error as ::serde::de::Error>::invalid_type(
+                                    ::serde::de::Unexpected::Other("number"),
+                                    &self,
+                                ),
+                            );
+                        }
                         "features" => {
                             __f_features = Some(
                                 map
@@ -14127,9 +14225,22 @@ impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
                             );
                         }
                         "deprecated" => {
-                            __f_deprecated = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
-                            );
+                            __f_deprecated = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
                             __f_uninterpreted_option = Some({
@@ -14195,7 +14306,7 @@ impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
                 Ok(__r)
             }
         }
-        d.deserialize_map(_V)
+        if d.is_human_readable() { d.deserialize_any(_V) } else { d.deserialize_map(_V) }
     }
 }
 #[cfg(feature = "json")]
@@ -14293,6 +14404,7 @@ pub struct MethodOptions {
         feature = "json",
         serde(
             rename = "deprecated",
+            with = "::buffa::json_helpers::opt_bool",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -14625,6 +14737,22 @@ impl<'de> ::serde::Deserialize<'de> for MethodOptions {
             ) -> ::core::fmt::Result {
                 f.write_str("struct MethodOptions")
             }
+            ::buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            fn visit_none<__E: ::serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<MethodOptions, __E> {
+                ::core::result::Result::Ok(
+                    <MethodOptions as ::core::default::Default>::default(),
+                )
+            }
+            fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(
+                self,
+                tagged: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                ::buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
             #[allow(clippy::field_reassign_with_default)]
             fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
@@ -14645,10 +14773,31 @@ impl<'de> ::serde::Deserialize<'de> for MethodOptions {
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
-                        "deprecated" => {
-                            __f_deprecated = Some(
-                                map.next_value::<::core::option::Option<bool>>()?,
+                        ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                            return ::core::result::Result::Err(
+                                <__A::Error as ::serde::de::Error>::invalid_type(
+                                    ::serde::de::Unexpected::Other("number"),
+                                    &self,
+                                ),
                             );
+                        }
+                        "deprecated" => {
+                            __f_deprecated = Some({
+                                struct _S;
+                                impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
+                                    type Value = ::core::option::Option<bool>;
+                                    fn deserialize<__D: ::serde::Deserializer<'de>>(
+                                        self,
+                                        d: __D,
+                                    ) -> ::core::result::Result<
+                                        ::core::option::Option<bool>,
+                                        __D::Error,
+                                    > {
+                                        ::buffa::json_helpers::opt_bool::deserialize(d)
+                                    }
+                                }
+                                map.next_value_seed(_S)?
+                            });
                         }
                         "idempotencyLevel" | "idempotency_level" => {
                             __f_idempotency_level = Some({
@@ -14748,7 +14897,7 @@ impl<'de> ::serde::Deserialize<'de> for MethodOptions {
                 Ok(__r)
             }
         }
-        d.deserialize_map(_V)
+        if d.is_human_readable() { d.deserialize_any(_V) } else { d.deserialize_map(_V) }
     }
 }
 #[cfg(feature = "json")]
@@ -14873,73 +15022,7 @@ pub mod method_options {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = IdempotencyLevel;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(IdempotencyLevel)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<IdempotencyLevel, __E> {
-                        <IdempotencyLevel as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<IdempotencyLevel, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <IdempotencyLevel as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<IdempotencyLevel, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <IdempotencyLevel as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<IdempotencyLevel, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for IdempotencyLevel {
@@ -15020,6 +15103,7 @@ pub struct UninterpretedOption {
         serde(
             rename = "identifierValue",
             alias = "identifier_value",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -15074,6 +15158,7 @@ pub struct UninterpretedOption {
         serde(
             rename = "aggregateValue",
             alias = "aggregate_value",
+            with = "::buffa::json_helpers::opt_string",
             skip_serializing_if = "::core::option::Option::is_none"
         )
     )]
@@ -16286,6 +16371,22 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
             ) -> ::core::fmt::Result {
                 f.write_str("struct FeatureSet")
             }
+            ::buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            fn visit_none<__E: ::serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<FeatureSet, __E> {
+                ::core::result::Result::Ok(
+                    <FeatureSet as ::core::default::Default>::default(),
+                )
+            }
+            fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(
+                self,
+                tagged: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                ::buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
             #[allow(clippy::field_reassign_with_default)]
             fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
@@ -16320,6 +16421,14 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
+                        ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                            return ::core::result::Result::Err(
+                                <__A::Error as ::serde::de::Error>::invalid_type(
+                                    ::serde::de::Unexpected::Other("number"),
+                                    &self,
+                                ),
+                            );
+                        }
                         "fieldPresence" | "field_presence" => {
                             __f_field_presence = Some({
                                 struct _S;
@@ -16541,7 +16650,7 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                 Ok(__r)
             }
         }
-        d.deserialize_map(_V)
+        if d.is_human_readable() { d.deserialize_any(_V) } else { d.deserialize_map(_V) }
     }
 }
 #[cfg(feature = "json")]
@@ -16665,72 +16774,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = FieldPresence;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ", stringify!(FieldPresence)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<FieldPresence, __E> {
-                        <FieldPresence as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<FieldPresence, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <FieldPresence as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<FieldPresence, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <FieldPresence as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<FieldPresence, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for FieldPresence {
@@ -16827,72 +16871,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = EnumType;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ", stringify!(EnumType)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<EnumType, __E> {
-                        <EnumType as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<EnumType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <EnumType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<EnumType, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <EnumType as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<EnumType, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for EnumType {
@@ -16981,75 +16960,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = RepeatedFieldEncoding;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(RepeatedFieldEncoding)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<RepeatedFieldEncoding, __E> {
-                        <RepeatedFieldEncoding as ::buffa::Enumeration>::from_proto_name(
-                                v,
-                            )
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<RepeatedFieldEncoding, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <RepeatedFieldEncoding as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<RepeatedFieldEncoding, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <RepeatedFieldEncoding as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<RepeatedFieldEncoding, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for RepeatedFieldEncoding {
@@ -17142,73 +17053,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = Utf8Validation;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(Utf8Validation)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<Utf8Validation, __E> {
-                        <Utf8Validation as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<Utf8Validation, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Utf8Validation as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<Utf8Validation, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <Utf8Validation as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<Utf8Validation, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for Utf8Validation {
@@ -17297,73 +17142,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = MessageEncoding;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(MessageEncoding)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<MessageEncoding, __E> {
-                        <MessageEncoding as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<MessageEncoding, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <MessageEncoding as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<MessageEncoding, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <MessageEncoding as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<MessageEncoding, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for MessageEncoding {
@@ -17452,72 +17231,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = JsonFormat;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ", stringify!(JsonFormat)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<JsonFormat, __E> {
-                        <JsonFormat as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<JsonFormat, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <JsonFormat as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<JsonFormat, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <JsonFormat as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<JsonFormat, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for JsonFormat {
@@ -17608,73 +17322,7 @@ pub mod feature_set {
             fn deserialize<__D: ::serde::Deserializer<'de>>(
                 d: __D,
             ) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = EnforceNamingStyle;
-                    fn expecting(
-                        &self,
-                        f: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        f.write_str(
-                            concat!(
-                                "a string, integer, or null for ",
-                                stringify!(EnforceNamingStyle)
-                            ),
-                        )
-                    }
-                    fn visit_str<__E: ::serde::de::Error>(
-                        self,
-                        v: &str,
-                    ) -> ::core::result::Result<EnforceNamingStyle, __E> {
-                        <EnforceNamingStyle as ::buffa::Enumeration>::from_proto_name(v)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::invalid_value(
-                                    ::serde::de::Unexpected::Str(v),
-                                    &"a known enum variant name",
-                                )
-                            })
-                    }
-                    fn visit_i64<__E: ::serde::de::Error>(
-                        self,
-                        v: i64,
-                    ) -> ::core::result::Result<EnforceNamingStyle, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <EnforceNamingStyle as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_u64<__E: ::serde::de::Error>(
-                        self,
-                        v: u64,
-                    ) -> ::core::result::Result<EnforceNamingStyle, __E> {
-                        let v32 = i32::try_from(v)
-                            .map_err(|_| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                )
-                            })?;
-                        <EnforceNamingStyle as ::buffa::Enumeration>::from_i32(v32)
-                            .ok_or_else(|| {
-                                ::serde::de::Error::custom(
-                                    ::buffa::alloc::format!("unknown enum value {v32}"),
-                                )
-                            })
-                    }
-                    fn visit_unit<__E: ::serde::de::Error>(
-                        self,
-                    ) -> ::core::result::Result<EnforceNamingStyle, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
         impl ::buffa::json_helpers::ProtoElemJson for EnforceNamingStyle {
@@ -17916,81 +17564,7 @@ pub mod feature_set {
                 fn deserialize<__D: ::serde::Deserializer<'de>>(
                     d: __D,
                 ) -> ::core::result::Result<Self, __D::Error> {
-                    struct _V;
-                    impl ::serde::de::Visitor<'_> for _V {
-                        type Value = DefaultSymbolVisibility;
-                        fn expecting(
-                            &self,
-                            f: &mut ::core::fmt::Formatter<'_>,
-                        ) -> ::core::fmt::Result {
-                            f.write_str(
-                                concat!(
-                                    "a string, integer, or null for ",
-                                    stringify!(DefaultSymbolVisibility)
-                                ),
-                            )
-                        }
-                        fn visit_str<__E: ::serde::de::Error>(
-                            self,
-                            v: &str,
-                        ) -> ::core::result::Result<DefaultSymbolVisibility, __E> {
-                            <DefaultSymbolVisibility as ::buffa::Enumeration>::from_proto_name(
-                                    v,
-                                )
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::invalid_value(
-                                        ::serde::de::Unexpected::Str(v),
-                                        &"a known enum variant name",
-                                    )
-                                })
-                        }
-                        fn visit_i64<__E: ::serde::de::Error>(
-                            self,
-                            v: i64,
-                        ) -> ::core::result::Result<DefaultSymbolVisibility, __E> {
-                            let v32 = i32::try_from(v)
-                                .map_err(|_| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                    )
-                                })?;
-                            <DefaultSymbolVisibility as ::buffa::Enumeration>::from_i32(
-                                    v32,
-                                )
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("unknown enum value {v32}"),
-                                    )
-                                })
-                        }
-                        fn visit_u64<__E: ::serde::de::Error>(
-                            self,
-                            v: u64,
-                        ) -> ::core::result::Result<DefaultSymbolVisibility, __E> {
-                            let v32 = i32::try_from(v)
-                                .map_err(|_| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                    )
-                                })?;
-                            <DefaultSymbolVisibility as ::buffa::Enumeration>::from_i32(
-                                    v32,
-                                )
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("unknown enum value {v32}"),
-                                    )
-                                })
-                        }
-                        fn visit_unit<__E: ::serde::de::Error>(
-                            self,
-                        ) -> ::core::result::Result<DefaultSymbolVisibility, __E> {
-                            ::core::result::Result::Ok(
-                                ::core::default::Default::default(),
-                            )
-                        }
-                    }
-                    d.deserialize_any(_V)
+                    ::buffa::json_helpers::closed_enum::deserialize_strict(d)
                 }
             }
             impl ::buffa::json_helpers::ProtoElemJson for DefaultSymbolVisibility {
@@ -18954,6 +18528,22 @@ impl<'de> ::serde::Deserialize<'de> for SourceCodeInfo {
             ) -> ::core::fmt::Result {
                 f.write_str("struct SourceCodeInfo")
             }
+            ::buffa::json_helpers::reject_other_json_kinds!(
+                bool, i64, u64, i128, u128, f64, str, bytes
+            );
+            fn visit_none<__E: ::serde::de::Error>(
+                self,
+            ) -> ::core::result::Result<SourceCodeInfo, __E> {
+                ::core::result::Result::Ok(
+                    <SourceCodeInfo as ::core::default::Default>::default(),
+                )
+            }
+            fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(
+                self,
+                tagged: __A,
+            ) -> ::core::result::Result<Self::Value, __A::Error> {
+                ::buffa::json_helpers::deserialize_tagged(self, tagged)
+            }
             #[allow(clippy::field_reassign_with_default)]
             fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                 self,
@@ -18965,6 +18555,14 @@ impl<'de> ::serde::Deserialize<'de> for SourceCodeInfo {
                 let mut __ext_records: ::buffa::alloc::vec::Vec<::buffa::UnknownField> = ::buffa::alloc::vec::Vec::new();
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
+                        ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                            return ::core::result::Result::Err(
+                                <__A::Error as ::serde::de::Error>::invalid_type(
+                                    ::serde::de::Unexpected::Other("number"),
+                                    &self,
+                                ),
+                            );
+                        }
                         "location" => {
                             __f_location = Some({
                                 struct _S;
@@ -19025,7 +18623,7 @@ impl<'de> ::serde::Deserialize<'de> for SourceCodeInfo {
                 Ok(__r)
             }
         }
-        d.deserialize_map(_V)
+        if d.is_human_readable() { d.deserialize_any(_V) } else { d.deserialize_map(_V) }
     }
 }
 #[cfg(feature = "json")]
@@ -19221,6 +18819,7 @@ pub mod source_code_info {
             serde(
                 rename = "leadingComments",
                 alias = "leading_comments",
+                with = "::buffa::json_helpers::opt_string",
                 skip_serializing_if = "::core::option::Option::is_none"
             )
         )]
@@ -19231,6 +18830,7 @@ pub mod source_code_info {
             serde(
                 rename = "trailingComments",
                 alias = "trailing_comments",
+                with = "::buffa::json_helpers::opt_string",
                 skip_serializing_if = "::core::option::Option::is_none"
             )
         )]
@@ -19241,8 +18841,8 @@ pub mod source_code_info {
             serde(
                 rename = "leadingDetachedComments",
                 alias = "leading_detached_comments",
-                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
-                deserialize_with = "::buffa::json_helpers::null_as_default"
+                with = "::buffa::json_helpers::native_seq",
+                skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
             )
         )]
         pub leading_detached_comments: ::buffa::alloc::vec::Vec<
@@ -19870,6 +19470,7 @@ pub mod generated_code_info {
             serde(
                 rename = "sourceFile",
                 alias = "source_file",
+                with = "::buffa::json_helpers::opt_string",
                 skip_serializing_if = "::core::option::Option::is_none"
             )
         )]
@@ -20315,74 +19916,7 @@ pub mod generated_code_info {
                 fn deserialize<__D: ::serde::Deserializer<'de>>(
                     d: __D,
                 ) -> ::core::result::Result<Self, __D::Error> {
-                    struct _V;
-                    impl ::serde::de::Visitor<'_> for _V {
-                        type Value = Semantic;
-                        fn expecting(
-                            &self,
-                            f: &mut ::core::fmt::Formatter<'_>,
-                        ) -> ::core::fmt::Result {
-                            f.write_str(
-                                concat!(
-                                    "a string, integer, or null for ", stringify!(Semantic)
-                                ),
-                            )
-                        }
-                        fn visit_str<__E: ::serde::de::Error>(
-                            self,
-                            v: &str,
-                        ) -> ::core::result::Result<Semantic, __E> {
-                            <Semantic as ::buffa::Enumeration>::from_proto_name(v)
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::invalid_value(
-                                        ::serde::de::Unexpected::Str(v),
-                                        &"a known enum variant name",
-                                    )
-                                })
-                        }
-                        fn visit_i64<__E: ::serde::de::Error>(
-                            self,
-                            v: i64,
-                        ) -> ::core::result::Result<Semantic, __E> {
-                            let v32 = i32::try_from(v)
-                                .map_err(|_| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                    )
-                                })?;
-                            <Semantic as ::buffa::Enumeration>::from_i32(v32)
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("unknown enum value {v32}"),
-                                    )
-                                })
-                        }
-                        fn visit_u64<__E: ::serde::de::Error>(
-                            self,
-                            v: u64,
-                        ) -> ::core::result::Result<Semantic, __E> {
-                            let v32 = i32::try_from(v)
-                                .map_err(|_| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("enum value {v} out of i32 range"),
-                                    )
-                                })?;
-                            <Semantic as ::buffa::Enumeration>::from_i32(v32)
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::custom(
-                                        ::buffa::alloc::format!("unknown enum value {v32}"),
-                                    )
-                                })
-                        }
-                        fn visit_unit<__E: ::serde::de::Error>(
-                            self,
-                        ) -> ::core::result::Result<Semantic, __E> {
-                            ::core::result::Result::Ok(
-                                ::core::default::Default::default(),
-                            )
-                        }
-                    }
-                    d.deserialize_any(_V)
+                    ::buffa::json_helpers::closed_enum::deserialize_strict(d)
                 }
             }
             impl ::buffa::json_helpers::ProtoElemJson for Semantic {

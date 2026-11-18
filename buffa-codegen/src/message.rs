@@ -1294,6 +1294,37 @@ fn generate_custom_deserialize(
     let non_snake_attr = ctx.message_non_snake_attr(msg);
     let deprecated_field_allow = deprecated_field_allow(ctx, msg, proto_fqn);
 
+    // An explicit json_name may legally use this spelling. Known fields must
+    // retain their schema mapping rather than being mistaken for a number.
+    let has_number_key = accepted_keys
+        .iter()
+        .any(|key| key == "$serde_json::private::Number");
+    let number_key_arm = if has_number_key {
+        quote! {}
+    } else {
+        quote! {
+            ::buffa::json_helpers::SERDE_JSON_NUMBER_KEY => {
+                return ::core::result::Result::Err(
+                    <__A::Error as ::serde::de::Error>::invalid_type(
+                        ::serde::de::Unexpected::Other("number"), &self,
+                    ),
+                );
+            }
+        }
+    };
+
+    // For this exceptional schema, deserialize_any cannot distinguish a
+    // genuine object from serde_json's synthetic arbitrary-precision number.
+    // Keep the original typed map boundary rather than accepting a scalar.
+    let deserialize_body = if has_number_key {
+        quote! { d.deserialize_map(_V) }
+    } else {
+        quote! {
+            if d.is_human_readable() { d.deserialize_any(_V) }
+            else { d.deserialize_map(_V) }
+        }
+    };
+
     Ok(quote! {
         #non_snake_attr
         #deprecated_field_allow
@@ -1307,6 +1338,21 @@ fn generate_custom_deserialize(
                         f.write_str(#expecting_msg)
                     }
 
+                    ::buffa::json_helpers::reject_other_json_kinds!(
+                        bool, i64, u64, i128, u128, f64, str, bytes
+                    );
+
+                    // An empty YAML value reaches `deserialize_any` as
+                    // `visit_none`; `deserialize_map` read it as an empty
+                    // map. JSON never sends it.
+                    fn visit_none<__E: ::serde::de::Error>(self) -> ::core::result::Result<#name_ident, __E> {
+                        ::core::result::Result::Ok(<#name_ident as ::core::default::Default>::default())
+                    }
+
+                    fn visit_enum<__A: ::serde::de::EnumAccess<'de>>(self, tagged: __A) -> ::core::result::Result<Self::Value, __A::Error> {
+                        ::buffa::json_helpers::deserialize_tagged(self, tagged)
+                    }
+
                     #[allow(clippy::field_reassign_with_default)]
                     fn visit_map<__A: ::serde::de::MapAccess<'de>>(
                         self,
@@ -1317,6 +1363,7 @@ fn generate_custom_deserialize(
 
                         while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                             match key.as_str() {
+                                #number_key_arm
                                 #(#match_arms)*
                                 #ext_arm
                                 #terminal_arm
@@ -1332,7 +1379,9 @@ fn generate_custom_deserialize(
                         Ok(__r)
                     }
                 }
-                d.deserialize_map(_V)
+                // `deserialize_any` so a non-object reaches `_V`, whose
+                // rejections name the JSON kind but not the value.
+                #deserialize_body
             }
         }
     })
@@ -1542,6 +1591,7 @@ fn custom_deser_oneof_group(
             json_name,
             proto_name,
             field_type,
+            custom_string: !variant_string_repr.is_default(),
             null_forward: crate::oneof::null_is_valid_value(field),
             is_boxed: crate::oneof::variant_boxed(ctx, field_type, &variant_fqn),
             pointer_repr: &variant_pointer_repr,
@@ -1607,6 +1657,8 @@ pub(crate) struct FieldInfo {
     /// the wrong type.
     struct_field_type: TokenStream,
     is_repeated: bool,
+    /// A custom collection retains its native bool/string Serde policy.
+    repeated_is_custom: bool,
     is_map: bool,
     /// Whether the field's resolved presence is explicit: proto3 `optional`
     /// scalars and proto2 `optional` (non-required) scalars, which use
@@ -1892,6 +1944,7 @@ pub(crate) fn classify_field(
         rust_type,
         struct_field_type,
         is_repeated,
+        repeated_is_custom: !repeated_repr.is_default(),
         is_map,
         is_optional,
         is_required,
@@ -2606,7 +2659,12 @@ fn field_deser_modules(
     } else if info.is_repeated {
         repeated_serde_module(field_type, info, features)
     } else if info.is_optional {
-        optional_serde_module(field_type, features)
+        if field_type == Type::TYPE_STRING && !info.string_repr.is_default() {
+            // Custom representations retain their native Serde conversions.
+            None
+        } else {
+            optional_serde_module(field_type, features)
+        }
     } else {
         singular_serde_module(field_type, features)
     };
@@ -2624,7 +2682,9 @@ fn field_deser_modules(
 ///
 /// Integers accept quoted strings and integral decimal/exponent forms;
 /// int64/uint64 serialize as quoted strings; float/double use NaN/Inf tokens;
-/// bytes use base64. For bool/string, derive serde is already compliant.
+/// bytes use base64. Native serde accepts the same bool/string inputs, but
+/// its diagnostics echo a wrong-kind value, so the container callers route
+/// those through the helpers as well.
 fn value_needs_proto_json(ty: Type) -> bool {
     matches!(
         ty,
@@ -2646,11 +2706,13 @@ fn value_needs_proto_json(ty: Type) -> bool {
 
 /// Serde module for map fields (keyed by key/value types).
 ///
-/// Uses `proto_map` (generic over `V: ProtoElemJson`) only when the value
-/// type needs proto3-JSON parsing or encoding (integer numeric forms,
-/// int64→quoted, float→NaN token, bytes→base64). For string/bool values with
-/// string keys, returns `None` to use derive. Non-string keys still use
-/// `string_key_map` for key stringification.
+/// Uses `proto_map`, or `proto_str_key_map` for a string key (both generic
+/// over `V: ProtoElemJson`), only when the value type needs proto3-JSON
+/// parsing or encoding (integer numeric forms, int64→quoted, float→NaN
+/// token, bytes→base64), or is a bool or default `String` (whose native
+/// diagnostics would echo a wrong-kind value). A
+/// custom `string_type` value with a string key returns `None` to use derive;
+/// with a non-string key it uses `string_key_map` for key stringification.
 ///
 /// Open-enum map values keep `map_enum` for its ignore-unknown-values
 /// filtering behavior (a `JsonParseOptions` feature proto_map doesn't have).
@@ -2715,15 +2777,37 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
     }
 
     // Scalar value types: route through proto_map if the value needs
-    // proto-JSON parsing or encoding. String/bool values can use derive.
+    // proto-JSON parsing or encoding. Bool and default `String` values go
+    // there too, so a wrong-kind value is rejected without echoing it. A
+    // custom `string_type` value has no `ProtoElemJson` impl and keeps its
+    // own serde.
     let value_ty = info.map_value_type.unwrap_or(Type::TYPE_STRING);
     let is_string_key = matches!(info.map_key_type, Some(Type::TYPE_STRING));
-    if value_needs_proto_json(value_ty) {
+    let value_uses_proto_map = match value_ty {
+        Type::TYPE_BOOL => true,
+        Type::TYPE_STRING => !info.map_value_custom_string,
+        ty => value_needs_proto_json(ty),
+    };
+    if value_uses_proto_map {
+        // Bool/default-string values used native Serde before the redacting
+        // routing. A custom container may validate or encode its own shape.
+        if matches!(value_ty, Type::TYPE_BOOL | Type::TYPE_STRING)
+            && is_string_key
+            && matches!(info.map_repr, crate::MapRepr::Custom(_))
+        {
+            return None;
+        }
         // Value needs special parsing or encoding.
-        // A custom-`ProtoString` key lacks the `Display`/`FromStr` that
-        // `proto_map` requires, so route it through the serde-keyed twin.
-        Some(if info.map_key_custom_string {
-            "::buffa::json_helpers::proto_str_key_map"
+        // A string key, custom `ProtoString` or not, goes through the
+        // serde-keyed twin: a custom key lacks the `Display`/`FromStr` that
+        // `proto_map` requires, and a `String` key read through `FromStr`
+        // would be copied once more.
+        Some(if is_string_key {
+            if matches!(value_ty, Type::TYPE_BOOL | Type::TYPE_STRING) {
+                "::buffa::json_helpers::native_str_key_map"
+            } else {
+                "::buffa::json_helpers::proto_str_key_map"
+            }
         } else {
             "::buffa::json_helpers::proto_map"
         })
@@ -2738,9 +2822,9 @@ fn map_serde_module(info: &FieldInfo) -> Option<&'static str> {
 
 /// Serde module for repeated fields.
 ///
-/// Uses `proto_seq` (generic over `T: ProtoElemJson`) only for element types
-/// that need proto3-JSON parsing or encoding. For string/bool, derive is
-/// already compliant.
+/// Uses `proto_seq` (generic over `T: ProtoElemJson`) for scalar element
+/// types, except a custom `string_type` element, which has no
+/// `ProtoElemJson` impl and keeps its own serde.
 ///
 /// Enums keep the `_enum` / `_closed_enum` modules for their
 /// ignore-unknown-values filtering behavior (JsonParseOptions).
@@ -2764,8 +2848,15 @@ fn repeated_serde_module(
         // Other messages/groups: derived Serialize is already proto-JSON.
         Type::TYPE_MESSAGE | Type::TYPE_GROUP => None,
         // Route scalar types needing special parsing or encoding through
-        // proto_seq. String/bool can use derive.
+        // proto_seq. Bool and default `String` elements go there too, so a
+        // wrong-kind element is rejected without echoing it. A custom
+        // `string_type` element has no `ProtoElemJson` impl and keeps its
+        // own serde.
         ty if value_needs_proto_json(ty) => Some("::buffa::json_helpers::proto_seq"),
+        Type::TYPE_BOOL if !info.repeated_is_custom => Some("::buffa::json_helpers::native_seq"),
+        Type::TYPE_STRING if info.string_repr.is_default() && !info.repeated_is_custom => {
+            Some("::buffa::json_helpers::native_seq")
+        }
         _ => None,
     }
 }
@@ -2784,6 +2875,8 @@ fn optional_serde_module(field_type: Type, features: &ResolvedFeatures) -> Optio
         Type::TYPE_FLOAT => Some("::buffa::json_helpers::opt_float"),
         Type::TYPE_DOUBLE => Some("::buffa::json_helpers::opt_double"),
         Type::TYPE_BYTES => Some("::buffa::json_helpers::opt_bytes"),
+        Type::TYPE_BOOL => Some("::buffa::json_helpers::opt_bool"),
+        Type::TYPE_STRING => Some("::buffa::json_helpers::opt_string"),
         Type::TYPE_ENUM => Some(if is_closed_enum(features) {
             "::buffa::json_helpers::opt_closed_enum"
         } else {

@@ -1,0 +1,4 @@
+kind: Security
+body: |-
+  Omit the rejected path from `FieldMask` JSON decoding diagnostics. A malformed path is now reported as `invalid FieldMask path, expected comma-separated lowerCamelCase paths`, by both the generated `FieldMask` and `DynamicMessage`'s JSON codec, instead of quoting the path and naming the rule it broke. Accepted paths are unchanged.
+time: 2026-11-17T12:01:00Z

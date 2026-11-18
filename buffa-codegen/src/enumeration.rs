@@ -26,54 +26,7 @@ fn generate_enum_serde(name_ident: &Ident) -> TokenStream {
 
         impl<'de> ::serde::Deserialize<'de> for #name_ident {
             fn deserialize<__D: ::serde::Deserializer<'de>>(d: __D) -> ::core::result::Result<Self, __D::Error> {
-                struct _V;
-                impl ::serde::de::Visitor<'_> for _V {
-                    type Value = #name_ident;
-
-                    fn expecting(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                        f.write_str(concat!("a string, integer, or null for ", stringify!(#name_ident)))
-                    }
-
-                    fn visit_str<__E: ::serde::de::Error>(self, v: &str) -> ::core::result::Result<#name_ident, __E> {
-                        <#name_ident as ::buffa::Enumeration>::from_proto_name(v).ok_or_else(|| {
-                            ::serde::de::Error::invalid_value(
-                                ::serde::de::Unexpected::Str(v),
-                                &"a known enum variant name",
-                            )
-                        })
-                    }
-
-                    fn visit_i64<__E: ::serde::de::Error>(self, v: i64) -> ::core::result::Result<#name_ident, __E> {
-                        let v32 = i32::try_from(v).map_err(|_| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {v} out of i32 range")
-                            )
-                        })?;
-                        <#name_ident as ::buffa::Enumeration>::from_i32(v32).ok_or_else(|| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {v32}")
-                            )
-                        })
-                    }
-
-                    fn visit_u64<__E: ::serde::de::Error>(self, v: u64) -> ::core::result::Result<#name_ident, __E> {
-                        let v32 = i32::try_from(v).map_err(|_| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("enum value {v} out of i32 range")
-                            )
-                        })?;
-                        <#name_ident as ::buffa::Enumeration>::from_i32(v32).ok_or_else(|| {
-                            ::serde::de::Error::custom(
-                                ::buffa::alloc::format!("unknown enum value {v32}")
-                            )
-                        })
-                    }
-
-                    fn visit_unit<__E: ::serde::de::Error>(self) -> ::core::result::Result<#name_ident, __E> {
-                        ::core::result::Result::Ok(::core::default::Default::default())
-                    }
-                }
-                d.deserialize_any(_V)
+                ::buffa::json_helpers::closed_enum::deserialize_strict(d)
             }
         }
 

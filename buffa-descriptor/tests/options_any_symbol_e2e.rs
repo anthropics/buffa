@@ -74,7 +74,7 @@ fn empty_wkt_inside_any_unknown_fields_follow_parse_mode() {
     let err = DynamicMessage::from_json(Arc::clone(&p), any_idx, input).unwrap_err();
     assert!(
         err.to_string()
-            .contains("unknown field \"futureField\" on message google.protobuf.Empty"),
+            .contains("invalid JSON payload for a registered Any message"),
         "{err}"
     );
 
@@ -103,7 +103,12 @@ fn any_wkt_wrapper_unknown_fields_follow_parse_mode() {
     }"#;
 
     let err = DynamicMessage::from_json(Arc::clone(&p), any_idx, input).unwrap_err();
-    assert!(err.to_string().contains("unknown field \"futureField\""));
+    let error = err.to_string();
+    assert!(
+        error.contains("Any with a well-known type has an unexpected field"),
+        "{error}"
+    );
+    assert!(!error.contains("futureField"), "{error}");
 
     DynamicMessage::from_json_ignoring_unknown(Arc::clone(&p), any_idx, input)
         .expect("lenient parsing must ignore unknown Any wrapper fields");
@@ -143,17 +148,19 @@ fn any_json_accepts_a_bare_type_name_unless_strict() {
 
     let bare = r#"{"@type":"reflect.opt.Annotated"}"#;
     let nested_bare = r#"{"@type":"type.googleapis.com/google.protobuf.Any","value":{"@type":"reflect.opt.Annotated"}}"#;
-    for input in [bare, nested_bare] {
+    for (input, reason) in [
+        (bare, "@type must contain a '/'"),
+        (
+            nested_bare,
+            "invalid JSON value for a registered Any well-known type",
+        ),
+    ] {
         let parsed = DynamicMessage::from_json(Arc::clone(&p), any_idx, input)
             .unwrap_or_else(|err| panic!("{input}: {err}"));
         assert_eq!(parsed.to_json().unwrap(), input);
 
         let err = strict.clone().parse_json(input).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("\"reflect.opt.Annotated\" must contain a '/'"),
-            "{input}: {err}"
-        );
+        assert!(err.to_string().contains(reason), "{input}: {err}");
     }
 
     let parsed = DynamicMessage::from_json(Arc::clone(&p), any_idx, bare).unwrap();

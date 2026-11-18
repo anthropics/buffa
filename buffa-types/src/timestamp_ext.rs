@@ -268,10 +268,11 @@ impl serde::Serialize for Timestamp {
 impl<'de> serde::Deserialize<'de> for Timestamp {
     /// Deserializes from an RFC 3339 string.
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        use alloc::{format, string::String};
-        let s: String = serde::Deserialize::deserialize(d)?;
-        let (secs, nanos) = parse_rfc3339(&s)
-            .ok_or_else(|| serde::de::Error::custom(format!("invalid RFC 3339 timestamp: {s}")))?;
+        use buffa::json_helpers::JsonValueError;
+
+        let s = buffa::json_helpers::wkt::deserialize_string(d)?;
+        let (secs, nanos) =
+            parse_rfc3339(&s).ok_or_else(|| serde::de::Error::custom(JsonValueError::Timestamp))?;
         Ok(Self {
             seconds: secs,
             nanos,
