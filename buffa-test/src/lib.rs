@@ -1358,3 +1358,9 @@ pub mod xti {
         "/cross_package_idiomatic/_include.rs"
     ));
 }
+
+/// Enum null boundaries across Vec and custom collections.
+#[allow(clippy::derivable_impls)]
+pub mod enum_nulls {
+    buffa::include_proto!("enum_nulls");
+}

@@ -1,0 +1,7 @@
+syntax = "proto3";
+package enum_nulls;
+import "google/protobuf/struct.proto";
+enum Mode { ZERO = 0; READY = 1; }
+enum Impostor { NULL_VALUE = 0; }
+message Plain { repeated Mode values = 1; repeated google.protobuf.NullValue nulls = 2; repeated Impostor impostors = 3; }
+message Custom { repeated Mode values = 1; repeated google.protobuf.NullValue nulls = 2; repeated Impostor impostors = 3; }

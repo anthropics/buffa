@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Repeated open-enum JSON fields reject null elements** in both strict and lenient parsing, rather than silently converting them to zero. A null whole field still means an empty collection. Canonical `google.protobuf.NullValue` lists continue to accept null; enum types with a similarly named variant do not receive that exception. The defaulted `Enumeration::IS_NULL_VALUE` marker preserves existing enum implementations. Upgrade the runtime and canonical WKT provider together; external NullValue providers need regeneration or explicit metadata. Existing generated consumers of the updated provider continue to work. Serialization and other field shapes retain their existing behavior.
+time: 2026-11-18T12:00:00+01:00

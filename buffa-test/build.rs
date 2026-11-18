@@ -251,6 +251,17 @@ fn rustc_minor() -> u32 {
 }
 
 fn main() {
+    buffa_build::Config::new()
+        .files(&["protos/enum_nulls.proto"])
+        .includes(&["protos/"])
+        .generate_json(true)
+        .repeated_type_custom_in(
+            "crate::repeated_type::CustomList<*>",
+            &[".enum_nulls.Custom"],
+        )
+        .compile()
+        .expect("enum null boundary fixture generation failed");
+
     // Each schema in `tests::table_codec` is compiled once with the unrolled
     // codec and once with the table codec, under renamed packages, so a test can
     // compare them.
