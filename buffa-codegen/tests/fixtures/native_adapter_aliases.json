@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "selectors": [{
+    "file": "aliased_selector.rs",
+    "name": "AliasedSelector",
+    "wire": {"source": ".aliascompat.AliasedWire", "rust_type": "crate::r#gen::AliasedWire"},
+    "error": {"rust_type": "crate::r#gen::ErrorReason", "value": "crate::r#gen::ErrorReason::Invalid"},
+    "variants": [
+      {"source": "C_ALIAS_ERROR", "name": "Error"},
+      {"source": "C_ALIAS_READY", "name": "Ready"}
+    ],
+    "normalizations": [{"source": "C_ALIAS_FAILURE", "target": "Error"}],
+    "legacy": [{
+      "wire": {"source": ".aliascompat.LegacyWire", "rust_type": "crate::r#gen::LegacyWire"},
+      "normalizations": [
+        {"source": "L_ALIAS_ERROR", "target": "Error"},
+        {"source": "L_ALIAS_FAILURE", "target": "Error"},
+        {"source": "L_ALIAS_READY", "target": "Ready"}
+      ]
+    }]
+  }],
+  "payloads": [{
+    "file": "aliased_payload.rs",
+    "name": "AliasedPayload",
+    "source": ".aliascompat.ModeWire",
+    "variants": [
+      {"name": "Message", "cases": ["M_ALIAS_MESSAGE"], "payload": {"kind": "Unit"}},
+      {"name": "Digest", "cases": ["M_ALIAS_DIGEST"], "payload": {"kind": "Tuple", "field": {
+        "name": "status",
+        "source": {"message": ".aliascompat.Projection", "path": ["status"]},
+        "representation": {"kind": "Value", "source": ".aliascompat.AliasedWire", "rust_type": "super::AliasedSelector"}
+      }}}
+    ]
+  }],
+  "borrowed": [{
+    "file": "aliased_borrow.rs",
+    "name": "AliasedBorrow",
+    "source": {"kind": "Enum", "source": ".aliascompat.ModeWire"},
+    "variants": [
+      {"name": "Message", "cases": ["M_ALIAS_MESSAGE"], "payload": {"kind": "Tuple", "field": {
+        "name": "body", "source": {"message": ".aliascompat.Projection", "path": ["body"]}, "representation": {"kind": "Bytes"}
+      }}},
+      {"name": "Digest", "cases": ["M_ALIAS_DIGEST"], "payload": {"kind": "Tuple", "field": {
+        "name": "body", "source": {"message": ".aliascompat.Projection", "path": ["body"]}, "representation": {"kind": "Bytes"}
+      }}}
+    ]
+  }]
+}

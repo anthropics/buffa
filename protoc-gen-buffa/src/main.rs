@@ -50,6 +50,11 @@ The proto side of extern_path is a dotted protobuf package or type name
 (leading dot optional); a name with an empty or non-identifier segment
 is an error.
 
+To emit native adapters from typed protobuf options, pass adapters=true.
+Additionally or instead, adapter_manifest=path reads a bounded typed JSON
+manifest; with a manifest, files without adapter options are allowed.
+Native adapter files are included explicitly by their API owner.
+
 To skip a package pulled in by include_imports (e.g. an option-only
 import that is never referenced as a field), use exclude_package:
   --buffa_opt=exclude_package=.buf.validate,exclude_package=.gnostic
@@ -198,6 +203,22 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
             .split_once('=')
             .ok_or_else(|| format!("plugin option '{param}' must use key=value syntax"))?;
         match key.trim() {
+            "adapters" => {
+                codegen.generate_adapters =
+                    parse_adapter_bool(value).map_err(|error| error.to_string())?;
+            }
+            "adapter_manifest" => {
+                if codegen.adapters.is_some() {
+                    return Err(buffa_codegen::adapters::AdapterError::from(
+                        buffa_codegen::adapters::ErrorReason::InvalidPluginOption,
+                    )
+                    .to_string());
+                }
+                codegen.adapters = Some(
+                    buffa_codegen::adapters::AdapterConfig::read_json(value)
+                        .map_err(|error| error.to_string())?,
+                );
+            }
             "views" => codegen.generate_views = parse_bool("views", value)?,
             "lazy_views" => codegen.lazy_views = parse_bool("lazy_views", value)?,
             "unknown_fields" => {
@@ -535,6 +556,16 @@ fn parse_codec_strategy(value: &str) -> Result<CodecStrategy, String> {
     }
 }
 
+// Adapter diagnostics must not format rejected values even transiently. Other
+// plugin options retain their existing diagnostics through parse_bool below.
+fn parse_adapter_bool(value: &str) -> Result<bool, buffa_codegen::adapters::AdapterError> {
+    match value.trim() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(buffa_codegen::adapters::ErrorReason::InvalidPluginOption.into()),
+    }
+}
+
 fn parse_bool(key: &str, value: &str) -> Result<bool, String> {
     match value.trim() {
         "true" => Ok(true),
@@ -606,6 +637,56 @@ fn normalize_proto_path(path: &str, label: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_adapters_require_explicit_plugin_selection() {
+        assert!(!parse_config("").unwrap().codegen.generate_adapters);
+        assert!(
+            parse_config("adapters=true")
+                .unwrap()
+                .codegen
+                .generate_adapters
+        );
+        assert!(
+            !parse_config("adapters=false")
+                .unwrap()
+                .codegen
+                .generate_adapters
+        );
+        assert!(
+            parse_config("adapters= true ")
+                .unwrap()
+                .codegen
+                .generate_adapters
+        );
+    }
+
+    #[test]
+    fn native_adapter_option_errors_never_echo_values() {
+        for value in ["invalid", "private-token", "", "1", "TRUE"] {
+            let error = parse_err(&format!("adapters={value}"));
+            assert_eq!(error, "adapter generation failed: InvalidPluginOption");
+        }
+    }
+
+    #[test]
+    fn native_manifest_duplicates_have_a_fixed_typed_reason() {
+        let manifest = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/empty_adapters.json"
+        );
+        let error = parse_err(&format!(
+            "adapter_manifest={manifest},adapter_manifest=private-path"
+        ));
+        assert_eq!(error, "adapter generation failed: InvalidPluginOption");
+    }
+
+    #[test]
+    fn native_manifest_read_failures_are_fixed_and_redacted() {
+        let error = parse_err("adapter_manifest=/a-path-that-does-not-exist/private-contract.json");
+        assert_eq!(error, "adapter generation failed: ManifestIo");
+        assert!(!error.contains("private-contract"));
+    }
 
     fn parse_err(params: &str) -> String {
         match parse_config(params) {

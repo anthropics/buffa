@@ -10,6 +10,9 @@ keywords = ["protobuf", "protocol-buffers", "codegen"]
 categories = ["development-tools::build-utils"]
 
 [dependencies]
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true }
+buffa-proto-options = { workspace = true }
 buffa = { workspace = true, features = ["std", "fast-utf8"] }
 # Codegen reads descriptors via the binary codec only — no views / json /
 # text. The workspace dep is `default-features = false`; `std` is added back

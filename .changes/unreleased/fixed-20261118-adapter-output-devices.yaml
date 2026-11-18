@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    Reject native-adapter output filenames that name reserved Windows devices, including case variants and numbered COM/LPT ports. Return the existing fixed InvalidOutput reason on every host; ordinary filenames containing those words remain supported.
+time: 2026-11-18T19:00:00+01:00

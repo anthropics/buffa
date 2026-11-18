@@ -58,8 +58,9 @@ buffa-types = { path = "buffa-types", version = "0.9.2" }
 # `default-features = false` keeps the codegen toolchain (`buffa-codegen` /
 # `buffa-build` / `protoc-gen-buffa`) lean — descriptor types are read at
 # codegen time via the binary codec only, never serialised to JSON / text or
-# borrowed as views, so the codegen build graph carries no `serde` /
-# `serde_json` / `base64`. Downstream consumers whose protos reference
+# borrowed as views. The generator uses serde/serde_json for bounded adapter
+# manifests; descriptor features still avoid their codecs and base64.
+# Downstream consumers whose protos reference
 # `descriptor.proto` types as fields enable the features they need.
 buffa-descriptor = { path = "buffa-descriptor", version = "0.9.2", default-features = false }
 buffa-proto-options = { path = "buffa-proto-options", version = "0.9.2" }
