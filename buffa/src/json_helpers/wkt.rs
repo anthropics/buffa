@@ -12,7 +12,6 @@
 //! (e.g. one accepting a fractional-second precision the other rejects)
 //! would be a user-visible inconsistency.
 
-use crate::alloc::format;
 use crate::alloc::string::String;
 
 // ── Bounds ──────────────────────────────────────────────────────────────────
@@ -53,11 +52,59 @@ fn parse_component<T: core::str::FromStr>(s: &str, err: &'static str) -> Result<
 /// range (`0001-01-01T00:00:00Z` through `9999-12-31T23:59:59.999999999Z`)
 /// or `nanos` is outside `[0, 999_999_999]`.
 pub fn fmt_timestamp(secs: i64, nanos: i32) -> Result<String, &'static str> {
+    let mut output = String::new();
+    write_timestamp(&mut output, secs, nanos).map_err(TemporalFormatError::static_reason)?;
+    Ok(output)
+}
+
+/// A protobuf temporal validation or formatting failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum TemporalFormatError {
+    /// Nanoseconds are outside the Timestamp range.
+    #[error("Timestamp nanos out of range")]
+    TimestampNanos,
+    /// Seconds are outside the Timestamp range.
+    #[error("Timestamp seconds out of range")]
+    TimestampSeconds,
+    /// The calendar year is outside 0001 through 9999.
+    #[error("Timestamp year out of range")]
+    TimestampYear,
+    /// Duration signs or magnitudes are invalid.
+    #[error("invalid Duration")]
+    Duration,
+    /// The destination writer rejected the output.
+    #[error("temporal writer rejected output")]
+    Write,
+}
+impl TemporalFormatError {
+    fn static_reason(self) -> &'static str {
+        match self {
+            Self::TimestampNanos => "Timestamp nanos out of range",
+            Self::TimestampSeconds => "Timestamp seconds out of range",
+            Self::TimestampYear => "Timestamp year out of range",
+            Self::Duration => "invalid Duration",
+            Self::Write => "temporal writer rejected output",
+        }
+    }
+}
+
+/// Append a canonical UTC timestamp directly to caller-owned storage.
+/// At most thirty ASCII bytes are written; no intermediate String is allocated.
+/// # Errors
+/// Returns a typed validation error or reports failure of the destination writer.
+/// Validation failures write nothing. A destination failure may leave an appended
+/// prefix; callers retain responsibility for clearing their output storage.
+pub fn write_timestamp(
+    output: &mut (impl core::fmt::Write + ?Sized),
+    secs: i64,
+    nanos: i32,
+) -> Result<(), TemporalFormatError> {
     if !(0..1_000_000_000).contains(&nanos) {
-        return Err("Timestamp nanos out of range");
+        return Err(TemporalFormatError::TimestampNanos);
     }
     if !(MIN_TIMESTAMP_SECS..=MAX_TIMESTAMP_SECS).contains(&secs) {
-        return Err("Timestamp seconds out of range");
+        return Err(TemporalFormatError::TimestampSeconds);
     }
     let (tod, day) = {
         let r = secs % 86_400;
@@ -69,15 +116,34 @@ pub fn fmt_timestamp(secs: i64, nanos: i32) -> Result<String, &'static str> {
     };
     let (y, mo, d) = days_to_date(day);
     if !(1..=9999).contains(&y) {
-        return Err("Timestamp year out of range");
+        return Err(TemporalFormatError::TimestampYear);
     }
     let h = tod / 3600;
     let mi = (tod % 3600) / 60;
     let s = tod % 60;
-    let frac = fmt_nanos_min(nanos);
-    Ok(format!(
-        "{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}{frac}Z"
-    ))
+    write!(output, "{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}")
+        .map_err(|_| TemporalFormatError::Write)?;
+    write_fraction(output, nanos.unsigned_abs())?;
+    output
+        .write_char('Z')
+        .map_err(|_| TemporalFormatError::Write)
+}
+
+fn write_fraction(
+    output: &mut (impl core::fmt::Write + ?Sized),
+    nanos: u32,
+) -> Result<(), TemporalFormatError> {
+    if nanos == 0 {
+        return Ok(());
+    }
+    if nanos % 1_000_000 == 0 {
+        write!(output, ".{:03}", nanos / 1_000_000)
+    } else if nanos % 1_000 == 0 {
+        write!(output, ".{:06}", nanos / 1_000)
+    } else {
+        write!(output, ".{nanos:09}")
+    }
+    .map_err(|_| TemporalFormatError::Write)
 }
 
 /// Parse an RFC 3339 timestamp into unix `(seconds, nanos)`.
@@ -184,14 +250,36 @@ pub fn parse_timestamp(s: &str) -> Result<(i64, i32), &'static str> {
 /// Returns an error if `(seconds, nanos)` violate the `Duration` invariants:
 /// magnitude bounds, or `seconds` and `nanos` having opposite signs.
 pub fn fmt_duration(secs: i64, nanos: i32) -> Result<String, &'static str> {
+    // Keep the legacy API's detailed validation reasons; the additive writer
+    // deliberately exposes one typed Duration validation variant instead.
     validate_duration(secs, nanos)?;
-    let negative = secs < 0 || (secs == 0 && nanos < 0);
-    let abs_secs = secs.unsigned_abs();
-    let abs_nanos = nanos.unsigned_abs();
-    let sign = if negative { "-" } else { "" };
-    // `validate_duration` bounded `|nanos|` so the cast is provably safe.
-    let frac = fmt_nanos_min(i32::try_from(abs_nanos).expect("validated nanos fit in i32"));
-    Ok(format!("{sign}{abs_secs}{frac}s"))
+    let mut output = String::new();
+    write_duration(&mut output, secs, nanos).map_err(TemporalFormatError::static_reason)?;
+    Ok(output)
+}
+
+/// Append a canonical Duration directly to caller-owned storage.
+/// At most twenty-four ASCII bytes are written; no intermediate String is allocated.
+/// # Errors
+/// Returns a typed validation error or reports failure of the destination writer.
+/// Validation failures write nothing. A destination failure may leave an appended
+/// prefix; callers retain responsibility for clearing their output storage.
+pub fn write_duration(
+    output: &mut (impl core::fmt::Write + ?Sized),
+    secs: i64,
+    nanos: i32,
+) -> Result<(), TemporalFormatError> {
+    validate_duration(secs, nanos).map_err(|_| TemporalFormatError::Duration)?;
+    if secs < 0 || (secs == 0 && nanos < 0) {
+        output
+            .write_char('-')
+            .map_err(|_| TemporalFormatError::Write)?;
+    }
+    write!(output, "{}", secs.unsigned_abs()).map_err(|_| TemporalFormatError::Write)?;
+    write_fraction(output, nanos.unsigned_abs())?;
+    output
+        .write_char('s')
+        .map_err(|_| TemporalFormatError::Write)
 }
 
 /// Parse a `"3.5s"`-style decimal seconds string into `(seconds, nanos)`.
@@ -260,21 +348,6 @@ pub fn validate_duration(secs: i64, nanos: i32) -> Result<(), &'static str> {
         return Err("Duration seconds and nanos have opposite signs");
     }
     Ok(())
-}
-
-/// Format `nanos` (0–999 999 999) as `"."`-prefixed fractional seconds
-/// with the minimal precision (3, 6, or 9 digits) that loses no information,
-/// or the empty string for zero.
-fn fmt_nanos_min(nanos: i32) -> String {
-    if nanos == 0 {
-        String::new()
-    } else if nanos % 1_000_000 == 0 {
-        format!(".{:03}", nanos / 1_000_000)
-    } else if nanos % 1_000 == 0 {
-        format!(".{:06}", nanos / 1_000)
-    } else {
-        format!(".{nanos:09}")
-    }
 }
 
 // ── FieldMask ───────────────────────────────────────────────────────────────
