@@ -1500,6 +1500,8 @@ for tag in person.tags.iter() { /* ... */ }
 let owned: Person = view.to_owned_message();
 ```
 
+If a sibling message named `PersonOwned` also generates a view, its borrowed view is `PersonOwnedView` and the owned wrapper for `Person` is `PersonOwnedView_`. The wrapper is always accessible as `<Person as buffa::HasMessageView>::ViewHandle`.
+
 When working with the generic `OwnedView<V>` directly (for example, a request type handed to you by an RPC framework), reach the inner view with `reborrow()`, which ties the borrow to the `OwnedView` itself: `let person = view.reborrow();` then `person.name`. Field access directly on the handle is deliberately not provided — the stored view's lifetime is a synthetic `'static`, and exposing it would let field borrows outlive the buffer they point into.
 
 `OwnedView` implements `Clone` (cheap — `Bytes` clone is an O(1) refcount bump) when the view does, `Debug` for every view (the `ViewReborrow::Reborrowed` type is required to be `Debug`, which every generated view is), and `PartialEq`, `Eq` and `Serialize` when the view implements them at every lifetime (`for<'b> V::Reborrowed<'b>: Trait`; generated views derive `Debug` but not `PartialEq`, so the comparison impls apply to hand-written views that do) — all of these except `Clone` call the view's impl on a `reborrow()`ed value, never on the `'static`-typed one. The generated `PersonOwnedView` wrapper forwards `Clone` and `Debug`.

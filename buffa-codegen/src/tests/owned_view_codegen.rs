@@ -86,6 +86,68 @@ fn test_owned_view_wrapper_struct_and_value_accessors() {
 }
 
 #[test]
+fn test_owned_view_name_collision_across_files() {
+    let mut item = simple_msg_file("item.proto");
+    item.package = Some("inventory".to_string());
+    let mut item_owned = proto3_file("item_owned.proto");
+    item_owned.package = item.package.clone();
+    item_owned.message_type.push(DescriptorProto {
+        name: Some("ItemOwned".to_string()),
+        ..Default::default()
+    });
+
+    let descriptors = [item, item_owned];
+    let config = CodeGenConfig::default();
+    let files = generate(
+        &descriptors,
+        &["item.proto".to_string(), "item_owned.proto".to_string()],
+        &config,
+    )
+    .expect("both message views should generate");
+    let content = joined(&files);
+    assert!(content.contains("pub struct ItemOwnedView<'a>"));
+    assert!(content.contains("pub struct ItemOwnedView_(::buffa::OwnedView<ItemView<'static>>)"));
+    assert!(content.contains("type ViewHandle = ItemOwnedView_;"));
+    assert!(content.contains("pub use self::__buffa::view::ItemOwnedView_;"));
+    assert!(content.contains("pub use self::__buffa::view::ItemOwnedView;"));
+
+    let files = generate(&descriptors, &["item.proto".to_string()], &config)
+        .expect("the ungenerated sibling should not affect the wrapper name");
+    let content = joined(&files);
+    assert!(content.contains("type ViewHandle = ItemOwnedView;"));
+    assert!(!content.contains("ItemOwnedView_"));
+}
+
+#[test]
+fn test_nested_owned_view_name_collision_with_type_prefix() {
+    let mut file = proto3_file("container.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("Container".to_string()),
+        nested_type: ["Part", "PartOwned"]
+            .into_iter()
+            .map(|name| DescriptorProto {
+                name: Some(name.to_string()),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    });
+
+    let config = CodeGenConfig {
+        type_name_prefix: "Api".to_string(),
+        ..Default::default()
+    };
+    let files = generate(&[file], &["container.proto".to_string()], &config)
+        .expect("nested views should generate with distinct names");
+    let content = joined(&files);
+    assert!(content.contains("pub struct ApiPartOwnedView<'a>"));
+    assert!(content.contains("pub struct ApiPartOwnedView_("));
+    assert!(content.contains("type ViewHandle = ApiPartOwnedView_;"));
+    assert!(content.contains("::view::container::ApiPartOwnedView_;"));
+    assert!(content.contains("::view::container::ApiPartOwnedView;"));
+}
+
+#[test]
 fn test_owned_view_optional_string_accessor_returns_option() {
     let mut file = proto3_file("opt.proto");
     file.message_type.push(DescriptorProto {

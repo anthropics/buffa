@@ -1062,9 +1062,9 @@ fn collect_natural_reexports(
         // Nested-message views: `__buffa::view::<msg>::BarView` → `BarView`.
         // The owned-view wrapper rides along: `BarOwnedView` → `BarOwnedView`.
         for nested in non_map_nested {
-            let nested_rust_name = ctx
-                .config
-                .prefixed_type_name(nested.name.as_deref().unwrap_or(""));
+            let nested_name = nested.name.as_deref().unwrap_or("");
+            let nested_rust_name = ctx.config.prefixed_type_name(nested_name);
+            let nested_fqn = format!("{proto_fqn}.{nested_name}");
             let view_ident = format_ident!("{nested_rust_name}View");
             candidates.push(ReexportCandidate {
                 name: view_ident.to_string(),
@@ -1073,7 +1073,7 @@ fn collect_natural_reexports(
                     views_gate,
                 ),
             });
-            let owned_view_ident = format_ident!("{nested_rust_name}OwnedView");
+            let owned_view_ident = ctx.owned_view_ident(&nested_fqn, &nested_rust_name);
             candidates.push(ReexportCandidate {
                 name: owned_view_ident.to_string(),
                 tokens: crate::feature_gates::cfg_block(

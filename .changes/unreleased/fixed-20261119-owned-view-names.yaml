@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Avoid duplicate Rust types when generating borrowed and owned views.** If sibling messages such as `Item` and `ItemOwned` would both generate a view type named `ItemOwnedView`, the owned wrapper for `Item` is named `ItemOwnedView_`. The wrapper stays accessible through `HasMessageView::ViewHandle`.
+time: 2026-11-19T12:15:02+01:00
