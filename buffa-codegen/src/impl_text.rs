@@ -56,6 +56,11 @@ fn text_bytes_into(repr: &crate::BytesRepr, owned: TokenStream) -> TokenStream {
     }
 }
 
+fn text_seen_field_ident(field: &FieldDescriptorProto) -> proc_macro2::Ident {
+    let number = field.number.unwrap_or_default() as u32;
+    format_ident!("__buffa_text_seen_field_{number}")
+}
+
 /// Generate `impl ::buffa::text::TextFormat for #name_ident { ... }`.
 ///
 /// Returns an empty `TokenStream` when `generate_text` is disabled, the
@@ -157,7 +162,12 @@ pub(crate) fn generate_text_impl(
         .filter(|f| f.label.unwrap_or_default() == Label::LABEL_REPEATED && is_map_field(msg, f))
         .collect();
 
-    let oneof_groups: Vec<(String, proc_macro2::Ident, Vec<&FieldDescriptorProto>)> = msg
+    let oneof_groups: Vec<(
+        usize,
+        String,
+        proc_macro2::Ident,
+        Vec<&FieldDescriptorProto>,
+    )> = msg
         .oneof_decl
         .iter()
         .enumerate()
@@ -172,6 +182,7 @@ pub(crate) fn generate_text_impl(
                 return None;
             }
             Some((
+                idx,
                 oneof.name.as_deref()?.to_string(),
                 enum_ident.clone(),
                 fields,
@@ -191,7 +202,7 @@ pub(crate) fn generate_text_impl(
         .collect::<Result<_, _>>()?;
     let oneof_encode: Vec<_> = oneof_groups
         .iter()
-        .map(|(name, enum_ident, fields)| {
+        .map(|(_, name, enum_ident, fields)| {
             oneof_encode_stmt(
                 ctx,
                 enum_ident,
@@ -214,14 +225,25 @@ pub(crate) fn generate_text_impl(
         .iter()
         .map(|f| scalar_merge_arm(ctx, f, current_package, proto_fqn, features, nesting))
         .collect::<Result<_, _>>()?;
+    let scalar_seen: Vec<_> = scalar_fields
+        .iter()
+        .map(|field| {
+            let seen = text_seen_field_ident(field);
+            quote! { let mut #seen = false; }
+        })
+        .collect();
     let repeated_merge: Vec<_> = repeated_fields
         .iter()
         .map(|f| repeated_merge_arm(ctx, f, current_package, proto_fqn, features, nesting))
         .collect::<Result<_, _>>()?;
     let mut oneof_merge: Vec<TokenStream> = Vec::new();
-    for (name, enum_ident, fields) in &oneof_groups {
+    let mut oneof_seen: Vec<TokenStream> = Vec::new();
+    for (oneof_idx, name, enum_ident, fields) in &oneof_groups {
+        let seen = format_ident!("__buffa_text_seen_oneof_{oneof_idx}");
+        oneof_seen.push(quote! { let mut #seen = false; });
         oneof_merge.extend(oneof_merge_arms(
             ctx,
+            *oneof_idx,
             enum_ident,
             name,
             fields,
@@ -256,6 +278,14 @@ pub(crate) fn generate_text_impl(
     // without one never has a matching registry entry.
     let use_ext_text = ctx.preserve_unknown_fields(proto_fqn) && has_extension_ranges;
     let proto_fqn_lit = proto_fqn;
+    let extension_seen = if use_ext_text {
+        quote! {
+            let mut __buffa_text_seen_extensions: ::buffa::alloc::collections::BTreeSet<u32> =
+                ::buffa::alloc::collections::BTreeSet::new();
+        }
+    } else {
+        quote! {}
+    };
     let (ext_encode, ext_merge_arm) = if use_ext_text {
         (
             quote! {
@@ -263,6 +293,10 @@ pub(crate) fn generate_text_impl(
             },
             quote! {
                 __name if __name.starts_with('[') => {
+                    let (__number, __repeated) = dec.extension_info(__name, #proto_fqn_lit)?;
+                    if !__repeated && !__buffa_text_seen_extensions.insert(__number) {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
                     for __r in dec.read_extension(__name, #proto_fqn_lit)? {
                         self.__buffa_unknown_fields.push(__r);
                     }
@@ -353,6 +387,9 @@ pub(crate) fn generate_text_impl(
                 ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
                     #[allow(unused_imports)]
                     use ::buffa::Enumeration as _;
+                    #(#scalar_seen)*
+                    #(#oneof_seen)*
+                    #extension_seen
                     #merge_body
                     ::core::result::Result::Ok(())
                 }
@@ -652,13 +689,20 @@ fn scalar_merge_arm(
     let ident = ctx.field_ident(proto_name, field.number.unwrap_or(0));
     let ty = effective_type(ctx, field, features);
     let (_, name_pat) = text_field_name(proto_name, field, ty);
+    let seen = text_seen_field_ident(field);
     let explicit = is_explicit_presence_scalar(field, ty, features);
     let bytes_repr = field_bytes_repr(ctx, proto_fqn, proto_name);
 
     // Message: merge into existing (proto merge semantics).
     if matches!(ty, Type::TYPE_MESSAGE | Type::TYPE_GROUP) {
         return Ok(quote! {
-            #name_pat => dec.merge_message(self.#ident.get_or_insert_default())?,
+            #name_pat => {
+                if #seen {
+                    return ::core::result::Result::Err(dec.duplicate_field());
+                }
+                #seen = true;
+                dec.merge_message(self.#ident.get_or_insert_default())?;
+            }
         });
     }
 
@@ -668,9 +712,25 @@ fn scalar_merge_arm(
         let enum_ty = enum_type_path(ctx, field, current_package, nesting)?;
         let read = enum_read(closed, &enum_ty, &format_ident!("dec"));
         return Ok(if explicit {
-            quote! { #name_pat => self.#ident = ::core::option::Option::Some(#read?), }
+            quote! {
+                #name_pat => {
+                    if #seen {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    #seen = true;
+                    self.#ident = ::core::option::Option::Some(#read?);
+                }
+            }
         } else {
-            quote! { #name_pat => self.#ident = #read?, }
+            quote! {
+                #name_pat => {
+                    if #seen {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    #seen = true;
+                    self.#ident = #read?;
+                }
+            }
         });
     }
 
@@ -685,9 +745,25 @@ fn scalar_merge_arm(
         _ => read_call(ty),
     };
     Ok(if explicit {
-        quote! { #name_pat => self.#ident = ::core::option::Option::Some(#read), }
+        quote! {
+            #name_pat => {
+                if #seen {
+                    return ::core::result::Result::Err(dec.duplicate_field());
+                }
+                #seen = true;
+                self.#ident = ::core::option::Option::Some(#read);
+            }
+        }
     } else {
-        quote! { #name_pat => self.#ident = #read, }
+        quote! {
+            #name_pat => {
+                if #seen {
+                    return ::core::result::Result::Err(dec.duplicate_field());
+                }
+                #seen = true;
+                self.#ident = #read;
+            }
+        }
     })
 }
 
@@ -901,6 +977,7 @@ fn oneof_encode_stmt(
 #[allow(clippy::too_many_arguments)]
 fn oneof_merge_arms(
     ctx: &CodeGenContext,
+    oneof_idx: usize,
     enum_ident: &proc_macro2::Ident,
     oneof_name: &str,
     fields: &[&FieldDescriptorProto],
@@ -911,6 +988,7 @@ fn oneof_merge_arms(
     nesting: usize,
 ) -> Result<Vec<TokenStream>, CodeGenError> {
     let field_ident = ctx.oneof_ident(oneof_name);
+    let seen = format_ident!("__buffa_text_seen_oneof_{oneof_idx}");
     let qualified: TokenStream = quote! { #oneof_prefix #enum_ident };
 
     let mut arms: Vec<TokenStream> = Vec::new();
@@ -996,7 +1074,15 @@ fn oneof_merge_arms(
                 }
             }
         };
-        arms.push(quote! { #name_pat => { #assign } });
+        arms.push(quote! {
+            #name_pat => {
+                if #seen {
+                    return ::core::result::Result::Err(dec.duplicate_field());
+                }
+                #seen = true;
+                #assign
+            }
+        });
     }
     Ok(arms)
 }
@@ -1155,11 +1241,25 @@ fn map_merge_arm(
             dec.read_repeated_into(&mut __pairs, |__d| {
                 let mut __k = ::core::option::Option::None;
                 let mut __v = ::core::option::Option::None;
+                let mut __seen_key = false;
+                let mut __seen_value = false;
                 __d.merge_map_entry(|__d| {
                     while let ::core::option::Option::Some(__n) = __d.read_field_name()? {
                         match __n {
-                            "key" => __k = ::core::option::Option::Some(#key_read),
-                            "value" => __v = ::core::option::Option::Some(#val_read),
+                            "key" => {
+                                if __seen_key {
+                                    return ::core::result::Result::Err(__d.duplicate_field());
+                                }
+                                __seen_key = true;
+                                __k = ::core::option::Option::Some(#key_read);
+                            }
+                            "value" => {
+                                if __seen_value {
+                                    return ::core::result::Result::Err(__d.duplicate_field());
+                                }
+                                __seen_value = true;
+                                __v = ::core::option::Option::Some(#val_read);
+                            }
                             _ => return ::core::result::Result::Err(__d.unknown_field()),
                         }
                     }

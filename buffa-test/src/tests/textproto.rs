@@ -71,6 +71,22 @@ fn direct_scalar_values_require_colon() {
 }
 
 #[test]
+fn singular_fields_reject_duplicates() {
+    for input in [
+        r#"id: 0 id: 1"#,
+        r#"name: "first" name: "second""#,
+        "maybe_age: 10 maybe_age: 20",
+        r#"address { city: "Paris" } address { street: "Rue de Rivoli" }"#,
+    ] {
+        let err = decode_from_str::<Person>(input).unwrap_err();
+        assert_eq!(err.kind, ParseErrorKind::DuplicateField, "input: {input}");
+    }
+
+    let err = decode_from_str::<Person>("id: 1 id: 2").unwrap_err();
+    assert_eq!(err.col, 7, "the error points at the repeated field name");
+}
+
+#[test]
 fn scalar_lists_require_colon() {
     for valid in [
         "tags: ['a']",
@@ -347,14 +363,14 @@ fn oneof_variants() {
         ))
     );
 
-    // Last-wins when both variants appear (textproto merge semantics).
-    let p: Person = decode_from_str(r#"email: "a" phone: "b""#).unwrap();
-    assert_eq!(
-        p.contact,
-        Some(crate::basic::__buffa::oneof::person::Contact::Phone(
-            "b".into()
-        ))
-    );
+    for input in [
+        r#"email: "a" phone: "b""#,
+        r#"email: "a" email: "b""#,
+        r#"home_address { city: "Paris" } home_address { street: "Rue de Rivoli" }"#,
+    ] {
+        let err = decode_from_str::<Person>(input).unwrap_err();
+        assert_eq!(err.kind, ParseErrorKind::DuplicateField, "input: {input}");
+    }
 }
 
 // ── repeated ────────────────────────────────────────────────────────────────
@@ -440,6 +456,36 @@ fn map_decode_missing_key_or_value_defaults() {
     assert_eq!(inv.stock[""], 7);
     let inv: Inventory = decode_from_str(r#"stock { key: "x" }"#).unwrap();
     assert_eq!(inv.stock["x"], 0);
+}
+
+#[test]
+fn map_entries_reject_duplicate_fields_and_preserve_repeated_entries() {
+    for input in [
+        r#"stock { key: "first" key: "second" value: 1 }"#,
+        r#"stock { key: "item" value: 1 value: 2 }"#,
+        r#"locations { key: "home" value { city: "Paris" } value { street: "Rue" } }"#,
+    ] {
+        let err = decode_from_str::<Inventory>(input).unwrap_err();
+        assert_eq!(err.kind, ParseErrorKind::DuplicateField, "input: {input}");
+    }
+
+    // A map field is repeated: separate entries with the same key remain
+    // valid, and the last entry wins as usual.
+    let inv: Inventory =
+        decode_from_str(r#"stock { key: "item" value: 1 } stock { key: "item" value: 2 }"#)
+            .unwrap();
+    assert_eq!(inv.stock["item"], 2);
+}
+
+#[test]
+fn merge_from_str_accepts_one_occurrence_for_an_existing_singular_field() {
+    let mut person = Person {
+        name: "old".into(),
+        ..Default::default()
+    };
+
+    buffa::text::merge_from_str(&mut person, r#"name: "new""#).unwrap();
+    assert_eq!(person.name, "new");
 }
 
 // ── unknown fields ──────────────────────────────────────────────────────────

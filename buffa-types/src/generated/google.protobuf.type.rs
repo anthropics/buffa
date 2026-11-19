@@ -508,18 +508,42 @@ impl ::buffa::text::TextFormat for Type {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
+        let mut __buffa_text_seen_field_5 = false;
+        let mut __buffa_text_seen_field_6 = false;
+        let mut __buffa_text_seen_field_7 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "name" => self.name = dec.read_string()?.into_owned(),
+                "name" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.name = dec.read_string()?.into_owned();
+                }
                 "source_context" => {
-                    dec.merge_message(self.source_context.get_or_insert_default())?
+                    if __buffa_text_seen_field_5 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_5 = true;
+                    dec.merge_message(self.source_context.get_or_insert_default())?;
                 }
                 "syntax" => {
+                    if __buffa_text_seen_field_6 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_6 = true;
                     self.syntax = dec
                         .read_enum_by_name::<Syntax>()
                         .map(::buffa::EnumValue::from)?;
                 }
-                "edition" => self.edition = dec.read_string()?.into_owned(),
+                "edition" => {
+                    if __buffa_text_seen_field_7 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_7 = true;
+                    self.edition = dec.read_string()?.into_owned();
+                }
                 "fields" => {
                     dec.read_repeated_into(
                         &mut self.fields,
@@ -1054,25 +1078,84 @@ impl ::buffa::text::TextFormat for Field {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
+        let mut __buffa_text_seen_field_2 = false;
+        let mut __buffa_text_seen_field_3 = false;
+        let mut __buffa_text_seen_field_4 = false;
+        let mut __buffa_text_seen_field_6 = false;
+        let mut __buffa_text_seen_field_7 = false;
+        let mut __buffa_text_seen_field_8 = false;
+        let mut __buffa_text_seen_field_10 = false;
+        let mut __buffa_text_seen_field_11 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "kind" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
                     self.kind = dec
                         .read_enum_by_name::<field::Kind>()
                         .map(::buffa::EnumValue::from)?;
                 }
                 "cardinality" => {
+                    if __buffa_text_seen_field_2 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_2 = true;
                     self.cardinality = dec
                         .read_enum_by_name::<field::Cardinality>()
                         .map(::buffa::EnumValue::from)?;
                 }
-                "number" => self.number = dec.read_i32()?,
-                "name" => self.name = dec.read_string()?.into_owned(),
-                "type_url" => self.type_url = dec.read_string()?.into_owned(),
-                "oneof_index" => self.oneof_index = dec.read_i32()?,
-                "packed" => self.packed = dec.read_bool()?,
-                "json_name" => self.json_name = dec.read_string()?.into_owned(),
-                "default_value" => self.default_value = dec.read_string()?.into_owned(),
+                "number" => {
+                    if __buffa_text_seen_field_3 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_3 = true;
+                    self.number = dec.read_i32()?;
+                }
+                "name" => {
+                    if __buffa_text_seen_field_4 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_4 = true;
+                    self.name = dec.read_string()?.into_owned();
+                }
+                "type_url" => {
+                    if __buffa_text_seen_field_6 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_6 = true;
+                    self.type_url = dec.read_string()?.into_owned();
+                }
+                "oneof_index" => {
+                    if __buffa_text_seen_field_7 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_7 = true;
+                    self.oneof_index = dec.read_i32()?;
+                }
+                "packed" => {
+                    if __buffa_text_seen_field_8 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_8 = true;
+                    self.packed = dec.read_bool()?;
+                }
+                "json_name" => {
+                    if __buffa_text_seen_field_10 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_10 = true;
+                    self.json_name = dec.read_string()?.into_owned();
+                }
+                "default_value" => {
+                    if __buffa_text_seen_field_11 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_11 = true;
+                    self.default_value = dec.read_string()?.into_owned();
+                }
                 "options" => {
                     dec.read_repeated_into(
                         &mut self.options,
@@ -1806,18 +1889,42 @@ impl ::buffa::text::TextFormat for Enum {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
+        let mut __buffa_text_seen_field_4 = false;
+        let mut __buffa_text_seen_field_5 = false;
+        let mut __buffa_text_seen_field_6 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "name" => self.name = dec.read_string()?.into_owned(),
+                "name" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.name = dec.read_string()?.into_owned();
+                }
                 "source_context" => {
-                    dec.merge_message(self.source_context.get_or_insert_default())?
+                    if __buffa_text_seen_field_4 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_4 = true;
+                    dec.merge_message(self.source_context.get_or_insert_default())?;
                 }
                 "syntax" => {
+                    if __buffa_text_seen_field_5 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_5 = true;
                     self.syntax = dec
                         .read_enum_by_name::<Syntax>()
                         .map(::buffa::EnumValue::from)?;
                 }
-                "edition" => self.edition = dec.read_string()?.into_owned(),
+                "edition" => {
+                    if __buffa_text_seen_field_6 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_6 = true;
+                    self.edition = dec.read_string()?.into_owned();
+                }
                 "enumvalue" => {
                     dec.read_repeated_into(
                         &mut self.enumvalue,
@@ -2140,10 +2247,24 @@ impl ::buffa::text::TextFormat for EnumValue {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
+        let mut __buffa_text_seen_field_2 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "name" => self.name = dec.read_string()?.into_owned(),
-                "number" => self.number = dec.read_i32()?,
+                "name" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.name = dec.read_string()?.into_owned();
+                }
+                "number" => {
+                    if __buffa_text_seen_field_2 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_2 = true;
+                    self.number = dec.read_i32()?;
+                }
                 "options" => {
                     dec.read_repeated_into(
                         &mut self.options,
@@ -2440,10 +2561,24 @@ impl ::buffa::text::TextFormat for Option {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
+        let mut __buffa_text_seen_field_2 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "name" => self.name = dec.read_string()?.into_owned(),
-                "value" => dec.merge_message(self.value.get_or_insert_default())?,
+                "name" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.name = dec.read_string()?.into_owned();
+                }
+                "value" => {
+                    if __buffa_text_seen_field_2 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_2 = true;
+                    dec.merge_message(self.value.get_or_insert_default())?;
+                }
                 _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }

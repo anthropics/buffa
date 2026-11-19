@@ -73,6 +73,10 @@ pub enum ParseErrorKind {
     #[error("unknown field")]
     UnknownField,
 
+    /// A non-repeated field appeared more than once in a message.
+    #[error("duplicate field")]
+    DuplicateField,
+
     /// An enum variant name was not recognised, or a closed enum received a
     /// numeric value outside its defined set.
     ///

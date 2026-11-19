@@ -296,17 +296,27 @@ impl ::buffa::text::TextFormat for Struct {
                         |__d| {
                             let mut __k = ::core::option::Option::None;
                             let mut __v = ::core::option::Option::None;
+                            let mut __seen_key = false;
+                            let mut __seen_value = false;
                             __d.merge_map_entry(|__d| {
                                 while let ::core::option::Option::Some(__n) = __d
                                     .read_field_name()?
                                 {
                                     match __n {
                                         "key" => {
+                                            if __seen_key {
+                                                return ::core::result::Result::Err(__d.duplicate_field());
+                                            }
+                                            __seen_key = true;
                                             __k = ::core::option::Option::Some(
                                                 __d.read_string()?.into_owned(),
                                             );
                                         }
                                         "value" => {
+                                            if __seen_value {
+                                                return ::core::result::Result::Err(__d.duplicate_field());
+                                            }
+                                            __seen_value = true;
                                             __v = ::core::option::Option::Some({
                                                 let mut __m = ::core::default::Default::default();
                                                 __d.merge_message(&mut __m)?;
@@ -833,9 +843,14 @@ impl ::buffa::text::TextFormat for Value {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_oneof_0 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
                 "null_value" => {
+                    if __buffa_text_seen_oneof_0 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_oneof_0 = true;
                     self.kind = ::core::option::Option::Some(
                         __buffa::oneof::value::Kind::NullValue(
                             dec
@@ -845,11 +860,19 @@ impl ::buffa::text::TextFormat for Value {
                     );
                 }
                 "number_value" => {
+                    if __buffa_text_seen_oneof_0 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_oneof_0 = true;
                     self.kind = ::core::option::Option::Some(
                         __buffa::oneof::value::Kind::NumberValue(dec.read_f64()?),
                     );
                 }
                 "string_value" => {
+                    if __buffa_text_seen_oneof_0 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_oneof_0 = true;
                     self.kind = ::core::option::Option::Some(
                         __buffa::oneof::value::Kind::StringValue(
                             dec.read_string()?.into_owned(),
@@ -857,11 +880,19 @@ impl ::buffa::text::TextFormat for Value {
                     );
                 }
                 "bool_value" => {
+                    if __buffa_text_seen_oneof_0 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_oneof_0 = true;
                     self.kind = ::core::option::Option::Some(
                         __buffa::oneof::value::Kind::BoolValue(dec.read_bool()?),
                     );
                 }
                 "struct_value" => {
+                    if __buffa_text_seen_oneof_0 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_oneof_0 = true;
                     if let ::core::option::Option::Some(
                         __buffa::oneof::value::Kind::StructValue(ref mut __existing),
                     ) = self.kind
@@ -878,6 +909,10 @@ impl ::buffa::text::TextFormat for Value {
                     }
                 }
                 "list_value" => {
+                    if __buffa_text_seen_oneof_0 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_oneof_0 = true;
                     if let ::core::option::Option::Some(
                         __buffa::oneof::value::Kind::ListValue(ref mut __existing),
                     ) = self.kind

@@ -28,9 +28,9 @@ use crate::CodeGenError;
 /// `scope_fqn` is the proto FQN prefix for building extension JSON full names
 /// (the package for file-level, `<package>.<Message>` for message-nested).
 ///
-/// Returns the generated tokens plus two lists of registry const identifiers
-/// emitted in the same scope: JSON entries (all types except `TYPE_GROUP`)
-/// and text entries (message/group only).
+/// Returns the generated tokens plus registry const identifiers emitted in
+/// the same scope: JSON entries (all types except `TYPE_GROUP`) and text
+/// entries (message/group only), paired with their repeated label.
 pub(crate) fn generate_extensions(
     ctx: &CodeGenContext,
     extensions: &[FieldDescriptorProto],
@@ -38,7 +38,7 @@ pub(crate) fn generate_extensions(
     nesting: usize,
     features: &ResolvedFeatures,
     scope_fqn: &str,
-) -> Result<(TokenStream, Vec<Ident>, Vec<Ident>), CodeGenError> {
+) -> Result<(TokenStream, Vec<Ident>, Vec<(Ident, bool)>), CodeGenError> {
     let mut out = TokenStream::new();
     let mut json_consts = Vec::new();
     let mut text_consts = Vec::new();
@@ -51,7 +51,7 @@ pub(crate) fn generate_extensions(
                 json_consts.push(id);
             }
             if let Some(id) = text_id {
-                text_consts.push(id);
+                text_consts.push((id, ext.label.unwrap_or_default() == Label::LABEL_REPEATED));
             }
         }
     }

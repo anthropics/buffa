@@ -316,10 +316,24 @@ impl ::buffa::text::TextFormat for Duration {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
+        let mut __buffa_text_seen_field_2 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "seconds" => self.seconds = dec.read_i64()?,
-                "nanos" => self.nanos = dec.read_i32()?,
+                "seconds" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.seconds = dec.read_i64()?;
+                }
+                "nanos" => {
+                    if __buffa_text_seen_field_2 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_2 = true;
+                    self.nanos = dec.read_i32()?;
+                }
                 _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }

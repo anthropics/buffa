@@ -4506,8 +4506,8 @@ fn generate_proto_content(
         for p in msg_reg.json_ext {
             reg.json_ext.push(quote! { #mod_ident :: #p });
         }
-        for p in msg_reg.text_ext {
-            reg.text_ext.push(quote! { #mod_ident :: #p });
+        for (p, repeated) in msg_reg.text_ext {
+            reg.text_ext.push((quote! { #mod_ident :: #p }, repeated));
         }
         reg.json_any.extend(msg_reg.json_any);
         reg.text_any.extend(msg_reg.text_any);
@@ -4592,8 +4592,9 @@ fn generate_proto_content(
     for id in file_ext_json {
         reg.json_ext.push(quote! { #sentinel :: ext :: #id });
     }
-    for id in file_ext_text {
-        reg.text_ext.push(quote! { #sentinel :: ext :: #id });
+    for (id, repeated) in file_ext_text {
+        reg.text_ext
+            .push((quote! { #sentinel :: ext :: #id }, repeated));
     }
     // File-level extension consts → re-export at package root. `self::` and
     // `#[doc(inline)]` for the same reasons as the view re-exports above.
@@ -5047,8 +5048,13 @@ fn generate_package_mod(
             .map(|p| {
                 feature_gates::cfg_block(quote! { reg.register_text_any(super::#p); }, gates.text)
             })
-            .chain(reg.text_ext.iter().map(|p| {
-                feature_gates::cfg_block(quote! { reg.register_text_ext(super::#p); }, gates.text)
+            .chain(reg.text_ext.iter().map(|(p, repeated)| {
+                let method = if *repeated {
+                    format_ident!("register_repeated_text_ext")
+                } else {
+                    format_ident!("register_text_ext")
+                };
+                feature_gates::cfg_block(quote! { reg.#method(super::#p); }, gates.text)
             }));
         // When gating, a feature subset may leave one bucket of statements
         // cfg'd out while the other survives — `reg` is still used. But if

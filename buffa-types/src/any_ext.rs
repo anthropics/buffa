@@ -377,11 +377,30 @@ impl buffa::text::TextFormat for Any {
         &mut self,
         dec: &mut buffa::text::TextDecoder<'_>,
     ) -> Result<(), buffa::text::ParseError> {
+        let mut seen_type_url = false;
+        let mut seen_value = false;
         while let Some(name) = dec.read_field_name()? {
             match name {
-                "type_url" => self.type_url = dec.read_string()?.into_owned(),
-                "value" => self.value = dec.read_bytes()?.into(),
+                "type_url" => {
+                    if seen_type_url {
+                        return Err(dec.duplicate_field());
+                    }
+                    seen_type_url = true;
+                    self.type_url = dec.read_string()?.into_owned();
+                }
+                "value" => {
+                    if seen_value {
+                        return Err(dec.duplicate_field());
+                    }
+                    seen_value = true;
+                    self.value = dec.read_bytes()?.into();
+                }
                 _ if name.starts_with('[') => {
+                    if seen_type_url || seen_value {
+                        return Err(dec.duplicate_field());
+                    }
+                    seen_type_url = true;
+                    seen_value = true;
                     let (url, bytes) = dec.read_any_expansion(name)?;
                     self.type_url = url.into_owned();
                     self.value = bytes.into();
@@ -419,6 +438,17 @@ mod text_tests {
     fn unknown_fields_rejected_by_default() {
         let err = decode_from_str::<Any>(r#"type_urll: "type.example.com/Foo""#).unwrap_err();
         assert_eq!(err.kind, ParseErrorKind::UnknownField);
+    }
+
+    #[test]
+    fn duplicate_fields_rejected() {
+        for input in [
+            r#"type_url: "first" type_url: "second""#,
+            r#"value: "first" value: "second""#,
+        ] {
+            let err = decode_from_str::<Any>(input).unwrap_err();
+            assert_eq!(err.kind, ParseErrorKind::DuplicateField, "input: {input}");
+        }
     }
 
     // Registry-manipulating tests live in `serde_tests` below — they share

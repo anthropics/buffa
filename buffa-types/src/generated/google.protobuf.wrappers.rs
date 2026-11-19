@@ -220,9 +220,16 @@ impl ::buffa::text::TextFormat for DoubleValue {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "value" => self.value = dec.read_f64()?,
+                "value" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.value = dec.read_f64()?;
+                }
                 _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
@@ -454,9 +461,16 @@ impl ::buffa::text::TextFormat for FloatValue {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "value" => self.value = dec.read_f32()?,
+                "value" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.value = dec.read_f32()?;
+                }
                 _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
@@ -689,9 +703,16 @@ impl ::buffa::text::TextFormat for Int64Value {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "value" => self.value = dec.read_i64()?,
+                "value" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.value = dec.read_i64()?;
+                }
                 _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
@@ -924,9 +945,16 @@ impl ::buffa::text::TextFormat for UInt64Value {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "value" => self.value = dec.read_u64()?,
+                "value" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.value = dec.read_u64()?;
+                }
                 _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
@@ -1159,9 +1187,16 @@ impl ::buffa::text::TextFormat for Int32Value {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "value" => self.value = dec.read_i32()?,
+                "value" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.value = dec.read_i32()?;
+                }
                 _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
@@ -1394,9 +1429,16 @@ impl ::buffa::text::TextFormat for UInt32Value {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "value" => self.value = dec.read_u32()?,
+                "value" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.value = dec.read_u32()?;
+                }
                 _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
@@ -1629,9 +1671,16 @@ impl ::buffa::text::TextFormat for BoolValue {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "value" => self.value = dec.read_bool()?,
+                "value" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.value = dec.read_bool()?;
+                }
                 _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
@@ -1864,9 +1913,16 @@ impl ::buffa::text::TextFormat for StringValue {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "value" => self.value = dec.read_string()?.into_owned(),
+                "value" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.value = dec.read_string()?.into_owned();
+                }
                 _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }
@@ -2099,9 +2155,16 @@ impl ::buffa::text::TextFormat for BytesValue {
     ) -> ::core::result::Result<(), ::buffa::text::ParseError> {
         #[allow(unused_imports)]
         use ::buffa::Enumeration as _;
+        let mut __buffa_text_seen_field_1 = false;
         while let ::core::option::Option::Some(__name) = dec.read_field_name()? {
             match __name {
-                "value" => self.value = dec.read_bytes()?,
+                "value" => {
+                    if __buffa_text_seen_field_1 {
+                        return ::core::result::Result::Err(dec.duplicate_field());
+                    }
+                    __buffa_text_seen_field_1 = true;
+                    self.value = dec.read_bytes()?;
+                }
                 _ => return ::core::result::Result::Err(dec.unknown_field()),
             }
         }

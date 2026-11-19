@@ -93,6 +93,26 @@ fn repeated_group_extension_prints_one_entry_per_element() {
     }
 }
 
+#[test]
+fn duplicate_singular_message_and_group_extensions_are_rejected() {
+    register_types();
+
+    for input in [concat!(
+        "[buffa.test.extjson.ann] {doc: \"first\"} ",
+        "[ buffa . test . extjson . ann ] {doc: \"second\"}"
+    )] {
+        let err = decode_from_str::<extjson::Carrier>(input).unwrap_err();
+        assert_eq!(err.kind, ParseErrorKind::DuplicateField, "{input}");
+    }
+
+    let input = concat!(
+        "[buffa.test.groupext.delim_inner] {c: 1} ",
+        "[buffa.test.groupext.delim_inner] {c: 2}"
+    );
+    let err = decode_from_str::<groupext::Carrier>(input).unwrap_err();
+    assert_eq!(err.kind, ParseErrorKind::DuplicateField, "{input}");
+}
+
 /// The entries of a repeated extension between a regular field and a singular
 /// extension each carry their own name, including an empty middle element.
 #[test]

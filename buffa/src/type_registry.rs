@@ -320,11 +320,12 @@ impl TextAnyMap {
 struct TextExtMap {
     by_number: hashbrown::HashMap<&'static str, hashbrown::HashMap<u32, TextExtEntry>>,
     by_name: hashbrown::HashMap<&'static str, (&'static str, u32)>,
+    repeated: hashbrown::HashSet<(&'static str, u32)>,
 }
 
 #[cfg(feature = "text")]
 impl TextExtMap {
-    fn register(&mut self, entry: TextExtEntry) {
+    fn register(&mut self, entry: TextExtEntry, repeated: bool) {
         let extendee = entry.extendee;
         let number = entry.number;
 
@@ -334,11 +335,13 @@ impl TextExtMap {
             .and_then(|entries| entries.remove(&number))
         {
             self.by_name.remove(previous.full_name);
+            self.repeated.remove(&(extendee, number));
         }
         if let Some((previous_extendee, previous_number)) = self.by_name.remove(entry.full_name) {
             if let Some(entries) = self.by_number.get_mut(previous_extendee) {
                 entries.remove(&previous_number);
             }
+            self.repeated.remove(&(previous_extendee, previous_number));
         }
 
         self.by_name.insert(entry.full_name, (extendee, number));
@@ -346,6 +349,9 @@ impl TextExtMap {
             .entry(extendee)
             .or_default()
             .insert(number, entry);
+        if repeated {
+            self.repeated.insert((extendee, number));
+        }
     }
 
     fn by_number(&self, extendee: &str, number: u32) -> Option<&TextExtEntry> {
@@ -354,6 +360,12 @@ impl TextExtMap {
     fn by_name(&self, full_name: &str) -> Option<&TextExtEntry> {
         let key = self.by_name.get(full_name)?;
         self.by_number.get(key.0)?.get(&key.1)
+    }
+
+    fn info_by_name(&self, full_name: &str) -> Option<(&TextExtEntry, bool)> {
+        let key = self.by_name.get(full_name)?;
+        let entry = self.by_number.get(key.0)?.get(&key.1)?;
+        Some((entry, self.repeated.contains(key)))
     }
 }
 
@@ -425,10 +437,22 @@ impl TypeRegistry {
     }
 
     /// Registers a text extension entry. Replaces any existing entry at the
-    /// same `(extendee, number)` or `full_name`.
+    /// same `(extendee, number)` or `full_name`. Use
+    /// [`register_repeated_text_ext`](Self::register_repeated_text_ext) for a
+    /// repeated message or group extension.
     #[cfg(feature = "text")]
     pub fn register_text_ext(&mut self, entry: TextExtEntry) {
-        self.text_ext.register(entry);
+        self.text_ext.register(entry, false);
+    }
+
+    /// Registers a repeated message or group text extension entry.
+    ///
+    /// The parser uses this metadata to allow multiple occurrences of the
+    /// extension name in one message. Replaces any existing entry at the
+    /// same `(extendee, number)` or `full_name`.
+    #[cfg(feature = "text")]
+    pub fn register_repeated_text_ext(&mut self, entry: TextExtEntry) {
+        self.text_ext.register(entry, true);
     }
 
     /// Look up a JSON `Any` entry by type URL.
@@ -600,6 +624,20 @@ pub(crate) fn global_text_ext_by_name(full_name: &str) -> Option<&'static TextEx
     }
     // SAFETY: see global_text_any.
     unsafe { &*ptr }.by_name(full_name)
+}
+
+/// Look up an extension and its repeated label by full name.
+#[cfg(feature = "text")]
+pub(crate) fn global_text_ext_info_by_name(
+    full_name: &str,
+) -> Option<(&'static TextExtEntry, bool)> {
+    use core::sync::atomic::Ordering;
+    let ptr = TEXT_EXT.load(Ordering::Acquire);
+    if ptr.is_null() {
+        return None;
+    }
+    // SAFETY: see global_text_any.
+    unsafe { &*ptr }.info_by_name(full_name)
 }
 
 /// Clear the global text maps. Test cleanup only; leaks old allocations.
@@ -1266,7 +1304,7 @@ mod tests {
             for (number, ((full_name, text_encode, merge), text_merge)) in
                 (60..).zip(REPEATED_HELPERS.into_iter().zip(singular_merges))
             {
-                reg.register_text_ext(TextExtEntry {
+                reg.register_repeated_text_ext(TextExtEntry {
                     number,
                     full_name,
                     extendee: "pkg.Msg",
@@ -1334,7 +1372,7 @@ mod tests {
             ) -> core::fmt::Result,
         ) -> UnknownFields {
             let mut reg = TypeRegistry::new();
-            reg.register_text_ext(TextExtEntry {
+            reg.register_repeated_text_ext(TextExtEntry {
                 number: 60,
                 full_name: "pkg.custom",
                 extendee: "pkg.Msg",
@@ -1464,6 +1502,31 @@ mod tests {
             // by_name axis → same entry via indirection.
             assert_eq!(reg.text_ext_by_name("pkg.inner_ext").unwrap().number, 50);
             assert!(reg.text_ext_by_name("pkg.missing").is_none());
+        }
+
+        #[test]
+        fn text_ext_repeated_label_tracks_replacements() {
+            let mut reg = TypeRegistry::new();
+            let make_entry = |number, full_name, extendee| TextExtEntry {
+                number,
+                full_name,
+                extendee,
+                text_encode: message_encode_text::<Inner>,
+                text_merge: message_merge_text::<Inner>,
+            };
+
+            reg.register_repeated_text_ext(make_entry(50, "pkg.old", "pkg.Carrier"));
+            assert!(reg.text_ext.info_by_name("pkg.old").unwrap().1);
+
+            // Replacing by (extendee, number) clears the old repeated label.
+            reg.register_text_ext(make_entry(50, "pkg.new", "pkg.Carrier"));
+            assert!(reg.text_ext.info_by_name("pkg.old").is_none());
+            assert!(!reg.text_ext.info_by_name("pkg.new").unwrap().1);
+
+            // Replacing by full name moves both the entry and its label.
+            reg.register_repeated_text_ext(make_entry(51, "pkg.new", "other.Carrier"));
+            assert!(reg.text_ext_by_number("pkg.Carrier", 50).is_none());
+            assert!(reg.text_ext.info_by_name("pkg.new").unwrap().1);
         }
 
         #[test]
