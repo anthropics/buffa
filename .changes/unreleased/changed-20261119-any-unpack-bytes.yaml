@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+  **`Any` unpacking can share decoded `bytes::Bytes` fields with its payload.** `unpack_unchecked`, `unpack_if`, and `unpack_message` borrow the payload and share its storage when the decoder requests owned bytes. A shared field keeps the backing allocation alive until the field is dropped.
+time: 2026-11-19T16:25:18+01:00

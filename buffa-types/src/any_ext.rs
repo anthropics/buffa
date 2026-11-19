@@ -1,8 +1,39 @@
 //! Ergonomic helpers for [`google::protobuf::Any`](crate::google::protobuf::Any).
 
 use alloc::string::String;
+use bytes::{Buf, Bytes};
 
 use crate::google::protobuf::Any;
+
+/// Borrow a `Bytes` buffer until the decoder requests an owned slice.
+struct PayloadCursor<'a> {
+    source: &'a Bytes,
+    unread: &'a [u8],
+}
+
+impl Buf for PayloadCursor<'_> {
+    #[inline]
+    fn remaining(&self) -> usize {
+        self.unread.len()
+    }
+
+    #[inline]
+    fn chunk(&self) -> &[u8] {
+        self.unread
+    }
+
+    #[inline]
+    fn advance(&mut self, count: usize) {
+        self.unread = &self.unread[count..];
+    }
+
+    #[inline]
+    fn copy_to_bytes(&mut self, len: usize) -> Bytes {
+        let (payload, unread) = self.unread.split_at(len);
+        self.unread = unread;
+        self.source.slice_ref(payload)
+    }
+}
 
 impl Any {
     /// Pack a message into an [`Any`] with the given type URL.
@@ -93,11 +124,19 @@ impl Any {
     /// [`unpack_if`](Self::unpack_if) to check the stored type before
     /// decoding.
     ///
+    /// Decoded `bytes::Bytes` fields can keep the original backing allocation
+    /// alive after this `Any` is dropped. That allocation can be larger than
+    /// `self.value`. Use `T::decode_from_slice(&self.value)` to decode without
+    /// sharing the original allocation.
+    ///
     /// # Errors
     ///
     /// Returns a [`buffa::DecodeError`] if the bytes cannot be decoded as `T`.
     pub fn unpack_unchecked<T: buffa::Message>(&self) -> Result<T, buffa::DecodeError> {
-        T::decode(&mut self.value.as_ref())
+        T::decode(&mut PayloadCursor {
+            source: &self.value,
+            unread: &self.value,
+        })
     }
 
     /// Unpack the contained message as `T`, but only if `type_url` is
@@ -106,6 +145,8 @@ impl Any {
     /// Most callers want [`unpack_message`](Self::unpack_message), which
     /// accepts any prefix; use this method when the prefix itself carries
     /// meaning. Returns `Ok(None)` when the type URL does not match.
+    ///
+    /// See [`unpack_unchecked`](Self::unpack_unchecked) for buffer sharing.
     ///
     /// # Errors
     ///
@@ -118,7 +159,7 @@ impl Any {
         if self.type_url != expected_type_url {
             return Ok(None);
         }
-        T::decode(&mut self.value.as_ref()).map(Some)
+        self.unpack_unchecked().map(Some)
     }
 
     /// Unpack the contained message as `T`, but only if the type URL
@@ -129,6 +170,8 @@ impl Any {
     /// `T` is an owned message. For a view, check `is_message::<FooView>()`
     /// and decode `any.value` with
     /// [`MessageView::decode_view`](buffa::MessageView::decode_view).
+    ///
+    /// See [`unpack_unchecked`](Self::unpack_unchecked) for buffer sharing.
     ///
     /// # Examples
     ///
@@ -152,7 +195,7 @@ impl Any {
         if !self.is_message::<T>() {
             return Ok(None);
         }
-        T::decode(&mut self.value.as_ref()).map(Some)
+        self.unpack_unchecked().map(Some)
     }
 
     /// Returns `true` if the `type_url` of this [`Any`] is exactly `type_url`,
@@ -810,6 +853,30 @@ mod tests {
 
         let decoded: Timestamp = any.unpack_unchecked().unwrap();
         assert_eq!(decoded, ts);
+    }
+
+    #[test]
+    fn should_share_payload_bytes_if_unpacking_an_any() {
+        use crate::google::protobuf::__buffa::view::AnyView;
+        use buffa::MessageView as _;
+
+        let inner = Any::pack_message(&Timestamp::from_unix_secs(42));
+        let outer = Any::pack_message(&inner);
+        let expected_ptr = AnyView::decode_view(&outer.value).unwrap().value.as_ptr();
+
+        let unpacked = [
+            outer.unpack_unchecked::<Any>().unwrap(),
+            outer.unpack_if::<Any>(outer.type_url()).unwrap().unwrap(),
+            outer.unpack_message::<Any>().unwrap().unwrap(),
+        ];
+        for message in &unpacked {
+            assert_eq!(message.value.as_ptr(), expected_ptr);
+        }
+
+        drop(outer);
+        for message in unpacked {
+            assert_eq!(message, inner);
+        }
     }
 
     #[test]
