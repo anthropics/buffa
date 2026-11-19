@@ -439,7 +439,7 @@ pub(crate) fn plan_field_names(files: &[FileDescriptorProto]) -> FieldNamePlan {
 
 /// Apply `f` to every non-map-entry message in `files`, nested included,
 /// with its dotted FQN (no leading dot).
-fn for_each_message<'a>(
+pub(crate) fn for_each_message<'a>(
     files: impl IntoIterator<Item = &'a FileDescriptorProto>,
     mut f: impl FnMut(&str, &DescriptorProto),
 ) {

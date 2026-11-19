@@ -99,6 +99,8 @@ pub struct CodeGenContext<'a> {
     /// [`deconflict_modules`] chooses the names. The ancillary trees under
     /// `__buffa` use the same name as the owned tree.
     nested_module_names: HashMap<String, String>,
+    /// Proto FQNs of owned-view wrappers whose names collide with sibling views.
+    renamed_owned_views: HashSet<String>,
     /// Variant paths (leading-dot form) resolved from
     /// `config.unboxed_oneof_fields` whose oneof variants are stored inline.
     /// Built once by [`resolve_unboxed_variants`](crate::oneof::resolve_unboxed_variants);
@@ -664,6 +666,7 @@ impl<'a> CodeGenContext<'a> {
             deprecated_enum_values: std::cell::OnceCell::new(),
             comment_map,
             nested_module_names,
+            renamed_owned_views: crate::owned_view::plan_renames(files, config, generated_files),
             unboxed_oneof_variants,
             inlined_message_fields,
             table_plan: std::cell::OnceCell::new(),
@@ -674,6 +677,16 @@ impl<'a> CodeGenContext<'a> {
             warnings: std::cell::RefCell::new(plan_warnings),
             imports: std::cell::RefCell::new(crate::imports::ImportsPhase::Off),
         }
+    }
+
+    /// The owned-view wrapper name in both its declaration and re-exports.
+    pub(crate) fn owned_view_ident(&self, proto_fqn: &str, rust_name: &str) -> proc_macro2::Ident {
+        let suffix = if self.renamed_owned_views.contains(proto_fqn) {
+            "OwnedView_"
+        } else {
+            "OwnedView"
+        };
+        quote::format_ident!("{rust_name}{suffix}")
     }
 
     /// The Rust source name for a proto field, before

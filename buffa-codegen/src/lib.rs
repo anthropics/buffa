@@ -4552,7 +4552,7 @@ fn generate_proto_content(
             });
             // The owned-view wrapper gets the same natural-path treatment as
             // the view struct, so `pkg::FooOwnedView` works out of the box.
-            let owned_view_ident = format_ident!("{rust_name}OwnedView");
+            let owned_view_ident = ctx.owned_view_ident(&proto_fqn, &rust_name);
             root_reexports.push(message::ReexportCandidate {
                 name: owned_view_ident.to_string(),
                 tokens: feature_gates::cfg_block(

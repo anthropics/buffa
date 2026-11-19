@@ -10,9 +10,10 @@
 //! not offered).
 
 use crate::generated::descriptor::field_descriptor_proto::{Label, Type};
-use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto};
+use crate::generated::descriptor::{DescriptorProto, FieldDescriptorProto, FileDescriptorProto};
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
+use std::collections::{HashMap, HashSet};
 
 use crate::context::MessageScope;
 use crate::impl_message::{effective_type, is_real_oneof_member, is_supported_field_type};
@@ -20,7 +21,7 @@ use crate::message::is_map_field;
 use crate::view::{
     oneof_view_needs_lifetime, view_map_type, view_repeated_type, view_singular_type,
 };
-use crate::{CodeGenError, CodeGenWarning};
+use crate::{CodeGenConfig, CodeGenError, CodeGenWarning};
 
 /// Method names reserved by the wrapper itself. A proto field or oneof with
 /// one of these names would collide with the wrapper's inherent methods (or,
@@ -39,6 +40,37 @@ const RESERVED_WRAPPER_METHODS: &[&str] = &[
     "clone",
     "into",
 ];
+
+/// Find wrappers that would share a name with a borrowed view in the same
+/// generated module. For example, `Item`'s wrapper and `ItemOwned`'s borrowed
+/// view would both be named `ItemOwnedView`.
+pub(crate) fn plan_renames(
+    files: &[FileDescriptorProto],
+    config: &CodeGenConfig,
+    generated_files: Option<&HashSet<String>>,
+) -> HashSet<String> {
+    if !config.generate_views {
+        return HashSet::new();
+    }
+
+    let files = files.iter().filter(|file| {
+        generated_files.map_or(true, |names| {
+            names.contains(file.name.as_deref().unwrap_or_default())
+        })
+    });
+    let mut messages = HashMap::new();
+    crate::field_names::for_each_message(files, |proto_fqn, _| {
+        let (scope, name) = proto_fqn.rsplit_once('.').unwrap_or(("", proto_fqn));
+        let rust_name = config.prefixed_type_name(name);
+        messages.insert(format!("{scope}.{rust_name}"), proto_fqn.to_owned());
+    });
+
+    messages
+        .keys()
+        .filter_map(|name| name.strip_suffix("Owned"))
+        .filter_map(|name| messages.get(name).cloned())
+        .collect()
+}
 
 /// Generate the `FooOwnedView` wrapper for `msg`.
 ///
@@ -62,7 +94,7 @@ pub(crate) fn generate_owned_view_wrapper(
         ..
     } = scope;
 
-    let wrapper_ident = format_ident!("{}OwnedView", rust_name);
+    let wrapper_ident = ctx.owned_view_ident(proto_fqn, rust_name);
     // Accessor return types use the anonymous lifetime: in return position
     // with a `&self` receiver it elides to the borrow of `self`.
     let lt = quote! { '_ };
