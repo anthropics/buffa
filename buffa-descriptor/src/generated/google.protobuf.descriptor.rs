@@ -621,6 +621,11 @@ impl<'de> ::serde::Deserialize<'de> for FileDescriptorSet {
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
                         "file" => {
+                            if __f_file.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field("file"),
+                                );
+                            }
                             __f_file = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -3248,6 +3253,13 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
                         "uninterpretedOption" | "uninterpreted_option" => {
+                            if __f_uninterpreted_option.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "uninterpretedOption",
+                                    ),
+                                );
+                            }
                             __f_uninterpreted_option = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -3266,6 +3278,13 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
                             });
                         }
                         "declaration" => {
+                            if __f_declaration.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "declaration",
+                                    ),
+                                );
+                            }
                             __f_declaration = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -3288,6 +3307,13 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
                             });
                         }
                         "features" => {
+                            if __f_features.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "features",
+                                    ),
+                                );
+                            }
                             __f_features = Some(
                                 map
                                     .next_value::<
@@ -3299,6 +3325,13 @@ impl<'de> ::serde::Deserialize<'de> for ExtensionRangeOptions {
                             );
                         }
                         "verification" => {
+                            if __f_verification.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "verification",
+                                    ),
+                                );
+                            }
                             __f_verification = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -8337,6 +8370,13 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
                         "javaPackage" | "java_package" => {
+                            if __f_java_package.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "javaPackage",
+                                    ),
+                                );
+                            }
                             __f_java_package = Some(
                                 map
                                     .next_value::<
@@ -8345,6 +8385,13 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             );
                         }
                         "javaOuterClassname" | "java_outer_classname" => {
+                            if __f_java_outer_classname.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "javaOuterClassname",
+                                    ),
+                                );
+                            }
                             __f_java_outer_classname = Some(
                                 map
                                     .next_value::<
@@ -8353,22 +8400,50 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             );
                         }
                         "javaMultipleFiles" | "java_multiple_files" => {
+                            if __f_java_multiple_files.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "javaMultipleFiles",
+                                    ),
+                                );
+                            }
                             __f_java_multiple_files = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "javaGenerateEqualsAndHash"
                         | "java_generate_equals_and_hash" => {
+                            if __f_java_generate_equals_and_hash.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "javaGenerateEqualsAndHash",
+                                    ),
+                                );
+                            }
                             __f_java_generate_equals_and_hash = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "javaStringCheckUtf8" | "java_string_check_utf8" => {
+                            if __f_java_string_check_utf8.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "javaStringCheckUtf8",
+                                    ),
+                                );
+                            }
                             __f_java_string_check_utf8 = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "optimizeFor" | "optimize_for" => {
+                            if __f_optimize_for.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "optimizeFor",
+                                    ),
+                                );
+                            }
                             __f_optimize_for = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -8389,6 +8464,13 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             });
                         }
                         "goPackage" | "go_package" => {
+                            if __f_go_package.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "goPackage",
+                                    ),
+                                );
+                            }
                             __f_go_package = Some(
                                 map
                                     .next_value::<
@@ -8397,31 +8479,73 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             );
                         }
                         "ccGenericServices" | "cc_generic_services" => {
+                            if __f_cc_generic_services.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "ccGenericServices",
+                                    ),
+                                );
+                            }
                             __f_cc_generic_services = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "javaGenericServices" | "java_generic_services" => {
+                            if __f_java_generic_services.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "javaGenericServices",
+                                    ),
+                                );
+                            }
                             __f_java_generic_services = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "pyGenericServices" | "py_generic_services" => {
+                            if __f_py_generic_services.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "pyGenericServices",
+                                    ),
+                                );
+                            }
                             __f_py_generic_services = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "deprecated" => {
+                            if __f_deprecated.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "deprecated",
+                                    ),
+                                );
+                            }
                             __f_deprecated = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "ccEnableArenas" | "cc_enable_arenas" => {
+                            if __f_cc_enable_arenas.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "ccEnableArenas",
+                                    ),
+                                );
+                            }
                             __f_cc_enable_arenas = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "objcClassPrefix" | "objc_class_prefix" => {
+                            if __f_objc_class_prefix.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "objcClassPrefix",
+                                    ),
+                                );
+                            }
                             __f_objc_class_prefix = Some(
                                 map
                                     .next_value::<
@@ -8430,6 +8554,13 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             );
                         }
                         "csharpNamespace" | "csharp_namespace" => {
+                            if __f_csharp_namespace.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "csharpNamespace",
+                                    ),
+                                );
+                            }
                             __f_csharp_namespace = Some(
                                 map
                                     .next_value::<
@@ -8438,6 +8569,13 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             );
                         }
                         "swiftPrefix" | "swift_prefix" => {
+                            if __f_swift_prefix.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "swiftPrefix",
+                                    ),
+                                );
+                            }
                             __f_swift_prefix = Some(
                                 map
                                     .next_value::<
@@ -8446,6 +8584,13 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             );
                         }
                         "phpClassPrefix" | "php_class_prefix" => {
+                            if __f_php_class_prefix.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "phpClassPrefix",
+                                    ),
+                                );
+                            }
                             __f_php_class_prefix = Some(
                                 map
                                     .next_value::<
@@ -8454,6 +8599,13 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             );
                         }
                         "phpNamespace" | "php_namespace" => {
+                            if __f_php_namespace.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "phpNamespace",
+                                    ),
+                                );
+                            }
                             __f_php_namespace = Some(
                                 map
                                     .next_value::<
@@ -8462,6 +8614,13 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             );
                         }
                         "phpMetadataNamespace" | "php_metadata_namespace" => {
+                            if __f_php_metadata_namespace.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "phpMetadataNamespace",
+                                    ),
+                                );
+                            }
                             __f_php_metadata_namespace = Some(
                                 map
                                     .next_value::<
@@ -8470,6 +8629,13 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             );
                         }
                         "rubyPackage" | "ruby_package" => {
+                            if __f_ruby_package.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "rubyPackage",
+                                    ),
+                                );
+                            }
                             __f_ruby_package = Some(
                                 map
                                     .next_value::<
@@ -8478,6 +8644,13 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             );
                         }
                         "features" => {
+                            if __f_features.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "features",
+                                    ),
+                                );
+                            }
                             __f_features = Some(
                                 map
                                     .next_value::<
@@ -8489,6 +8662,13 @@ impl<'de> ::serde::Deserialize<'de> for FileOptions {
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
+                            if __f_uninterpreted_option.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "uninterpretedOption",
+                                    ),
+                                );
+                            }
                             __f_uninterpreted_option = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -9412,33 +9592,75 @@ impl<'de> ::serde::Deserialize<'de> for MessageOptions {
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
                         "messageSetWireFormat" | "message_set_wire_format" => {
+                            if __f_message_set_wire_format.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "messageSetWireFormat",
+                                    ),
+                                );
+                            }
                             __f_message_set_wire_format = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "noStandardDescriptorAccessor"
                         | "no_standard_descriptor_accessor" => {
+                            if __f_no_standard_descriptor_accessor.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "noStandardDescriptorAccessor",
+                                    ),
+                                );
+                            }
                             __f_no_standard_descriptor_accessor = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "deprecated" => {
+                            if __f_deprecated.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "deprecated",
+                                    ),
+                                );
+                            }
                             __f_deprecated = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "mapEntry" | "map_entry" => {
+                            if __f_map_entry.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "mapEntry",
+                                    ),
+                                );
+                            }
                             __f_map_entry = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "deprecatedLegacyJsonFieldConflicts"
                         | "deprecated_legacy_json_field_conflicts" => {
+                            if __f_deprecated_legacy_json_field_conflicts.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "deprecatedLegacyJsonFieldConflicts",
+                                    ),
+                                );
+                            }
                             __f_deprecated_legacy_json_field_conflicts = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "features" => {
+                            if __f_features.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "features",
+                                    ),
+                                );
+                            }
                             __f_features = Some(
                                 map
                                     .next_value::<
@@ -9450,6 +9672,13 @@ impl<'de> ::serde::Deserialize<'de> for MessageOptions {
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
+                            if __f_uninterpreted_option.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "uninterpretedOption",
+                                    ),
+                                );
+                            }
                             __f_uninterpreted_option = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -10554,6 +10783,11 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
                         "ctype" => {
+                            if __f_ctype.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field("ctype"),
+                                );
+                            }
                             __f_ctype = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -10572,11 +10806,25 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                             });
                         }
                         "packed" => {
+                            if __f_packed.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "packed",
+                                    ),
+                                );
+                            }
                             __f_packed = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "jstype" => {
+                            if __f_jstype.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "jstype",
+                                    ),
+                                );
+                            }
                             __f_jstype = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -10595,31 +10843,69 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                             });
                         }
                         "lazy" => {
+                            if __f_lazy.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field("lazy"),
+                                );
+                            }
                             __f_lazy = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "unverifiedLazy" | "unverified_lazy" => {
+                            if __f_unverified_lazy.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "unverifiedLazy",
+                                    ),
+                                );
+                            }
                             __f_unverified_lazy = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "deprecated" => {
+                            if __f_deprecated.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "deprecated",
+                                    ),
+                                );
+                            }
                             __f_deprecated = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "weak" => {
+                            if __f_weak.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field("weak"),
+                                );
+                            }
                             __f_weak = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "debugRedact" | "debug_redact" => {
+                            if __f_debug_redact.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "debugRedact",
+                                    ),
+                                );
+                            }
                             __f_debug_redact = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "retention" => {
+                            if __f_retention.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "retention",
+                                    ),
+                                );
+                            }
                             __f_retention = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -10640,6 +10926,13 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                             });
                         }
                         "targets" => {
+                            if __f_targets.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "targets",
+                                    ),
+                                );
+                            }
                             __f_targets = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -10660,6 +10953,13 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                             });
                         }
                         "editionDefaults" | "edition_defaults" => {
+                            if __f_edition_defaults.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "editionDefaults",
+                                    ),
+                                );
+                            }
                             __f_edition_defaults = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -10680,6 +10980,13 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                             });
                         }
                         "features" => {
+                            if __f_features.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "features",
+                                    ),
+                                );
+                            }
                             __f_features = Some(
                                 map
                                     .next_value::<
@@ -10691,6 +10998,13 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                             );
                         }
                         "featureSupport" | "feature_support" => {
+                            if __f_feature_support.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "featureSupport",
+                                    ),
+                                );
+                            }
                             __f_feature_support = Some(
                                 map
                                     .next_value::<
@@ -10702,6 +11016,13 @@ impl<'de> ::serde::Deserialize<'de> for FieldOptions {
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
+                            if __f_uninterpreted_option.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "uninterpretedOption",
+                                    ),
+                                );
+                            }
                             __f_uninterpreted_option = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -12478,6 +12799,13 @@ impl<'de> ::serde::Deserialize<'de> for OneofOptions {
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
                         "features" => {
+                            if __f_features.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "features",
+                                    ),
+                                );
+                            }
                             __f_features = Some(
                                 map
                                     .next_value::<
@@ -12489,6 +12817,13 @@ impl<'de> ::serde::Deserialize<'de> for OneofOptions {
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
+                            if __f_uninterpreted_option.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "uninterpretedOption",
+                                    ),
+                                );
+                            }
                             __f_uninterpreted_option = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -13043,22 +13378,50 @@ impl<'de> ::serde::Deserialize<'de> for EnumOptions {
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
                         "allowAlias" | "allow_alias" => {
+                            if __f_allow_alias.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "allowAlias",
+                                    ),
+                                );
+                            }
                             __f_allow_alias = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "deprecated" => {
+                            if __f_deprecated.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "deprecated",
+                                    ),
+                                );
+                            }
                             __f_deprecated = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "deprecatedLegacyJsonFieldConflicts"
                         | "deprecated_legacy_json_field_conflicts" => {
+                            if __f_deprecated_legacy_json_field_conflicts.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "deprecatedLegacyJsonFieldConflicts",
+                                    ),
+                                );
+                            }
                             __f_deprecated_legacy_json_field_conflicts = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "features" => {
+                            if __f_features.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "features",
+                                    ),
+                                );
+                            }
                             __f_features = Some(
                                 map
                                     .next_value::<
@@ -13070,6 +13433,13 @@ impl<'de> ::serde::Deserialize<'de> for EnumOptions {
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
+                            if __f_uninterpreted_option.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "uninterpretedOption",
+                                    ),
+                                );
+                            }
                             __f_uninterpreted_option = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -13627,11 +13997,25 @@ impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
                         "deprecated" => {
+                            if __f_deprecated.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "deprecated",
+                                    ),
+                                );
+                            }
                             __f_deprecated = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "features" => {
+                            if __f_features.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "features",
+                                    ),
+                                );
+                            }
                             __f_features = Some(
                                 map
                                     .next_value::<
@@ -13643,11 +14027,25 @@ impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
                             );
                         }
                         "debugRedact" | "debug_redact" => {
+                            if __f_debug_redact.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "debugRedact",
+                                    ),
+                                );
+                            }
                             __f_debug_redact = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "featureSupport" | "feature_support" => {
+                            if __f_feature_support.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "featureSupport",
+                                    ),
+                                );
+                            }
                             __f_feature_support = Some(
                                 map
                                     .next_value::<
@@ -13659,6 +14057,13 @@ impl<'de> ::serde::Deserialize<'de> for EnumValueOptions {
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
+                            if __f_uninterpreted_option.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "uninterpretedOption",
+                                    ),
+                                );
+                            }
                             __f_uninterpreted_option = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -14116,6 +14521,13 @@ impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
                         "features" => {
+                            if __f_features.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "features",
+                                    ),
+                                );
+                            }
                             __f_features = Some(
                                 map
                                     .next_value::<
@@ -14127,11 +14539,25 @@ impl<'de> ::serde::Deserialize<'de> for ServiceOptions {
                             );
                         }
                         "deprecated" => {
+                            if __f_deprecated.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "deprecated",
+                                    ),
+                                );
+                            }
                             __f_deprecated = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
+                            if __f_uninterpreted_option.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "uninterpretedOption",
+                                    ),
+                                );
+                            }
                             __f_uninterpreted_option = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -14646,11 +15072,25 @@ impl<'de> ::serde::Deserialize<'de> for MethodOptions {
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
                         "deprecated" => {
+                            if __f_deprecated.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "deprecated",
+                                    ),
+                                );
+                            }
                             __f_deprecated = Some(
                                 map.next_value::<::core::option::Option<bool>>()?,
                             );
                         }
                         "idempotencyLevel" | "idempotency_level" => {
+                            if __f_idempotency_level.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "idempotencyLevel",
+                                    ),
+                                );
+                            }
                             __f_idempotency_level = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -14671,6 +15111,13 @@ impl<'de> ::serde::Deserialize<'de> for MethodOptions {
                             });
                         }
                         "features" => {
+                            if __f_features.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "features",
+                                    ),
+                                );
+                            }
                             __f_features = Some(
                                 map
                                     .next_value::<
@@ -14682,6 +15129,13 @@ impl<'de> ::serde::Deserialize<'de> for MethodOptions {
                             );
                         }
                         "uninterpretedOption" | "uninterpreted_option" => {
+                            if __f_uninterpreted_option.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "uninterpretedOption",
+                                    ),
+                                );
+                            }
                             __f_uninterpreted_option = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -16321,6 +16775,13 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
                         "fieldPresence" | "field_presence" => {
+                            if __f_field_presence.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "fieldPresence",
+                                    ),
+                                );
+                            }
                             __f_field_presence = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -16341,6 +16802,13 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                             });
                         }
                         "enumType" | "enum_type" => {
+                            if __f_enum_type.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "enumType",
+                                    ),
+                                );
+                            }
                             __f_enum_type = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -16359,6 +16827,13 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                             });
                         }
                         "repeatedFieldEncoding" | "repeated_field_encoding" => {
+                            if __f_repeated_field_encoding.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "repeatedFieldEncoding",
+                                    ),
+                                );
+                            }
                             __f_repeated_field_encoding = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -16379,6 +16854,13 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                             });
                         }
                         "utf8Validation" | "utf8_validation" => {
+                            if __f_utf8_validation.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "utf8Validation",
+                                    ),
+                                );
+                            }
                             __f_utf8_validation = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -16399,6 +16881,13 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                             });
                         }
                         "messageEncoding" | "message_encoding" => {
+                            if __f_message_encoding.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "messageEncoding",
+                                    ),
+                                );
+                            }
                             __f_message_encoding = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -16419,6 +16908,13 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                             });
                         }
                         "jsonFormat" | "json_format" => {
+                            if __f_json_format.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "jsonFormat",
+                                    ),
+                                );
+                            }
                             __f_json_format = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -16439,6 +16935,13 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                             });
                         }
                         "enforceNamingStyle" | "enforce_naming_style" => {
+                            if __f_enforce_naming_style.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "enforceNamingStyle",
+                                    ),
+                                );
+                            }
                             __f_enforce_naming_style = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -16459,6 +16962,13 @@ impl<'de> ::serde::Deserialize<'de> for FeatureSet {
                             });
                         }
                         "defaultSymbolVisibility" | "default_symbol_visibility" => {
+                            if __f_default_symbol_visibility.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "defaultSymbolVisibility",
+                                    ),
+                                );
+                            }
                             __f_default_symbol_visibility = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
@@ -18966,6 +19476,13 @@ impl<'de> ::serde::Deserialize<'de> for SourceCodeInfo {
                 while let Some(key) = map.next_key::<::buffa::alloc::string::String>()? {
                     match key.as_str() {
                         "location" => {
+                            if __f_location.is_some() {
+                                return ::core::result::Result::Err(
+                                    <__A::Error as ::serde::de::Error>::duplicate_field(
+                                        "location",
+                                    ),
+                                );
+                            }
                             __f_location = Some({
                                 struct _S;
                                 impl<'de> ::serde::de::DeserializeSeed<'de> for _S {
