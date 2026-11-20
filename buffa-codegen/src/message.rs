@@ -1437,15 +1437,24 @@ fn custom_deser_regular_field(
     };
 
     // Match arm accepting both json_name and proto_name. `accepted_keys`
-    // lists the same two names.
+    // lists the same two names. A field given twice, under either name, is
+    // an error, as on the derive path.
+    let body = quote! {
+        if #var_ident.is_some() {
+            return ::core::result::Result::Err(
+                <__A::Error as ::serde::de::Error>::duplicate_field(#json_name),
+            );
+        }
+        #var_ident = Some(#deser_expr);
+    };
     let (arm, accepted_keys) = if json_name != field_name {
         (
-            quote! { #json_name | #field_name => { #var_ident = Some(#deser_expr); } },
+            quote! { #json_name | #field_name => { #body } },
             vec![json_name.to_string(), field_name.to_string()],
         )
     } else {
         (
-            quote! { #json_name => { #var_ident = Some(#deser_expr); } },
+            quote! { #json_name => { #body } },
             vec![json_name.to_string()],
         )
     };

@@ -673,3 +673,50 @@ fn message_named_result_does_not_shadow_std_result_in_serde() {
         "serde Deserialize should use ::core::result::Result.\nGenerated code:\n{content}"
     );
 }
+
+#[test]
+fn test_json_custom_deserialize_rejects_duplicate_regular_fields() {
+    let mut file = proto3_file("dup_fields.proto");
+    file.message_type.push(DescriptorProto {
+        name: Some("WithOneof".to_string()),
+        field: vec![
+            FieldDescriptorProto {
+                name: Some("foo_bar".to_string()),
+                number: Some(1),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_INT32),
+                json_name: Some("fooBar".to_string()),
+                ..Default::default()
+            },
+            FieldDescriptorProto {
+                name: Some("name".to_string()),
+                number: Some(2),
+                label: Some(Label::LABEL_OPTIONAL),
+                r#type: Some(Type::TYPE_STRING),
+                oneof_index: Some(0),
+                json_name: Some("name".to_string()),
+                ..Default::default()
+            },
+        ],
+        oneof_decl: vec![OneofDescriptorProto {
+            name: Some("kind".to_string()),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+
+    let files = generate(&[file], &["dup_fields.proto".to_string()], &json_config())
+        .expect("should generate");
+    let content = &joined(&files);
+
+    // Both names of the regular field share one arm, guarded by the local.
+    assert!(
+        content.contains(r#""fooBar" | "foo_bar" =>"#),
+        "regular field arm must accept both names: {content}"
+    );
+    assert!(
+        content.contains("__f_foo_bar.is_some()")
+            && content.contains("::serde::de::Error>::duplicate_field("),
+        "regular field arm must reject a repeated key: {content}"
+    );
+}

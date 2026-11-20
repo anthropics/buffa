@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Generated JSON decoding rejects a field given twice in a message that has a `oneof`**. A message with a `oneof` gets a hand-written `Deserialize` impl, which kept the last value of a repeated key, so `{"id": "1", "id": "2"}` decoded as `id = 2` and `{"fooBar": 1, "foo_bar": 2}` (the JSON name, then the proto name) as `foo_bar = 2`. It now returns serde's `duplicate field` error, as the derived impl on a message without a `oneof` and `DynamicMessage::from_json` already did, and as the proto3 JSON spec and the `Recommended.*.JsonInput.FieldNameDuplicate*` conformance tests require. Duplicate members of a `oneof` were already rejected.
+time: 2026-11-20T03:30:00+00:00

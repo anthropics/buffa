@@ -721,6 +721,36 @@ fn test_json_mixed_oneof_deserialize_proto_name_alias() {
 }
 
 #[test]
+fn test_json_mixed_oneof_rejects_duplicate_fields() {
+    // A message with a oneof gets a hand-written Deserialize. Like the
+    // derive path, it must reject a field given twice, under its JSON name,
+    // its proto name, or one of each.
+    use crate::json_types::{MixedOneofAndFields, Scalar};
+
+    for json in [
+        r#"{"id": "1", "id": "2"}"#,
+        r#"{"snakeCaseField": 1, "snakeCaseField": 2}"#,
+        r#"{"snakeCaseField": 1, "snake_case_field": 2}"#,
+        r#"{"snake_case_field": 1, "snakeCaseField": 2}"#,
+        r#"{"tags": ["a"], "tags": ["b"]}"#,
+        r#"{"counts": {"a": 1}, "counts": {"b": 2}}"#,
+        r#"{"scalar": {"int32Val": 1}, "scalar": {}}"#,
+        r#"{"dynamic": 1, "dynamic": null}"#,
+        r#"{"id": null, "id": "2"}"#,
+    ] {
+        let err = serde_json::from_str::<MixedOneofAndFields>(json)
+            .expect_err(&format!("{json} must be rejected"));
+        assert!(
+            err.to_string().contains("duplicate field"),
+            "{json}: unexpected error {err}"
+        );
+    }
+
+    // The derive path, for comparison.
+    assert!(serde_json::from_str::<Scalar>(r#"{"int32Val": 1, "int32Val": 2}"#).is_err());
+}
+
+#[test]
 fn test_json_mixed_value_field_null_forwarding() {
     // google.protobuf.Value: JSON null is a VALID value (NullValue),
     // not "field absent". The custom Deserialize must forward null to
