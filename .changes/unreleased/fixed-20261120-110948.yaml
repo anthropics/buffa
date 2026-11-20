@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    **A proto comment line that holds only spaces or tabs is a blank line in the generated docs** (#844).
+    protoc keeps everything after `//`, so a `// ` separator with a trailing space reaches codegen as `" "`. The indented-code fencing took such a line for text: inside an indented code example it closed the `text` code fence and opened a second one, splitting the example in two, and a line of four or more spaces opened an empty code block. Codegen now treats a line of only spaces and tabs as blank, as CommonMark and rustdoc do.
+time: 2026-11-20T11:09:48+01:00

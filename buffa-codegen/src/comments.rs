@@ -284,16 +284,16 @@ fn doc_lines_impl<F: Fn(&str) -> String>(text: &str, sanitize: F) -> TokenStream
         }
 
         if in_code_block {
-            if is_indented(line) {
+            if is_indented(line) && !is_blank(line) {
                 lines.push(pad(&strip_indent(line)));
                 continue;
             }
             // A blank line inside an indented block only closes it when no
             // more indented content follows.
-            if line.is_empty() {
+            if is_blank(line) {
                 let next_is_indented = raw_lines[idx + 1..]
                     .iter()
-                    .find(|l| !l.is_empty())
+                    .find(|l| !is_blank(l))
                     .is_some_and(|l| is_indented(l));
                 if next_is_indented {
                     lines.push(String::new());
@@ -305,7 +305,9 @@ fn doc_lines_impl<F: Fn(&str) -> String>(text: &str, sanitize: F) -> TokenStream
             // Fall through: this line still needs classifying.
         }
 
-        if let Some(fence) = fence_marker(line) {
+        if is_blank(line) {
+            lines.push(String::new());
+        } else if let Some(fence) = fence_marker(line) {
             open_fence = Some((fence.ch, fence.len));
             let run = fence.ch.to_string().repeat(fence.len);
             let info = fence_info(fence.info);
@@ -314,8 +316,6 @@ fn doc_lines_impl<F: Fn(&str) -> String>(text: &str, sanitize: F) -> TokenStream
             lines.push(" ```text".to_string());
             in_code_block = true;
             lines.push(pad(&strip_indent(line)));
-        } else if line.is_empty() {
-            lines.push(String::new());
         } else {
             lines.push(pad(&sanitize(line)));
         }
@@ -372,6 +372,12 @@ fn indent_split(line: &str, columns: usize) -> Option<usize> {
 /// An indented-code-block line: leading whitespace reaching 4+ columns.
 fn is_indented(line: &str) -> bool {
     indent_split(line, INDENT_COLUMNS).is_some()
+}
+
+/// A blank line: empty, or only spaces and tabs (CommonMark). protoc keeps
+/// the text after `//`, so `// ` with a trailing space arrives as `" "`.
+fn is_blank(line: &str) -> bool {
+    line.chars().all(|c| c == ' ' || c == '\t')
 }
 
 /// Remove one level of code-block indentation, but keep it on a line that
@@ -1288,6 +1294,27 @@ mod tests {
         assert_eq!(
             fence_count, 2,
             "one open + one close, not two blocks: {out}"
+        );
+    }
+
+    #[test]
+    fn test_doc_whitespace_only_line_within_indented_block_keeps_fence_open() {
+        // protoc keeps everything after `//`, so a `// ` separator line with
+        // a trailing space arrives as " ". CommonMark reads a line of spaces
+        // and tabs as blank, so it must not split the block in two.
+        for blank in [" ", "   ", "\t", "      "] {
+            let out = doc_tokens(&format!("    line1\n{blank}\n    line2"));
+            assert_eq!(out.matches("```").count(), 2, "{blank:?}: {out}");
+        }
+    }
+
+    #[test]
+    fn test_doc_whitespace_only_line_does_not_open_indented_block() {
+        // A blank line of four or more spaces is not indented code.
+        let out = doc_tokens("Foo.\n      \nBar.");
+        assert_eq!(
+            out,
+            "# [doc = \" Foo.\"] # [doc = \"\"] # [doc = \" Bar.\"]"
         );
     }
 
