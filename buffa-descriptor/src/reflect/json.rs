@@ -582,6 +582,11 @@ impl DynamicMessageSeed {
     /// The setting propagates to nested messages, repeated elements, and map
     /// values. See [`DynamicMessage::from_json_ignoring_unknown`].
     ///
+    /// It also covers enum names the enum does not declare, as in protobuf
+    /// C++ and Java: an unknown name leaves a singular field unset and drops
+    /// the element of a repeated field or the entry of a map. An unknown
+    /// number for a closed enum is still an error.
+    ///
     /// An unknown field inside a `google.protobuf.Any` payload is buffered
     /// with the rest of the payload before it is discarded, and the buffer
     /// counts toward the
@@ -984,7 +989,12 @@ impl<'de> DeserializeSeed<'de> for SingularSeed<'_> {
     fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
         match self.kind {
             SingularKind::Scalar(sc) => deserialize_optional_scalar(sc, d),
-            SingularKind::Enum(eidx) => deserialize_enum(self.pool, eidx, self.enum_type, d),
+            SingularKind::Enum(eidx) => Ok(
+                match deserialize_enum(self.pool, eidx, self.enum_type, self.flags, d)? {
+                    EnumJson::Value(v) => Some(v),
+                    EnumJson::Null | EnumJson::Unknown => None,
+                },
+            ),
             SingularKind::Message(midx) => {
                 // `google.protobuf.Value` treats JSON `null` as a present
                 // `null_value` member, not "unset" — dispatch straight to the
@@ -1206,29 +1216,45 @@ fn scalar_from_str<E: de::Error>(sc: ScalarType, v: &str) -> Result<Value, E> {
     })
 }
 
+/// The outcome of reading one JSON enum value.
+enum EnumJson {
+    Value(Value),
+    /// JSON `null` for an enum other than `google.protobuf.NullValue`.
+    Null,
+    /// A name the enum does not declare, read with
+    /// [`ParseFlags::ignore_unknown`] set: the field is left unset, or the
+    /// element or map entry dropped, as on the generated path.
+    Unknown,
+}
+
 fn deserialize_enum<'de, D: Deserializer<'de>>(
     pool: &Arc<DescriptorPool>,
     eidx: EnumIndex,
     enum_type: Option<EnumType>,
+    flags: ParseFlags,
     d: D,
-) -> Result<Option<Value>, D::Error> {
+) -> Result<EnumJson, D::Error> {
     struct EnumVisitor<'a> {
         pool: &'a Arc<DescriptorPool>,
         eidx: EnumIndex,
         enum_type: Option<EnumType>,
+        ignore_unknown: bool,
     }
     impl<'de> Visitor<'de> for EnumVisitor<'_> {
-        type Value = Option<Value>;
+        type Value = EnumJson;
         fn expecting(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
             write!(f, "an enum string, number, or null")
         }
         fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
             let ed = self.pool.enumeration(self.eidx);
-            ed.value_by_name(v)
-                .map(|ev| Some(Value::EnumNumber(ev.number)))
-                .ok_or_else(|| {
-                    de::Error::invalid_value(de::Unexpected::Str(v), &"a known enum variant name")
-                })
+            match ed.value_by_name(v) {
+                Some(ev) => Ok(EnumJson::Value(Value::EnumNumber(ev.number))),
+                None if self.ignore_unknown => Ok(EnumJson::Unknown),
+                None => Err(de::Error::invalid_value(
+                    de::Unexpected::Str(v),
+                    &"a known enum variant name",
+                )),
+            }
         }
         fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
             let n = i32::try_from(v).map_err(de::Error::custom)?;
@@ -1237,7 +1263,7 @@ fn deserialize_enum<'de, D: Deserializer<'de>>(
             if self.enum_type.unwrap_or(ed.enum_type) == EnumType::Closed && ed.value(n).is_none() {
                 return Err(de::Error::custom("unknown closed enum value"));
             }
-            Ok(Some(Value::EnumNumber(n)))
+            Ok(EnumJson::Value(Value::EnumNumber(n)))
         }
         fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
             self.visit_i64(i64::try_from(v).map_err(de::Error::custom)?)
@@ -1247,9 +1273,9 @@ fn deserialize_enum<'de, D: Deserializer<'de>>(
             // enums treat null as unset.
             let ed = self.pool.enumeration(self.eidx);
             if ed.full_name == "google.protobuf.NullValue" {
-                Ok(Some(Value::EnumNumber(0)))
+                Ok(EnumJson::Value(Value::EnumNumber(0)))
             } else {
-                Ok(None)
+                Ok(EnumJson::Null)
             }
         }
         fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
@@ -1264,7 +1290,24 @@ fn deserialize_enum<'de, D: Deserializer<'de>>(
         pool,
         eidx,
         enum_type,
+        ignore_unknown: flags.ignore_unknown,
     })
+}
+
+/// [`DeserializeSeed`] for one element or map value of an enum field.
+struct EnumSeed<'a> {
+    pool: &'a Arc<DescriptorPool>,
+    eidx: EnumIndex,
+    enum_type: Option<EnumType>,
+    flags: ParseFlags,
+}
+
+impl<'de> DeserializeSeed<'de> for EnumSeed<'_> {
+    type Value = EnumJson;
+
+    fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+        deserialize_enum(self.pool, self.eidx, self.enum_type, self.flags, d)
+    }
 }
 
 struct ListVisitor<'a> {
@@ -1285,6 +1328,26 @@ impl<'de> Visitor<'de> for ListVisitor<'_> {
     }
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
         let mut out = Vec::new();
+        if let SingularKind::Enum(eidx) = self.kind {
+            let seed = || EnumSeed {
+                pool: self.pool,
+                eidx,
+                enum_type: self.enum_type,
+                flags: self.flags,
+            };
+            while let Some(v) = seq.next_element_seed(seed())? {
+                let v = match v {
+                    EnumJson::Value(v) => v,
+                    EnumJson::Unknown => continue,
+                    EnumJson::Null => {
+                        return Err(de::Error::custom("null element in repeated field"));
+                    }
+                };
+                charge(self.budget, core::mem::size_of::<Value>())?;
+                out.push(v);
+            }
+            return Ok(Some(Value::List(out)));
+        }
         while let Some(v) = seq.next_element_seed(SingularSeed {
             pool: self.pool,
             kind: self.kind,
@@ -1327,13 +1390,26 @@ impl<'de> Visitor<'de> for MapFieldVisitor<'_> {
         let mut out: Vec<(MapKey, Value)> = Vec::new();
         while let Some(key) = map.next_key::<String>()? {
             let k = parse_map_key(self.key, &key).map_err(de::Error::custom)?;
-            let v = map.next_value_seed(SingularSeed {
-                pool: self.pool,
-                kind: self.value,
-                enum_type: self.enum_type,
-                flags: self.flags,
-                budget: self.budget,
-            })?;
+            let v = if let SingularKind::Enum(eidx) = self.value {
+                match map.next_value_seed(EnumSeed {
+                    pool: self.pool,
+                    eidx,
+                    enum_type: self.enum_type,
+                    flags: self.flags,
+                })? {
+                    EnumJson::Value(v) => Some(v),
+                    EnumJson::Unknown => continue,
+                    EnumJson::Null => None,
+                }
+            } else {
+                map.next_value_seed(SingularSeed {
+                    pool: self.pool,
+                    kind: self.value,
+                    enum_type: self.enum_type,
+                    flags: self.flags,
+                    budget: self.budget,
+                })?
+            };
             let v = v.ok_or_else(|| de::Error::custom("null value in map field"))?;
             charge(
                 self.budget,

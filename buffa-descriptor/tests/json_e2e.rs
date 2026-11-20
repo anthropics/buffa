@@ -701,6 +701,37 @@ fn json_unknown_enum_name_error_names_the_value() {
 }
 
 #[test]
+fn json_lenient_mode_ignores_unknown_enum_names() {
+    let p = pool();
+    let idx = p.message_index("reflect.test.Containers").unwrap();
+    // `color` is field 6, `colors` field 7.
+    let input = r#"{"color": "PURPLE", "colors": ["RED", "PURPLE", "BLUE"]}"#;
+    assert!(DynamicMessage::from_json(Arc::clone(&p), idx, input).is_err());
+    let m = DynamicMessage::from_json_ignoring_unknown(Arc::clone(&p), idx, input)
+        .expect("lenient parse succeeds");
+    assert_eq!(
+        m.field_by_number(6),
+        None,
+        "unknown name leaves the field unset"
+    );
+    assert_eq!(
+        m.field_by_number(7),
+        Some(&Value::List(vec![
+            Value::EnumNumber(1),
+            Value::EnumNumber(3)
+        ])),
+        "unknown element is dropped"
+    );
+    // Null elements are still rejected in lenient mode.
+    assert!(DynamicMessage::from_json_ignoring_unknown(
+        Arc::clone(&p),
+        idx,
+        r#"{"colors": ["RED", null]}"#
+    )
+    .is_err());
+}
+
+#[test]
 fn generated_enum_unknown_name_error_names_the_value() {
     use buffa_descriptor::generated::descriptor::Edition;
     let err = serde_json::from_str::<Edition>(r#""PURPLE""#).unwrap_err();

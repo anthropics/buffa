@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **`DynamicMessage::from_json_ignoring_unknown` ignores an unknown enum name**. With `DynamicMessageSeed::ignore_unknown_fields(true)`, an enum name the enum does not declare was still a parse error, so `{"color": "PURPLE"}` failed where generated code with `JsonParseOptions::ignore_unknown_enum_values` and protobuf C++ with `ignore_unknown_fields` both accept it. The name is now ignored: a singular field is left unset, and the element of a repeated field or the entry of a map is dropped. Strict parsing is unchanged, and an unknown number for a closed enum is still an error. This passes the ten `Recommended.*.JsonInput.IgnoreUnknownEnumStringValue*` conformance tests under reflection.
+time: 2026-11-20T21:00:00+00:00

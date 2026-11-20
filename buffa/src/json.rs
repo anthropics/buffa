@@ -91,8 +91,10 @@
 //! modes. For open enums, it is read as the enum's default value.
 //!
 //! The option applies to generated message types. JSON parsing of a
-//! `DynamicMessage` in `buffa-descriptor` does not read the option, and an
-//! unknown enum name is a parse error there.
+//! `DynamicMessage` in `buffa-descriptor` does not read the option: there an
+//! unknown enum name is a parse error, unless the parse ignores unknown
+//! fields (`DynamicMessageSeed::ignore_unknown_fields`), which ignores it the
+//! same way.
 
 /// Options controlling protobuf JSON parsing behavior.
 ///
