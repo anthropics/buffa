@@ -53,9 +53,10 @@ enum Last {
 pub struct TextEncoder<'a> {
     w: &'a mut dyn Write,
     depth: u32,
-    /// Nesting depth of `Any` expansions on the current path, bounded by
-    /// [`MAX_ANY_EXPANSION_DEPTH`]. Separate from `depth`, which counts
-    /// textproto braces for indentation and is not a bound.
+    /// Nesting depth of `Any` and registered extension expansions on the
+    /// current path, bounded by [`MAX_ANY_EXPANSION_DEPTH`]. Separate from
+    /// `depth`, which counts textproto braces for indentation and is not a
+    /// bound.
     any_depth: u32,
     pretty: bool,
     emit_unknown: bool,
@@ -341,6 +342,11 @@ impl<'a> TextEncoder<'a> {
     /// Consults the text-format extension map installed via
     /// [`set_type_registry`](crate::type_registry::set_type_registry).
     ///
+    /// Shares the [`MAX_ANY_EXPANSION_DEPTH`] nesting cap with
+    /// [`try_write_any_expanded`](Self::try_write_any_expanded): past the cap,
+    /// further recursive extension expansions are omitted so deeply nested
+    /// opaque wire payloads cannot exhaust the stack.
+    ///
     /// # Errors
     ///
     /// Propagates [`core::fmt::Error`] from the underlying writer.
@@ -364,10 +370,19 @@ impl<'a> TextEncoder<'a> {
             else {
                 continue;
             };
+            // Message-typed extensions are stored as opaque bytes in
+            // UnknownFields and decoded here, so wire-decode recursion limits
+            // do not bound nested extensions. Past the cap, stop expanding.
+            if self.any_depth >= MAX_ANY_EXPANSION_DEPTH {
+                continue;
+            }
             self.write_extension_name(entry.full_name)?;
-            self.ext_name = Some(entry.full_name);
-            (entry.text_encode)(uf.number, fields, self)?;
-            self.ext_name = None;
+            let prev_ext_name = self.ext_name.replace(entry.full_name);
+            self.any_depth += 1;
+            let res = (entry.text_encode)(uf.number, fields, self);
+            self.any_depth -= 1;
+            self.ext_name = prev_ext_name;
+            res?;
         }
         Ok(())
     }
