@@ -1336,13 +1336,13 @@ pub struct CodeGenConfig {
     /// exact type-FQN entry wins over a covering package prefix; otherwise
     /// the longest matching prefix wins.
     ///
-    /// The proto side must be `"."` (every type) or a fully-qualified name:
-    /// a leading dot, then protobuf identifiers separated by single dots,
-    /// with no trailing dot. [`generate`] does not validate entries, and an
-    /// entry in another form matches no type; a caller that fills this field
-    /// directly should pass each name through
-    /// [`normalize_extern_path_proto_name`], as `protoc-gen-buffa` and
-    /// `buffa-build` do.
+    /// The proto side must be `"."` (every type) or a dotted protobuf package
+    /// or type name (e.g. `".my.common"` or `"my.common"`). [`generate`] and
+    /// [`generate_with_diagnostics`] normalize and validate each entry with
+    /// [`normalize_extern_path_proto_name`], returning
+    /// [`CodeGenError::Other`] for a malformed proto name. `protoc-gen-buffa`
+    /// and `buffa-build` also run the same check up front so errors surface
+    /// before `protoc` runs.
     ///
     /// Well-known types (`google.protobuf.*`) are automatically mapped to
     /// `::buffa_types::google::protobuf::*` without needing an explicit
@@ -3444,6 +3444,27 @@ pub fn generate_with_diagnostics(
                 .map_err(|e| CodeGenError::Other(format!("exclude_package {entry:?}: {e}")))
         })
         .collect::<Result<_, _>>()?;
+    // Normalize and validate extern_paths proto names so direct `CodeGenConfig`
+    // callers get the same leading-dot normalization and error reporting as
+    // `protoc-gen-buffa` and `buffa-build`.
+    let normalized_extern_paths: Vec<(String, String)> = config
+        .extern_paths
+        .iter()
+        .map(|(proto_path, rust_path)| {
+            normalize_extern_path_proto_name(proto_path)
+                .map(|norm| (norm, rust_path.clone()))
+                .map_err(CodeGenError::Other)
+        })
+        .collect::<Result<_, _>>()?;
+    let effective_config: std::borrow::Cow<'_, CodeGenConfig> =
+        if normalized_extern_paths == config.extern_paths {
+            std::borrow::Cow::Borrowed(config)
+        } else {
+            let mut cloned = config.clone();
+            cloned.extern_paths = normalized_extern_paths;
+            std::borrow::Cow::Owned(cloned)
+        };
+    let config: &CodeGenConfig = &effective_config;
     // Drop files whose proto package is listed in `config.exclude_packages`
     // BEFORE building the codegen context, so that context decisions that key
     // on `files_to_generate` membership (e.g. WKT auto-extern-path injection,
@@ -5346,6 +5367,92 @@ mod extern_path_proto_name_tests {
                 err.contains(&format!("proto name '{given}': segment '{segment}'")),
                 "{given:?}: {err}"
             );
+        }
+    }
+
+    fn common_and_app_descriptors() -> (Vec<super::FileDescriptorProto>, Vec<String>) {
+        use super::generated::descriptor::{
+            field_descriptor_proto, DescriptorProto, FieldDescriptorProto, FileDescriptorProto,
+        };
+        let common = FileDescriptorProto {
+            name: Some("common.proto".into()),
+            package: Some("my.common".into()),
+            syntax: Some("proto3".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Shared".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let app = FileDescriptorProto {
+            name: Some("app.proto".into()),
+            package: Some("my.app".into()),
+            syntax: Some("proto3".into()),
+            dependency: vec!["common.proto".into()],
+            message_type: vec![DescriptorProto {
+                name: Some("UsesShared".into()),
+                field: vec![FieldDescriptorProto {
+                    name: Some("shared".into()),
+                    number: Some(1),
+                    label: Some(field_descriptor_proto::Label::LABEL_OPTIONAL),
+                    r#type: Some(field_descriptor_proto::Type::TYPE_MESSAGE),
+                    type_name: Some(".my.common.Shared".into()),
+                    json_name: Some("shared".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        (vec![common, app], vec!["app.proto".into()])
+    }
+
+    #[test]
+    fn generate_normalizes_extern_paths_for_direct_callers() {
+        let (files, to_gen) = common_and_app_descriptors();
+        for given in ["my.common", ".my.common.", " my.common "] {
+            let mut config = super::CodeGenConfig::default();
+            config
+                .extern_paths
+                .push((given.into(), "::common_protos".into()));
+            let out = super::generate(&files, &to_gen, &config)
+                .unwrap_or_else(|e| panic!("expected {given:?} to succeed, got {e}"));
+            let app_file = out
+                .iter()
+                .find(|f| f.name.ends_with("app.rs"))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "missing app.rs in {:?}",
+                        out.iter().map(|f| &f.name).collect::<Vec<_>>()
+                    )
+                });
+            assert!(
+                app_file.content.contains("::common_protos::Shared"),
+                "{given:?} should map to ::common_protos::Shared, got:\n{}",
+                app_file.content
+            );
+        }
+    }
+
+    #[test]
+    fn generate_rejects_malformed_extern_paths_for_direct_callers() {
+        let (files, to_gen) = common_and_app_descriptors();
+        for given in [".my..common", "", "my.123"] {
+            let mut config = super::CodeGenConfig::default();
+            config
+                .extern_paths
+                .push((given.into(), "::common_protos".into()));
+            let err = super::generate_with_diagnostics(&files, &to_gen, &config)
+                .expect_err(&format!("expected {given:?} to fail"));
+            match err {
+                super::CodeGenError::Other(msg) => {
+                    assert!(
+                        msg.contains(&format!("'{given}'")),
+                        "{given:?}: error should quote entry, got {msg}"
+                    );
+                }
+                other => panic!("expected CodeGenError::Other for {given:?}, got {other:?}"),
+            }
         }
     }
 }
