@@ -122,6 +122,9 @@ pub struct CodeGenContext<'a> {
     ///
     /// [`generate_with_diagnostics`]: crate::generate_with_diagnostics
     warnings: std::cell::RefCell<Vec<crate::CodeGenWarning>>,
+    /// Per-rule match flags for the six custom attribute lists in `config`,
+    /// indexed by [`AttributeOption`] discriminant.
+    matched_attributes: std::cell::RefCell<[Vec<bool>; 6]>,
     /// The messages generated with the table codec, planned by
     /// [`plan_table_codec`](Self::plan_table_codec). Unset, which is the same
     /// as empty, unless a table codec was requested.
@@ -338,6 +341,49 @@ fn parse_custom_attribute(
 
 /// Checks every custom attribute rule of `config`, in the order of its six
 /// attribute lists, whether or not the rule's path matches a generated item.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum AttributeOption {
+    Type = 0,
+    Field = 1,
+    Message = 2,
+    Enum = 3,
+    Oneof = 4,
+    OneofStructField = 5,
+}
+
+impl AttributeOption {
+    const ALL: [Self; 6] = [
+        Self::Type,
+        Self::Field,
+        Self::Message,
+        Self::Enum,
+        Self::Oneof,
+        Self::OneofStructField,
+    ];
+
+    pub(crate) const fn option_name(self) -> &'static str {
+        match self {
+            Self::Type => "type_attributes",
+            Self::Field => "field_attributes",
+            Self::Message => "message_attributes",
+            Self::Enum => "enum_attributes",
+            Self::Oneof => "oneof_attributes",
+            Self::OneofStructField => "oneof_struct_field_attributes",
+        }
+    }
+
+    fn rules(self, config: &crate::CodeGenConfig) -> &[(String, String)] {
+        match self {
+            Self::Type => &config.type_attributes,
+            Self::Field => &config.field_attributes,
+            Self::Message => &config.message_attributes,
+            Self::Enum => &config.enum_attributes,
+            Self::Oneof => &config.oneof_attributes,
+            Self::OneofStructField => &config.oneof_struct_field_attributes,
+        }
+    }
+}
+
 pub(crate) fn validate_custom_attributes(
     config: &crate::CodeGenConfig,
 ) -> Result<(), crate::CodeGenError> {
@@ -672,6 +718,14 @@ impl<'a> CodeGenContext<'a> {
             keyword_field_renames: keyword_plan.field_renames,
             keyword_oneof_renames: keyword_plan.oneof_renames,
             warnings: std::cell::RefCell::new(plan_warnings),
+            matched_attributes: std::cell::RefCell::new([
+                vec![false; config.type_attributes.len()],
+                vec![false; config.field_attributes.len()],
+                vec![false; config.message_attributes.len()],
+                vec![false; config.enum_attributes.len()],
+                vec![false; config.oneof_attributes.len()],
+                vec![false; config.oneof_struct_field_attributes.len()],
+            ]),
             imports: std::cell::RefCell::new(crate::imports::ImportsPhase::Off),
         }
     }
@@ -1270,6 +1324,7 @@ impl<'a> CodeGenContext<'a> {
     ///
     /// Returns `CodeGenError::InvalidCustomAttribute` if any matching attribute
     /// string does not parse as one or more `#[...]` attributes.
+    #[cfg(test)]
     pub(crate) fn matching_attributes(
         attrs: &[(String, String)],
         fqn: &str,
@@ -1285,6 +1340,48 @@ impl<'a> CodeGenContext<'a> {
             }
         }
         Ok(tokens)
+    }
+
+    /// Collect custom attributes for `option` matching `fqn`, recording every
+    /// matched rule so [`warn_unmatched_attributes`](Self::warn_unmatched_attributes)
+    /// can report rules that matched nothing.
+    pub(crate) fn matching_attributes_for(
+        &self,
+        option: AttributeOption,
+        fqn: &str,
+    ) -> Result<proc_macro2::TokenStream, crate::CodeGenError> {
+        let attrs = option.rules(self.config);
+        if attrs.is_empty() {
+            return Ok(proc_macro2::TokenStream::new());
+        }
+        let fqn_dotted = format!(".{fqn}");
+        let mut tokens = proc_macro2::TokenStream::new();
+        let mut matched = self.matched_attributes.borrow_mut();
+        let flags = &mut matched[option as usize];
+        for (idx, (prefix, attr_str)) in attrs.iter().enumerate() {
+            if matches_proto_prefix(prefix, &fqn_dotted) {
+                flags[idx] = true;
+                tokens.extend(parse_custom_attribute(prefix, attr_str)?);
+            }
+        }
+        Ok(tokens)
+    }
+
+    /// Emit [`CodeGenWarning::AttributeRuleMatchedNothing`] for every custom
+    /// attribute rule that matched no generated element during this run.
+    pub(crate) fn warn_unmatched_attributes(&self) {
+        let matched = self.matched_attributes.borrow();
+        for option in AttributeOption::ALL {
+            let flags = &matched[option as usize];
+            for ((rule, _), &was_matched) in option.rules(self.config).iter().zip(flags.iter()) {
+                if !was_matched {
+                    self.warn(crate::CodeGenWarning::AttributeRuleMatchedNothing {
+                        rule: rule.clone(),
+                        option: option.option_name(),
+                    });
+                }
+            }
+        }
     }
 
     /// Resolve the [`BytesRepr`](crate::BytesRepr) for a `bytes` field at the
