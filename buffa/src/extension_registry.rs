@@ -171,6 +171,11 @@ pub fn extension_registry() -> Option<&'static ExtensionRegistry> {
 /// `Serialize` impl. Iterates the unknown fields; for each field number with
 /// a registered extension of `extendee`, emits a JSON key/value pair.
 /// Unregistered numbers are silently dropped (they remain wire-only).
+///
+/// Shares the [`MAX_ANY_EXPANSION_DEPTH`](crate::type_registry::MAX_ANY_EXPANSION_DEPTH)
+/// nesting cap with `google.protobuf.Any`: message-typed extensions are stored
+/// as opaque wire bytes in [`UnknownFields`] and decoded on the fly here, so
+/// wire-decode recursion limits do not bound nested extensions.
 pub fn serialize_extensions<S: serde::Serializer>(
     extendee: &str,
     fields: &UnknownFields,
@@ -198,6 +203,12 @@ pub fn serialize_extensions<S: serde::Serializer>(
             continue;
         }
         if let Some(entry) = reg.by_number(extendee, uf.number) {
+            let Some(_depth_guard) = crate::type_registry::enter_any_expansion() else {
+                return Err(S::Error::custom(format!(
+                    "extension expansion nested deeper than {} levels",
+                    crate::type_registry::MAX_ANY_EXPANSION_DEPTH
+                )));
+            };
             let json = (entry.to_json)(uf.number, fields).map_err(S::Error::custom)?;
             let key = format!("[{}]", entry.full_name);
             map.serialize_entry(&key, &json)?;
@@ -1600,5 +1611,93 @@ mod tests {
             enum_from_json::<Color>;
         let _: fn(u32, &UnknownFields) -> Result<serde_json::Value, String> =
             repeated_enum_to_json::<Color>;
+    }
+
+    #[test]
+    fn serialize_extensions_caps_recursive_depth() {
+        use crate::Message;
+
+        #[derive(Clone, Default, PartialEq, Debug)]
+        struct RecursiveNode {
+            unknown: UnknownFields,
+        }
+
+        impl crate::DefaultInstance for RecursiveNode {
+            fn default_instance() -> &'static Self {
+                static I: crate::__private::OnceBox<RecursiveNode> =
+                    crate::__private::OnceBox::new();
+                I.get_or_init(|| Box::new(RecursiveNode::default()))
+            }
+        }
+
+        impl Message for RecursiveNode {
+            fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
+                self.unknown.encoded_len() as u32
+            }
+            fn write_to(&self, _cache: &mut crate::SizeCache, buf: &mut impl crate::EncodeSink) {
+                self.unknown.write_to(buf);
+            }
+            fn merge_field(
+                &mut self,
+                tag: crate::encoding::Tag,
+                buf: &mut impl bytes::Buf,
+                ctx: crate::DecodeContext<'_>,
+            ) -> Result<(), crate::DecodeError> {
+                let uf = crate::encoding::decode_unknown_field(tag, buf, ctx)?;
+                self.unknown.push(uf);
+                Ok(())
+            }
+            fn clear(&mut self) {
+                self.unknown.clear();
+            }
+        }
+
+        impl serde::Serialize for RecursiveNode {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                serialize_extensions("pkg.RecursiveNode", &self.unknown, s)
+            }
+        }
+
+        fn build_chain(depth: usize) -> RecursiveNode {
+            let mut node = RecursiveNode::default();
+            for _ in 0..depth {
+                let bytes = node.encode_to_vec();
+                let mut parent = RecursiveNode::default();
+                parent.unknown.push(UnknownField {
+                    number: 100,
+                    data: UnknownFieldData::LengthDelimited(bytes),
+                });
+                node = parent;
+            }
+            node
+        }
+
+        let _lock = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
+        let mut reg = ExtensionRegistry::new();
+        reg.register(JsonExtEntry {
+            number: 100,
+            full_name: "pkg.child",
+            extendee: "pkg.RecursiveNode",
+            to_json: message_to_json::<RecursiveNode>,
+            from_json: |_, _| unreachable!(),
+        });
+        set_extension_registry(Box::new(reg));
+
+        let shallow = build_chain(3);
+        let ok = serde_json::to_string(&shallow);
+        let deep = build_chain(crate::type_registry::MAX_ANY_EXPANSION_DEPTH as usize + 5);
+        let err = serde_json::to_string(&deep);
+
+        REGISTRY.swap(core::ptr::null_mut(), Ordering::AcqRel);
+
+        assert_eq!(
+            ok.unwrap(),
+            r#"{"[pkg.child]":{"[pkg.child]":{"[pkg.child]":{}}}}"#
+        );
+        let msg = err.unwrap_err().to_string();
+        assert!(
+            msg.contains("extension expansion nested deeper than"),
+            "unexpected error: {msg}"
+        );
     }
 }

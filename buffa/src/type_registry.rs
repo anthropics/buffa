@@ -1600,5 +1600,96 @@ mod tests {
 
             clear_text_registry();
         }
+
+        #[test]
+        fn write_extension_fields_caps_recursive_depth() {
+            use crate::Message;
+
+            #[derive(Clone, Default, PartialEq, Debug)]
+            struct RecursiveNode {
+                unknown: UnknownFields,
+            }
+
+            impl crate::DefaultInstance for RecursiveNode {
+                fn default_instance() -> &'static Self {
+                    static I: crate::__private::OnceBox<RecursiveNode> =
+                        crate::__private::OnceBox::new();
+                    I.get_or_init(|| alloc::boxed::Box::new(RecursiveNode::default()))
+                }
+            }
+
+            impl Message for RecursiveNode {
+                fn compute_size(&self, _cache: &mut crate::SizeCache) -> u32 {
+                    self.unknown.encoded_len() as u32
+                }
+                fn write_to(
+                    &self,
+                    _cache: &mut crate::SizeCache,
+                    buf: &mut impl crate::EncodeSink,
+                ) {
+                    self.unknown.write_to(buf);
+                }
+                fn merge_field(
+                    &mut self,
+                    tag: crate::encoding::Tag,
+                    buf: &mut impl bytes::Buf,
+                    ctx: crate::DecodeContext<'_>,
+                ) -> Result<(), crate::DecodeError> {
+                    let uf = crate::encoding::decode_unknown_field(tag, buf, ctx)?;
+                    self.unknown.push(uf);
+                    Ok(())
+                }
+                fn clear(&mut self) {
+                    self.unknown.clear();
+                }
+            }
+
+            impl crate::text::TextFormat for RecursiveNode {
+                fn encode_text(&self, enc: &mut crate::text::TextEncoder<'_>) -> core::fmt::Result {
+                    enc.write_extension_fields("pkg.RecursiveTextNode", &self.unknown)
+                }
+                fn merge_text(
+                    &mut self,
+                    dec: &mut crate::text::TextDecoder<'_>,
+                ) -> Result<(), crate::text::ParseError> {
+                    while dec.read_field_name()?.is_some() {
+                        dec.skip_value()?;
+                    }
+                    Ok(())
+                }
+            }
+
+            let mut node = RecursiveNode::default();
+            for _ in 0..(MAX_ANY_EXPANSION_DEPTH as usize + 5) {
+                let bytes = node.encode_to_vec();
+                let mut parent = RecursiveNode::default();
+                parent.unknown.push(UnknownField {
+                    number: 100,
+                    data: UnknownFieldData::LengthDelimited(bytes),
+                });
+                node = parent;
+            }
+
+            let _g = crate::test_doubles::REGISTRY_TEST_LOCK.lock().unwrap();
+            let mut reg = TypeRegistry::new();
+            reg.register_text_ext(TextExtEntry {
+                number: 100,
+                full_name: "pkg.child",
+                extendee: "pkg.RecursiveTextNode",
+                text_encode: message_encode_text::<RecursiveNode>,
+                text_merge: message_merge_text::<RecursiveNode>,
+            });
+            set_type_registry(reg);
+
+            let out = crate::text::encode_to_string(&node);
+
+            clear_text_registry();
+
+            assert_eq!(
+                out.matches('{').count(),
+                MAX_ANY_EXPANSION_DEPTH as usize,
+                "expected expansion to stop at MAX_ANY_EXPANSION_DEPTH"
+            );
+        }
     }
 }
