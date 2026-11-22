@@ -409,7 +409,7 @@ fn collect_variant_info(
             };
             let variant_fqn = format!("{proto_fqn}.{oneof_name}.{proto_name}");
             let custom_attrs =
-                CodeGenContext::matching_attributes(&ctx.config.field_attributes, &variant_fqn)?;
+                ctx.matching_attributes_for(crate::context::AttributeOption::Field, &variant_fqn)?;
             // Recursive variants never make it into the resolved unboxed set
             // (see `resolve_unboxed_variants`), so a variant that an
             // *exact-path* rule names but that is still boxed can only have
@@ -628,7 +628,7 @@ pub fn generate_oneof_enum(
     let oneof_doc =
         crate::comments::doc_attrs_resolved(ctx.comment(&oneof_fqn), proto_fqn, &ctx.type_map);
     let custom_type_attrs =
-        CodeGenContext::matching_attributes(&ctx.config.type_attributes, &oneof_fqn)?;
+        ctx.matching_attributes_for(crate::context::AttributeOption::Type, &oneof_fqn)?;
     // An inline (unboxed) message variant can dwarf its siblings, which trips
     // clippy::large_enum_variant in the consumer's crate on code they cannot
     // edit. The user explicitly chose inline storage, so allow the lint —
@@ -643,7 +643,7 @@ pub fn generate_oneof_enum(
         quote! {}
     };
     let custom_oneof_attrs =
-        CodeGenContext::matching_attributes(&ctx.config.oneof_attributes, &oneof_fqn)?;
+        ctx.matching_attributes_for(crate::context::AttributeOption::Oneof, &oneof_fqn)?;
 
     // Variants whose field is `[debug_redact = true]` print a placeholder
     // instead of their payload. The `Debug` derive is swapped for a manual

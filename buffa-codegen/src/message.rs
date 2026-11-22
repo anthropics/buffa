@@ -281,8 +281,8 @@ fn generate_message_with_nesting(
         let rename_note = ctx
             .oneof_rename_note(oneof_name)
             .map(|note| quote! { #[doc = #note] });
-        let custom_attrs = CodeGenContext::matching_attributes(
-            &ctx.config.oneof_struct_field_attributes,
+        let custom_attrs = ctx.matching_attributes_for(
+            crate::context::AttributeOption::OneofStructField,
             &format!("{proto_fqn}.{oneof_name}"),
         )?;
         let tokens = quote! {
@@ -575,9 +575,9 @@ fn generate_message_with_nesting(
         quote! {}
     };
     let custom_type_attrs =
-        CodeGenContext::matching_attributes(&ctx.config.type_attributes, proto_fqn)?;
+        ctx.matching_attributes_for(crate::context::AttributeOption::Type, proto_fqn)?;
     let custom_message_attrs =
-        CodeGenContext::matching_attributes(&ctx.config.message_attributes, proto_fqn)?;
+        ctx.matching_attributes_for(crate::context::AttributeOption::Message, proto_fqn)?;
     let custom_deserialize = if needs_custom_deserialize {
         crate::feature_gates::cfg_block(
             generate_custom_deserialize(
@@ -2046,7 +2046,7 @@ fn generate_field(
         quote! {}
     };
     let custom_field_attrs =
-        CodeGenContext::matching_attributes(&ctx.config.field_attributes, &field_fqn)?;
+        ctx.matching_attributes_for(crate::context::AttributeOption::Field, &field_fqn)?;
     // Deprecation reaches a generated field from two sources: the
     // `[deprecated = true]` option, and a caller-supplied `#[deprecated]` from
     // `field_attribute` (the documented workaround for the option having been
