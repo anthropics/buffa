@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    **Validate and normalize `CodeGenConfig::extern_paths` in `generate` / `generate_with_diagnostics`** (closes #703). Direct callers that populate `CodeGenConfig::extern_paths` now have each proto name normalized and validated through `normalize_extern_path_proto_name` (matching `protoc-gen-buffa` and `buffa-build`), so missing leading dots or trailing dots match types as expected and malformed names return `CodeGenError::Other` quoting the invalid entry instead of silently matching nothing.
+time: 2026-11-22T17:55:00+09:00
