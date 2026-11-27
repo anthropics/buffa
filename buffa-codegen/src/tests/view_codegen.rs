@@ -721,3 +721,133 @@ fn map_entries_omit_defaults_compares_view_enum_values_with_their_default() {
     assert_eq!(view.matches(closed).count(), 3, "{view}");
     assert_eq!(view.matches("v.to_i32()!=0").count(), 3, "{view}");
 }
+
+/// `app.Holder`'s lazy view, with whitespace removed, for a `Holder` holding
+/// a singular and a repeated `dep.Thing` and a `google.protobuf.Timestamp`,
+/// none of which this run generates.
+fn lazy_extern_holder(config: CodeGenConfig) -> String {
+    let message = |name: &str, field: Vec<FieldDescriptorProto>| DescriptorProto {
+        name: Some(name.to_string()),
+        field,
+        ..Default::default()
+    };
+    let message_field = |name: &str, number, label, type_name: &str| FieldDescriptorProto {
+        type_name: Some(type_name.to_string()),
+        ..make_field(name, number, label, Type::TYPE_MESSAGE)
+    };
+    let mut dep = proto3_file("dep.proto");
+    dep.package = Some("dep".to_string());
+    dep.message_type.push(message(
+        "Thing",
+        vec![make_field(
+            "name",
+            1,
+            Label::LABEL_OPTIONAL,
+            Type::TYPE_STRING,
+        )],
+    ));
+    let mut wkt = proto3_file("google/protobuf/timestamp.proto");
+    wkt.package = Some("google.protobuf".to_string());
+    wkt.message_type.push(message(
+        "Timestamp",
+        vec![make_field(
+            "seconds",
+            1,
+            Label::LABEL_OPTIONAL,
+            Type::TYPE_INT64,
+        )],
+    ));
+    let mut app = proto3_file("app.proto");
+    app.package = Some("app".to_string());
+    app.dependency = vec![
+        "dep.proto".to_string(),
+        "google/protobuf/timestamp.proto".to_string(),
+    ];
+    app.message_type.push(message(
+        "Holder",
+        vec![
+            message_field("one", 1, Label::LABEL_OPTIONAL, ".dep.Thing"),
+            message_field("many", 2, Label::LABEL_REPEATED, ".dep.Thing"),
+            message_field("at", 3, Label::LABEL_OPTIONAL, ".google.protobuf.Timestamp"),
+        ],
+    ));
+    let mut config = CodeGenConfig {
+        lazy_views: true,
+        ..config
+    };
+    config
+        .extern_paths
+        .push((".dep".to_string(), "::dep_crate".to_string()));
+    let files =
+        generate(&[dep, wkt, app], &["app.proto".to_string()], &config).expect("should generate");
+    let mut lazy = files
+        .iter()
+        .filter(|f| f.content.contains("pub struct HolderLazyView"))
+        .map(|f| f.content.as_str())
+        .collect::<String>();
+    lazy.retain(|c| !c.is_whitespace());
+    lazy
+}
+
+#[test]
+fn test_lazy_view_extern_fields_stay_eager_by_default() {
+    let lazy = lazy_extern_holder(CodeGenConfig::default());
+    assert!(
+        lazy.contains("pubone:::buffa::MessageFieldView<::dep_crate::__buffa::view::ThingView<'a>"),
+        "{lazy}"
+    );
+    assert!(!lazy.contains("lazy_view::ThingLazyView"), "{lazy}");
+}
+
+#[test]
+fn test_lazy_extern_path_defers_extern_fields() {
+    let lazy = lazy_extern_holder(CodeGenConfig {
+        lazy_extern_paths: vec![".dep".to_string()],
+        ..Default::default()
+    });
+    assert!(
+        lazy.contains(
+            "pubone:::buffa::LazyMessageFieldView<'a,::dep_crate::__buffa::lazy_view::ThingLazyView<'a>"
+        ),
+        "{lazy}"
+    );
+    assert!(
+        lazy.contains(
+            "pubmany:::buffa::LazyRepeatedView<'a,::dep_crate::__buffa::lazy_view::ThingLazyView<'a>"
+        ),
+        "{lazy}"
+    );
+}
+
+#[test]
+fn test_lazy_extern_path_keeps_buffa_types_wkts_eager() {
+    // "." covers every type, but buffa-types ships no lazy views
+    let lazy = lazy_extern_holder(CodeGenConfig {
+        lazy_extern_paths: vec![".".to_string()],
+        ..Default::default()
+    });
+    assert!(lazy.contains("lazy_view::ThingLazyView"), "{lazy}");
+    assert!(
+        lazy.contains(
+            "pubat:::buffa::MessageFieldView<::buffa_types::google::protobuf::__buffa::view::TimestampView<'a>"
+        ),
+        "{lazy}"
+    );
+    assert!(!lazy.contains("TimestampLazyView"), "{lazy}");
+}
+
+#[test]
+fn test_lazy_extern_path_defers_wkts_mapped_to_another_crate() {
+    let lazy = lazy_extern_holder(CodeGenConfig {
+        extern_paths: vec![(".google.protobuf".to_string(), "::wkt_crate".to_string())],
+        lazy_extern_paths: vec![".google.protobuf".to_string()],
+        ..Default::default()
+    });
+    assert!(
+        lazy.contains(
+            "pubat:::buffa::LazyMessageFieldView<'a,::wkt_crate::__buffa::lazy_view::TimestampLazyView<'a>"
+        ),
+        "{lazy}"
+    );
+    assert!(!lazy.contains("lazy_view::ThingLazyView"), "{lazy}");
+}

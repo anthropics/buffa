@@ -650,6 +650,7 @@ Passed via `opt:` (works for `remote:` and `local:`):
 | `with_setters=false` | Disable `with_<name>()` builder-style setters for explicit-presence fields (default: emitted) |
 | `map_entries_omit_defaults=true` | Encode map entries as prost does: an entry's key or value at its default is left out, the entry itself is kept, in the messages generated with it (default: both written). Maps with several entries keep `HashMap` order, so they match prost's `btree_map` bytes only through `buffa-build`'s `map_type` — see [Map entries](migration-from-prost.md#map-entries) |
 | `lazy_views=true` | Generate the lazy view family alongside the strict views (default: false) — see [Lazy views](#lazy-views--lazy_viewstrue) |
+| `lazy_extern_path=<proto>` | Declare that the `extern_path` crate for a package or type ships the lazy view family, so lazy views defer fields of its types instead of decoding them eagerly; repeatable, inert without `lazy_views=true` — see [Lazy views](#lazy-views--lazy_viewstrue) |
 | `register_types=false` | Disable the per-package `register_types()` helper that populates a `MessageRegistry` (default: emitted) |
 | `allow_message_set=true` | Permit `option message_set_wire_format = true;` instead of rejecting it (default: false) |
 | `strict_utf8=true` | Map `string` fields to `Vec<u8>`/`&[u8]` (no UTF-8 validation) instead of `String`/`&str`. Alias: `strict_utf8_mapping`. |
@@ -1455,7 +1456,8 @@ impl reports deferred errors as serde errors); repeated access re-decodes (no
 caching — bind the result when reading several fields); lazy repeated fields
 are not slice-backed (`.get(i)`/`.iter()`/`.len()` instead of indexing);
 groups, oneof message variants, map message values, and extern-typed fields
-(WKTs, `extern_path`) stay eagerly decoded inside the lazy view; re-encoding
+(WKTs, `extern_path`, unless declared with `lazy_extern_path` below) stay
+eagerly decoded inside the lazy view; re-encoding
 replays the recorded bytes verbatim without validating them; and the lazy
 family has no reflection, `OwnedView`, or text-format surface — use the
 eager `PersonView` for those. The recursion and unknown-field budgets
@@ -1473,6 +1475,24 @@ byte ranges is real memory whatever the elements later cost, and again when
 a deferred subtree is accessed and its own elements are recorded. The budget
 remaining at the record site is what an access replays, so a subtree cannot
 spend more than was left when its bytes were set aside.
+
+An extern crate generated with `lazy_views(true)` ships the lazy family too,
+but codegen can't tell, so its types stay eager inside your lazy views until
+you declare it with `lazy_extern_path`, in the form `extern_path` takes:
+
+```rust,ignore
+buffa_build::Config::new()
+    .files(&["protos/blocks.proto"])
+    .lazy_views(true)
+    .extern_path(".sf.ethereum.type.v2", "::substreams_ethereum::pb::eth::v2")
+    .lazy_extern_path(".sf.ethereum.type.v2")
+    .compile()?;
+```
+
+Fields of those types then become `LazyMessageFieldView` and
+`LazyRepeatedView` of the extern crate's `LogLazyView`, decoded on access
+like local ones. Well-known types mapped to `buffa-types` stay eager, as
+`buffa-types` ships no lazy views.
 
 ### `OwnedView<V>` — views with `'static` lifetime
 

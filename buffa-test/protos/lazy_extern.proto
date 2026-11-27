@@ -1,0 +1,15 @@
+// Exercises `lazy_extern_path`: test.lazyviews is generated with lazy views
+// into crate::lazyviews, so this package's lazy views defer its types like
+// local ones, while the well-known type from buffa-types stays eager.
+syntax = "proto3";
+
+package test.lazyextern;
+
+import "google/protobuf/timestamp.proto";
+import "lazy_views.proto";
+
+message Wrapper {
+  test.lazyviews.Pair pair = 1;
+  repeated test.lazyviews.Pair pairs = 2;
+  google.protobuf.Timestamp at = 3;
+}

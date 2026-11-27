@@ -371,6 +371,35 @@ fn extern_wkt_field_stays_eager() {
 }
 
 #[test]
+fn lazy_extern_path_defers_extern_fields() {
+    // `test.lazyviews` ships the lazy family and is declared with
+    // `lazy_extern_path`, so its types decode on access through its own
+    // `PairLazyView`; the buffa-types Timestamp stays eager.
+    use crate::lazyextern::{Wrapper, WrapperLazyView};
+    use crate::lazyviews::PairLazyView;
+
+    let owned = Wrapper {
+        pair: pair("a", "1").into(),
+        pairs: vec![pair("b", "2"), pair("c", "3")],
+        at: buffa_types::google::protobuf::Timestamp {
+            seconds: 7,
+            ..Default::default()
+        }
+        .into(),
+        ..Default::default()
+    };
+    let bytes = owned.encode_to_vec();
+    let view = WrapperLazyView::decode_lazy(&bytes).unwrap();
+
+    let one: PairLazyView<'_> = view.pair.get().unwrap().expect("set");
+    assert_eq!((one.k, one.v), ("a", "1"));
+    let many: Vec<PairLazyView<'_>> = view.pairs.iter().map(Result::unwrap).collect();
+    assert_eq!(many.iter().map(|p| p.k).collect::<Vec<_>>(), ["b", "c"]);
+    assert_eq!(view.at.as_option().expect("set").seconds, 7);
+    assert_eq!(view.to_owned_message().unwrap(), owned);
+}
+
+#[test]
 fn unknown_field_allowance_flows_through_lazy_boundary() {
     // The allowance remaining at the deferred field's record site is captured
     // and replayed per access — a per-subtree approximation of the shared

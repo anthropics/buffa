@@ -40,7 +40,9 @@ use crate::CodeGenError;
 /// defer), and map/oneof message values are reached through eager types.
 /// Fields resolving to **extern** types (WKTs via `buffa-types`,
 /// `extern_path`-mapped crates) also stay eager: the target crate may not
-/// ship a lazy family, and WKT JSON needs the hand-written eager impls.
+/// ship a lazy family, and WKT JSON needs the hand-written eager impls. An
+/// extern type under `lazy_extern_paths` is the exception: its crate is
+/// declared to ship the family, so its fields defer like local ones.
 fn is_lazy_field(scope: MessageScope<'_>, field: &FieldDescriptorProto) -> bool {
     let features = crate::features::resolve_field(scope.ctx, field, scope.features);
     if effective_type(scope.ctx, field, &features) != Type::TYPE_MESSAGE {
@@ -52,7 +54,7 @@ fn is_lazy_field(scope: MessageScope<'_>, field: &FieldDescriptorProto) -> bool 
     scope
         .ctx
         .rust_type_relative_split(type_name, scope.current_package, scope.nesting)
-        .is_some_and(|split| !split.is_extern)
+        .is_some_and(|split| !split.is_extern || scope.ctx.config.defers_extern_type(type_name))
 }
 
 /// Generate the `FooLazyView` struct + impls for `msg`.

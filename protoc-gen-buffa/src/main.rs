@@ -50,6 +50,11 @@ The proto side of extern_path is a dotted protobuf package or type name
 (leading dot optional); a name with an empty or non-identifier segment
 is an error.
 
+With lazy_views=true, a field of an extern type stays eager unless its
+crate also ships the lazy view family; name those packages or types with
+lazy_extern_path, in the same form:
+  --buffa_opt=lazy_views=true,extern_path=.my.pkg=::my_crate,lazy_extern_path=.my.pkg
+
 To skip a package pulled in by include_imports (e.g. an option-only
 import that is never referenced as a field), use exclude_package:
   --buffa_opt=exclude_package=.buf.validate,exclude_package=.gnostic
@@ -185,6 +190,11 @@ struct PluginConfig {
 /// every type:
 ///   --buffa_opt=extern_path=.my.common=::common_protos
 ///   --buffa_opt=extern_path=.my.common.Shared=::shared_types::Shared
+///
+/// `lazy_extern_path=<proto>`, in the same form, declares that the extern
+/// crate for `<proto>` ships the lazy view family, so lazy views defer fields
+/// of its types:
+///   --buffa_opt=lazy_extern_path=.my.common
 fn parse_config(params: &str) -> Result<PluginConfig, String> {
     let mut codegen = CodeGenConfig::default();
     let mut unbox_oneof = false;
@@ -439,6 +449,10 @@ fn parse_config(params: &str) -> Result<PluginConfig, String> {
                         value
                     ));
                 }
+            }
+            "lazy_extern_path" => {
+                let proto = buffa_codegen::normalize_extern_path_proto_name(value)?;
+                codegen.lazy_extern_paths.push(proto);
             }
             "mod_file" => {
                 return Err("the mod_file option was removed in 0.2; use \
@@ -899,6 +913,31 @@ mod tests {
         assert_eq!(config.codegen.extern_paths.len(), 1);
         assert_eq!(config.codegen.extern_paths[0].0, ".my.common");
         assert_eq!(config.codegen.extern_paths[0].1, "::common_protos");
+    }
+
+    #[test]
+    fn lazy_extern_path_is_normalized_and_repeatable() {
+        let config =
+            parse_config("lazy_extern_path=my.common,lazy_extern_path=.other.Shared").unwrap();
+        assert_eq!(
+            config.codegen.lazy_extern_paths,
+            [".my.common", ".other.Shared"]
+        );
+        assert!(parse_config("")
+            .unwrap()
+            .codegen
+            .lazy_extern_paths
+            .is_empty());
+    }
+
+    #[test]
+    fn lazy_extern_path_rejects_invalid_names() {
+        for proto in ["", "..my", ".my..common", ".my.1common"] {
+            assert!(
+                parse_config(&format!("lazy_extern_path={proto}")).is_err(),
+                "{proto}"
+            );
+        }
     }
 
     #[test]

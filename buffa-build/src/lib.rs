@@ -1116,6 +1116,43 @@ impl Config {
         self
     }
 
+    /// Declare that the [`extern_path`](Self::extern_path) crate for a proto
+    /// package or type ships the lazy view family, as a crate generated with
+    /// [`lazy_views(true)`](Self::lazy_views) does.
+    ///
+    /// Lazy views keep message fields of extern types eager by default, since
+    /// an extern crate may not ship the lazy family. A field whose type falls
+    /// under `proto_path` is deferred like a local message field instead,
+    /// decoded on access through the extern crate's `FooLazyView`. Well-known
+    /// types mapped to `buffa-types` by default stay eager, as `buffa-types`
+    /// ships no lazy views.
+    ///
+    /// `proto_path` takes the same form as in
+    /// [`extern_path`](Self::extern_path), and [`compile`](Self::compile)
+    /// validates it the same way. It has no effect unless
+    /// [`lazy_views`](Self::lazy_views) is enabled.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// buffa_build::Config::new()
+    ///     .lazy_views(true)
+    ///     .extern_path(".my.common", "::common_protos")
+    ///     .lazy_extern_path(".my.common")
+    ///     .files(&["proto/my_service.proto"])
+    ///     .includes(&["proto/"])
+    ///     .compile()
+    ///     .unwrap();
+    /// ```
+    #[must_use]
+    pub fn lazy_extern_path(mut self, proto_path: impl Into<String>) -> Self {
+        // Stored as given, like `extern_path`: `compile` normalizes it.
+        self.codegen_config
+            .lazy_extern_paths
+            .push(proto_path.into());
+        self
+    }
+
     /// Exclude a proto package from code generation.
     ///
     /// `package` is the proto package to exclude (e.g. `"buf.validate"`,
@@ -2408,6 +2445,9 @@ impl Config {
         // Same for `extern_path`: a name that can match no type would leave
         // the mapping silently unused. The plugin applies the same function.
         for (proto, _) in &mut self.codegen_config.extern_paths {
+            *proto = buffa_codegen::normalize_extern_path_proto_name(proto)?;
+        }
+        for proto in &mut self.codegen_config.lazy_extern_paths {
             *proto = buffa_codegen::normalize_extern_path_proto_name(proto)?;
         }
 

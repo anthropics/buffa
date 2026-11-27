@@ -1412,6 +1412,17 @@ fn main() {
         .compile()
         .expect("buffa_build failed for lazy_views.proto");
 
+    // lazy_extern_path — test.lazyviews ships the lazy family (above), so a
+    // package mapping it with extern_path can defer its types like local ones.
+    buffa_build::Config::new()
+        .files(&["protos/lazy_extern.proto"])
+        .includes(&["protos/"])
+        .extern_path(".test.lazyviews", "crate::lazyviews")
+        .lazy_views(true)
+        .lazy_extern_path(".test.lazyviews")
+        .compile()
+        .expect("buffa_build failed for lazy_extern.proto");
+
     // lazy_views + preserve_unknown_fields(false): compiles the lazy decode
     // loop without unknown-field capture, and the PhantomData lifetime anchor
     // for an all-scalar lazy struct — branches lazy_views.proto can't reach.
