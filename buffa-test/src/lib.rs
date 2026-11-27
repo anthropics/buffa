@@ -558,6 +558,13 @@ pub mod lazyviews {
     buffa::include_proto!("test.lazyviews");
 }
 
+/// `lazy_extern_path` — lazy views deferring [`lazyviews`] types, which they
+/// reach through `extern_path`.
+#[allow(clippy::derivable_impls, clippy::match_single_binding)]
+pub mod lazyextern {
+    buffa::include_proto!("test.lazyextern");
+}
+
 /// `lazy_views(true)` + `preserve_unknown_fields(false)` — the lazy decode
 /// loop without unknown-field capture, and an all-scalar lazy struct whose
 /// lifetime is anchored by `PhantomData`.

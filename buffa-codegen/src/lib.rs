@@ -1357,6 +1357,24 @@ pub struct CodeGenConfig {
     /// values in bytes-keyed maps; ordinary message containers use serde
     /// directly.
     pub extern_paths: Vec<(String, String)>,
+    /// Proto packages or types, named like the proto side of
+    /// [`extern_paths`](Self::extern_paths), whose extern crate was generated
+    /// with [`lazy_views`](Self::lazy_views) and so ships the lazy view family.
+    ///
+    /// A lazy view keeps a message field of an extern type eager, since the
+    /// extern crate may not ship the lazy family. A field whose type falls
+    /// under one of these entries is deferred like a local message field
+    /// instead: a `LazyMessageFieldView` or `LazyRepeatedView` of the extern
+    /// crate's `FooLazyView`, at the same `__buffa::lazy_view` layout this
+    /// crate generates. Well-known types mapped to `buffa-types` by default
+    /// stay eager, as `buffa-types` ships no lazy views; to defer them, map
+    /// `.google.protobuf` to a crate that does.
+    ///
+    /// Has no effect unless [`lazy_views`](Self::lazy_views) is enabled. Like
+    /// [`extern_paths`](Self::extern_paths), [`generate`] does not validate
+    /// entries: a caller that fills this field directly should pass each name
+    /// through [`normalize_extern_path_proto_name`].
+    pub lazy_extern_paths: Vec<String>,
     /// Ordered (proto-path-prefix, [`BytesRepr`]) rules selecting the Rust type
     /// for `bytes` fields. Later rules win, so a broad rule (e.g. `"."` →
     /// `Bytes`) can be refined by a more specific one. Fields matching no rule
@@ -2032,6 +2050,7 @@ impl Default for CodeGenConfig {
             generate_arbitrary: false,
             skip_debug: Vec::new(),
             extern_paths: Vec::new(),
+            lazy_extern_paths: Vec::new(),
             bytes_fields: Vec::new(),
             string_fields: Vec::new(),
             map_fields: Vec::new(),
@@ -2072,6 +2091,24 @@ impl Default for CodeGenConfig {
 }
 
 impl CodeGenConfig {
+    /// Whether a lazy view defers a field of the extern type `fqn`: it falls
+    /// under a [`lazy_extern_paths`](Self::lazy_extern_paths) entry, and isn't
+    /// a well-known type from `buffa-types`, which ships no lazy views.
+    pub(crate) fn defers_extern_type(&self, fqn: &str) -> bool {
+        // the same override test as `effective_extern_paths`: only an exact
+        // `.google.protobuf` mapping replaces `buffa-types`
+        let from_buffa_types = context::matches_proto_prefix(".google.protobuf", fqn)
+            && !self
+                .extern_paths
+                .iter()
+                .any(|(proto, _)| proto == ".google.protobuf");
+        !from_buffa_types
+            && self
+                .lazy_extern_paths
+                .iter()
+                .any(|prefix| context::matches_proto_prefix(prefix, fqn))
+    }
+
     /// Whether any [`FeatureOverride::EnumType`] rule is configured — the
     /// gate for the open-enum declared-default machinery (which can only
     /// fire when a closed enum has been opened by such a rule).

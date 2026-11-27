@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    **Lazy views can defer fields of extern types.** A new `lazy_extern_path` option (`buffa_build::Config::lazy_extern_path`, plugin `lazy_extern_path=<proto>`) declares that the `extern_path` crate for a package or type ships the lazy view family, so a lazy view decodes fields of its types on access, as `LazyMessageFieldView` and `LazyRepeatedView` of the crate's `FooLazyView`, instead of eagerly. Well-known types mapped to `buffa-types` stay eager.
+time: 2026-11-27T19:52:05+04:00
