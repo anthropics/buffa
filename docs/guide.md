@@ -235,7 +235,7 @@ The macro pulls in `OUT_DIR/<dotted.pkg>.mod.rs`, which in turn includes the per
 | `.field_attribute(path, attr)` / `.oneof_struct_field_attribute` | — | Attach a Rust attribute to generated fields matching a proto path prefix (`field_attribute` reaches oneof variants as `.pkg.Msg.oneof_name.variant`; `oneof_struct_field_attribute` reaches the struct field holding the oneof, `.pkg.Msg.oneof_name`) |
 | `.use_buf()` | — | Use `buf build` instead of `protoc` for descriptor generation |
 | `.include_file(name)` | — | Generate a module tree file for `include!` (recommended) |
-| `.descriptor_set(path)` | — | Use a pre-compiled `FileDescriptorSet` file |
+| `.descriptor_set(path)` | — | Use a pre-compiled `FileDescriptorSet` file. If the build script writes it into `OUT_DIR`, the file is not watched, and the script must print `cargo:rerun-if-changed` lines for the files it was built from |
 | `.descriptor_set_bytes(bytes)` | — | Use a serialized `FileDescriptorSet` held in memory, for example from an in-process compiler. The build script must print `cargo:rerun-if-changed` lines for the files the bytes were built from |
 
 ### Well-known types

@@ -1,0 +1,3 @@
+kind: Fixed
+body: '**`buffa_build::Config::compile` no longer watches files in the build script''s own `OUT_DIR`**: neither `.proto` files with protoc nor a `descriptor_set` file (#852, closes #851). A script that writes such a file into `OUT_DIR` on each run made it newer than Cargo''s record of that run, so Cargo reran the script and recompiled the crate on every build. A file counts as in `OUT_DIR` once symlinks and `..` are resolved. A script that generates protos or a descriptor set there must print `cargo:rerun-if-changed` for their real inputs.'
+time: 2026-11-27T20:13:53.512919+01:00
