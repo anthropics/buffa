@@ -86,6 +86,14 @@ impl Config {
     }
 
     /// Add `.proto` files to compile.
+    ///
+    /// With protoc, [`compile()`](Self::compile) prints a
+    /// `cargo:rerun-if-changed` line for each file and for each import found
+    /// under [`includes()`](Self::includes), except for files that are in the
+    /// build script's `OUT_DIR` once symlinks and `..` are resolved. Only the
+    /// script writes there, so a script that generates `.proto` files in
+    /// `OUT_DIR` must print `cargo:rerun-if-changed` lines for their real
+    /// inputs.
     #[must_use]
     pub fn files(mut self, files: &[impl AsRef<Path>]) -> Self {
         self.files
@@ -2234,6 +2242,11 @@ impl Config {
     /// When using this, `.files()` specifies which proto files in the
     /// descriptor set to generate code for (matching by proto file name).
     /// For in-memory input, use [`descriptor_set_bytes()`](Self::descriptor_set_bytes).
+    ///
+    /// [`compile()`](Self::compile) prints a `cargo:rerun-if-changed` line
+    /// for the file, unless it is in the build script's `OUT_DIR`. A script
+    /// that writes the file there must print `cargo:rerun-if-changed` lines
+    /// for the files it was built from.
     #[must_use]
     pub fn descriptor_set(mut self, path: impl Into<PathBuf>) -> Self {
         self.descriptor_source = DescriptorSource::Precompiled(path.into());
@@ -2652,18 +2665,28 @@ impl Config {
             "cargo:rerun-if-env-changed={}",
             buffa_codegen::ELEMENT_MEMORY_LIMIT_ENV
         );
+        // Files in the script's own OUT_DIR are never watched; see
+        // `without_script_out_dir`.
+        let script_out_dir = std::env::var_os("OUT_DIR").map(PathBuf::from);
         match self.descriptor_source {
             DescriptorSource::Buf => emit_buf_rerun_if_changed(),
             DescriptorSource::Protoc => {
                 // Rerun if PROTOC changes (different binary may accept
                 // protos the previous one rejected, e.g. newer editions).
                 println!("cargo:rerun-if-env-changed=PROTOC");
-                for proto_file in protoc_rerun_if_changed_paths(&fds, &self.files, &self.includes) {
+                for proto_file in protoc_rerun_if_changed_paths(
+                    &fds,
+                    &self.files,
+                    &self.includes,
+                    script_out_dir.as_deref(),
+                ) {
                     println!("cargo:rerun-if-changed={}", proto_file.display());
                 }
             }
             DescriptorSource::Precompiled(ref path) => {
-                println!("cargo:rerun-if-changed={}", path.display());
+                for path in without_script_out_dir([path.clone()], script_out_dir.as_deref()) {
+                    println!("cargo:rerun-if-changed={}", path.display());
+                }
             }
             // The caller tracks the inputs used to produce these bytes.
             DescriptorSource::Bytes(_) => {}
@@ -2946,10 +2969,14 @@ fn normalize_proto_path(path: &Path) -> PathBuf {
 /// from protoc's bundled includes (the well-known types) are not under any
 /// configured root and are deliberately left unwatched — they ship with the
 /// protoc binary and are not user-editable.
+///
+/// Files in `script_out_dir`, the build script's `OUT_DIR`, are left
+/// unwatched too; see [`without_script_out_dir`].
 fn protoc_rerun_if_changed_paths(
     fds: &FileDescriptorSet,
     files: &[PathBuf],
     includes: &[PathBuf],
+    script_out_dir: Option<&Path>,
 ) -> Vec<PathBuf> {
     let mut paths: BTreeSet<PathBuf> = files.iter().cloned().collect();
     for file in &fds.file {
@@ -2959,7 +2986,34 @@ fn protoc_rerun_if_changed_paths(
             }
         }
     }
-    paths.into_iter().collect()
+    without_script_out_dir(paths, script_out_dir)
+}
+
+/// Drop the paths that are in `script_out_dir`, the build script's
+/// `OUT_DIR`, so that Cargo does not watch them.
+///
+/// Only the script writes there, and a script that writes a watched file on
+/// each run makes it newer than Cargo's record of that run, so Cargo would
+/// rerun the script on every build. The script watches the real inputs
+/// instead. Both sides are canonicalized first, so a symlink out of
+/// `OUT_DIR`, a `..` component, a relative path or an alias such as `/tmp`
+/// for `/private/tmp` is judged by where the file really is. A path that
+/// cannot be canonicalized stays watched, and so does every path when
+/// `OUT_DIR` is unset or cannot be canonicalized.
+fn without_script_out_dir(
+    paths: impl IntoIterator<Item = PathBuf>,
+    script_out_dir: Option<&Path>,
+) -> Vec<PathBuf> {
+    let script_out_dir = script_out_dir.and_then(|dir| dir.canonicalize().ok());
+    paths
+        .into_iter()
+        .filter(|path| match &script_out_dir {
+            Some(dir) => path
+                .canonicalize()
+                .map_or(true, |real| !real.starts_with(dir)),
+            None => true,
+        })
+        .collect()
 }
 
 /// Map an include-relative descriptor name back to an on-disk path, trying
@@ -3758,7 +3812,7 @@ mod tests {
         let explicit = vec![include.join("svc/service.proto")];
 
         let got: BTreeSet<_> =
-            protoc_rerun_if_changed_paths(&fds, &explicit, std::slice::from_ref(&include))
+            protoc_rerun_if_changed_paths(&fds, &explicit, std::slice::from_ref(&include), None)
                 .into_iter()
                 .collect();
         let expected: BTreeSet<_> = [
@@ -3794,9 +3848,115 @@ mod tests {
         let explicit = vec![PathBuf::from("service.proto")];
 
         assert_eq!(
-            protoc_rerun_if_changed_paths(&fds, &explicit, &[include]),
+            protoc_rerun_if_changed_paths(&fds, &explicit, &[include], None),
             explicit
         );
+    }
+
+    #[test]
+    fn protoc_rerun_paths_skip_files_in_the_script_out_dir() {
+        use buffa_codegen::generated::descriptor::FileDescriptorProto;
+
+        let dir = tempfile::tempdir().unwrap();
+        let proto = dir.path().join("proto");
+        // A sibling whose name starts with "out" is not inside OUT_DIR.
+        let out_dir = dir.path().join("out");
+        let other = dir.path().join("outside");
+        for (root, file) in [
+            (&proto, "source.proto"),
+            (&out_dir, "generated.proto"),
+            (&other, "other.proto"),
+        ] {
+            std::fs::create_dir_all(root).unwrap();
+            std::fs::write(root.join(file), b"syntax = \"proto3\";").unwrap();
+        }
+
+        let fds = FileDescriptorSet {
+            file: ["source.proto", "generated.proto", "other.proto"]
+                .into_iter()
+                .map(|name| FileDescriptorProto {
+                    name: Some(name.into()),
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        };
+        // The build script wrote generated.proto into OUT_DIR and lists it
+        // explicitly; source.proto and other.proto are imports.
+        let explicit = vec![out_dir.join("generated.proto")];
+        let includes = [out_dir.clone(), proto.clone(), other.clone()];
+
+        let got: BTreeSet<_> =
+            protoc_rerun_if_changed_paths(&fds, &explicit, &includes, Some(&out_dir))
+                .into_iter()
+                .collect();
+        let expected: BTreeSet<_> = [proto.join("source.proto"), other.join("other.proto")]
+            .into_iter()
+            .collect();
+        assert_eq!(got, expected);
+
+        // Without OUT_DIR, every file is watched.
+        assert_eq!(
+            protoc_rerun_if_changed_paths(&fds, &explicit, &includes, None).len(),
+            3
+        );
+    }
+
+    #[test]
+    fn protoc_rerun_paths_judge_out_dir_by_the_real_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let out_dir = dir.path().join("out");
+        let input = dir.path().join("input");
+        std::fs::create_dir_all(&out_dir).unwrap();
+        std::fs::create_dir_all(&input).unwrap();
+        std::fs::write(out_dir.join("generated.proto"), b"").unwrap();
+        std::fs::write(input.join("source.proto"), b"").unwrap();
+        let watched = |files: &[PathBuf], out_dir: &Path| {
+            protoc_rerun_if_changed_paths(&FileDescriptorSet::default(), files, &[], Some(out_dir))
+        };
+
+        // A `..` component: judged by where the file really is.
+        let into_out_dir = input.join("../out/generated.proto");
+        let out_of_out_dir = out_dir.join("../input/source.proto");
+        assert_eq!(
+            watched(&[into_out_dir, out_of_out_dir.clone()], &out_dir),
+            [out_of_out_dir]
+        );
+        // A file that does not exist cannot be resolved, so it stays watched.
+        let missing = out_dir.join("missing.proto");
+        assert_eq!(watched(std::slice::from_ref(&missing), &out_dir), [missing]);
+        // An OUT_DIR that cannot be resolved leaves every file watched.
+        let generated = out_dir.join("generated.proto");
+        assert_eq!(
+            watched(std::slice::from_ref(&generated), &dir.path().join("gone")),
+            [generated]
+        );
+        // `descriptor_set(path)` uses the same check: a descriptor set that
+        // the script wrote into OUT_DIR is not watched, one in the sources is.
+        let fds_out = out_dir.join("fds.binpb");
+        let fds_src = input.join("fds.binpb");
+        std::fs::write(&fds_out, b"").unwrap();
+        std::fs::write(&fds_src, b"").unwrap();
+        assert_eq!(
+            without_script_out_dir([fds_out, fds_src.clone()], Some(&out_dir)),
+            [fds_src]
+        );
+
+        #[cfg(unix)]
+        {
+            // OUT_DIR spelled through an alias, as `/tmp` is for
+            // `/private/tmp` on macOS.
+            let alias = dir.path().join("alias");
+            std::os::unix::fs::symlink(&out_dir, &alias).unwrap();
+            assert!(watched(&[out_dir.join("generated.proto")], &alias).is_empty());
+            assert!(watched(&[alias.join("generated.proto")], &out_dir).is_empty());
+
+            // A symlink in OUT_DIR that points at real sources.
+            let link = out_dir.join("source");
+            std::os::unix::fs::symlink(&input, &link).unwrap();
+            let linked = link.join("source.proto");
+            assert_eq!(watched(std::slice::from_ref(&linked), &out_dir), [linked]);
+        }
     }
 
     #[test]
